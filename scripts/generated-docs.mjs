@@ -21,6 +21,7 @@ export async function buildGeneratedDocs(root) {
   const schemas = [];
   let blockKinds = [];
   let gameplayEffectTypes = [];
+  let conditionTypes = [];
   let actionTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
@@ -42,6 +43,12 @@ export async function buildGeneratedDocs(root) {
     if (name === "block") blockKinds = [...schema.properties.kind.enum].sort();
     if (name === "gameplay-effect") {
       gameplayEffectTypes = schema.oneOf
+        .map((variant) => variant?.properties?.type?.const)
+        .filter((value) => typeof value === "string")
+        .sort();
+    }
+    if (name === "condition") {
+      conditionTypes = schema.oneOf
         .map((variant) => variant?.properties?.type?.const)
         .filter((value) => typeof value === "string")
         .sort();
@@ -68,6 +75,7 @@ export async function buildGeneratedDocs(root) {
     contractsSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
+    conditionTypes,
     actionTypes,
     operations: availableOperations
   };
@@ -84,6 +92,7 @@ export async function buildGeneratedDocs(root) {
     operations: registry.operations,
     blockKinds,
     gameplayEffectTypes,
+    conditionTypes,
     actionTypes,
     schemas
   }));
@@ -99,6 +108,7 @@ export async function buildGeneratedDocs(root) {
     contractsSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
+    conditionTypes,
     actionTypes,
     availableOperations
   });
@@ -158,7 +168,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, actionTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, actionTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -166,6 +176,9 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
   const effectLines = gameplayEffectTypes.length === 0
     ? "- Нет исполняемых gameplay effects."
     : gameplayEffectTypes.map((type) => `- \`${type}\``).join("\n");
+  const conditionLines = conditionTypes.length === 0
+    ? "- Нет декларативных conditions."
+    : conditionTypes.map((type) => `- \`${type}\``).join("\n");
   const actionLines = actionTypes.length === 0
     ? "- Нет рассчитанных action types."
     : actionTypes.map((type) => `- \`${type}\``).join("\n");
@@ -178,6 +191,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
     `- OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)\n\n` +
     `## Available block kinds\n\n${blockLines}\n\n` +
     `## Available gameplay effects\n\n${effectLines}\n\n` +
+    `## Available conditions\n\n${conditionLines}\n\n` +
     `## Available calculated actions\n\n${actionLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +

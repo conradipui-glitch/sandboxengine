@@ -15,14 +15,55 @@
           "minLength": 1,
           "maxLength": 200
         },
-        "resourceId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-        },
+        "resourceId": { "$ref": "#/$defs/id" },
         "delta": { "type": "integer" }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "sourceId", "itemId", "destination"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "item.transfer" },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "itemId": { "$ref": "#/$defs/id" },
+        "destination": { "$ref": "#/$defs/itemPosition" }
+      }
     }
-  ]
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "itemPosition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "locationId"],
+          "properties": {
+            "kind": { "const": "location" },
+            "locationId": { "$ref": "#/$defs/id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "holderId"],
+          "properties": {
+            "kind": { "const": "holder" },
+            "holderId": { "$ref": "#/$defs/id" }
+          }
+        }
+      ]
+    }
+  }
 }

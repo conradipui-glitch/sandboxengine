@@ -16,7 +16,17 @@ Generated file. Do not edit by hand.
 
 ## Available gameplay effects
 
+- `item.transfer`
 - `resource.change`
+
+## Available conditions
+
+- `all`
+- `any`
+- `entity.at`
+- `item.heldBy`
+- `not`
+- `resource.atLeast`
 
 ## Available calculated actions
 

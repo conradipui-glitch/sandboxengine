@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "type": "all",
+  "conditions": [
+    {
+      "schemaVersion": "1.0",
+      "type": "resource.atLeast",
+      "resourceId": "blue_paint",
+      "value": 1
+    },
+    {
+      "schemaVersion": "1.0",
+      "type": "entity.at",
+      "entityId": "painter",
+      "locationId": "workshop"
+    },
+    {
+      "schemaVersion": "1.0",
+      "type": "not",
+      "condition": {
+        "schemaVersion": "1.0",
+        "type": "item.heldBy",
+        "itemId": "sealed-box",
+        "holderId": "painter"
+      }
+    }
+  ]
+}

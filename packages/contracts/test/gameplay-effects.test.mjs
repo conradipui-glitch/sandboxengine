@@ -14,32 +14,35 @@ async function readJson(relative) {
   return JSON.parse(await readFile(new URL(relative, import.meta.url), "utf8"));
 }
 
-test("GameplayEffect starts as a strict resource.change union without breaking Effect v1.0", async () => {
+test("GameplayEffect is a strict union of implemented executable effect types", async () => {
   const schema = await readJson("../schemas/v1/gameplay-effect.schema.json");
   assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
   assert.equal(schema.$id, CONTRACT_SCHEMA_IDS.gameplayEffect);
   assert.equal(schema.oneOf[0].properties.schemaVersion.const, CONTRACT_SCHEMA_VERSION);
-  assert.deepEqual(GAMEPLAY_EFFECT_TYPES, ["resource.change"]);
+  assert.deepEqual(GAMEPLAY_EFFECT_TYPES, ["resource.change", "item.transfer"]);
 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validate = ajv.compile(schema);
-  const valid = await readJson("../fixtures/gameplay-effect.resource-change.valid.json");
-  const invalid = await readJson("../fixtures/gameplay-effect.resource-change.invalid.json");
+  const resource = await readJson("../fixtures/gameplay-effect.resource-change.valid.json");
+  const transfer = await readJson("../fixtures/gameplay-effect.item-transfer.valid.json");
+  const invalidTransfer = await readJson("../fixtures/gameplay-effect.item-transfer.invalid.json");
 
-  assert.equal(validate(valid), true);
-  assert.equal(isGameplayEffect(valid), true);
-  assert.equal(validate(invalid), false);
-  assert.equal(isGameplayEffect(invalid), false);
+  assert.equal(validate(resource), true);
+  assert.equal(isGameplayEffect(resource), true);
+  assert.equal(validate(transfer), true);
+  assert.equal(isGameplayEffect(transfer), true);
+  assert.equal(validate(invalidTransfer), false);
+  assert.equal(isGameplayEffect(invalidTransfer), false);
 
-  assert.equal(isEffect(valid), false, "B01 generic Effect v1.0 stays unchanged instead of silently widening");
+  assert.equal(isEffect(resource), false, "B01 generic Effect v1.0 stays unchanged instead of silently widening");
+  assert.equal(isEffect(transfer), false, "new executable variants do not widen the B01 generic envelope");
 });
 
 test("unknown gameplay effect types are rejected", () => {
   assert.equal(isGameplayEffect({
     schemaVersion: "1.0",
-    type: "item.transfer",
+    type: "item.destroy",
     sourceId: "action.demo",
-    resourceId: "x",
-    delta: 1
+    itemId: "sealed-box"
   }), false);
 });

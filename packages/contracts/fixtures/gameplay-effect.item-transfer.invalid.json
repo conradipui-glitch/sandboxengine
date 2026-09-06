@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "type": "item.transfer",
+  "sourceId": "action.transfer",
+  "itemId": "sealed-box",
+  "destination": {
+    "kind": "holder",
+    "holderId": "painter",
+    "locationId": "workshop"
+  }
+}

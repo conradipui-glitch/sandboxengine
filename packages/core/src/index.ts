@@ -11,6 +11,13 @@ export {
   type CompileQuestSuccess
 } from "./compile.js";
 export {
+  evaluateCondition,
+  type ConditionEvaluationFailure,
+  type ConditionEvaluationFailureCode,
+  type ConditionEvaluationResult,
+  type ConditionEvaluationSuccess
+} from "./conditions.js";
+export {
   tryApplyEffectBatch,
   type EffectBatchFailure,
   type EffectBatchFailureCode,
@@ -29,8 +36,10 @@ export type {
   ActionResultEnvelope,
   Block,
   CalculatedAction,
+  Condition,
   EffectRef,
   GameplayEffect,
+  ItemTransferEffect,
   QuestRelease,
   ResolvedIntent,
   ResourceChangeEffect,

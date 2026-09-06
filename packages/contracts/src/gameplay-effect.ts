@@ -1,7 +1,8 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isRecord } from "./result.js";
+import type { WorldItemPosition } from "./world-state.js";
 
-export const GAMEPLAY_EFFECT_TYPES = ["resource.change"] as const;
+export const GAMEPLAY_EFFECT_TYPES = ["resource.change", "item.transfer"] as const;
 export type GameplayEffectType = (typeof GAMEPLAY_EFFECT_TYPES)[number];
 
 export interface ResourceChangeEffect {
@@ -12,25 +13,59 @@ export interface ResourceChangeEffect {
   readonly delta: number;
 }
 
+export interface ItemTransferEffect {
+  readonly schemaVersion: ContractSchemaVersion;
+  readonly type: "item.transfer";
+  readonly sourceId: string;
+  readonly itemId: string;
+  readonly destination: WorldItemPosition;
+}
+
 /**
  * Executable gameplay effects are intentionally separate from the B01 generic
- * Effect envelope. This avoids silently breaking Effect schema v1.0 while B02
- * starts a strict discriminated union that can grow through explicit versions.
+ * Effect envelope. Each executable type is added to this strict union only
+ * together with deterministic Core semantics and tests.
  */
-export type GameplayEffect = ResourceChangeEffect;
+export type GameplayEffect = ResourceChangeEffect | ItemTransferEffect;
 
 export function isGameplayEffect(value: unknown): value is GameplayEffect {
+  if (!isRecord(value) || value.schemaVersion !== CONTRACT_SCHEMA_VERSION) return false;
+  if (value.type === "resource.change") {
+    return hasOnlyKeys(value, ["schemaVersion", "type", "sourceId", "resourceId", "delta"])
+      && isSourceId(value.sourceId)
+      && isId(value.resourceId)
+      && typeof value.delta === "number"
+      && Number.isInteger(value.delta);
+  }
+  if (value.type === "item.transfer") {
+    return hasOnlyKeys(value, ["schemaVersion", "type", "sourceId", "itemId", "destination"])
+      && isSourceId(value.sourceId)
+      && isId(value.itemId)
+      && isItemPosition(value.destination);
+  }
+  return false;
+}
+
+function isItemPosition(value: unknown): value is WorldItemPosition {
   if (!isRecord(value)) return false;
-  if (!hasOnlyKeys(value, ["schemaVersion", "type", "sourceId", "resourceId", "delta"])) return false;
-  return value.schemaVersion === CONTRACT_SCHEMA_VERSION
-    && value.type === "resource.change"
-    && typeof value.sourceId === "string"
-    && value.sourceId.length > 0
-    && value.sourceId.length <= 200
-    && typeof value.resourceId === "string"
-    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value.resourceId)
-    && typeof value.delta === "number"
-    && Number.isInteger(value.delta);
+  if (value.kind === "location") {
+    return hasOnlyKeys(value, ["kind", "locationId"]) && isId(value.locationId);
+  }
+  if (value.kind === "holder") {
+    return hasOnlyKeys(value, ["kind", "holderId"]) && isId(value.holderId);
+  }
+  return false;
+}
+
+function isSourceId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 200;
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length >= 1
+    && value.length <= 200
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
