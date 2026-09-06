@@ -1,25 +1,40 @@
 # Contract fixtures
 
-Fixtures are executable examples for the canonical schemas in `../schemas/v1/`.
-They intentionally cover only fields declared by B01-02.
+Fixtures are executable examples for the canonical schemas in `../schemas/v1/`. They intentionally cover only fields declared by the currently accepted B01 slices.
 
-## Valid examples
+## Runtime-boundary examples
 
+Valid:
 - `effect.valid.json`
 - `action-result.executed.json`
 - `world-state.valid.json`
 - `scene-frame.valid.json`
 - `presentation-plan.valid.json`
 
-## Rejected examples
+Rejected by schema:
+- `effect.invalid-type.json`
+- `action-result.invalid.json`
+- `world-state.invalid-version.json`
+- `scene-frame.invalid-type.json`
+- `presentation-plan.invalid-type.json`
 
-- `effect.invalid-type.json` — effect type is not namespaced.
-- `action-result.invalid.json` — processing status is not an action result.
-- `world-state.invalid-version.json` — unsupported schema version.
-- `scene-frame.invalid-type.json` — wrong revision type.
-- `presentation-plan.invalid-type.json` — unknown reveal value.
+`world-state.invalid-reference.json` and `presentation-plan.invalid-reference.json` are deliberately JSON-Schema-valid and rejected by semantic reference checks.
 
-`world-state.invalid-reference.json` and `presentation-plan.invalid-reference.json`
-are deliberately JSON-Schema-valid. They are rejected by the semantic reference
-checks exported from `@living-history/contracts`; JSON Schema validates shape,
-not membership of one entity ID in another array.
+## Authoring examples
+
+`minimal-quest/` is one coherent package fixture:
+- `quest-release.json`
+- `blocks/workshop.json`
+- `blocks/painter.json`
+- `blocks/blue-paint.json`
+
+`resolved-intent.valid.json` is a separate understanding-layer example; it does not claim the action has already executed.
+
+Negative fixtures:
+- `block.unknown-kind.json` — kind not registered by the current block schema;
+- `block.duplicate-id.json` — individually shape-valid, but invalid when combined with another block using the same ID;
+- `quest-release.invalid-version.json` — incompatible schema version;
+- `quest-release.invalid-reference.json` — shape-valid release referencing a missing block;
+- `resolved-intent.invalid-mutation.json` — tries to smuggle duration and a state patch into the understanding result.
+
+The semantic fixtures demonstrate an intentional boundary: JSON Schema validates local shape; package/reference integrity is a separate deterministic check.

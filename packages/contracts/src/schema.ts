@@ -12,5 +12,8 @@ export const CONTRACT_SCHEMA_IDS = {
   actionResult: "urn:living-history:schema:action-result:1.0",
   worldState: "urn:living-history:schema:world-state:1.0",
   sceneFrame: "urn:living-history:schema:scene-frame:1.0",
-  presentationPlan: "urn:living-history:schema:presentation-plan:1.0"
+  presentationPlan: "urn:living-history:schema:presentation-plan:1.0",
+  block: "urn:living-history:schema:block:1.0",
+  questRelease: "urn:living-history:schema:quest-release:1.0",
+  resolvedIntent: "urn:living-history:schema:resolved-intent:1.0"
 } as const;

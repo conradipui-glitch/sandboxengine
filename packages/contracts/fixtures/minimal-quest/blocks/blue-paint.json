@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "id": "blue-paint",
+  "kind": "core.resource",
+  "title": "Синяя краска",
+  "description": "Целочисленный ресурс минимального квеста.",
+  "data": {
+    "unit": "порция",
+    "initialValue": 2,
+    "min": 0,
+    "max": 8
+  }
+}

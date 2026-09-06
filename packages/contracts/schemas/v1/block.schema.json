@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:block:1.0",
+  "title": "Block",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "kind", "title", "description", "data"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "kind": { "enum": ["core.location", "core.character", "core.resource"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "core.location" } }, "required": ["kind"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/locationData" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "core.character" } }, "required": ["kind"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/characterData" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "core.resource" } }, "required": ["kind"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/resourceData" } } }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "locationData": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "characterData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initialLocationId", "initialStatus"],
+      "properties": {
+        "initialLocationId": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "initialStatus": { "type": "string", "minLength": 1, "maxLength": 100 }
+      }
+    },
+    "resourceData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "initialValue", "min", "max"],
+      "properties": {
+        "unit": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "initialValue": { "type": "integer" },
+        "min": { "type": "integer" },
+        "max": { "type": "integer" }
+      }
+    }
+  }
+}

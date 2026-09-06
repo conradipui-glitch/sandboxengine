@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:resolved-intent:1.0",
+  "title": "ResolvedIntent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "actionType", "participantIds", "targetIds", "args", "sourceInput"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "actionType": { "$ref": "#/$defs/namespacedId" },
+    "participantIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "targetIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "args": {
+      "type": "object",
+      "maxProperties": 50,
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "sourceInput": {
+      "oneOf": [
+        { "$ref": "#/$defs/textInput" },
+        { "$ref": "#/$defs/actionInput" }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "namespacedId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$",
+      "maxLength": 200
+    },
+    "jsonValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+      ]
+    },
+    "textInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": { "const": "text" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      }
+    },
+    "actionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actionType", "args"],
+      "properties": {
+        "kind": { "const": "action" },
+        "actionType": { "$ref": "#/$defs/namespacedId" },
+        "args": {
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      }
+    }
+  }
+}
