@@ -58,17 +58,29 @@ export type ApplyDraftChangesResult =
   | { readonly kind: "revision_conflict"; readonly currentRevision: number }
   | { readonly kind: "invalid_change_set"; readonly errors: readonly string[] };
 
-export interface DraftValidationRecord {
+interface DraftValidationRecordBase {
   readonly validationId: string;
   readonly projectId: string;
   readonly questId: string;
   readonly draftRevision: number;
   readonly contentHash: string;
-  readonly status: "valid" | "invalid";
-  readonly errors: readonly string[];
-  readonly compiledArtifact: CompiledQuestArtifact | null;
-  readonly compiledContentHash: string | null;
 }
+
+export interface ValidDraftValidationRecord extends DraftValidationRecordBase {
+  readonly status: "valid";
+  readonly errors: readonly [];
+  readonly compiledArtifact: CompiledQuestArtifact;
+  readonly compiledContentHash: string;
+}
+
+export interface InvalidDraftValidationRecord extends DraftValidationRecordBase {
+  readonly status: "invalid";
+  readonly errors: readonly string[];
+  readonly compiledArtifact: null;
+  readonly compiledContentHash: null;
+}
+
+export type DraftValidationRecord = ValidDraftValidationRecord | InvalidDraftValidationRecord;
 
 export type ValidateDraftResult =
   | { readonly kind: "validated"; readonly validation: DraftValidationRecord }
