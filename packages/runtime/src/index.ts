@@ -15,6 +15,26 @@ export {
   type SQLiteFaultPoint,
   type SQLiteRuntimeStorageOptions
 } from "./sqlite-storage.js";
+export {
+  SQLiteGuestSessionAccess,
+  type SQLiteGuestSessionAccessOptions
+} from "./sqlite-guest-session-access.js";
+export {
+  projectPlayerState,
+  projectPlayerView,
+  type PlayerClockView,
+  type PlayerEntityView,
+  type PlayerItemView,
+  type PlayerReleaseView,
+  type PlayerResourceView,
+  type PlayerTerminalView,
+  type PlayerView
+} from "./player-view.js";
+export type {
+  CreateGuestSessionInput,
+  CreateGuestSessionResult,
+  RuntimeGuestSessionAccess
+} from "./session-access.js";
 export type {
   ClaimOperationInput,
   ClaimOperationResult,
