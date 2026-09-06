@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  CORE_DEADLINE_PRIORITY,
+  CORE_TASK_START_INTERNAL_ORDER,
+  CORE_TASK_STEP_PRIORITY,
   applyTimeAdvancePlan,
   planTimeAdvance,
   projectDeadlineEvent,
@@ -22,7 +25,7 @@ function resourceEffect(sourceId, delta) {
   };
 }
 
-function effectEvent(eventId, atElapsedSeconds, delta, order = 0) {
+function effectEvent(eventId, atElapsedSeconds, delta, order = 10) {
   return {
     schemaVersion: "1.0",
     eventId,
@@ -34,7 +37,7 @@ function effectEvent(eventId, atElapsedSeconds, delta, order = 0) {
   };
 }
 
-test("ScheduledTask projects deterministic start/completion events with actor reference validation", async () => {
+test("ScheduledTask projects canonical start/completion priorities with actor reference validation", async () => {
   const state = await readJson("../../contracts/fixtures/world-state.valid.json");
   const task = await readJson("../../contracts/fixtures/scheduled-task.valid.json");
   const before = JSON.stringify(task);
@@ -50,8 +53,8 @@ test("ScheduledTask projects deterministic start/completion events with actor re
     order: event.order,
     kind: event.kind
   })), [
-    { id: "task.painter.prepares-blue.start", at: 60, order: 20, kind: "core.marker" },
-    { id: "task.painter.prepares-blue.complete", at: 300, order: 21, kind: "core.effects" }
+    { id: "task.painter.prepares-blue.start", at: 60, order: CORE_TASK_START_INTERNAL_ORDER, kind: "core.marker" },
+    { id: "task.painter.prepares-blue.complete", at: 300, order: CORE_TASK_STEP_PRIORITY, kind: "core.effects" }
   ]);
   assert.equal(JSON.stringify(task), before, "projection does not mutate authored task");
 
@@ -59,19 +62,24 @@ test("ScheduledTask projects deterministic start/completion events with actor re
     ok: false,
     code: "actor_not_found"
   });
+  assert.deepEqual(projectTaskEvents(state, { ...task, baseOrder: 7 }), {
+    ok: false,
+    code: "invalid_task_priority"
+  });
 });
 
-test("deadline projected at 300 interrupts a planned 600-second action and skips later effects", async () => {
+test("deadline uses fixed priority 100, interrupts a planned 600-second action and skips later effects", async () => {
   const state = await readJson("../../contracts/fixtures/world-state.valid.json");
   const deadline = projectDeadlineEvent({
     deadlineId: "deadline.sunset",
     atElapsedSeconds: 300,
-    order: 50,
+    order: CORE_DEADLINE_PRIORITY,
     sourceId: "quest.demo",
     reason: "SUNSET_DEADLINE",
     outcome: "The commission window closed at sunset."
   });
   assert.equal(deadline.ok, true);
+  assert.equal(deadline.event.order, 100);
 
   const plan = planTimeAdvance(state, 600, [
     effectEvent("event.before", 200, 1, 10),
@@ -123,13 +131,24 @@ test("terminal state blocks subsequent normal planning and application", async (
   });
 });
 
-test("deadline helper rejects malformed definitions instead of inventing terminal events", () => {
+test("deadline helper rejects malformed or noncanonical priority definitions", () => {
   assert.deepEqual(projectDeadlineEvent({
     deadlineId: "deadline.bad",
     atElapsedSeconds: -1,
-    order: 0,
+    order: CORE_DEADLINE_PRIORITY,
     sourceId: "quest.demo",
     reason: "BAD",
+    outcome: "No"
+  }), {
+    ok: false,
+    code: "invalid_deadline"
+  });
+  assert.deepEqual(projectDeadlineEvent({
+    deadlineId: "deadline.bad-priority",
+    atElapsedSeconds: 10,
+    order: 20,
+    sourceId: "quest.demo",
+    reason: "BAD_PRIORITY",
     outcome: "No"
   }), {
     ok: false,
