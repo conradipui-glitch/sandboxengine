@@ -54,6 +54,10 @@ Generated file. Do not edit by hand.
 
 ## Available HTTP operations
 
-- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы.
+- `GET /healthz` — Проверка доступности Runtime API
+- `POST /v1/sessions` — Создание гостевой игровой сессии
+- `GET /v1/sessions/{sessionId}` — Получение player-safe состояния своей игровой сессии
+- `POST /v1/sessions/{sessionId}/actions` — Отправка одного поддержанного explicit игрового действия
+- `GET /v1/sessions/{sessionId}/operations/{operationId}` — Восстановление публичного статуса или результата операции
 
 Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.
