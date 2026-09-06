@@ -63,6 +63,15 @@ export {
   type ScheduledEventKind
 } from "./scheduled-event.js";
 export {
+  MAX_EFFECTS_PER_SCHEDULED_EVENT,
+  SCHEDULED_EFFECT_EVENT_KIND,
+  isScheduledEffectEvent,
+  isSchedulerEvent,
+  type ScheduledEffectEvent,
+  type ScheduledEffectEventPayload,
+  type SchedulerEvent
+} from "./scheduled-effect-event.js";
+export {
   CALCULATED_ACTION_TYPES,
   isCalculatedAction,
   type CalculatedAction,
