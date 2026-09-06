@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "actionType": "core.paint",
+  "status": "partial",
+  "reasonCode": "RESOURCE_LIMIT",
+  "requestedUnits": 8,
+  "completedUnits": 2,
+  "durationSeconds": 600,
+  "effects": [
+    {
+      "schemaVersion": "1.0",
+      "type": "resource.change",
+      "sourceId": "action.paint-sky",
+      "resourceId": "blue_paint",
+      "delta": -2
+    }
+  ]
+}

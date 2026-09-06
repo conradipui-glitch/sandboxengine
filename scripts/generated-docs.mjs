@@ -21,6 +21,7 @@ export async function buildGeneratedDocs(root) {
   const schemas = [];
   let blockKinds = [];
   let gameplayEffectTypes = [];
+  let actionTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
     const schema = JSON.parse(await readFile(resolve(schemaDirectory, file), "utf8"));
@@ -45,6 +46,12 @@ export async function buildGeneratedDocs(root) {
         .filter((value) => typeof value === "string")
         .sort();
     }
+    if (name === "calculated-action") {
+      actionTypes = schema.oneOf
+        .map((variant) => variant?.properties?.actionType?.const)
+        .filter((value) => typeof value === "string")
+        .sort();
+    }
   }
 
   if (contractsSchemaVersion === null) throw new Error("No contract schema version found");
@@ -61,6 +68,7 @@ export async function buildGeneratedDocs(root) {
     contractsSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
+    actionTypes,
     operations: availableOperations
   };
   const openapi = {
@@ -76,6 +84,7 @@ export async function buildGeneratedDocs(root) {
     operations: registry.operations,
     blockKinds,
     gameplayEffectTypes,
+    actionTypes,
     schemas
   }));
   const compatibility = {
@@ -90,6 +99,7 @@ export async function buildGeneratedDocs(root) {
     contractsSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
+    actionTypes,
     availableOperations
   });
 
@@ -148,7 +158,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, actionTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -156,6 +166,9 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
   const effectLines = gameplayEffectTypes.length === 0
     ? "- Нет исполняемых gameplay effects."
     : gameplayEffectTypes.map((type) => `- \`${type}\``).join("\n");
+  const actionLines = actionTypes.length === 0
+    ? "- Нет рассчитанных action types."
+    : actionTypes.map((type) => `- \`${type}\``).join("\n");
   return `# Living History Engine — agent contract\n\n` +
     `Generated file. Do not edit by hand.\n\n` +
     `- Engine version: \`${engineVersion}\`\n` +
@@ -165,6 +178,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
     `- OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)\n\n` +
     `## Available block kinds\n\n${blockLines}\n\n` +
     `## Available gameplay effects\n\n${effectLines}\n\n` +
+    `## Available calculated actions\n\n${actionLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +
     `Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.\n`;

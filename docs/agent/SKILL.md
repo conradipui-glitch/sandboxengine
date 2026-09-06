@@ -18,6 +18,10 @@ Generated file. Do not edit by hand.
 
 - `resource.change`
 
+## Available calculated actions
+
+- `core.paint`
+
 ## Available HTTP operations
 
 - Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы.

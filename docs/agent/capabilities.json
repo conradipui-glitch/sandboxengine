@@ -8,5 +8,8 @@
   "gameplayEffectTypes": [
     "resource.change"
   ],
+  "actionTypes": [
+    "core.paint"
+  ],
   "operations": []
 }

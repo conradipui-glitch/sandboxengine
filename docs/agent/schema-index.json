@@ -12,6 +12,11 @@
       "id": "urn:living-history:schema:block:1.0"
     },
     {
+      "name": "calculated-action",
+      "file": "packages/contracts/schemas/v1/calculated-action.schema.json",
+      "id": "urn:living-history:schema:calculated-action:1.0"
+    },
+    {
       "name": "effect",
       "file": "packages/contracts/schemas/v1/effect.schema.json",
       "id": "urn:living-history:schema:effect:1.0"
