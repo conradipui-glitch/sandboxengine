@@ -2,6 +2,10 @@ import { isGameplayEffect, type GameplayEffect } from "./gameplay-effect.js";
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isRecord } from "./result.js";
 import { isScheduledEvent, type ScheduledEvent } from "./scheduled-event.js";
+import {
+  isScheduledTerminalEvent,
+  type ScheduledTerminalEvent
+} from "./scheduled-terminal-event.js";
 
 export const SCHEDULED_EFFECT_EVENT_KIND = "core.effects" as const;
 export const MAX_EFFECTS_PER_SCHEDULED_EVENT = 100;
@@ -20,7 +24,7 @@ export interface ScheduledEffectEvent {
   readonly payload: ScheduledEffectEventPayload;
 }
 
-export type SchedulerEvent = ScheduledEvent | ScheduledEffectEvent;
+export type SchedulerEvent = ScheduledEvent | ScheduledEffectEvent | ScheduledTerminalEvent;
 
 export function isScheduledEffectEvent(value: unknown): value is ScheduledEffectEvent {
   if (!isRecord(value) || !hasOnlyKeys(value, [
@@ -43,7 +47,9 @@ export function isScheduledEffectEvent(value: unknown): value is ScheduledEffect
 }
 
 export function isSchedulerEvent(value: unknown): value is SchedulerEvent {
-  return isScheduledEvent(value) || isScheduledEffectEvent(value);
+  return isScheduledEvent(value)
+    || isScheduledEffectEvent(value)
+    || isScheduledTerminalEvent(value);
 }
 
 function isEffectPayload(value: unknown): value is ScheduledEffectEventPayload {
