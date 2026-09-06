@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "deadline.sunset.terminal",
+  "atElapsedSeconds": 300,
+  "order": 50,
+  "sourceId": "deadline.sunset",
+  "kind": "core.terminal",
+  "payload": {
+    "reason": "SUNSET_DEADLINE",
+    "outcome": "The commission window closed at sunset."
+  }
+}
