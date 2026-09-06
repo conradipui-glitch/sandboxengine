@@ -16,6 +16,7 @@ Generated file. Do not edit by hand.
 
 ## Available gameplay effects
 
+- `entity.move`
 - `item.transfer`
 - `resource.change`
 
