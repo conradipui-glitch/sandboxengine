@@ -30,6 +30,16 @@ export interface ValidationView {
   readonly compiledContentHash: string | null;
 }
 
+export interface PlaytestView {
+  readonly playtestId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly contentHash: string;
+  readonly validationId: string;
+  readonly compiledContentHash: string;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -111,6 +121,20 @@ export class ControlApiClient {
       { draftRevision }
     );
     return body.validation;
+  }
+
+  async createPlaytest(
+    projectId: string,
+    questId: string,
+    draftRevision: number,
+    validationId: string
+  ): Promise<PlaytestView> {
+    const body = await this.request<{ readonly playtest: PlaytestView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/playtests`,
+      { draftRevision, validationId }
+    );
+    return body.playtest;
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
