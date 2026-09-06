@@ -114,7 +114,7 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
 }
 
-async function readRequestBody(request: any): Promise<Uint8Array> {
+async function readRequestBody(request: any): Promise<ArrayBuffer> {
   const chunks: Uint8Array[] = [];
   let total = 0;
   for await (const chunk of request) {
@@ -128,7 +128,7 @@ async function readRequestBody(request: any): Promise<Uint8Array> {
     result.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return result;
+  return result.buffer;
 }
 
 function mimeType(path: string): string {
