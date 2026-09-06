@@ -2,143 +2,113 @@
 
 Обновлено: 2026-09-07
 
-Текущий блок: **B05-03 — Basic Player + frozen playtest gameplay E2E**  
-База: published B05-02 main `b45a4fa5e930a893df755797c8b6668ec74ae7f6`  
-B05-02 push-CI: `34049166381` — success  
-Ветка: `b05-03-basic-player-frozen-playtest-e2e`  
-PR: #17  
-Статус: **B05-03 final current-head gate `34054174169` success; осталось merge → push-CI main**
+Текущий блок: **B05-04 — Repeatable onboarding + persistent help / T29**  
+База: published B05-03 merge `158fbd3169d3402621faf079b39bd5e8dc8d0c69`  
+B05-03 push-CI main: `34055023933` — success  
+Ветка: `b05-04-repeatable-onboarding-help-t29`  
+PR: #18  
+Статус: **functional + canonical audit gate `34055820343` success; docs sync → final current-head CI → merge/main publication gate**
 
-## Опубликованная база
+## Что уже published
 
-B01–B04 published. B05-01/B05-02 published.
+B01–B04 и B05-01/B05-02/B05-03 published.
 
-Authoring foundation:
+B05-03 впервые завершил causal author→game path:
 
-- `@living-history/control`;
-- Memory + durable SQLiteControlStore;
-- `draftRevision` + atomic `baseRevision` changes;
-- exact validation revision/hash;
-- frozen playtest;
-- loopback-only Control HTTP;
-- Studio human forms/conflict UX/validation.
-
-Не смешивать `draftRevision`, `WorldState.revision` и Runtime fencing/lease.
-
-## Что реализовано в B05-03
-
-### Player package boundary
-
-`@living-history/player`:
-
-- deterministic frozen bootstrap;
-- initial WorldState только из frozen snapshot;
-- bounded `core.paint` definitions из frozen action blocks;
-- broken/unsupported snapshot rejected;
-- `RuntimePlayerClient` для create/refresh/action/reset;
-- никаких Core/Control/SQLite/storage imports из Player package.
-
-### Author rule действительно доходит до Core
-
-B04 minimal executor имел compatibility hardcode cost=1. Для authored/playtest path теперь используется `createCoreExplicitActionExecutorForDefinition(definition)`.
-
-Definition захватывается из frozen playtest и передаётся существующему Core resolver. Player не вычисляет последствия.
-
-Canonical causal result:
-
-- P1: initial resource=2, cost=1, request2 → executed2 / 600s;
-- reset P1 → снова те же frozen rules;
-- draft edit cost=2;
-- P1 остаётся cost=1;
-- P2: request2 → partial1 / 300s;
-- P1/P2 hashes различаются;
+- authoritative Studio draft;
+- validation;
+- immutable frozen playtest;
+- Player bootstrap только из frozen record;
+- authored action definition → Runtime/Core;
+- P1 cost=1 executed2/600;
+- reset P1 остаётся cost=1;
+- P2 cost=2 partial1/300;
 - idempotent retry не запускает Core второй раз.
 
-### Minimal Player UI
+## Что реализовано в B05-04
 
-`apps/player` показывает:
+### Persistent Help
 
-- quest/playtest identity;
-- neutral scene/location text;
-- player-safe resource;
-- elapsed game time;
-- bounded quantity;
-- action result executed/partial/blocked;
-- server-computed requested/completed/duration;
-- Reset.
+Отдельный `apps/studio/src/onboarding.ts` добавляет постоянный `? Справка` entrypoint, доступный независимо от наличия/выбора project/quest.
 
-Browser не получает `resourceUnitsPerUnit`, raw compiled artifact или content hashes как источник gameplay logic.
+Справка статическая и versioned. Она объясняет только существующий B05:
 
-### Real process composition
+- project/quest;
+- resource;
+- bounded `core.paint`;
+- save/revision/conflict;
+- validation;
+- frozen playtest;
+- local Player launch;
+- Reset = новая session из того же frozen playtest.
 
-`npm run dev:player` требует `LH_PLAYTEST_ID` и читает exact durable frozen record из той же SQLite, что Studio/Control.
+### Repeatable tour / T29
 
-Process test:
+Tour состоит из 8 deterministic шагов и поддерживает Next/Back/Skip/completion/replay.
 
-1. создаёт реальный cost=2 frozen playtest;
-2. запускает emitted `apps/player/dist/src/main.js`;
-3. проходит RuntimePlayerClient через Player proxy;
-4. получает partial1/300s;
-5. reset возвращает resource=2/time=0.
+Критическая граница:
 
-Development listeners остаются loopback-only.
+- нет `fetch`;
+- нет Control/API import;
+- нет Runtime/Player/Core import;
+- нет provider/LLM import;
+- tour не создаёт project/quest/blocks и не вызывает validation/freeze/action;
+- missing prerequisite только объясняется;
+- completed/skipped — optional localStorage UX preference, не canonical state.
 
-### Studio → frozen Player bridge
+Escape закрывает Help/tour; focus возвращается на Help trigger; mobile controls остаются доступны.
 
-Studio после exact-current valid validation теперь может создать frozen playtest через существующий Control endpoint.
+ADR: `docs/decisions/0017-static-repeatable-onboarding-boundary.md`.
 
-UI показывает:
+## Canonical B05 audit
 
-- frozen playtest id;
-- PowerShell команду запуска;
-- macOS/Linux команду запуска;
-- stale note, если draft изменился после frozen playtest.
+`apps/studio/test/b05-canonical-audit.test.mjs` теперь одним regression доказывает:
 
-Regression проверяет P1 cost=1 → edit cost=2 → persisted P1 остаётся cost=1 → P2 cost=2.
+1. fresh Studio/Control;
+2. project/quest/location;
+3. resource initial=2;
+4. cost=1 + validation + frozen P1;
+5. P1 request2 → executed2 / 600s;
+6. same idempotency key → тот же result, Core count=1;
+7. reset/new P1 session → executed2 / 600s;
+8. edit draft cost=2;
+9. persisted old P1 всё ещё cost=1;
+10. validation + frozen P2;
+11. P1/P2 hashes differ;
+12. P2 request2 → partial1 / 300s / RESOURCE_LIMIT;
+13. onboarding bundle доступен и no-fetch.
 
-### B05-02 process gap, найденный аудитом
+Functional/audit head `fd18beab06b0c47a6622ab5c76c6ad68baef4282`.  
+PR CI `34055820343` — **success**, root `npm run verify` green.
 
-Во время B05-03 выяснилось, что реальный emitted Studio `main.js` имел неверную глубину relative import к server dist. Старые module/integration tests этого не ловили.
+## B05-04 acceptance state
 
-Исправлено через runtime URL к `apps/server/dist/control-server.js`. Добавлен permanent process smoke: реальный Studio process должен отдать `/` и proxied `/control/v1/projects`.
+Закрыто функционально:
 
-Это важная причина сохранять process-level tests в последующих UI slices.
+- Help always available;
+- onboarding repeatable after completion/skip;
+- deterministic static/versioned content;
+- no AI/network/canonical mutation;
+- optional failure-safe preference;
+- anchor regression;
+- accessibility minimum;
+- full author→Player causal audit;
+- existing Studio/Player regressions green.
 
-## CI evidence
+Остался только Publication Gate:
 
-- `34052353562` — success, first causal frozen path;
-- `34052452602` — PlayerView client validation bug найден;
-- `34052572989` — success после исправления actual public PlayerView shape;
-- `34053446362` — TypeScript narrowing gap найден;
-- `34053500773` — success, Player UI + real process;
-- `34053598431` — success, Studio/Player process smoke;
-- `34053894740` — success, full Studio freeze bridge;
-- `34054126878` — success, full acceptance docs state;
-- `34054174169` — **success на final current head перед merge**.
+1. final current-head PR CI после docs sync;
+2. mark PR #18 ready;
+3. merge с expected head SHA;
+4. проверить push-to-main CI на merge SHA;
+5. после green main объявить весь B05 published.
 
-ADR: `docs/decisions/0016-frozen-playtest-player-causal-boundary.md`.  
-Worklog: `docs/worklog/2026-09-07-b05-03.md`.  
-Player runbook: `apps/player/README.md`.
+## Следующее после публикации B05
 
-## Bounded limitation
+B06 — free-text/LLM intent + narration по canonical roadmap.
 
-Один B05-03 `dev:player` process = один `LH_PLAYTEST_ID`, один Runtime template и один frozen paint definition.
+Создать отдельную bounded task-card и ветку **только от verified B05 merge SHA**. Не добавлять B06 в PR #18.
 
-Не расширять это молча до multi-template server. Если понадобится, definition routing проектируется явно по pinned session release.
+## Не делать сейчас
 
-## Publication sequence
-
-1. Merge #17 с expected current head SHA после green `34054174169`.
-2. Проверить push-to-main CI именно на merge SHA.
-3. Только после green main объявить B05-03 published.
-4. Создать B05-04 branch **от verified B05-03 merge**.
-
-## Следующая задача
-
-[B05-04 — Repeatable onboarding + persistent help / T29](tasks/B05-04-repeatable-onboarding-help-t29.md).
-
-Ключ: Help всегда доступна; onboarding можно повторить/пропустить; tour не вызывает AI/Control mutation/Runtime и не меняет canonical state. После B05-04 провести полный B05 author→Player audit.
-
-## Не делать в PR #17
-
-Onboarding implementation, LLM/free text, B07 presentation/assets, plugins, B09 auth/publish, animation suggestions, Florence migration и force dependency upgrade.
+B06 implementation, B07 presentation/assets/animations, plugins, B09 auth/public publish, B10 AI author helper, Florence migration и force dependency upgrade.
