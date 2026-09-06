@@ -2,67 +2,75 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B03-01 — integer clock и ordered scheduler plan  
-Базовый commit: `ec9b676cf1f424514204c51a63fa37fd3c6e8472`  
-Последний кодовый commit перед docs: `fa3fb5e373e6ae95a55b26ff1e5b20fe61488582`  
-Статус: accepted по bounded-приёмке; публикация выполняется через PR #8
+Текущий блок: B03-02 — scheduled effects и atomic clock transition  
+Базовый commit: `e2605c3f24fd456fb11ed0b8dbcc3b00e97e3893`  
+Последний кодовый commit перед docs: `06a8d3d39cedcbafbf067aa0c2bd3db9f87e67b6`  
+Статус: accepted по bounded-приёмке; публикация выполняется через PR #9
 
 ## Выполнено
 
-- Добавлен strict `ScheduledEvent` v1.0.
-- Первый scheduler kind — `core.marker`; payload не может содержать arbitrary code/effects/statePatch.
-- `atElapsedSeconds` и `order` — non-negative safe integers; `eventId` и `sourceId` bounded.
-- Реализован чистый `planTimeAdvance(state, durationSeconds, events, options)`.
-- Boundary semantics зафиксирована ADR 0007 как inclusive `[start,end]`.
-- Event `< start` → `past_event`; event `> end` → pending.
-- Event ровно в start/end входит в due plan.
-- duration=0 может включить due-now event, но не future event.
-- Deterministic sort: `atElapsedSeconds` → `order` → lexical `eventId`.
-- Duplicate event ids, invalid event, unsafe duration/options и clock overflow — explicit failures.
-- `maxEvents` bounded; limit failure не возвращает partial due plan.
-- Planning не мутирует `WorldState`, не двигает clock/revision и не применяет effects.
-- Generated agent kit публикует `scheduledEventKinds: ["core.marker"]`; HTTP operations по-прежнему отсутствуют.
+- B03-01 marker-only `ScheduledEvent:1.0` не расширялся задним числом.
+- Добавлен отдельный strict `ScheduledEffectEvent:1.0`, kind `core.effects`, bounded non-empty `GameplayEffect[]`.
+- Core использует union `SchedulerEvent = ScheduledEvent | ScheduledEffectEvent`.
+- `planTimeAdvance` поддерживает оба event contract и сохраняет inclusive `[start,end]` + deterministic ordering.
+- Реализован `applyTimeAdvancePlan`.
+- Plan обязан начинаться с authoritative state clock; malformed/unsorted plan и mismatch отклоняются.
+- Due effect events применяются строго по plan order через существующий B02 `tryApplyEffectBatch`.
+- Marker event остаётся trace/no-op.
+- Более поздний event видит state после более раннего event.
+- Если поздний event effect падает, весь scheduler transition возвращает failure без state; earlier trial state наружу не коммитится.
+- На полном success clock становится `plan.endElapsedSeconds`, revision увеличивается ровно один раз.
+- Zero-duration committed transition сохраняет clock и увеличивает revision один раз.
+- Pending events возвращаются отдельно и не применяются преждевременно.
+- Generated agent kit публикует `core.effects` и `core.marker` как два scheduler capabilities с двумя отдельными schema IDs.
+- Решение зафиксировано ADR 0008.
 
 ## Проверено
 
-GitHub Actions PR #8 run [34032426350](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34032426350), Node `24.19.0`, npm `11.17.0`:
+GitHub Actions PR #9 run [34032919106](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34032919106), Node `24.19.0`, npm `11.17.0`:
 
 - `npm ci` → успешно;
 - `npm run verify` → успешно;
-- contract tests → 30/30 passed;
-- Core tests → 34/34 passed;
+- contract tests → 32/32 passed;
+- Core tests → 40/40 passed;
 - `check:boundaries` → успешно;
 - `docs:check` → успешно.
 
-Опорный B03-01 trace:
+### Chronology regression
 
-- clock start=0;
-- duration=600;
-- event at=300;
-- plan end=600;
-- event входит в `dueEvents`;
-- authoritative state после planning всё ещё clock=0.
+- initial `blue_paint=2`;
+- input #1: spend `-4` at 400 sec;
+- input #2: delivery `+2` at 300 sec;
+- planner sorts delivery before spend;
+- scheduler applies +2 then -4;
+- final paint=0, clock=600, revision 7→8.
 
-Дополнительно доказаны input-order independence, time/order/eventId tie-break, inclusive boundaries, zero-duration behavior, past-event failure, duplicate ids, event-limit whole-plan failure и safe integer overflow handling.
+### Whole-transition atomicity
+
+- event A at 300: paint +2 succeeds on trial;
+- event B at 400: item transfer to missing holder fails;
+- result: `event_effect_failed`, nested `holder_not_found`, no state field;
+- authoritative paint remains 2, item remains at original location.
 
 ## Не выполнено / ограничения
 
-- Due events пока не применяют gameplay effects.
-- Clock/revision пока не меняются даже после успешного plan.
-- Pending queue не хранится в WorldState/storage.
-- NPC task lifecycle, recurring events, deadlines, interruption/resume, terminal conditions и RNG отсутствуют.
-- Runtime API/storage/idempotency — B04.
-- Wall-clock, `Date`, timers и background simulation намеренно отсутствуют.
+- Task definitions/lifecycle отсутствуют.
+- Deadline/terminal interruption отсутствует.
+- Long action пока не обрывается ранним terminal event.
+- Deterministic RNG/provenance отсутствует.
+- Queue/state persistence и idempotent runtime commit относятся к B04.
+- Никаких `Date`, wall-clock timers, HTTP/storage/LLM в Core нет.
 - `npm ci` продолжает сообщать 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade не выполнялся.
 
 ## Следующее действие
 
-После публикации PR #8 выполнить [B03-02 — event effects и чистый clock commit](tasks/B03-02-event-effects-and-clock-commit.md): добавить bounded effect-bearing event kind, применить due events строго по B03-01 plan через существующий `tryApplyEffectBatch`, доказать whole-transition atomicity и вернуть новый immutable state с clock=end/revision+1. Не добавлять persistence, HTTP или interruptions.
+После публикации PR #9 выполнить [B03-03 — tasks, deadlines, interruptions и deterministic RNG](tasks/B03-03-tasks-deadlines-interruptions-rng.md). Этот срез должен доказать deadline interrupt длинного interval и deterministic task/RNG behavior по T05–06/T08. После него сверить общий B03 с канонической матрицей; не переходить к B04, если останется конкретный незакрытый B03-инвариант.
 
 ## Решения
 
 - ADR 0003: executable GameplayEffect отдельно от generic Effect v1.0.
 - ADR 0004: CalculatedAction отдельно от public transport ActionResult v1.0.
 - ADR 0005: declarative Condition и mixed atomicity.
-- ADR 0006: request, permission и response являются отдельными social semantics.
+- ADR 0006: request, permission и response — разные social semantics.
 - ADR 0007: integer scheduler planning использует inclusive `[start,end]` и deterministic `time → order → eventId`.
+- ADR 0008: effect-bearing scheduler events имеют отдельный strict contract; весь time interval — один atomic Core transition.
