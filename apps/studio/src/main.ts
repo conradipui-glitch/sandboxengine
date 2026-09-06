@@ -11,7 +11,7 @@ declare const process: any;
 const databasePath = resolve(String(process.env.LH_DATABASE_PATH ?? "./data/living-history.sqlite"));
 await mkdir(dirname(databasePath), { recursive: true });
 
-const store = new SQLiteControlStore({ databasePath });
+const store = new SQLiteControlStore({ path: databasePath });
 const control = createControlHttpServer({ store });
 const controlAddress = await control.listen(Number(process.env.LH_CONTROL_PORT ?? 0), "127.0.0.1");
 const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}` });
