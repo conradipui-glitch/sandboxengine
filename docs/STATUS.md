@@ -4,11 +4,11 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | **B01–B04 опубликованы** | B04 merge `3ef8633cff0c07339e09107e4f3653f7e7295f0f`, push-CI `34039569962` |
+| Репозиторий и навигация | **B01–B04 опубликованы; B05-01 accepted на PR #15** | B04 main `3ef8633cff0c07339e09107e4f3653f7e7295f0f`; B05-01 финальный docs gate → merge → main CI |
 | Контракты/Core | B01–B03 приняты | typed actions/effects/conditions/social semantics, deterministic scheduler/tasks/terminal/RNG/replay |
-| Runtime storage/API | **B04 published** | Memory+SQLite idempotency/fencing, guest ownership, PlayerView, explicit HTTP; T10–12/T15; ADR 0011–0013 |
-| Authoring / Control | **B05-01 начат** | draft revision/change-set/validation/frozen-playtest foundation по новой task-card |
-| Studio UI | не начато | B05-02 после B05-01 semantic gate |
+| Runtime storage/API | **B04 published** | Memory+SQLite idempotency/fencing, guest ownership, PlayerView, Runtime HTTP; T10–12/T15; ADR 0011–0013 |
+| Authoring / Control | **B05-01 accepted на branch** | Memory+SQLite draft, validation, frozen playtest, loopback Control HTTP; ADR 0014 |
+| Studio UI | не начато | B05-02 после публикации B05-01 |
 | Player basic author path | не начато | B05-03 |
 | Onboarding/help | не начато | B05-04 / T29 |
 | AI-провайдеры/свободный ввод | не начато | B06 |
@@ -18,73 +18,71 @@
 | Авторский AI helper | не начато | B10 |
 | Миграция Florence | не начато | B11 |
 
-## B04 — опубликованная Runtime база
+## Опубликованная B04 база
 
 Main merge: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`.  
 Push-to-main CI: `34039569962` — success.
 
-Принято:
+B04 гарантирует durable gameplay operation lifecycle, crash/restart/fencing, guest ownership, deny-by-default PlayerView и explicit Runtime HTTP. Authoring не меняет эти semantics.
 
-- B04-01 transport-agnostic `RuntimeStorage`, idempotency, lease, fencing, atomic commit;
-- B04-02 durable SQLite restart/fault/busy semantics;
-- B04-03 guest ownership, deny-by-default PlayerView, Runtime HTTP and operation recovery;
-- completed retry never re-executes Core;
-- credential verifier hash-at-rest;
-- cross-owner read/mutation denied server-side;
-- real SQLite busy → 503 without partial operation/Core execution;
-- generated contract advertises only five implemented Runtime endpoints;
-- T10, T11, T12, T15 green;
-- Core boundaries clean.
+## B05 — первый законченный путь автора
 
-## Canonical B05
+Canonical итог B05: человек без ручного JSON создаёт квест, добавляет ресурс, меняет стоимость действия, запускает новую тестовую сессию и видит новый результат; старый playtest остаётся на старых правилах.
 
-`docs/SPECIFICATION.md` определяет B05 как **«Первый законченный путь автора»**.
+Разбиение:
 
-Итог B05 должен доказать путь без ручного JSON:
-
-1. создать квест;
-2. добавить ресурс;
-3. изменить стоимость действия;
-4. запустить новую тестовую сессию;
-5. увидеть новый игровой результат;
-6. убедиться, что старый playtest не изменился после редактирования draft.
-
-B05 намеренно разбит:
-
-- B05-01 — server-side draft/control + validation + frozen playtest snapshot;
-- B05-02 — минимальные Studio-формы;
-- B05-03 — базовый Player/E2E/reset;
+- B05-01 — draft/control/validation/frozen playtest;
+- B05-02 — минимальные Studio forms;
+- B05-03 — basic Player + frozen playtest E2E;
 - B05-04 — help/onboarding/T29.
 
-## Текущая точка — B05-01
+## B05-01 — accepted на PR #15
 
-Карточка: [B05-01 — Draft Control foundation и frozen playtest snapshot](tasks/B05-01-draft-control-frozen-playtest.md).
+Карточка: [B05-01](tasks/B05-01-draft-control-frozen-playtest.md).  
+Решение: [ADR 0014](decisions/0014-authoring-draft-frozen-playtest-control-boundary.md).
 
-Главные invariants:
+Принято:
 
-- draft — единственная редактируемая authoring truth;
-- `draftRevision` monotonic;
-- изменения используют `baseRevision`;
-- change set применим только целиком;
-- stale revision не перетирает новый draft;
-- validation привязана к exact revision/hash;
-- playtest pinned к immutable snapshot/hash;
-- новый draft не меняет уже созданный playtest;
-- authoring storage не меняет gameplay RuntimeStorage semantics.
+- отдельный `@living-history/control`;
+- bounded `core.action` для `core.paint`;
+- `draftRevision` отдельно от `WorldState.revision` и Runtime fencing;
+- atomic change set по `baseRevision`;
+- exact revision/contentHash validation;
+- immutable frozen playtest;
+- Memory reference + durable `SQLiteControlStore` на отдельных `control_*` tables;
+- reopen/restart и two-instance stale-writer regressions;
+- loopback-only Control HTTP;
+- 8 реально работающих Control operations;
+- generated registry: всего 13 available operations / 11 distinct paths;
+- `control.capabilities` и `control.agent-kit` остаются planned;
+- registry hash `86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
 
-До semantic gate B05-01 не публиковать Control endpoints как `available`.
+CI checkpoints:
+
+- `34040472362` — semantic foundation success;
+- `34046137073` — durable SQLite success;
+- `34046356282` — Control HTTP success;
+- `34046749725` — registry/generated contract success.
+
+Матрица последнего publication-contract gate:
+
+- contracts 37/37;
+- Core 55/55;
+- Runtime storage 20/20;
+- Control 14/14;
+- server 10/10;
+- boundaries/docs green.
+
+До merge PR #15 и зелёного push-to-main B05-01 считать accepted, но ещё не published.
+
+## Следующий блок после publication
+
+[B05-02 — Minimal Studio forms поверх Control API](tasks/B05-02-minimal-studio-forms.md).
+
+Studio обязана быть клиентом Control API: project/quest/resource/paint forms, save by baseRevision, conflict UX, validation; никаких прямых SQLite/JSON writes.
 
 ## Scope boundary
 
-В B05-01 не входят:
-
-- Studio UI;
-- полный Player presentation interpreter;
-- onboarding UI;
-- LLM/author helper;
-- assets/presentation composer;
-- publish/rollback/roles/login;
-- animation suggestions;
-- Florence migration.
+Пока не реализованы Studio UI, Player E2E, onboarding, LLM/author helper, assets/presentation composer, roles/login/publish, animation suggestions и Florence migration.
 
 Известное наблюдение CI: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельного аудита не выполнялся.

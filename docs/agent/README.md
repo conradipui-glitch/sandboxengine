@@ -2,92 +2,94 @@
 
 Это короткая человеческая точка входа. Сначала прочитай [README](../../README.md), [STATUS](../STATUS.md), [HANDOFF](../HANDOFF.md) и карточку текущей задачи. Полное ТЗ — [docs/SPECIFICATION.md](../SPECIFICATION.md). Машинно собранный текущий контракт находится в [SKILL.md](SKILL.md).
 
-## Принятая лестница причинности
+## Принятая лестница границ
 
-Не смешивай обязанности:
-
-1. `ResolvedIntent` — что понял ввод; без duration/effects/state mutation.
-2. `Condition` — чистая проверка предпосылок.
-3. Action/social resolver — что реально возможно.
-4. `CalculatedAction` — рассчитанный outcome.
-5. `tryApplyEffectBatch` — atomic typed world mutation на trial state.
-6. Scheduler/tasks/deadline/terminal/RNG/replay — принятый B03 Core.
-7. `RuntimeStorage` — публикует один уже рассчитанный candidate transition либо ничего.
-8. Memory/SQLite B04 storage — operation lifecycle/idempotency/fencing, не gameplay logic.
-9. B04 HTTP — guest ownership + transport validation + player-safe projection, не raw state.
-10. B05 authoring/control — редактирует **quest draft**, а не `WorldState` живой игровой сессии.
+1. `ResolvedIntent` — что понял ввод.
+2. Conditions/action/social resolvers — что реально возможно.
+3. Gameplay effects + scheduler — deterministic Core causality.
+4. `RuntimeStorage` — gameplay operation lifecycle/idempotency/fencing.
+5. Runtime HTTP — guest ownership + player-safe projection.
+6. `@living-history/control` — authoring draft lifecycle; он не меняет живой `WorldState`.
+7. Studio — клиент Control API; прямого доступа к SQLite/quest files как к второй истине нет.
 
 ## Опубликованная база
 
-B01–B04 published.
+B01–B04 published. B04 main: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`; push-CI `34039569962` success.
 
-Последняя точка: B04 merge `3ef8633cff0c07339e09107e4f3653f7e7295f0f`, push-CI `34039569962` — success.
+## B05-01 — accepted branch, publishing gate
 
-B04 guarantees:
+Карточка: [B05-01](../tasks/B05-01-draft-control-frozen-playtest.md).  
+ADR: [0014](../decisions/0014-authoring-draft-frozen-playtest-control-boundary.md).
 
-- durable idempotent replay;
-- one active operation + fencing;
-- crash/restart recovery;
-- guest ownership;
-- deny-by-default PlayerView;
-- explicit Runtime HTTP;
-- T10–12/T15;
-- five available Runtime endpoints only;
-- Core does not import Runtime.
+Принято на PR #15:
 
-## Текущая задача — B05-01
+- separate `@living-history/control`;
+- bounded `core.action/core.paint` authoring block;
+- Memory + durable SQLite ControlStore;
+- monotonic `draftRevision` and atomic `baseRevision` changes;
+- exact revision/contentHash validation;
+- frozen playtest snapshot + compiled artifact;
+- restart/two-instance regressions;
+- loopback-only Control HTTP;
+- 8 Control operations advertised only after HTTP tests;
+- total generated operations: 13; distinct paths: 11;
+- planned `control.capabilities`/`agent-kit` remain hidden;
+- registry hash `86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
 
-Карточка: [B05-01 — Draft Control foundation и frozen playtest snapshot](../tasks/B05-01-draft-control-frozen-playtest.md).
+CI:
 
-Canonical B05 — «Первый законченный путь автора». B05-01 закладывает server-side foundation до UI.
+- semantic `34040472362` success;
+- durable `34046137073` success;
+- HTTP `34046356282` success;
+- generated contract `34046749725` success.
 
-### Главный invariant
+Current matrix: contracts 37, Core 55, Runtime storage 20, Control 14, server 10 — all green, plus boundaries/docs.
 
-Draft — единственная редактируемая authoring truth.
+B05-01 считается published только после final PR #15 docs gate, merge и green push-to-main.
 
-- change set содержит `baseRevision`;
-- stale revision не может перетереть новый draft;
-- весь change set применим atomically;
-- validation относится к exact draft revision/hash;
-- playtest создаётся из immutable snapshot;
-- дальнейшее редактирование draft не меняет уже созданный playtest.
+## Критическая authoring boundary
 
-### B05 decomposition
+Никогда не смешивай:
 
-- B05-01 — draft/control/validation/frozen playtest;
-- B05-02 — минимальные Studio forms;
-- B05-03 — basic Player + frozen playtest E2E;
-- B05-04 — help/onboarding/T29.
+- `draftRevision`;
+- `WorldState.revision`;
+- Runtime fencing/lease.
 
-## Граница authoring vs gameplay
+Draft — единственная редактируемая истина. Validation принадлежит точному snapshot/hash. Frozen playtest не читает current draft после создания.
 
-Не использовать gameplay `RuntimeStorage` как произвольный authoring CRUD.
+Control HTTP до B09 auth доступен только loopback. Не превращай наличие OpenAPI route в разрешение bind на `0.0.0.0`.
 
-Authoring records (`Project`, `QuestDraft`, validation, playtest snapshot) имеют собственный contract. Они могут использовать общий инфраструктурный SQLite позже, но не смешивают revision draft с `WorldState.revision`, service lease или gameplay operation fencing.
+## Следующая работа после publication
 
-`draftRevision` — ревизия редактируемого контента. `WorldState.revision` — ревизия игровой сессии. Это разные счётчики и разные lifecycle.
+[B05-02 — Minimal Studio forms поверх Control API](../tasks/B05-02-minimal-studio-forms.md).
 
-## Следующий кодовый шаг
+Studio должна:
 
-1. Инвентаризировать текущие `packages/` / `apps/server` boundaries.
-2. Добавить отдельный authoring/control package или столь же явную package boundary.
-3. Реализовать Memory reference semantics прежде HTTP.
-4. Добавить regressions на stale revision, atomic change set, validation binding и frozen playtest.
-5. Только после зелёного semantic gate расширять Control HTTP и registry readiness.
+- работать через Control API;
+- создавать project/quest;
+- добавлять resource;
+- создавать/редактировать bounded `core.paint`;
+- сохранять по `baseRevision`;
+- показывать stale conflict;
+- запускать validation;
+- восстанавливать state после reload с сервера;
+- не требовать ручного JSON.
 
-## Не делать в B05-01
+B05-03 затем соединит frozen playtest с базовым Player и докажет реальное изменение игрового результата.
 
-- Studio UI;
-- полный Player presentation interpreter;
-- tutorial/help;
-- free-text/LLM/author assistant;
-- publish/release/rollback/roles/login;
-- asset pipeline;
-- animation suggestion assistant;
+## Не делать сейчас
+
+- Player B05-03;
+- onboarding B05-04;
+- free-text/LLM B06;
+- assets/presentation B07;
+- plugins B08;
+- roles/login/publish/network Control B09;
+- author AI B10;
+- animation suggestions;
 - Florence migration;
-- raw gameplay state mutation;
-- изменения B03/B04 semantics.
+- force dependency upgrade.
 
 ## Минимальный цикл
 
-Один bounded slice → реальные regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не переходить к B05-02 до зелёного main B05-01.
+Один bounded slice → regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не начинать B05-02 до зелёного `main` B05-01.

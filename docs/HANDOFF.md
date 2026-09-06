@@ -3,79 +3,129 @@
 Обновлено: 2026-09-06
 
 Текущий блок: **B05-01 — Draft Control foundation и frozen playtest snapshot**  
-База ветки: опубликованный B04 merge `3ef8633cff0c07339e09107e4f3653f7e7295f0f`  
-Push-to-main B04 CI: `34039569962` — success  
-Текущая ветка: `b05-01-canonical-slice`  
-Текущая карточка: [B05-01](tasks/B05-01-draft-control-frozen-playtest.md)  
-Статус: **task-card зафиксирована; реализация B05-01 ещё не принята**
+База: опубликованный B04 merge `3ef8633cff0c07339e09107e4f3653f7e7295f0f`  
+Ветка: `b05-01-canonical-slice`  
+PR: #15  
+Статус: **B05-01 accepted по code/semantic/API/generated-contract gate; остаётся final docs gate → merge → push-CI main**
 
 ## Опубликованная база
 
-B01–B04 приняты и опубликованы. B04 завершил public Runtime boundary:
+B01–B04 published. B04 push-CI `34039569962` — success. Gameplay Runtime semantics не менялись в B05-01.
 
-- Memory/SQLite operation semantics;
-- durable idempotency/restart/fencing;
-- guest ownership;
-- deny-by-default PlayerView;
-- explicit Runtime HTTP;
-- T10–12/T15;
-- five available Runtime endpoints в generated contract.
+## Что реализовано в B05-01
 
-B04 merge: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`.  
-Push-CI: `34039569962` — success.  
-ADR: 0011–0013.
+### Authoring domain
 
-## Canonical B05
+- отдельный package `@living-history/control`;
+- bounded schema-first `core.action` для существующего `core.paint`;
+- semantic resource references;
+- `DraftSnapshot`, atomic `DraftChangeSet`, exact validation records, frozen playtests;
+- `DraftValidationRecord` — discriminated union: valid требует artifact/hash, invalid запрещает их.
 
-По `docs/SPECIFICATION.md` B05 — **«Первый законченный путь автора»**:
+### Revision/lifecycle boundary
 
-- минимальная Studio;
-- server-side draft;
-- entities/action/rule forms;
-- validation;
-- frozen playtest;
-- базовый Player;
-- повторяемая справка/обучение.
+Не смешивать:
 
-Главная итоговая приёмка B05: человек создаёт квест, добавляет ресурс, меняет стоимость действия и видит новый результат в **новой** тестовой сессии без ручного JSON; уже начатый playtest при редактировании draft не меняется.
+- `draftRevision` — authoring content;
+- `WorldState.revision` — gameplay state;
+- Runtime fencing/lease — operation ownership.
 
-## B05 разложен на bounded slices
+### Storage
 
-1. **B05-01:** Draft Control foundation + validation + frozen playtest snapshot.
-2. **B05-02:** минимальные `apps/studio` формы поверх Control API.
-3. **B05-03:** базовый Player + frozen playtest E2E/result/reset.
-4. **B05-04:** постоянная справка + повторяемый onboarding/T29 без AI usage.
+Memory reference semantics + durable `SQLiteControlStore`.
 
-## B05-01 invariant
+SQLite использует отдельные `control_*` tables. Candidate draft строится до write transaction; short `BEGIN IMMEDIATE` сравнивает current revision и публикует snapshot atomically.
 
-Draft — единственная редактируемая истина автора.
+Доказано:
 
-- каждое изменение использует `baseRevision`;
-- change set применяется atomically на trial snapshot;
-- stale revision не перетирает более новый draft;
-- validation относится к точному revision/hash;
-- playtest pinned к immutable snapshot/hash;
-- последующие draft edits не меняют существующий playtest.
+- stale base revision не перезаписывает новый draft;
+- invalid multi-change set не применяет ранние изменения;
+- referenced resource нельзя удалить;
+- validation pinned к exact revision/hash;
+- playtest frozen после edit;
+- restart сохраняет draft/validation/playtest;
+- две SQLite instances отвергают stale writer.
 
-## Следующее действие
+### Control HTTP
 
-1. Проверить текущую структуру `packages/` и `apps/server`.
-2. Выбрать отдельную Control/authoring package boundary; не смешивать authoring tables с gameplay `RuntimeStorage` lifecycle.
-3. Добавить минимальный authoring domain + Memory reference semantics.
-4. Добавить regressions: atomic change set, stale revision, validation binding, frozen playtest.
-5. Только после semantic gate добавлять Control HTTP subset и readiness registry.
+Отдельный listener в `apps/server`, только loopback. Non-loopback bind отклоняется до появления B09 auth.
 
-## Не делать в B05-01
+Available routes:
 
-- Studio UI;
-- полный Player presentation interpreter;
-- tutorial/help UI;
-- free-text/LLM/author assistant;
-- publish/release/rollback/roles/login;
-- asset pipeline;
-- animation suggestion assistant;
-- Florence migration;
-- debug mutation gameplay state;
-- изменение B03/B04 semantics.
+- `GET/POST /control/v1/projects`;
+- `GET/POST /control/v1/projects/{projectId}/quests`;
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft`;
+- `POST .../draft/changes`;
+- `POST .../validations`;
+- `POST .../playtests`.
 
-Известное наблюдение: `npm ci` сообщает 2 vulnerabilities (1 moderate, 1 high); force-upgrade не смешивать с B05-01.
+Validation/playtest transport не раскрывает internal compiled artifact/snapshot целиком.
+
+### Registry/generated contract
+
+13 available operations total: 5 Runtime + 8 Control, 11 distinct paths.
+
+Остаются planned:
+
+- `runtime.quests.list`;
+- `control.capabilities`;
+- `control.agent-kit`.
+
+Registry hash:
+`86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
+
+Generated-doc regression теперь сравнивает OpenAPI/capabilities с actual registry readiness вместо исторического hardcode «5 endpoints».
+
+## CI evidence
+
+- `34040472362` — Memory semantic foundation success.
+- `34046137073` — durable SQLite success.
+- `34046356282` — loopback Control HTTP success.
+- `34046749725` — registry/generated contract success.
+
+Последняя матрица:
+
+- contracts 37/37;
+- Core 55/55;
+- Runtime storage 20/20;
+- Control 14/14;
+- server 10/10;
+- boundaries green;
+- docs green.
+
+ADR: `docs/decisions/0014-authoring-draft-frozen-playtest-control-boundary.md`.  
+Worklog: `docs/worklog/2026-09-06-b05-01.md`.
+
+## Publication sequence
+
+1. Финальный PR #15 CI на head вместе с ADR/STATUS/HANDOFF/worklog/B05-02 task-card.
+2. Если green — merge PR #15 с expected head SHA.
+3. Проверить push-to-main CI на merge SHA.
+4. Только после зелёного main создать новую ветку от merge для B05-02.
+
+## Следующая задача после публикации
+
+[B05-02 — Minimal Studio forms поверх Control API](tasks/B05-02-minimal-studio-forms.md).
+
+Первый Studio slice:
+
+- project/quest screens;
+- resource form;
+- bounded `core.paint` form;
+- save через `baseRevision`;
+- stale conflict без silent overwrite;
+- validation UI;
+- reload из Control API;
+- без ручного JSON.
+
+## Не делать до публикации B05-01
+
+- не начинать Studio code в PR #15;
+- не добавлять Player/LLM/assets/auth/publish;
+- не открывать Control listener наружу;
+- не смешивать authoring tables с Runtime operation tables;
+- не добавлять animation suggestion assistant;
+- не менять B03/B04 gameplay semantics;
+- не делать force dependency upgrade.
+
+`npm ci` по-прежнему сообщает 2 vulnerabilities (1 moderate, 1 high); отдельный audit позже.
