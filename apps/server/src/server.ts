@@ -22,7 +22,6 @@ import {
   buildFailedPublicResponse,
   createCoreExplicitActionExecutor,
   createPaintIntentCatalog,
-  explicitCommandToResolvedIntent,
   hashCanonicalJson,
   stateHash,
   type ExplicitActionCommand,
@@ -377,7 +376,7 @@ async function handleAction(
 
   try {
     const execution = parsed.kind === "explicit"
-      ? deps.executor.executeIntent(session.state, explicitCommandToResolvedIntent(parsed.action))
+      ? deps.executor.execute(session.state, parsed.action)
       : await interpretAndMaybeExecuteText(deps, session, claim.operation.operationId, parsed.input);
 
     if ("publicResponse" in execution) {
@@ -581,13 +580,13 @@ function parseActionBody(value: unknown): ParsedActionBody | null {
   }
 
   if (!("input" in value) || "action" in value || !isPlainObject(value.input)) return null;
-  const inputKeys = Object.keys(value.input).sort();
-  if (inputKeys.length < 2 || inputKeys.length > 3 || inputKeys[0] !== "kind" || inputKeys[1] !== "text") return null;
-  if (inputKeys.length === 3 && inputKeys[2] !== "clarification") return null;
+  const inputHasNoClarification = hasExactKeys(value.input, ["kind", "text"]);
+  const inputHasClarification = hasExactKeys(value.input, ["kind", "text", "clarification"]);
+  if (!inputHasNoClarification && !inputHasClarification) return null;
   if (value.input.kind !== "text" || typeof value.input.text !== "string" || value.input.text.length < 1 || value.input.text.length > 4_000) return null;
 
   let clarification: TextClarificationReference | null = null;
-  if ("clarification" in value.input) {
+  if (inputHasClarification) {
     if (!isPlainObject(value.input.clarification)
       || !hasExactKeys(value.input.clarification, ["id", "revision"])
       || !isRuntimeId(value.input.clarification.id)
@@ -679,14 +678,11 @@ function releaseKey(release: PinnedReleaseIdentity): string {
 }
 
 function clarificationIdForOperation(operationId: string): string {
-  return `clarification-${operationId}`;
+  return operationId;
 }
 
 function operationIdFromClarificationId(clarificationId: string): string | null {
-  const prefix = "clarification-";
-  if (!clarificationId.startsWith(prefix)) return null;
-  const operationId = clarificationId.slice(prefix.length);
-  return isRuntimeId(operationId) ? operationId : null;
+  return isRuntimeId(clarificationId) ? clarificationId : null;
 }
 
 function publicIds(view: ReturnType<typeof projectPlayerView>): readonly string[] {
