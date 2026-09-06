@@ -6,3 +6,9 @@ export {
   type PlayerPaintActionDefinition,
   type PlayerRuntimeTemplate
 } from "./bootstrap.js";
+export {
+  PlayerClientError,
+  RuntimePlayerClient,
+  type PlayerActionResult,
+  type PlayerSessionHandle
+} from "./client.js";
