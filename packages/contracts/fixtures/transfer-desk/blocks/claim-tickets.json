@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "id": "claim-tickets",
+  "kind": "core.resource",
+  "title": "Талоны выдачи",
+  "description": "Количество доступных талонов для оформления выдачи.",
+  "data": {
+    "unit": "талон",
+    "initialValue": 3,
+    "min": 0,
+    "max": 20
+  }
+}

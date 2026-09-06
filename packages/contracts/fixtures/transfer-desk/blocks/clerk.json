@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "clerk",
+  "kind": "core.character",
+  "title": "Дежурный",
+  "description": "Сотрудник стола находок.",
+  "data": {
+    "initialLocationId": "desk",
+    "initialStatus": "available"
+  }
+}

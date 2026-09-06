@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "desk",
+  "kind": "core.location",
+  "title": "Стол находок",
+  "description": "Небольшой стол выдачи потерянных вещей.",
+  "data": {}
+}

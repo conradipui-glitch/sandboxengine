@@ -1,0 +1,47 @@
+{
+  "registryVersion": "1.0",
+  "operations": [
+    {
+      "id": "runtime.healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "readiness": "planned",
+      "summary": "Проверка доступности будущего Runtime API"
+    },
+    {
+      "id": "runtime.quests.list",
+      "method": "GET",
+      "path": "/v1/quests",
+      "readiness": "planned",
+      "summary": "Каталог опубликованных квестов"
+    },
+    {
+      "id": "runtime.sessions.create",
+      "method": "POST",
+      "path": "/v1/sessions",
+      "readiness": "planned",
+      "summary": "Создание игрового прохождения"
+    },
+    {
+      "id": "runtime.sessions.action",
+      "method": "POST",
+      "path": "/v1/sessions/{sessionId}/actions",
+      "readiness": "planned",
+      "summary": "Отправка одного игрового действия"
+    },
+    {
+      "id": "control.capabilities",
+      "method": "GET",
+      "path": "/control/v1/capabilities",
+      "readiness": "planned",
+      "summary": "Реестр установленных возможностей Control API"
+    },
+    {
+      "id": "control.agent-kit",
+      "method": "GET",
+      "path": "/control/v1/agent-kit",
+      "readiness": "planned",
+      "summary": "Комплект актуальных контрактов для агента"
+    }
+  ]
+}
