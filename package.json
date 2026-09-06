@@ -14,9 +14,10 @@
   "scripts": {
     "build": "npm run typecheck",
     "typecheck": "tsc -b",
-    "test": "npm run test:contracts && npm run test:core && npm run test:storage && npm run test:control && npm run test:server && npm run test:studio && npm run test:player",
+    "test": "npm run test:contracts && npm run test:core && npm run test:ai && npm run test:storage && npm run test:control && npm run test:server && npm run test:studio && npm run test:player",
     "test:contracts": "npm run typecheck && node --test packages/contracts/test/*.test.mjs",
     "test:core": "npm run typecheck && node --test packages/core/test/*.test.mjs",
+    "test:ai": "npm run typecheck && node --test packages/ai/test/*.test.mjs",
     "test:storage": "npm run typecheck && node --test packages/runtime/test/*.test.mjs",
     "test:control": "npm run typecheck && node --test packages/control/test/*.test.mjs",
     "test:server": "npm run typecheck && node --test apps/server/test/*.test.mjs",
@@ -28,7 +29,7 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "docs:generate": "node scripts/docs-generate.mjs",
     "docs:check": "node scripts/docs-check.mjs",
-    "verify": "npm run typecheck && npm run test:contracts && npm run test:core && npm run test:storage && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run check:boundaries && npm run docs:check"
+    "verify": "npm run typecheck && npm run test:contracts && npm run test:core && npm run test:ai && npm run test:storage && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run check:boundaries && npm run docs:check"
   },
   "devDependencies": {
     "ajv": "8.17.1",
