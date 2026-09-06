@@ -68,7 +68,8 @@ const runtime = runtimeServerModule.createRuntimeHttpServer({
   templates: [{
     templateId: template.templateId,
     release: template.release,
-    initialState: template.initialState
+    initialState: template.initialState,
+    intentCatalog: actionServiceModule.createPaintIntentCatalog()
   }],
   executor: actionServiceModule.createCoreExplicitActionExecutorForDefinition(definition)
 });
