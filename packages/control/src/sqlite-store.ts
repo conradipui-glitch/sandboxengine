@@ -189,7 +189,7 @@ export class SQLiteControlStore implements ControlStore {
             draftRevision,
             contentHash: snapshot.contentHash,
             status: "valid" as const,
-            errors: [],
+            errors: [] as const,
             compiledArtifact: compiled.artifact,
             compiledContentHash: compiled.contentHash
           })
@@ -247,9 +247,7 @@ export class SQLiteControlStore implements ControlStore {
     if (!snapshot) return frozen({ kind: "revision_not_found" });
     const validation = await this.getValidation(input.validationId);
     if (!validation) return frozen({ kind: "validation_not_found" });
-    if (validation.status !== "valid" || validation.compiledArtifact === null || validation.compiledContentHash === null) {
-      return frozen({ kind: "validation_not_valid" });
-    }
+    if (validation.status !== "valid") return frozen({ kind: "validation_not_valid" });
     if (validation.projectId !== input.projectId
       || validation.questId !== input.questId
       || validation.draftRevision !== input.draftRevision
@@ -404,7 +402,7 @@ export class SQLiteControlStore implements ControlStore {
       this.#db.exec("COMMIT");
       return result;
     } catch (error) {
-      try { this.#db.exec("ROLLBACK"); } catch { /* transaction may already be closed */ }
+      try { this.#db.exec("ROLLBACK"); } catch { }
       throw error;
     }
   }
@@ -504,23 +502,25 @@ function makeRelease(questId: string, title: string, entryLocationId: string, bl
 }
 
 function applyTrialChange(change: DraftChange, blocks: Block[], setTitle: (title: string) => void): string | null {
+  if (!isRecord(change) || typeof change.kind !== "string") return "change.shape";
   if (change.kind === "quest.title.set") {
-    if (!isTitle(change.title)) return "change.title";
+    if (!hasExactKeys(change, ["kind", "title"]) || !isTitle(change.title)) return "change.title";
     setTitle(change.title); return null;
   }
   if (change.kind === "block.add") {
-    if (!isBlock(change.block)) return "change.block";
+    if (!hasExactKeys(change, ["kind", "block"]) || !isBlock(change.block)) return "change.block";
     if (blocks.some((block) => block.id === change.block.id)) return "change.duplicate_block";
     blocks.push(cloneJson(change.block)); return null;
   }
   if (change.kind === "block.replace") {
-    if (!isId(change.blockId) || !isBlock(change.block) || change.block.id !== change.blockId) return "change.block";
+    if (!hasExactKeys(change, ["kind", "blockId", "block"]) || !isId(change.blockId) || !isBlock(change.block)) return "change.block";
+    if (change.block.id !== change.blockId) return "change.block_id_mismatch";
     const index = blocks.findIndex((block) => block.id === change.blockId);
     if (index < 0) return "change.block_not_found";
     blocks[index] = cloneJson(change.block); return null;
   }
   if (change.kind === "block.remove") {
-    if (!isId(change.blockId)) return "change.block_id";
+    if (!hasExactKeys(change, ["kind", "blockId"]) || !isId(change.blockId)) return "change.block_id";
     const index = blocks.findIndex((block) => block.id === change.blockId);
     if (index < 0) return "change.block_not_found";
     blocks.splice(index, 1); return null;
@@ -530,7 +530,7 @@ function applyTrialChange(change: DraftChange, blocks: Block[], setTitle: (title
 
 function isDraftChangeSet(value: unknown): value is DraftChangeSet {
   return isRecord(value)
-    && Object.keys(value).sort().join("|") === "baseRevision|changes"
+    && hasExactKeys(value, ["baseRevision", "changes"])
     && isNonNegativeSafeInteger(value.baseRevision)
     && Array.isArray(value.changes)
     && value.changes.length >= 1
@@ -539,23 +539,44 @@ function isDraftChangeSet(value: unknown): value is DraftChangeSet {
 
 function validationFromRow(row: any): DraftValidationRecord {
   const status = String(row.status);
-  if (status !== "valid" && status !== "invalid") throw new Error("invalid validation status");
-  return cloneAndFreeze({
+  const common = {
     validationId: String(row.validation_id),
     projectId: String(row.project_id),
     questId: String(row.quest_id),
     draftRevision: Number(row.draft_revision),
-    contentHash: String(row.content_hash),
-    status,
-    errors: parseJson(row.errors_json) as readonly string[],
-    compiledArtifact: row.compiled_artifact_json === null ? null : parseJson(row.compiled_artifact_json) as CompiledQuestArtifact,
-    compiledContentHash: row.compiled_content_hash === null ? null : String(row.compiled_content_hash)
-  });
+    contentHash: String(row.content_hash)
+  };
+  const errors = parseJson(row.errors_json);
+  if (!Array.isArray(errors) || !errors.every((error) => typeof error === "string")) throw new Error("invalid validation errors");
+  if (status === "valid") {
+    if (errors.length !== 0 || typeof row.compiled_artifact_json !== "string" || typeof row.compiled_content_hash !== "string") {
+      throw new Error("invalid persisted valid validation");
+    }
+    return cloneAndFreeze({
+      ...common,
+      status: "valid" as const,
+      errors: [] as const,
+      compiledArtifact: parseJson(row.compiled_artifact_json) as CompiledQuestArtifact,
+      compiledContentHash: String(row.compiled_content_hash)
+    });
+  }
+  if (status === "invalid") {
+    if (row.compiled_artifact_json !== null || row.compiled_content_hash !== null) {
+      throw new Error("invalid persisted invalid validation");
+    }
+    return cloneAndFreeze({
+      ...common,
+      status: "invalid" as const,
+      errors: Object.freeze([...errors]) as readonly string[],
+      compiledArtifact: null,
+      compiledContentHash: null
+    });
+  }
+  throw new Error("invalid validation status");
 }
 
 function parseSnapshot(value: unknown): DraftSnapshot {
-  const snapshot = parseJson(value) as DraftSnapshot;
-  return cloneAndFreeze(snapshot);
+  return cloneAndFreeze(parseJson(value) as DraftSnapshot);
 }
 
 function parseJson(value: unknown): unknown {
@@ -570,7 +591,14 @@ function invalidChanges(errors: readonly string[]): ApplyDraftChangesResult {
   return frozen({ kind: "invalid_change_set", errors: Object.freeze([...errors]) });
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 function isId(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 200 && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
