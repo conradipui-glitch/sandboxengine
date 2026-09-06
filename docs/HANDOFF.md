@@ -2,130 +2,101 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: **B05-01 — Draft Control foundation и frozen playtest snapshot**  
-База: опубликованный B04 merge `3ef8633cff0c07339e09107e4f3653f7e7295f0f`  
-Ветка: `b05-01-canonical-slice`  
-PR: #15  
-Статус: **B05-01 accepted по code/semantic/API/generated-contract gate; остаётся final docs gate → merge → push-CI main**
+Текущий блок: **B05-02 — Minimal Studio forms**  
+База: published B05-01 main `07aacacb68178c119d11b555a8c166ebe65fe791`  
+B05-01 push-CI: `34047090138` — success  
+Ветка: `b05-02-minimal-studio-forms`  
+PR: #16  
+Статус: **B05-02 functional/hardening gates green; осталось final docs gate → merge → push-CI main**
 
 ## Опубликованная база
 
-B01–B04 published. B04 push-CI `34039569962` — success. Gameplay Runtime semantics не менялись в B05-01.
+B01–B04 published. B05-01 также published и даёт authoritative authoring foundation:
 
-## Что реализовано в B05-01
+- `@living-history/control`;
+- Memory + durable SQLiteControlStore;
+- `draftRevision` + atomic `baseRevision` changes;
+- validation exact revision/hash;
+- frozen playtest;
+- loopback-only Control HTTP.
 
-### Authoring domain
+Не смешивать `draftRevision`, `WorldState.revision` и Runtime fencing/lease.
 
-- отдельный package `@living-history/control`;
-- bounded schema-first `core.action` для существующего `core.paint`;
-- semantic resource references;
-- `DraftSnapshot`, atomic `DraftChangeSet`, exact validation records, frozen playtests;
-- `DraftValidationRecord` — discriminated union: valid требует artifact/hash, invalid запрещает их.
+## Что реализовано в B05-02
 
-### Revision/lifecycle boundary
+### Studio boundary
 
-Не смешивать:
+`apps/studio` — клиент Control API, не база данных.
 
-- `draftRevision` — authoring content;
-- `WorldState.revision` — gameplay state;
-- Runtime fencing/lease — operation ownership.
+- не пишет SQLite/quest files;
+- не держит самостоятельный quest JSON как вторую истину;
+- successful save заменяет локальное view server snapshot;
+- reload восстанавливает draft с Control API.
 
-### Storage
+### UI
 
-Memory reference semantics + durable `SQLiteControlStore`.
+- проекты: list/create;
+- квесты: list/create;
+- initial location при создании quest;
+- human `core.resource` form;
+- bounded `core.paint` form и cost edit;
+- validation revision/hash/status/errors;
+- loading/saving/saved/error/conflict/Control-unavailable messages;
+- labelled forms, focus restoration, responsive collapse до mobile viewport.
 
-SQLite использует отдельные `control_*` tables. Candidate draft строится до write transaction; short `BEGIN IMMEDIATE` сравнивает current revision и публикует snapshot atomically.
+### Concurrency UX
 
-Доказано:
+Save всегда использует текущий `draftRevision` как `baseRevision`.
 
-- stale base revision не перезаписывает новый draft;
-- invalid multi-change set не применяет ранние изменения;
-- referenced resource нельзя удалить;
-- validation pinned к exact revision/hash;
-- playtest frozen после edit;
-- restart сохраняет draft/validation/playtest;
-- две SQLite instances отвергают stale writer.
+При `409 DRAFT_REVISION_CONFLICT`:
 
-### Control HTTP
+1. Studio получает fresh server draft;
+2. stale change не применяется;
+3. пользователь видит old→current revision;
+4. retry или cancel — только явным действием;
+5. silent last-write-wins запрещён.
 
-Отдельный listener в `apps/server`, только loopback. Non-loopback bind отклоняется до появления B09 auth.
+### Development transport
 
-Available routes:
+Studio dev server и Control listener — loopback-only. Studio proxy принимает только loopback Control origin и делает same-origin `/control/*` для браузера. B09 network auth не предвосхищается.
 
-- `GET/POST /control/v1/projects`;
-- `GET/POST /control/v1/projects/{projectId}/quests`;
-- `GET /control/v1/projects/{projectId}/quests/{questId}/draft`;
-- `POST .../draft/changes`;
-- `POST .../validations`;
-- `POST .../playtests`.
+### Dependency/tooling decision
 
-Validation/playtest transport не раскрывает internal compiled artifact/snapshot целиком.
+B05-02 не добавляет React/Vite/Playwright/Chromium. Используется TypeScript + DOM и встроенный Node HTTP. Acceptance integration идёт через реальный SQLiteControlStore + Control HTTP + Studio proxy; compiled browser entry отдельно проверяется как раздаваемый JS.
 
-### Registry/generated contract
-
-13 available operations total: 5 Runtime + 8 Control, 11 distinct paths.
-
-Остаются planned:
-
-- `runtime.quests.list`;
-- `control.capabilities`;
-- `control.agent-kit`.
-
-Registry hash:
-`86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
-
-Generated-doc regression теперь сравнивает OpenAPI/capabilities с actual registry readiness вместо исторического hardcode «5 endpoints».
+Это не заявление о финальном visual polish/browser screenshot QA.
 
 ## CI evidence
 
-- `34040472362` — Memory semantic foundation success.
-- `34046137073` — durable SQLite success.
-- `34046356282` — loopback Control HTTP success.
-- `34046749725` — registry/generated contract success.
+- `34048457576` — найден BodyInit TypeScript mismatch, исправлен;
+- `34048515006` — бизнес-сценарии прошли, найден static-root 404, исправлен;
+- `34048587043` — success, Studio 4/4;
+- `34048643611` — success после hardening.
 
-Последняя матрица:
+На green gate также проходят contracts 37, Core 55, Runtime storage 20, Control 14, server 10, boundaries/docs.
 
-- contracts 37/37;
-- Core 55/55;
-- Runtime storage 20/20;
-- Control 14/14;
-- server 10/10;
-- boundaries green;
-- docs green.
-
-ADR: `docs/decisions/0014-authoring-draft-frozen-playtest-control-boundary.md`.  
-Worklog: `docs/worklog/2026-09-06-b05-01.md`.
+ADR: `docs/decisions/0015-studio-control-client-boundary.md`.  
+Worklog: `docs/worklog/2026-09-06-b05-02.md`.
 
 ## Publication sequence
 
-1. Финальный PR #15 CI на head вместе с ADR/STATUS/HANDOFF/worklog/B05-02 task-card.
-2. Если green — merge PR #15 с expected head SHA.
+1. Финальный PR #16 CI на current head с ADR/STATUS/HANDOFF/worklog/B05-03 card.
+2. Если green — merge #16 с expected head SHA.
 3. Проверить push-to-main CI на merge SHA.
-4. Только после зелёного main создать новую ветку от merge для B05-02.
+4. Только после green main создать B05-03 branch от merge.
 
-## Следующая задача после публикации
+## Следующая задача
 
-[B05-02 — Minimal Studio forms поверх Control API](tasks/B05-02-minimal-studio-forms.md).
+[B05-03 — Basic Player + frozen playtest gameplay E2E](tasks/B05-03-basic-player-frozen-playtest-e2e.md).
 
-Первый Studio slice:
+Нужно доказать не UI-иллюзию, а causal E2E:
 
-- project/quest screens;
-- resource form;
-- bounded `core.paint` form;
-- save через `baseRevision`;
-- stale conflict без silent overwrite;
-- validation UI;
-- reload из Control API;
-- без ручного JSON.
+- P1 frozen на cost=1;
+- draft изменён на cost=2;
+- P1/reset P1 остаются cost=1;
+- P2 получает cost=2;
+- одинаковый action request в новой test session даёт другой ожидаемый Core/Runtime result.
 
-## Не делать до публикации B05-01
+## Не делать в PR #16
 
-- не начинать Studio code в PR #15;
-- не добавлять Player/LLM/assets/auth/publish;
-- не открывать Control listener наружу;
-- не смешивать authoring tables с Runtime operation tables;
-- не добавлять animation suggestion assistant;
-- не менять B03/B04 gameplay semantics;
-- не делать force dependency upgrade.
-
-`npm ci` по-прежнему сообщает 2 vulnerabilities (1 moderate, 1 high); отдельный audit позже.
+Player, onboarding, LLM, B07 presentation/assets, plugins, auth/publish, animation suggestions, Florence migration и force dependency upgrade.
