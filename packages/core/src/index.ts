@@ -59,6 +59,21 @@ export {
   type TimeAdvancePlanSuccess
 } from "./scheduler.js";
 export {
+  DEFAULT_MAX_SCHEDULER_EVENTS,
+  DEFAULT_MAX_SCHEDULER_STEPS,
+  HARD_MAX_SCHEDULER_EVENTS,
+  HARD_MAX_SCHEDULER_STEPS,
+  processTimeAdvancePlan,
+  type ProcessedSchedulerEvent,
+  type SchedulerEventHandler,
+  type SchedulerProcessingContext,
+  type SchedulerProcessingFailure,
+  type SchedulerProcessingFailureCode,
+  type SchedulerProcessingOptions,
+  type SchedulerProcessingResult,
+  type SchedulerProcessingSuccess
+} from "./scheduler-process.js";
+export {
   projectDeadlineEvent,
   projectTaskEvents,
   type DeadlineDefinition,
@@ -87,6 +102,7 @@ export type {
   CalculatedAction,
   Condition,
   EffectRef,
+  EntityMoveEffect,
   GameplayEffect,
   ItemTransferEffect,
   QuestRelease,
