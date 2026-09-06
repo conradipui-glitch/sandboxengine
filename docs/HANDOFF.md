@@ -2,110 +2,122 @@
 
 Обновлено: 2026-09-07
 
-Текущий блок: **B06-01 — Provider, connection and quota contracts / T30–31**  
-База: published B05 merge `002c2cd7c802f06d23f62ac8cde726afef845c24`  
-B05 push-CI main: `34055962204` — success  
-Ветка: `b06-01-provider-connection-quota-contracts`  
-PR: #19  
-Статус: **functional T30/T31 gate `34056571152` success; docs sync → final current-head CI → merge/main publication gate**
+Текущий блок: **B06-02 — Free-text intent boundary / T02 T04 T09 T16**  
+База: published B06-01 merge `a08f3434060abe699be5d431464597645557b8f9`  
+B06-01 push-CI main: `34056977026` — success  
+Ветка: `b06-02-free-text-intent-boundary`  
+PR: #20  
+Статус: **functional gate `34057719194` success; docs sync → final current-head CI → merge/main publication gate**
 
 ## Что уже published
 
-B01–B05 published.
+B01–B05 и B06-01 published.
 
-B05 canonical path:
+Published B06-01 merge: `a08f3434060abe699be5d431464597645557b8f9`.  
+Main CI: `34056977026` — success.
 
-- authoritative Studio draft/revision/conflict;
-- validation;
-- immutable frozen playtest;
-- Player bootstrap from frozen record;
-- Runtime/Core-only gameplay calculation;
-- P1/P2 cost=1→2 proof;
-- reset and idempotent retry;
-- repeatable static Help/onboarding T29.
+B06-01 даёт provider/connection/quota foundation: deterministic fake, OpenAI-compatible adapter, OpenRouter/custom preset, safe credentials/endpoints, capability check, bounded deadline/errors/usage и honest quota semantics.
 
-Published B05 merge: `002c2cd7c802f06d23f62ac8cde726afef845c24`.  
-Main CI: `34055962204` — success.
+## Что реализовано в B06-02
 
-## Что реализовано в B06-01
+### Strict intent boundary
 
-### Provider/connection boundary
+`@living-history/ai` теперь разделяет:
 
-Новый `@living-history/ai` даёт:
+- `resolved`;
+- `needs_clarification`;
+- `unsupported`;
+- `failed`.
 
-- `ModelProvider.generate` contract;
-- deterministic scripted provider;
-- bounded OpenAI-compatible Chat Completions adapter;
-- OpenRouter + custom compatible presets;
-- separate Connection/ModelProfile;
-- safe connection view без raw credential;
-- connection capability test;
-- absolute deadline/AbortSignal;
-- normalized/sanitized errors and optional honest usage/model/request IDs;
-- no internal provider retries.
+Model output — proposal, не gameplay authority. Engine сам строит `ResolvedIntent` после exact validation и сам пришивает исходный `sourceInput.text`.
 
-Credential остаётся opaque header-only secret. CR/LF запрещены; URL punctuation внутри ключа не интерпретируется как URL.
+Запрещены extra authority fields: statePatch/effects/resource delta/duration/calculated outcome/code. Unknown action, invalid args и unknown entity IDs не проходят catalog/allowlist boundary.
 
-Endpoint validation — syntactic target policy: HTTPS public by default, explicit loopback dev HTTP, static private/metadata/reserved targets blocked, redirects disabled. DNS-aware egress isolation требуется deployment/transport layer и не объявляется решённой одним URL parser.
+Interpreter имеет общий максимум 2 attempts с одним absolute deadline. Repair входит в эти 2 attempts.
 
-### Quota boundary
+### Один causal resolver
 
-- independent `QuotaAdapter` / `QuotaMetric[]`;
-- real zero сохраняется, unknown = null;
-- OpenRouter `/key` uses inference credential;
-- `/credits` only with separate management credential;
-- without management credential => `permission_required`, no fabricated balance;
-- quota failure не инвалидирует inference provider;
-- period `monthly` не превращается в guessed reset date;
-- explicit ISO reset сохраняется;
-- cache identity = connection/account/credential revision;
-- expired available metric = `stale`.
+Legacy explicit HTTP request сохранён для B04/B05 compatibility.
 
-ADR: `docs/decisions/0018-runtime-ai-provider-connection-quota-boundary.md`.
+Free-text использует новый `input.kind=text`, но после validation оба пути сходятся в один action-service helper, который вызывает тот же Core `resolvePaintAction` и canonical time planning.
+
+Server/interpreter не считают authored resource cost или duration.
+
+### Idempotency before AI
+
+Text request hash строится по исходному input до provider call. `claimOperation` происходит до interpreter.
+
+Поэтому повтор того же idempotency key:
+
+- возвращает stored response;
+- не вызывает provider снова;
+- не запускает Core снова.
+
+### Processing outcomes без turn
+
+Clarification/unsupported/failed сохраняются через `finishWithoutTurn`.
+
+Revision, clock, resources и WorldState остаются неизменными. Public processing response не маскируется под `action.status`.
+
+### Clarification binding
+
+Clarification ссылается на persisted no-turn operation и revision. Перед provider/Core follow-up проверяются session-bound operation, kind и revision. Stale/forged reference отклоняется конфликтом.
+
+Это structural safety contract, не полноценная dialogue memory. Качество живого русского понимания fake-provider regressions не доказывают.
+
+### Frozen binding
+
+Player runtime template получает intent catalog вместе с exact frozen release/state, а executor остаётся bound к frozen authored action definition. Изменение draft не переключает уже запущенную frozen версию.
+
+ADR: `docs/decisions/0019-free-text-intent-shares-core-resolver.md`.
 
 ## CI evidence
 
-- `e4d21dfe4be676b5f467421bf48f2f046eae5a7b`: initial workspace; CI `34056350198` выявил unsynced package-lock на npm-ci stage;
-- `4ed048fcd292f4c90ce36015e14d3fd6152fa10a`: lock sync; CI `34056391413` success;
-- `156c8ee420b4533cce5d48a7a5b6106d08e6c1bf`: opaque credential hardening; CI `34056470699` success;
-- `64c644eee9e9bf66c199b082d12efedf25c9fa7f`: final T30/T31 hardening; CI `34056571152` **success**.
+- `414be66c6d7f471e1b37fe649f4aff0b42d01c16`: strict interpreter/validator + T02/T04/T09/T16 corpus;
+- `6761c2df54f9e1e5f3760a2ad1c05790850b0b52`: first Runtime integration; CI `34057574708` дошёл до server tests и выявил 5 локальных regressions;
+- причины: explicit wrapper compatibility и optional clarification key parser; AI 19/19, storage/control уже были green;
+- `9d21c3d7bc8c5b43f4caa32bbbc6438a4c0cc361`: compatibility/parser corrections;
+- `8e530be6232ce7cc2c0ed3c198eb84f6b44ba71e`: frozen intent-catalog binding;
+- PR CI `34057719194` — **success**, полный `npm run verify`.
 
 ## Acceptance state
 
 Закрыто функционально:
 
-- provider contract + deterministic fake;
-- OpenRouter/custom compatible connection behavior;
-- capability check without guessing;
-- deadline/error/usage semantics;
-- secret isolation in safe views/URLs/errors;
-- T30-level connection regression;
-- T31 quota null/zero/permission/cache/reset semantics;
-- old B01–B05 regressions green;
-- root boundaries/docs checks green.
+- free-text proposal → strict validated `ResolvedIntent`;
+- same Core resolver as explicit action;
+- claim-before-AI idempotency;
+- clarification/unsupported/failed no-turn semantics;
+- unchanged revision/time/resources on processing outcomes;
+- stale/forged clarification rejection before provider/Core;
+- T02/T04/T09/T16 prepared regressions;
+- malformed/injection proposals fail closed after bounded attempts;
+- old B04/B05/T15 behavior green;
+- frozen runtime/catalog binding green;
+- root `npm run verify` green.
 
 Остался Publication Gate:
 
 1. final current-head PR CI после docs sync;
-2. mark PR #19 ready;
+2. mark PR #20 ready;
 3. merge с expected head SHA;
 4. verify push-to-main CI on exact merge SHA;
-5. только после green main объявить B06-01 published.
+5. только после green main объявить B06-02 published.
 
-## Следующее после публикации B06-01
+## Следующее после публикации B06-02
 
-**B06-02 — free-text intent boundary**:
+**B06-03 — narrator/fallback pipeline**:
 
-- interpreter output contract / prepared fake responses;
-- `ResolvedIntent` без statePatch/time cost;
-- rights/reference/precondition filters;
-- `needs_clarification` / `unsupported` без turn mutation;
-- negation/hypothetical/deferred/multi-action/missing-target tests;
-- confirmed intent идёт в **тот же existing Core resolver**, что explicit action;
-- narrator ещё не добавлять.
+- Core-derived `FactPacket`;
+- strict + expressive narrative profiles;
+- narrator cannot add mechanics/player decisions/secret speakers;
+- deterministic local template fallback;
+- bounded narrator retry;
+- combined intent+narrator absolute deadline/failure semantics;
+- T13/T14-oriented regressions.
 
-Создать B06-02 отдельной bounded task-card/веткой **точно от verified B06-01 merge SHA**.
+Создать B06-03 отдельной bounded task-card/веткой **точно от verified B06-02 merge SHA**.
 
 ## Не делать сейчас
 
-Free-text implementation в PR #19, narrator/FactPacket, Codex AgentBackend session, final connection UI, B07 presentation/assets, plugins, auth/public publish, author AI, Florence migration, force dependency upgrade.
+Narrator/B06-03 implementation в PR #20, final Studio connection UI, Codex/AgentBackend session, B07 presentation/assets, plugins, auth/public publish, author AI, Florence migration, long-term dialogue/RAG memory или force dependency upgrade.
