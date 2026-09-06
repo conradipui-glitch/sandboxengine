@@ -7,7 +7,7 @@ import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
 
-const studioRoot = fileURLToPath(new URL("../", import.meta.url));
+const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
