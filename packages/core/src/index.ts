@@ -74,6 +74,12 @@ export {
   type SchedulerProcessingSuccess
 } from "./scheduler-process.js";
 export {
+  buildSchedulerReplayFingerprint,
+  type SchedulerReplayFingerprint,
+  type SchedulerReplayFingerprintInput,
+  type SchedulerReplayVersions
+} from "./scheduler-replay.js";
+export {
   projectDeadlineEvent,
   projectTaskEvents,
   type DeadlineDefinition,
