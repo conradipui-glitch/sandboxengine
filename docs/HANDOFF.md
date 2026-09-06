@@ -2,90 +2,99 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: **B04-01 — operation/storage contract и Memory reference semantics**  
-База ветки: опубликованный B03 merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`  
-Текущая ветка: `b04-01-operation-storage-contracts`  
-Functional head после canonical hash fix: `623ac02e8cb4b2ad2540d43356b63c6f90880ffc`  
-Статус: **accepted bounded по code/semantic gate; PR #12 должен пройти финальный docs gate, merge и push-CI**
+Текущий блок: **B04-02 — SQLite transaction, restart и fault recovery**  
+База ветки: опубликованный B04-01 merge `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`  
+Текущая ветка: `b04-02-sqlite-restart-fault-recovery`  
+Functional code head до docs closure: `71022f71e70391ed3e40954f964449cf3417e847`  
+Статус: **accepted bounded по code/semantic gate; PR #13 должен пройти финальный docs gate, merge и push-CI**
 
-## Выполнено
+## Принятая база
 
-- Создан реальный package `@living-history/runtime`.
-- Добавлены storage domain types/result unions без HTTP-кодов.
-- Добавлен единый `RuntimeStorage`: `loadSession`, `claimOperation`, `renewLease`, `commitTurn`, `finishWithoutTurn`, `getOperation`.
-- Реализован `MemoryRuntimeStorage` как reference semantics для будущего SQLite.
-- Unique `(sessionId, idempotencyKey)` и одна active operation на session.
-- Request hash — canonical lowercase SHA-256; same hex в другом casing остаётся тем же запросом.
-- Same completed key/hash возвращает persisted public response до current-revision conflict.
-- Same key с другим hash или исходной revision → `idempotency_key_reused`.
-- Lease использует injected `ServiceClock`, не игровой `WorldState.clock`.
-- Expired same request reacquire получает strictly greater fencing token.
-- Stale fencing token не может commit после reacquire.
-- `commitTurn` проверяет revision, active owner, current token, unexpired lease, candidate state, turn record и public response до публикации.
-- Success публикует state + turn + response + operation completion и освобождает active owner как один semantic commit.
-- Failed commit не оставляет partial state/turn/response.
-- `finishWithoutTurn` сохраняет replayable response без game revision change.
-- `npm run test:storage` стал реальной командой и входит в `verify`.
-- Boundary gate теперь отдельно запрещает Core импортировать Runtime.
+B03 опубликован и не меняется в Runtime. B04-01 опубликован в `main`: merge `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`, push-CI `34036478296` success.
+
+`RuntimeStorage` уже определяет canonical idempotency/lease/fencing semantics. SQLite adapter обязан их воспроизводить, а не создавать второй operation lifecycle.
+
+## Выполнено в B04-02
+
+- Реализован `SQLiteRuntimeStorage` на built-in Node 24.19 `node:sqlite`; новый native npm driver не добавлялся.
+- Schema version явная и минимальная: runtime metadata, sessions, operations, turns.
+- Хранятся pinned release identity, authoritative state/revision, active operation, persistent fencing counter и operation counter.
+- Unique `(session_id, idempotency_key)`.
+- Claim/reacquire/renew/commit/finish используют короткие SQLite transactions; Core/LLM внутрь write transaction не вызываются.
+- Success commit атомарно сохраняет state + revision + turn + public response + operation completion и освобождает active owner.
+- Lost HTTP response моделируется настоящим close/reopen DB; same key/hash восстанавливает persisted response без второго turn/revision.
+- T11 использует две независимые `SQLiteRuntimeStorage` instance на одном DB file.
+- T12 fault injection падает непосредственно before COMMIT; SQLite rollback оставляет мир/turn/response неизменными.
+- После restart и lease expiry same request reacquire получает greater fencing token; stale old token отклоняется.
+- `finishWithoutTurn` fault before COMMIT также не оставляет partial публикацию.
+- Реальный competing SQLite write lock проверяет bounded busy handling.
+- Busy policy использует bounded `DatabaseSync.timeout`; busy не запускает Core повторно.
+- Shared semantic suite выполняется и для Memory, и для SQLite.
 
 ## Проверено
 
-Первый code gate PR #12: CI `34036049442` — success.
+Первый clean PR #13 gate: CI `34036777799` — success.
 
-После semantic audit исправлена canonical hash comparison. Final functional gate: CI `34036284044` — success:
-
-- contract 35/35;
+- contracts 35/35;
 - Core 55/55;
-- storage 7/7;
+- storage 20/20;
 - boundaries passed;
 - docs check passed.
 
-Именованные storage tests:
+Именованные durable tests:
 
-1. T10 Memory — duplicate commits once, persisted response replays, different hash conflicts; SHA casing canonicalized.
-2. T11 Memory — две разные команды не владеют одной session/revision одновременно.
-3. T12 foundation — expired lease reacquire получает больший fencing token, stale worker commit отклонён.
-4. failed commit → no partial state/turn/response.
-5. service lease clock независим от game clock.
-6. `finishWithoutTurn` replay без revision change.
-7. `renewLease` сохраняет fencing token и использует service time.
+1. T10 SQLite durable — commit → response lost → reopen → persisted identical replay, no duplicate revision/turn.
+2. T11 SQLite durable — two independent adapter instances cannot own different commands on one revision.
+3. T12 SQLite durable — crash before COMMIT rolls back; restart/reacquire gets higher token; old token stays stale; current token commits once.
+4. `finishWithoutTurn` fault before COMMIT leaves operation/owner unchanged.
+5. Real SQLite write lock produces bounded busy failure without partial operation.
+6. Shared T10/T11/T12 foundation runs for Memory and SQLite with the same domain outcomes.
 
-ADR: `docs/decisions/0011-operation-idempotency-fencing-memory-reference.md`.  
-Worklog: `docs/worklog/2026-09-06-b04-01.md`.
+ADR: `docs/decisions/0012-sqlite-durable-runtime-storage.md`.  
+Worklog: `docs/worklog/2026-09-06-b04-02.md`.
 
-## Что B04-01 не доказывает
+## Что B04-02 не делает
 
-- durability/restart;
-- настоящий SQLite transaction;
-- crash-before/after-commit recovery через новый process/adapter instance;
-- `SQLITE_BUSY` policy;
-- Fastify/HTTP;
+- HTTP endpoints;
 - guest session ownership/auth;
-- PlayerView/public projection/T15.
+- PlayerView/public projection/T15;
+- free-text intent/narrator/provider calls;
+- Studio/Control API;
+- Florence migration;
+- Redis/queues/WebSocket/background simulation.
 
-Поэтому **общий B04 остаётся open**, а T12 закрыт только foundation-уровнем.
+Поэтому общий **B04 остаётся open**.
 
-## Следующее действие после merge/push-CI B04-01
+## Следующее действие
 
-Создать ветку от проверенного `main` и выполнить только [B04-02 — SQLite transaction, restart и fault recovery](tasks/B04-02-sqlite-restart-fault-recovery.md).
+1. Финальный PR #13 gate уже вместе с ADR/STATUS/HANDOFF/B04-03 task-card.
+2. При green — merge PR #13 с expected head SHA.
+3. Проверить push-to-main CI на merge SHA.
+4. Только после зелёного main создать новую ветку от этого merge для [B04-03 — Runtime HTTP, guest ownership и player-safe projection](tasks/B04-03-runtime-http-guest-player-projection.md).
 
-B04-02 должен:
+## B04-03 bounded scope
 
-- реализовать один `SQLiteRuntimeStorage` с тем же domain outcomes;
-- запускать общий semantic suite и для Memory, и для SQLite;
-- доказать lost-response replay после закрытия/повторного открытия DB;
-- использовать две независимые adapter instance для concurrent T11;
-- доказать crash-before-commit, expired lease/reacquire после restart и stale old token rejection;
-- обеспечить atomic state+turn+response+operation completion transaction;
-- иметь bounded `SQLITE_BUSY` handling без повторного Core execution.
+B04-03 завершает общий B04 через публичную transport boundary:
 
-Не добавлять HTTP/auth/PlayerView до B04-03 и не менять B03 scheduler semantics.
+- реальный Node server package в `apps/server`;
+- health endpoint;
+- guest session creation + server-side ownership check;
+- owner-only session read;
+- explicit-action endpoint с server-side request hash, `Idempotency-Key`, `expectedRevision` и существующим `RuntimeStorage` lifecycle;
+- public operation status/recovery;
+- deny-by-default `PlayerView`, не raw `WorldState`;
+- transport mapping `RuntimeStorage` outcomes → HTTP statuses/codes;
+- T15 projection/retry/ownership regression;
+- canonical T10–12/T15 audit до объявления общего B04 accepted.
+
+Свободный текст/LLM не реализовывать в B04-03: он относится к B06.
 
 ## Решения
 
-- ADR 0010 — закрытый B03 scheduler/replay contract.
-- ADR 0011 — B04 operation idempotency/lease/fencing + Memory reference semantics.
+- ADR 0010 — B03 scheduler/replay closure.
+- ADR 0011 — operation idempotency/lease/fencing + Memory reference semantics.
+- ADR 0012 — durable SQLite RuntimeStorage и bounded busy/fault/restart policy.
 
 ## Dependency observation
 
-`npm ci` по-прежнему сообщает 2 vulnerabilities (1 moderate, 1 high). Force-upgrade не смешивать с storage semantics без отдельного change set.
+`npm ci` по-прежнему сообщает 2 vulnerabilities (1 moderate, 1 high). Force-upgrade не смешивать с B04 closure без отдельного change set.
