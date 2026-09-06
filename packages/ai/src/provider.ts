@@ -102,8 +102,8 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
   constructor(options: CompatibleProviderOptions) {
     const validation = validateProviderBaseUrl(options.baseUrl, { allowLocal: options.allowLocal ?? false });
     if (!validation.ok) throw new Error(validation.message);
-    if (!options.credential || /[?&#]/.test(options.credential)) {
-      throw new Error("Provider credential must be supplied separately from the URL");
+    if (!isHeaderSafeCredential(options.credential)) {
+      throw new Error("Provider credential must be a non-empty header-safe value supplied separately from the URL");
     }
     this.#baseUrl = validation.url;
     this.#credential = options.credential;
@@ -193,7 +193,7 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
         modelId,
         providerRequestId
       });
-    } catch (error) {
+    } catch {
       if (controller.signal.aborted) {
         return failure(deadlineExpired ? "timeout" : "aborted", deadlineExpired ? "Provider deadline expired" : "Provider request was aborted", deadlineExpired, null, null, request.model);
       }
@@ -327,6 +327,10 @@ function safeRequestId(value: string | null): string | null {
   if (!value) return null;
   const sanitized = value.replace(/[\r\n\t]/g, "").slice(0, 200);
   return sanitized.length > 0 ? sanitized : null;
+}
+
+function isHeaderSafeCredential(value: string): boolean {
+  return value.length > 0 && !/[\r\n]/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
