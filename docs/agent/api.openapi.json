@@ -4,5 +4,61 @@
     "title": "Living History Engine API",
     "version": "0.1.0"
   },
-  "paths": {}
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "runtime_healthz",
+        "summary": "Проверка доступности Runtime API",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "post": {
+        "operationId": "runtime_sessions_create",
+        "summary": "Создание гостевой игровой сессии",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}": {
+      "get": {
+        "operationId": "runtime_sessions_get",
+        "summary": "Получение player-safe состояния своей игровой сессии",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/actions": {
+      "post": {
+        "operationId": "runtime_sessions_action",
+        "summary": "Отправка одного поддержанного explicit игрового действия",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{sessionId}/operations/{operationId}": {
+      "get": {
+        "operationId": "runtime_operations_get",
+        "summary": "Восстановление публичного статуса или результата операции",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    }
+  }
 }
