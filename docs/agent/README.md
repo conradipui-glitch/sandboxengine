@@ -14,68 +14,102 @@
 6. `planTimeAdvance` / `processTimeAdvancePlan` — детерминированное игровое время и события.
 7. Task/deadline/terminal/RNG/replay — принятый B03 Core.
 8. `RuntimeStorage` — публикует один уже рассчитанный candidate transition либо ничего; не создаёт новую игровую причинность.
-9. Durable adapter B04-02 обязан воспроизвести B04-01 semantics транзакционно.
-10. HTTP B04-03 только отображает domain outcomes и безопасную player projection; transport не меняет storage/Core semantics.
+9. `MemoryRuntimeStorage` задаёт semantic reference B04-01.
+10. `SQLiteRuntimeStorage` воспроизводит те же semantics durable transaction/restart/fault cases B04-02.
+11. HTTP B04-03 только аутентифицирует guest, валидирует transport input, вызывает существующий lifecycle и возвращает player-safe projection.
 
-## Принято до текущей точки
+## Принято и опубликовано
 
-B03 опубликован в `main`: merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`, push-CI `34035223262` success.
+B03: merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`, push-CI `34035223262` success.
 
-B04-01 accepted bounded после functional CI `34036284044`:
+B04-01: merge `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`, push-CI `34036478296` success.
 
-- package `@living-history/runtime` существует;
-- `RuntimeStorage` domain contract существует;
-- `MemoryRuntimeStorage` является reference semantics;
-- same completed idempotency key/hash → persisted replay;
-- canonical request SHA-256 сравнивается независимо от hex casing;
-- same key/different hash or base revision → reuse conflict;
-- одна active operation на session;
-- lease использует injected `ServiceClock`, отдельно от game clock;
-- reacquire expired same request → greater fencing token;
-- stale token не может commit;
-- commit атомарно публикует state + turn + response + operation completion;
-- failed commit не оставляет partial публикацию;
-- `finishWithoutTurn` replayable без изменения game revision;
-- `test:storage` — реальный обязательный gate;
-- Core не импортирует Runtime.
+B04-01 guarantees:
+
+- transport-agnostic `RuntimeStorage`;
+- canonical idempotency identity `(session, key, requestHash, expectedRevision)`;
+- one active operation;
+- service lease clock ≠ game clock;
+- monotonic fencing;
+- stale worker cannot commit after reacquire;
+- state + turn + public response + operation completion atomic;
+- completed duplicate returns persisted response;
+- Core cannot import Runtime.
 
 Решение: ADR 0011.
 
-## Текущая следующая задача — B04-02
+## B04-02 — accepted bounded, publishing gate
 
 Карточка: [B04-02 — SQLite transaction, restart и fault recovery](../tasks/B04-02-sqlite-restart-fault-recovery.md).
 
-Цель: доказать те же outcomes не в памяти процесса, а через один durable SQLite adapter.
+Реализован `SQLiteRuntimeStorage` на built-in `node:sqlite` с тем же contract.
 
-Обязательные риски:
+Доказано в PR #13 CI `34036777799`:
 
-- same key/hash после commit + restart возвращает сохранённый response и не удваивает revision/turn;
-- две независимые SQLite adapter instance не получают ownership одновременно;
-- crash after claim but before commit не меняет WorldState;
-- после lease expiry/restart reacquire получает больший fencing token;
-- старый token после reacquire не может commit;
-- state + turn + response + operation completion сохраняются одной transaction;
-- transaction/fault failure не оставляет partial rows/state;
-- `SQLITE_BUSY` имеет bounded storage retry и не запускает Core повторно.
+- 35/35 contracts;
+- 55/55 Core;
+- 20/20 storage;
+- boundaries/docs passed;
+- durable T10 lost-response replay after close/reopen;
+- durable T11 two independent adapter instances / one owner;
+- durable T12 fault before COMMIT → rollback, restart/reacquire → greater fencing token, stale token rejected;
+- finishWithoutTurn rollback fault;
+- real SQLite write-lock → bounded busy failure;
+- shared Memory/SQLite semantic suite.
 
-Shared semantic tests должны гоняться на Memory и SQLite, чтобы adapter не создавал вторую семантику.
+Решение: ADR 0012.
 
-## Что не делать сейчас
+B04-02 нельзя считать опубликованным до финального docs gate, merge PR #13 и push-CI `main`.
+
+## Следующая задача после публикации — B04-03
+
+Карточка: [B04-03 — Runtime HTTP, guest ownership и player-safe projection](../tasks/B04-03-runtime-http-guest-player-projection.md).
+
+Цель — завершить общий B04 transport layer без LLM:
+
+- запустить Node server package в `apps/server`;
+- public health;
+- guest session creation + server-side ownership;
+- owner-only session read;
+- explicit action endpoint с `Idempotency-Key` и `expectedRevision`;
+- operation status/recovery;
+- server-side SHA-256 request identity;
+- deny-by-default `PlayerView` вместо raw `WorldState`;
+- отдельный domain outcome → HTTP mapping;
+- T15 public projection/retry/ownership;
+- final canonical B04 audit T10–12/T15.
+
+## Критическая transport boundary
+
+Не выдавай Player:
+
+- raw `WorldState`;
+- lease expiry/service clock;
+- fencing token/counter;
+- request hash;
+- DB rows/schema errors/stacks;
+- hidden state/future queue/private knowledge;
+- provider secrets.
+
+HTTP retry completed operation должен вернуть сохранённый public response **без второго Core execution**.
+
+Guest B не может читать/менять session guest A. Ownership проверяется server-side, не UI.
+
+## Что не делать в B04-03
 
 Не добавляй:
 
-- Fastify/HTTP endpoints;
-- guest token/cookie/auth;
-- PlayerView/T15;
-- Studio/Control API;
-- LLM;
-- Redis/queues/websocket;
-- несколько storage adapters «на будущее»;
-- изменения Core scheduler/action/effect semantics;
-- полный project/draft/publication database раньше соответствующих блоков.
+- free-text intent/narrator/provider API — B06;
+- Studio/Control API — будущие блоки;
+- Florence migration — B11;
+- Redis/queues/WebSocket/background realtime;
+- публичную account registration/auth platform;
+- generic plugin middleware;
+- debug endpoint, меняющий raw state;
+- изменения B03 scheduler/action/effect semantics.
 
-Общий B04 остаётся open до B04-03 и canonical T10–12/T15 audit.
+Общий B04 объявляется accepted только после B04-03 и повторной сверки T10–12/T15.
 
 ## Минимальный цикл
 
-Один bounded slice → реальные fault/restart regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не переходить к HTTP до принятого B04-02.
+Один bounded slice → реальные regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не переходить к AI/Studio до закрытия соответствующего блока.
