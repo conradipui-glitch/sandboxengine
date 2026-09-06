@@ -52,6 +52,11 @@
       "id": "urn:living-history:schema:scene-frame:1.0"
     },
     {
+      "name": "scheduled-effect-event",
+      "file": "packages/contracts/schemas/v1/scheduled-effect-event.schema.json",
+      "id": "urn:living-history:schema:scheduled-effect-event:1.0"
+    },
+    {
       "name": "scheduled-event",
       "file": "packages/contracts/schemas/v1/scheduled-event.schema.json",
       "id": "urn:living-history:schema:scheduled-event:1.0"
