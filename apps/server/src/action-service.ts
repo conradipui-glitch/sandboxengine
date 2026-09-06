@@ -6,6 +6,7 @@ import {
   type ResolvedIntent,
   type WorldState
 } from "@living-history/contracts";
+import type { IntentActionCatalogEntry } from "@living-history/ai";
 import {
   applyTimeAdvancePlan,
   canonicalStringify,
@@ -38,6 +39,7 @@ export interface ExplicitActionExecution {
 
 export interface ExplicitActionExecutor {
   execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution;
+  executeIntent(state: WorldState, intent: ResolvedIntent): ExplicitActionExecution;
 }
 
 const B04_COMPATIBILITY_PAINT_DEFINITION: PaintActionDefinition = Object.freeze({
@@ -49,56 +51,85 @@ const B04_COMPATIBILITY_PAINT_DEFINITION: PaintActionDefinition = Object.freeze(
   allowPartial: true
 });
 
-/**
- * B04 compatibility factory used by the published minimal Runtime template.
- * New authored/playtest flows must bind an explicit frozen definition via
- * createCoreExplicitActionExecutorForDefinition instead.
- */
+/** B04 compatibility factory used by the published minimal Runtime template. */
 export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
   return createCoreExplicitActionExecutorForDefinition(B04_COMPATIBILITY_PAINT_DEFINITION);
 }
 
-/**
- * B05+ executor. The definition is captured from the pinned/frozen playtest,
- * so Core behavior follows authored rules rather than a client-side default.
- */
+/** B05+ executor bound to one frozen authored action definition. */
 export function createCoreExplicitActionExecutorForDefinition(
   definition: PaintActionDefinition
 ): ExplicitActionExecutor {
   const frozenDefinition: PaintActionDefinition = Object.freeze({ ...definition });
   return Object.freeze({
     execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution {
-      if (command.type !== "core.paint") throw new TypeError("unsupported explicit action");
-      const intent: ResolvedIntent = Object.freeze({
-        schemaVersion: CONTRACT_SCHEMA_VERSION,
-        actionType: "core.paint",
-        participantIds: Object.freeze([]),
-        targetIds: Object.freeze([]),
-        args: Object.freeze({ units: command.units }),
-        sourceInput: Object.freeze({
-          kind: "action",
-          actionType: "core.paint",
-          args: Object.freeze({ units: command.units })
-        })
-      });
-
-      const resolved = resolvePaintAction(state, frozenDefinition, intent);
-      if (!resolved.ok) throw new Error(`core action resolution failed: ${resolved.code}`);
-      const plan = planTimeAdvance(resolved.state, resolved.action.durationSeconds, []);
-      if (!plan.ok) throw new Error(`time planning failed: ${plan.code}`);
-      const advanced = applyTimeAdvancePlan(resolved.state, plan);
-      if (!advanced.ok) throw new Error(`time application failed: ${advanced.code}`);
-
-      return Object.freeze({
-        candidateState: advanced.state,
-        actionStatus: resolved.action.status,
-        requestedUnits: resolved.action.requestedUnits,
-        completedUnits: resolved.action.completedUnits,
-        durationSeconds: resolved.action.durationSeconds,
-        reasonCode: resolved.action.reasonCode
-      });
+      return executePaintResolvedIntent(state, frozenDefinition, explicitCommandToResolvedIntent(command));
+    },
+    executeIntent(state: WorldState, intent: ResolvedIntent): ExplicitActionExecution {
+      return executePaintResolvedIntent(state, frozenDefinition, intent);
     }
   });
+}
+
+/**
+ * Both button/explicit input and validated free text terminate here. Natural
+ * language never gets a second calculation path: Core owns resource/time/effect
+ * semantics through resolvePaintAction.
+ */
+export function executePaintResolvedIntent(
+  state: WorldState,
+  definition: PaintActionDefinition,
+  intent: ResolvedIntent
+): ExplicitActionExecution {
+  const resolved = resolvePaintAction(state, definition, intent);
+  if (!resolved.ok) throw new Error(`core action resolution failed: ${resolved.code}`);
+  const plan = planTimeAdvance(resolved.state, resolved.action.durationSeconds, []);
+  if (!plan.ok) throw new Error(`time planning failed: ${plan.code}`);
+  const advanced = applyTimeAdvancePlan(resolved.state, plan);
+  if (!advanced.ok) throw new Error(`time application failed: ${advanced.code}`);
+
+  return Object.freeze({
+    candidateState: advanced.state,
+    actionStatus: resolved.action.status,
+    requestedUnits: resolved.action.requestedUnits,
+    completedUnits: resolved.action.completedUnits,
+    durationSeconds: resolved.action.durationSeconds,
+    reasonCode: resolved.action.reasonCode
+  });
+}
+
+export function explicitCommandToResolvedIntent(command: ExplicitActionCommand): ResolvedIntent {
+  if (command.type !== "core.paint") throw new TypeError("unsupported explicit action");
+  return Object.freeze({
+    schemaVersion: CONTRACT_SCHEMA_VERSION,
+    actionType: "core.paint",
+    participantIds: Object.freeze([]),
+    targetIds: Object.freeze([]),
+    args: Object.freeze({ units: command.units }),
+    sourceInput: Object.freeze({
+      kind: "action",
+      actionType: "core.paint",
+      args: Object.freeze({ units: command.units })
+    })
+  });
+}
+
+export function createPaintIntentCatalog(
+  maximumUnits = 1_000
+): readonly IntentActionCatalogEntry[] {
+  if (!Number.isSafeInteger(maximumUnits) || maximumUnits < 1 || maximumUnits > 1_000_000) {
+    throw new RangeError("maximumUnits outside supported intent bounds");
+  }
+  return Object.freeze([
+    Object.freeze({
+      actionType: "core.paint",
+      args: Object.freeze({
+        units: Object.freeze({ type: "integer" as const, minimum: 1, maximum: maximumUnits })
+      }),
+      participantIds: Object.freeze([]),
+      targetIds: Object.freeze([])
+    })
+  ]);
 }
 
 export function buildCommittedPublicResponse(input: {

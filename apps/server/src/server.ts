@@ -2,18 +2,27 @@
 import { createHash, randomBytes } from "node:crypto";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
+import type {
+  IntentActionCatalogEntry,
+  IntentDecision,
+  IntentInterpreter
+} from "@living-history/ai";
+import type { JsonValue, WorldState } from "@living-history/contracts";
 import {
   SQLiteStorageBusyError,
   projectPlayerView,
   type PinnedReleaseIdentity,
   type RuntimeGuestSessionAccess,
-  type RuntimeStorage
+  type RuntimePublicResponse,
+  type RuntimeStorage,
+  type SessionRecord
 } from "@living-history/runtime";
-import type { WorldState } from "@living-history/contracts";
 import {
   buildCommittedPublicResponse,
   buildFailedPublicResponse,
   createCoreExplicitActionExecutor,
+  createPaintIntentCatalog,
+  explicitCommandToResolvedIntent,
   hashCanonicalJson,
   stateHash,
   type ExplicitActionCommand,
@@ -22,12 +31,14 @@ import {
 
 const MAX_BODY_CHARS = 16_384;
 const DEFAULT_LEASE_MS = 30_000;
+const DEFAULT_INTENT_DEADLINE_MS = 25_000;
 const POLL_AFTER_MS = 500;
 
 export interface RuntimeSessionTemplate {
   readonly templateId: string;
   readonly release: PinnedReleaseIdentity;
   readonly initialState: WorldState;
+  readonly intentCatalog?: readonly IntentActionCatalogEntry[];
 }
 
 export interface RuntimeServerDependencies {
@@ -35,6 +46,8 @@ export interface RuntimeServerDependencies {
   readonly guestAccess: RuntimeGuestSessionAccess;
   readonly templates: readonly RuntimeSessionTemplate[];
   readonly executor?: ExplicitActionExecutor;
+  readonly intentInterpreter?: IntentInterpreter;
+  readonly intentDeadlineMs?: number;
   readonly createSessionId?: () => string;
   readonly createCredential?: () => string;
   readonly leaseDurationMs?: number;
@@ -51,19 +64,32 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
   if (templates.size !== dependencies.templates.length || templates.size < 1) {
     throw new TypeError("templates must have unique ids and cannot be empty");
   }
+  const templatesByRelease = new Map<string, RuntimeSessionTemplate>();
+  for (const template of dependencies.templates) {
+    const key = releaseKey(template.release);
+    if (templatesByRelease.has(key)) throw new TypeError("templates must have unique release identities");
+    templatesByRelease.set(key, template);
+  }
   const executor = dependencies.executor ?? createCoreExplicitActionExecutor();
   const createSessionId = dependencies.createSessionId ?? (() => `session-${randomBytes(16).toString("hex")}`);
   const createCredential = dependencies.createCredential ?? (() => randomBytes(32).toString("base64url"));
   const leaseDurationMs = dependencies.leaseDurationMs ?? DEFAULT_LEASE_MS;
+  const intentDeadlineMs = dependencies.intentDeadlineMs ?? DEFAULT_INTENT_DEADLINE_MS;
   if (!Number.isSafeInteger(leaseDurationMs) || leaseDurationMs < 1 || leaseDurationMs > 300_000) {
     throw new RangeError("leaseDurationMs outside runtime bounds");
+  }
+  if (!Number.isSafeInteger(intentDeadlineMs) || intentDeadlineMs < 1 || intentDeadlineMs > 25_000) {
+    throw new RangeError("intentDeadlineMs outside runtime bounds");
   }
 
   const resolved: ResolvedServerDependencies = {
     storage: dependencies.storage,
     guestAccess: dependencies.guestAccess,
     templates,
+    templatesByRelease,
     executor,
+    intentInterpreter: dependencies.intentInterpreter ?? null,
+    intentDeadlineMs,
     createSessionId,
     createCredential,
     leaseDurationMs
@@ -116,11 +142,29 @@ type ResolvedServerDependencies = {
   readonly storage: RuntimeStorage;
   readonly guestAccess: RuntimeGuestSessionAccess;
   readonly templates: ReadonlyMap<string, RuntimeSessionTemplate>;
+  readonly templatesByRelease: ReadonlyMap<string, RuntimeSessionTemplate>;
   readonly executor: ExplicitActionExecutor;
+  readonly intentInterpreter: IntentInterpreter | null;
+  readonly intentDeadlineMs: number;
   readonly createSessionId: () => string;
   readonly createCredential: () => string;
   readonly leaseDurationMs: number;
 };
+
+type TextClarificationReference = {
+  readonly id: string;
+  readonly revision: number;
+};
+
+type TextActionInput = {
+  readonly kind: "text";
+  readonly text: string;
+  readonly clarification: TextClarificationReference | null;
+};
+
+type ParsedActionBody =
+  | { readonly kind: "explicit"; readonly expectedRevision: number; readonly action: ExplicitActionCommand }
+  | { readonly kind: "text"; readonly expectedRevision: number; readonly input: TextActionInput };
 
 async function routeRequest(request: any, response: any, deps: ResolvedServerDependencies): Promise<void> {
   const method = String(request.method ?? "GET").toUpperCase();
@@ -256,10 +300,29 @@ async function handleAction(
     return;
   }
 
-  const requestIdentity = Object.freeze({
-    expectedRevision: parsed.expectedRevision,
-    action: parsed.action
-  });
+  if (parsed.kind === "text" && parsed.input.clarification) {
+    const clarificationCheck = await validateClarificationReference(
+      deps.storage,
+      sessionId,
+      parsed.expectedRevision,
+      parsed.input.clarification
+    );
+    if (clarificationCheck !== "ok") {
+      sendJson(response, 409, { error: { code: clarificationCheck } });
+      return;
+    }
+  }
+
+  const requestIdentity = parsed.kind === "explicit"
+    ? Object.freeze({ expectedRevision: parsed.expectedRevision, action: parsed.action })
+    : Object.freeze({
+        expectedRevision: parsed.expectedRevision,
+        input: Object.freeze({
+          kind: "text",
+          text: parsed.input.text,
+          ...(parsed.input.clarification ? { clarification: parsed.input.clarification } : {})
+        })
+      });
   const requestHash = hashCanonicalJson(requestIdentity);
   const claim = await deps.storage.claimOperation({
     sessionId,
@@ -313,7 +376,23 @@ async function handleAction(
   }
 
   try {
-    const execution = deps.executor.execute(session.state, parsed.action);
+    const execution = parsed.kind === "explicit"
+      ? deps.executor.executeIntent(session.state, explicitCommandToResolvedIntent(parsed.action))
+      : await interpretAndMaybeExecuteText(deps, session, claim.operation.operationId, parsed.input);
+
+    if ("publicResponse" in execution) {
+      await finishWithoutTurnAndSend(
+        response,
+        deps,
+        sessionId,
+        parsed.expectedRevision,
+        claim.operation.operationId,
+        claim.operation.fencingToken,
+        execution.publicResponse
+      );
+      return;
+    }
+
     const turnId = `turn-${claim.operation.operationId}`;
     const publicResponse = buildCommittedPublicResponse({
       operationId: claim.operation.operationId,
@@ -360,6 +439,119 @@ async function handleAction(
   }
 }
 
+async function interpretAndMaybeExecuteText(
+  deps: ResolvedServerDependencies,
+  session: SessionRecord,
+  operationId: string,
+  input: TextActionInput
+): Promise<ReturnType<ExplicitActionExecutor["executeIntent"]> | { readonly publicResponse: RuntimePublicResponse }> {
+  const template = deps.templatesByRelease.get(releaseKey(session.release));
+  const catalog = template?.intentCatalog;
+  if (!deps.intentInterpreter || !catalog || catalog.length === 0) {
+    return Object.freeze({
+      publicResponse: Object.freeze({
+        kind: "failed",
+        operationId,
+        code: "INTENT_NOT_CONFIGURED",
+        revision: session.revision
+      })
+    });
+  }
+
+  const view = projectPlayerView(session);
+  const decision = await deps.intentInterpreter.interpret({
+    text: input.text,
+    actionCatalog: catalog,
+    allowedEntityIds: publicIds(view),
+    publicSituation: toJsonValue(view),
+    dialogueContext: input.clarification ? Object.freeze([`clarification:${input.clarification.id}`]) : Object.freeze([]),
+    deadlineAtMs: Date.now() + deps.intentDeadlineMs
+  });
+
+  if (decision.kind === "resolved") {
+    return deps.executor.executeIntent(session.state, decision.intent);
+  }
+  return Object.freeze({ publicResponse: decisionToPublicResponse(operationId, session.revision, decision) });
+}
+
+function decisionToPublicResponse(
+  operationId: string,
+  revision: number,
+  decision: Exclude<IntentDecision, { readonly kind: "resolved" }>
+): RuntimePublicResponse {
+  if (decision.kind === "needs_clarification") {
+    return Object.freeze({
+      kind: "needs_clarification",
+      operationId,
+      clarificationId: clarificationIdForOperation(operationId),
+      revision,
+      question: decision.question,
+      options: Object.freeze([...decision.options]),
+      normalizedDescription: decision.normalizedDescription
+    });
+  }
+  if (decision.kind === "unsupported") {
+    return Object.freeze({
+      kind: "unsupported",
+      operationId,
+      revision,
+      explanation: decision.explanation,
+      normalizedDescription: decision.normalizedDescription
+    });
+  }
+  return Object.freeze({
+    kind: "failed",
+    operationId,
+    revision,
+    code: "INTENT_INTERPRETATION_FAILED"
+  });
+}
+
+async function finishWithoutTurnAndSend(
+  response: any,
+  deps: ResolvedServerDependencies,
+  sessionId: string,
+  expectedRevision: number,
+  operationId: string,
+  fencingToken: number,
+  publicResponse: RuntimePublicResponse
+): Promise<void> {
+  const finished = await deps.storage.finishWithoutTurn({
+    sessionId,
+    operationId,
+    expectedRevision,
+    fencingToken,
+    publicResponse
+  });
+  if (finished.kind !== "finished" || finished.operation.publicResponse === null) {
+    sendJson(response, 503, { error: { code: "FINISH_WITHOUT_TURN_FAILED" } });
+    return;
+  }
+  sendJson(response, 200, finished.operation.publicResponse);
+}
+
+async function validateClarificationReference(
+  storage: RuntimeStorage,
+  sessionId: string,
+  expectedRevision: number,
+  reference: TextClarificationReference
+): Promise<"ok" | "STALE_CLARIFICATION" | "INVALID_CLARIFICATION"> {
+  if (reference.revision !== expectedRevision) return "STALE_CLARIFICATION";
+  const operationId = operationIdFromClarificationId(reference.id);
+  if (operationId === null) return "INVALID_CLARIFICATION";
+  const operation = await storage.getOperation(sessionId, operationId);
+  if (!operation || operation.status !== "finished_without_turn" || operation.publicResponse === null) {
+    return "INVALID_CLARIFICATION";
+  }
+  const publicResponse = operation.publicResponse;
+  if (publicResponse.kind !== "needs_clarification"
+    || publicResponse.clarificationId !== reference.id
+    || publicResponse.revision !== reference.revision) {
+    return "INVALID_CLARIFICATION";
+  }
+  return "ok";
+}
+
 async function authenticateGuest(
   request: any,
   guestAccess: RuntimeGuestSessionAccess,
@@ -372,15 +564,45 @@ async function authenticateGuest(
   return guestAccess.verifyGuestAccess(sessionId, sha256(credential));
 }
 
-function parseActionBody(value: unknown): { readonly expectedRevision: number; readonly action: ExplicitActionCommand } | null {
+function parseActionBody(value: unknown): ParsedActionBody | null {
   if (!isPlainObject(value) || Object.keys(value).length !== 2) return null;
   if (!Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0) return null;
-  if (!isPlainObject(value.action) || Object.keys(value.action).length !== 2) return null;
-  if (value.action.type !== "core.paint") return null;
-  if (!Number.isSafeInteger(value.action.units) || Number(value.action.units) < 1 || Number(value.action.units) > 1_000) return null;
+  const expectedRevision = Number(value.expectedRevision);
+
+  if ("action" in value && !("input" in value)) {
+    if (!isPlainObject(value.action) || Object.keys(value.action).length !== 2) return null;
+    if (value.action.type !== "core.paint") return null;
+    if (!Number.isSafeInteger(value.action.units) || Number(value.action.units) < 1 || Number(value.action.units) > 1_000) return null;
+    return Object.freeze({
+      kind: "explicit",
+      expectedRevision,
+      action: Object.freeze({ type: "core.paint", units: Number(value.action.units) })
+    });
+  }
+
+  if (!("input" in value) || "action" in value || !isPlainObject(value.input)) return null;
+  const inputKeys = Object.keys(value.input).sort();
+  if (inputKeys.length < 2 || inputKeys.length > 3 || inputKeys[0] !== "kind" || inputKeys[1] !== "text") return null;
+  if (inputKeys.length === 3 && inputKeys[2] !== "clarification") return null;
+  if (value.input.kind !== "text" || typeof value.input.text !== "string" || value.input.text.length < 1 || value.input.text.length > 4_000) return null;
+
+  let clarification: TextClarificationReference | null = null;
+  if ("clarification" in value.input) {
+    if (!isPlainObject(value.input.clarification)
+      || !hasExactKeys(value.input.clarification, ["id", "revision"])
+      || !isRuntimeId(value.input.clarification.id)
+      || !Number.isSafeInteger(value.input.clarification.revision)
+      || Number(value.input.clarification.revision) < 0) return null;
+    clarification = Object.freeze({
+      id: String(value.input.clarification.id),
+      revision: Number(value.input.clarification.revision)
+    });
+  }
+
   return Object.freeze({
-    expectedRevision: Number(value.expectedRevision),
-    action: Object.freeze({ type: "core.paint", units: Number(value.action.units) })
+    kind: "text",
+    expectedRevision,
+    input: Object.freeze({ kind: "text", text: value.input.text, clarification })
   });
 }
 
@@ -430,6 +652,12 @@ function isPlainObject(value: unknown): value is Record<string, any> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
 function isRuntimeId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
@@ -444,6 +672,40 @@ function isCredential(value: unknown): value is string {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function releaseKey(release: PinnedReleaseIdentity): string {
+  return `${release.questId}\u0000${release.releaseId}\u0000${release.contentHash}`;
+}
+
+function clarificationIdForOperation(operationId: string): string {
+  return `clarification-${operationId}`;
+}
+
+function operationIdFromClarificationId(clarificationId: string): string | null {
+  const prefix = "clarification-";
+  if (!clarificationId.startsWith(prefix)) return null;
+  const operationId = clarificationId.slice(prefix.length);
+  return isRuntimeId(operationId) ? operationId : null;
+}
+
+function publicIds(view: ReturnType<typeof projectPlayerView>): readonly string[] {
+  const ids = new Set<string>();
+  for (const entity of view.entities) {
+    ids.add(entity.id);
+    if (entity.locationId) ids.add(entity.locationId);
+  }
+  for (const resource of view.resources) ids.add(resource.id);
+  for (const item of view.items) {
+    ids.add(item.id);
+    if (item.position.kind === "location") ids.add(item.position.locationId);
+    else ids.add(item.position.holderId);
+  }
+  return Object.freeze([...ids]);
+}
+
+function toJsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
 export function createMinimalPaintTemplate(): RuntimeSessionTemplate {
@@ -478,6 +740,7 @@ export function createMinimalPaintTemplate(): RuntimeSessionTemplate {
       releaseId: "release-1",
       contentHash: "a".repeat(64)
     }),
-    initialState
+    initialState,
+    intentCatalog: createPaintIntentCatalog()
   });
 }
