@@ -38,6 +38,11 @@ Generated file. Do not edit by hand.
 
 - `core.effects`
 - `core.marker`
+- `core.terminal`
+
+## Available scheduled tasks
+
+- `core.task`
 
 ## Available calculated actions
 
