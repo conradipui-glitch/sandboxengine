@@ -1,6 +1,7 @@
 {
   "contractsSchemaVersion": "1.0",
   "blockKinds": [
+    "core.action",
     "core.character",
     "core.location",
     "core.resource"

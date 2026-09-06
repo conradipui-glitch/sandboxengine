@@ -5,6 +5,7 @@ const root = new URL("../packages/core/src/", import.meta.url);
 const forbidden = [
   /from\s+["'](?:react|fastify|sqlite|better-sqlite3)/,
   /from\s+["']@living-history\/runtime(?:["'/])/,
+  /from\s+["']@living-history\/control(?:["'/])/,
   /\bfetch\s*\(/,
   /process\.env/,
   /from\s+["']node:fs/
@@ -25,5 +26,5 @@ if (violations.length > 0) {
   console.error("Core boundary violations:\n" + violations.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("check:boundaries ok — Core остаётся чистым от инфраструктуры/runtime");
+  console.log("check:boundaries ok — Core остаётся чистым от инфраструктуры/runtime/control");
 }

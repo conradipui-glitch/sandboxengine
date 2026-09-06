@@ -1,9 +1,10 @@
-import type { ContractSchemaVersion } from "./schema.js";
+import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 
 export const BLOCK_KINDS = [
   "core.location",
   "core.character",
-  "core.resource"
+  "core.resource",
+  "core.action"
 ] as const;
 
 export type BlockKind = (typeof BLOCK_KINDS)[number];
@@ -35,7 +36,59 @@ export interface ResourceBlockData {
 
 export type ResourceBlock = BlockBase<"core.resource", ResourceBlockData>;
 
-export type Block = LocationBlock | CharacterBlock | ResourceBlock;
+export interface PaintActionBlockData {
+  readonly actionType: "core.paint";
+  readonly resourceId: string;
+  readonly resourceUnitsPerUnit: number;
+  readonly durationSecondsPerUnit: number;
+  readonly allowPartial: boolean;
+}
+
+export type ActionBlock = BlockBase<"core.action", PaintActionBlockData>;
+
+export type Block = LocationBlock | CharacterBlock | ResourceBlock | ActionBlock;
+
+export function isBlock(value: unknown): value is Block {
+  if (!isRecord(value) || !hasExactKeys(value, ["schemaVersion", "id", "kind", "title", "description", "data"])) return false;
+  if (value.schemaVersion !== CONTRACT_SCHEMA_VERSION || !isId(value.id)) return false;
+  if (typeof value.title !== "string" || value.title.length < 1 || value.title.length > 200) return false;
+  if (typeof value.description !== "string" || value.description.length > 2_000) return false;
+  if (!isRecord(value.data)) return false;
+
+  if (value.kind === "core.location") return hasExactKeys(value.data, []);
+
+  if (value.kind === "core.character") {
+    if (!hasExactKeys(value.data, ["initialLocationId", "initialStatus"])) return false;
+    return (value.data.initialLocationId === null || isId(value.data.initialLocationId))
+      && typeof value.data.initialStatus === "string"
+      && value.data.initialStatus.length >= 1
+      && value.data.initialStatus.length <= 100;
+  }
+
+  if (value.kind === "core.resource") {
+    if (!hasExactKeys(value.data, ["unit", "initialValue", "min", "max"])) return false;
+    return typeof value.data.unit === "string"
+      && value.data.unit.length >= 1
+      && value.data.unit.length <= 100
+      && isSafeInteger(value.data.initialValue)
+      && isSafeInteger(value.data.min)
+      && isSafeInteger(value.data.max)
+      && value.data.min <= value.data.max
+      && value.data.initialValue >= value.data.min
+      && value.data.initialValue <= value.data.max;
+  }
+
+  if (value.kind === "core.action") {
+    if (!hasExactKeys(value.data, ["actionType", "resourceId", "resourceUnitsPerUnit", "durationSecondsPerUnit", "allowPartial"])) return false;
+    return value.data.actionType === "core.paint"
+      && isId(value.data.resourceId)
+      && isPositiveSafeInteger(value.data.resourceUnitsPerUnit)
+      && isNonNegativeSafeInteger(value.data.durationSecondsPerUnit)
+      && typeof value.data.allowPartial === "boolean";
+  }
+
+  return false;
+}
 
 export interface QuestReleaseCompatibility {
   readonly contractsSchemaVersion: ContractSchemaVersion;
@@ -82,4 +135,35 @@ export interface ResolvedIntent {
   readonly targetIds: readonly string[];
   readonly args: Readonly<Record<string, JsonValue>>;
   readonly sourceInput: IntentSource;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length >= 1
+    && value.length <= 200
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+}
+
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return isSafeInteger(value) && value >= 1;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return isSafeInteger(value) && value >= 0;
 }

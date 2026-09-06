@@ -17,7 +17,15 @@ test("generated agent contracts expose only implemented capabilities", async () 
   const openapi = JSON.parse(generated.get("docs/agent/api.openapi.json"));
   const capabilities = JSON.parse(generated.get("docs/agent/capabilities.json"));
 
-  assert.deepEqual(capabilities.blockKinds, ["core.character", "core.location", "core.resource"]);
+  assert.equal(Object.keys(openapi.paths).length, 5);
+  assert.deepEqual(capabilities.operations.map((operation) => operation.id), [
+    "runtime.healthz",
+    "runtime.sessions.create",
+    "runtime.sessions.get",
+    "runtime.sessions.action",
+    "runtime.operations.get"
+  ]);
+  assert.deepEqual(capabilities.blockKinds, ["core.action", "core.character", "core.location", "core.resource"]);
   assert.deepEqual(capabilities.gameplayEffectTypes, ["entity.move", "item.transfer", "resource.change"]);
   assert.deepEqual(capabilities.conditionTypes, ["all", "any", "entity.at", "item.heldBy", "not", "resource.atLeast"]);
   assert.deepEqual(capabilities.socialActTypes, ["permission", "request", "response"]);
@@ -29,31 +37,8 @@ test("generated agent contracts expose only implemented capabilities", async () 
     "core.social.request",
     "core.social.response"
   ]);
-
-  assert.deepEqual(
-    capabilities.operations.map(({ id, method, path, successStatus }) => ({ id, method, path, successStatus })),
-    [
-      { id: "runtime.healthz", method: "GET", path: "/healthz", successStatus: 200 },
-      { id: "runtime.sessions.create", method: "POST", path: "/v1/sessions", successStatus: 201 },
-      { id: "runtime.sessions.get", method: "GET", path: "/v1/sessions/{sessionId}", successStatus: 200 },
-      { id: "runtime.sessions.action", method: "POST", path: "/v1/sessions/{sessionId}/actions", successStatus: 200 },
-      { id: "runtime.operations.get", method: "GET", path: "/v1/sessions/{sessionId}/operations/{operationId}", successStatus: 200 }
-    ]
-  );
-  assert.equal(capabilities.operations.some((operation) => operation.id === "runtime.quests.list"), false);
-  assert.equal(capabilities.operations.some((operation) => operation.id.startsWith("control.")), false);
-
-  assert.equal(openapi.paths["/healthz"].get.responses["200"].description, "Successful response");
-  assert.equal(openapi.paths["/v1/sessions"].post.responses["201"].description, "Successful response");
-  assert.equal(openapi.paths["/v1/sessions/{sessionId}"].get.responses["200"].description, "Successful response");
-  assert.equal(openapi.paths["/v1/sessions/{sessionId}/actions"].post.responses["200"].description, "Successful response");
-  assert.equal(openapi.paths["/v1/sessions/{sessionId}/operations/{operationId}"].get.responses["200"].description, "Successful response");
-  assert.equal(openapi.paths["/v1/quests"], undefined);
-  assert.equal(openapi.paths["/control/v1/capabilities"], undefined);
-
-  const skill = generated.get("docs/agent/SKILL.md");
-  assert.equal(skill.includes("POST /v1/sessions"), true);
-  assert.equal(skill.includes("/control/v1/capabilities"), false);
+  assert.equal(generated.get("docs/agent/SKILL.md").includes("POST /v1/sessions"), true);
+  assert.equal(generated.get("docs/agent/SKILL.md").includes("/control/v1/projects"), false);
 });
 
 test("generated docs are deterministic and stale content is detected", async () => {

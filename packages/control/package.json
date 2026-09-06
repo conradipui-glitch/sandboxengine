@@ -1,0 +1,17 @@
+{
+  "name": "@living-history/control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@living-history/contracts": "0.1.0",
+    "@living-history/core": "0.1.0"
+  }
+}

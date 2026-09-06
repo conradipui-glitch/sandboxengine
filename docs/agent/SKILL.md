@@ -10,6 +10,7 @@ Generated file. Do not edit by hand.
 
 ## Available block kinds
 
+- `core.action`
 - `core.character`
 - `core.location`
 - `core.resource`
