@@ -5,76 +5,87 @@
 Текущий блок: **B04-01 — operation/storage contract и Memory reference semantics**  
 База ветки: опубликованный B03 merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`  
 Текущая ветка: `b04-01-operation-storage-contracts`  
-Task-card commit: `30b8790894b27abe2ebe075f57d01d93b02d192b`  
-Статус: `in_progress`; код B04-01 ещё не реализован
+Functional head после canonical hash fix: `623ac02e8cb4b2ad2540d43356b63c6f90880ffc`  
+Статус: **accepted bounded по code/semantic gate; PR #12 должен пройти финальный docs gate, merge и push-CI**
 
-## Принятая база
+## Выполнено
 
-Общий B03 полностью принят и опубликован. Main push-CI `34035223262` — success. Принятые Core semantics, включая scheduler priority/terminal/RNG/replay, в B04 не переписываются.
+- Создан реальный package `@living-history/runtime`.
+- Добавлены storage domain types/result unions без HTTP-кодов.
+- Добавлен единый `RuntimeStorage`: `loadSession`, `claimOperation`, `renewLease`, `commitTurn`, `finishWithoutTurn`, `getOperation`.
+- Реализован `MemoryRuntimeStorage` как reference semantics для будущего SQLite.
+- Unique `(sessionId, idempotencyKey)` и одна active operation на session.
+- Request hash — canonical lowercase SHA-256; same hex в другом casing остаётся тем же запросом.
+- Same completed key/hash возвращает persisted public response до current-revision conflict.
+- Same key с другим hash или исходной revision → `idempotency_key_reused`.
+- Lease использует injected `ServiceClock`, не игровой `WorldState.clock`.
+- Expired same request reacquire получает strictly greater fencing token.
+- Stale fencing token не может commit после reacquire.
+- `commitTurn` проверяет revision, active owner, current token, unexpired lease, candidate state, turn record и public response до публикации.
+- Success публикует state + turn + response + operation completion и освобождает active owner как один semantic commit.
+- Failed commit не оставляет partial state/turn/response.
+- `finishWithoutTurn` сохраняет replayable response без game revision change.
+- `npm run test:storage` стал реальной командой и входит в `verify`.
+- Boundary gate теперь отдельно запрещает Core импортировать Runtime.
 
-B04 хранит и атомарно публикует уже рассчитанный Core candidate transition либо не сохраняет ничего.
+## Проверено
 
-## Текущий bounded scope
+Первый code gate PR #12: CI `34036049442` — success.
 
-Карточка: [B04-01 — operation/storage contract и Memory reference semantics](tasks/B04-01-operation-storage-contracts.md).
+После semantic audit исправлена canonical hash comparison. Final functional gate: CI `34036284044` — success:
 
-Этот срез закрывает только foundation вокруг operation ownership:
+- contract 35/35;
+- Core 55/55;
+- storage 7/7;
+- boundaries passed;
+- docs check passed.
 
-- строгие runtime/storage domain types;
-- единый semantic `RuntimeStorage` contract;
-- `claimOperation(sessionId, idempotencyKey, requestHash, expectedRevision, lease)`;
-- explicit outcomes для duplicate/reuse/action-in-progress/revision-conflict;
-- Memory reference adapter;
-- одна active operation на session;
-- unique `(sessionId, idempotencyKey)`;
-- monotonic fencing token;
-- injected service clock для lease, отдельно от game clock;
-- commit проверяет expected revision + active owner + current unexpired token;
-- atomic state + turn record + public response + operation completion;
-- `finishWithoutTurn` / `getOperation` foundation;
-- реальные storage tests для T10 Memory, T11 Memory и stale-worker fencing foundation T12.
+Именованные storage tests:
 
-## Что B04-01 не делает
+1. T10 Memory — duplicate commits once, persisted response replays, different hash conflicts; SHA casing canonicalized.
+2. T11 Memory — две разные команды не владеют одной session/revision одновременно.
+3. T12 foundation — expired lease reacquire получает больший fencing token, stale worker commit отклонён.
+4. failed commit → no partial state/turn/response.
+5. service lease clock независим от game clock.
+6. `finishWithoutTurn` replay без revision change.
+7. `renewLease` сохраняет fencing token и использует service time.
 
-- SQLite;
-- restart/crash durability claim;
+ADR: `docs/decisions/0011-operation-idempotency-fencing-memory-reference.md`.  
+Worklog: `docs/worklog/2026-09-06-b04-01.md`.
+
+## Что B04-01 не доказывает
+
+- durability/restart;
+- настоящий SQLite transaction;
+- crash-before/after-commit recovery через новый process/adapter instance;
+- `SQLITE_BUSY` policy;
 - Fastify/HTTP;
-- guest auth/session tokens;
-- PlayerView/public projection;
-- bundled release server startup;
-- JS client;
-- LLM/provider logic;
-- Studio/Control API;
-- background workers/queues;
-- изменение B03 Core semantics.
+- guest session ownership/auth;
+- PlayerView/public projection/T15.
 
-Поэтому B04-01 **не принимает общий B04** и не закрывает T12 целиком.
+Поэтому **общий B04 остаётся open**, а T12 закрыт только foundation-уровнем.
 
-## Следующее точное действие
+## Следующее действие после merge/push-CI B04-01
 
-1. Прочитать `docs/tasks/B04-01-operation-storage-contracts.md` и фактический каркас `packages/runtime`.
-2. Спроектировать минимальные domain result unions и `RuntimeStorage` interface без HTTP status codes.
-3. Сразу написать Memory adapter + fake service clock tests для T10/T11/stale fencing; не начинать SQLite до зелёной Memory semantics.
-4. Если `npm run test:storage` отсутствует или является заглушкой — сделать его реальной командой и включить в обязательный verify только после появления настоящих storage tests.
-5. После functional gate обновить STATUS/HANDOFF/worklog и только затем решить B04-01 acceptance.
+Создать ветку от проверенного `main` и выполнить только [B04-02 — SQLite transaction, restart и fault recovery](tasks/B04-02-sqlite-restart-fault-recovery.md).
 
-## Следующие bounded slices после B04-01
+B04-02 должен:
 
-- **B04-02:** SQLite atomicity + restart/fault injection, durable T10–12.
-- **B04-03:** Runtime API + guest access + player-safe projection, T15 и общая B04 canonical acceptance.
+- реализовать один `SQLiteRuntimeStorage` с тем же domain outcomes;
+- запускать общий semantic suite и для Memory, и для SQLite;
+- доказать lost-response replay после закрытия/повторного открытия DB;
+- использовать две независимые adapter instance для concurrent T11;
+- доказать crash-before-commit, expired lease/reacquire после restart и stale old token rejection;
+- обеспечить atomic state+turn+response+operation completion transaction;
+- иметь bounded `SQLITE_BUSY` handling без повторного Core execution.
 
-Не объявлять общий B04 принятым до повторной сверки T10–12/T15.
+Не добавлять HTTP/auth/PlayerView до B04-03 и не менять B03 scheduler semantics.
 
-## Архитектурные решения, которые нельзя размыть
+## Решения
 
-- Core не импортирует Runtime/Storage.
-- Service lease time ≠ `WorldState.clock`.
-- Storage не пересчитывает candidate transition.
-- Duplicate completed request возвращает сохранённый response без второго Core/commit.
-- Reused idempotency key с другим request hash никогда не становится новым действием.
-- Старый fencing token не может commit после reacquire.
-- HTTP-коды появляются только в transport layer будущего B04-03.
+- ADR 0010 — закрытый B03 scheduler/replay contract.
+- ADR 0011 — B04 operation idempotency/lease/fencing + Memory reference semantics.
 
-## Известное наблюдение dependency layer
+## Dependency observation
 
-`npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Force-upgrade не смешивать с B04-01 semantics без отдельного change set.
+`npm ci` по-прежнему сообщает 2 vulnerabilities (1 moderate, 1 high). Force-upgrade не смешивать с storage semantics без отдельного change set.
