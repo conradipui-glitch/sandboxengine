@@ -9,10 +9,16 @@ import {
   type SchedulerEvent,
   type WorldState
 } from "@living-history/contracts";
+import {
+  CORE_DEADLINE_PRIORITY,
+  CORE_TASK_START_INTERNAL_ORDER,
+  CORE_TASK_STEP_PRIORITY
+} from "./scheduler.js";
 
 export type TaskProjectionFailureCode =
   | "invalid_state"
   | "invalid_task"
+  | "invalid_task_priority"
   | "actor_not_found"
   | "invalid_projected_event";
 
@@ -57,6 +63,9 @@ export function projectTaskEvents(state: WorldState, task: ScheduledTask): TaskP
     return Object.freeze({ ok: false, code: "invalid_state" });
   }
   if (!isScheduledTask(task)) return Object.freeze({ ok: false, code: "invalid_task" });
+  if (task.baseOrder !== CORE_TASK_START_INTERNAL_ORDER) {
+    return Object.freeze({ ok: false, code: "invalid_task_priority" });
+  }
   if (!state.entities.some((entity) => entity.id === task.actorEntityId)) {
     return Object.freeze({ ok: false, code: "actor_not_found" });
   }
@@ -64,7 +73,7 @@ export function projectTaskEvents(state: WorldState, task: ScheduledTask): TaskP
   const start = buildTaskEvent(
     `${task.taskId}.start`,
     task.startAtElapsedSeconds,
-    task.baseOrder,
+    CORE_TASK_START_INTERNAL_ORDER,
     task.sourceId,
     "task.start",
     task.startEffects
@@ -72,7 +81,7 @@ export function projectTaskEvents(state: WorldState, task: ScheduledTask): TaskP
   const complete = buildTaskEvent(
     `${task.taskId}.complete`,
     task.completeAtElapsedSeconds,
-    task.baseOrder + 1,
+    CORE_TASK_STEP_PRIORITY,
     task.sourceId,
     "task.complete",
     task.completionEffects
@@ -89,11 +98,14 @@ export function projectTaskEvents(state: WorldState, task: ScheduledTask): TaskP
 }
 
 export function projectDeadlineEvent(definition: DeadlineDefinition): DeadlineProjectionResult {
+  if (definition.order !== CORE_DEADLINE_PRIORITY) {
+    return Object.freeze({ ok: false, code: "invalid_deadline" });
+  }
   const event = {
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     eventId: `${definition.deadlineId}.terminal`,
     atElapsedSeconds: definition.atElapsedSeconds,
-    order: definition.order,
+    order: CORE_DEADLINE_PRIORITY,
     sourceId: definition.sourceId,
     kind: "core.terminal" as const,
     payload: {
@@ -145,11 +157,13 @@ function buildTaskEvent(
 }
 
 function cloneEffect(effect: GameplayEffect): GameplayEffect {
-  if (effect.type === "resource.change") return Object.freeze({ ...effect });
-  return Object.freeze({
-    ...effect,
-    destination: Object.freeze({ ...effect.destination })
-  });
+  if (effect.type === "item.transfer") {
+    return Object.freeze({
+      ...effect,
+      destination: Object.freeze({ ...effect.destination })
+    });
+  }
+  return Object.freeze({ ...effect });
 }
 
 function freezeTerminalEvent(event: ScheduledTerminalEvent): ScheduledTerminalEvent {

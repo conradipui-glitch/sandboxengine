@@ -6,7 +6,7 @@
   "actorEntityId": "painter",
   "startAtElapsedSeconds": 60,
   "completeAtElapsedSeconds": 300,
-  "baseOrder": 20,
+  "baseOrder": 19,
   "startEffects": [],
   "completionEffects": [
     {

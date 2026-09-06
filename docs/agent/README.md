@@ -12,14 +12,15 @@
 4. `CalculatedAction` — строгий рассчитанный outcome.
 5. `tryApplyEffectBatch` — all-or-nothing typed world mutation на trial state.
 6. `planTimeAdvance` — B03-01: static integer interval и deterministic event order.
-7. `applyTimeAdvancePlan` — B03-02/03: chronological effects, atomic clock/revision transition и terminal interruption.
-8. `projectTaskEvents` / `projectDeadlineEvent` — B03-03: authored task/deadline → strict scheduler events, без state mutation при projection.
-9. Functional `lcg32-v1` RNG — B03-03: explicit immutable state + provenance; никакого hidden entropy.
-10. Следующий bounded B03-04 закрывает только exact T05/T06/T08 и replay/hash; после него возможен B04.
+7. `processTimeAdvancePlan` — B03-04: dynamic deterministic processing initial + generated events на trial state с bounded budget.
+8. `projectTaskEvents` / `projectDeadlineEvent` — authored task/deadline → strict scheduler events.
+9. Terminal semantics — previous effects учитываются, terminal останавливает interval в своём timestamp, later due events остаются unprocessed.
+10. Functional `lcg32-v1` RNG + `buildSchedulerReplayFingerprint` — explicit provenance и deterministic replay/hash.
+11. B04 добавляет persistence/runtime вокруг уже принятого Core transition; он не должен рассчитывать новую причинность.
 
-## Принятые capabilities до B03-03
+## Принятые capabilities после B03
 
-Gameplay effects: `resource.change`, `item.transfer`.
+Gameplay effects: `entity.move`, `item.transfer`, `resource.change`.
 
 Conditions: `resource.atLeast`, `entity.at`, `item.heldBy`, `all`, `any`, `not`.
 
@@ -35,39 +36,47 @@ Scheduler events:
 
 Scheduled task: `core.task` — strict `ScheduledTask:1.0`.
 
-Player/social invariant: request ≠ permission ≠ response ≠ physical execution. Даже `accept` сам не выполняет proposed item/resource mutation.
+Generated `capabilities.json` — машинный источник реально опубликованных типов. Planned HTTP operations всё ещё не являются available до B04.
 
-## Принятые scheduler invariants
+## Принятые B03 invariants
 
-- integer absolute elapsed seconds, без `Date`/timezone/wall-clock;
+- только integer absolute elapsed seconds; Core не использует `Date`/timezone/wall-clock;
 - static planning interval inclusive `[start,end]`;
-- deterministic static order `time → order → eventId`;
+- deterministic static order;
+- fixed first-release priority policy: world `10`, task/step completion `20`, deadline `100`; synthetic task-start internal order `19`;
 - past/duplicate/overflow/event-limit — explicit failure;
-- event effects проходят только через единый `tryApplyEffectBatch`;
-- late event failure отклоняет весь candidate transition без partial state;
+- event effects проходят только через единый atomic `tryApplyEffectBatch`;
+- `entity.move` переносит только existing entity → existing location;
+- dynamic child handler получает frozen snapshot и возвращает только strict `SchedulerEvent[]`;
+- child на том же timestamp не может перескочить перед parent: effective priority не ниже parent + monotonic sequence;
+- один `maxSteps/maxEvents` считает initial и generated processing;
+- failure не возвращает partial candidate state;
 - normal success: clock=`plan.end`, revision+1 ровно один раз;
-- terminal success: previous effects сохраняются в candidate, terminal фиксируется, clock=terminal timestamp, revision+1, later due events становятся `unprocessedEvents`;
-- already terminal authoritative state не запускает новый normal interval;
+- terminal success: clock=terminal timestamp, revision+1, later due events → `unprocessedEvents`;
 - task/deadline projection pure и deterministic;
-- RNG state/provenance explicit и repeatable.
+- RNG state/provenance explicit и repeatable;
+- replay fingerprint использует существующий `canonicalStringify` + SHA-256.
 
-Generated `capabilities.json` — машинный источник реально опубликованных типов. Planned HTTP operations по-прежнему не являются available.
+Canonical B03 acceptance доказана T05/T06/T08 и replay regressions; решение — ADR 0010.
 
-## Почему общий B03 ещё открыт
+## Следующий блок — B04
 
-Canonical audit после B03-03 выявил четыре конкретных gap, описанных в [B03-04](../tasks/B03-04-b03-matrix-closure.md):
+B04 начинается только после merge PR #11 и зелёного push-CI `main`.
 
-1. typed entity movement и exact T05 (NPC return at 900 inside interval to 2400);
-2. exact T06 same timestamp completion-before-deadline + crossing 86_400 integer seconds;
-3. dynamic generated child-event processing с sequence/step budget для exact T08;
-4. deterministic scheduler replay/state hash для same plan+seed.
+Канонический scope B04:
 
-Это последний bounded B03 slice. Не заменяй его ранним переходом к B04.
+- Memory/SQLite storage contract;
+- operation claim с `(sessionId, idempotencyKey, requestHash, expectedRevision)`;
+- lease + monotonic fencing token;
+- atomic commit candidate state + turn record + public response;
+- recovery/idempotent response после lost HTTP response;
+- Runtime API и player-safe projection;
+- T10–12/T15.
 
-## Что не делать сейчас
+Ключевой invariant: **Runtime/Storage не переписывает B03 scheduler semantics.** Оно сохраняет один уже рассчитанный candidate transition либо не сохраняет ничего.
 
-Не добавляй persistence, SQLite/Memory adapters, HTTP, idempotency/leases, background loops, wall-clock timers, LLM, Studio/Player или generic plugin manager. Они относятся к следующим блокам.
+## Что не делать в первом B04 slice
 
-Следующая карточка: `docs/tasks/B03-04-b03-matrix-closure.md`.
+Не добавляй LLM, Studio, Player redesign, Florence migration, background realtime, Redis/queues, несколько storage adapters «на будущее» или generic plugin manager. Не держи SQLite write transaction открытой во время будущего LLM-вызова.
 
-Минимальный цикл: один bounded-шаг → regression реального риска → `npm run verify` → STATUS/HANDOFF/worklog → canonical B03 re-audit.
+Сначала создай bounded B04 task-card с одним проверяемым риском вокруг operation/storage atomicity, затем код → regression → `npm run verify` → STATUS/HANDOFF/worklog.

@@ -27,6 +27,16 @@ function transfer(itemId, destination, sourceId = "action.transfer") {
   };
 }
 
+function move(entityId, locationId, sourceId = "task.return") {
+  return {
+    schemaVersion: "1.0",
+    type: "entity.move",
+    sourceId,
+    entityId,
+    locationId
+  };
+}
+
 test("resource.change batch applies sequentially to a new state", async () => {
   const state = await loadState();
   const result = tryApplyEffectBatch(state, [
@@ -57,6 +67,47 @@ test("valid item.transfer moves one unique item without mutating authoritative i
   assert.equal(Object.keys(result.state.items[0].position).length, 2, "item has exactly one position representation");
   assert.equal(Object.isFrozen(result.state.items), true);
   assert.equal(Object.isFrozen(result.state.items[0].position), true);
+});
+
+test("entity.move changes exactly one existing entity location without mutating authoritative input", async () => {
+  const base = await loadState();
+  const state = {
+    ...base,
+    locations: [...base.locations, { id: "doctor" }],
+    entities: base.entities.map((entity) => ({ ...entity, locationId: "doctor" }))
+  };
+  const result = tryApplyEffectBatch(state, [move("painter", "workshop")]);
+
+  assert.equal(result.ok, true);
+  assert.equal(state.entities[0].locationId, "doctor", "authoritative entity must not move");
+  assert.equal(result.state.entities[0].locationId, "workshop");
+  assert.equal(result.state.entities.length, state.entities.length);
+  assert.equal(Object.isFrozen(result.state.entities), true);
+  assert.equal(Object.isFrozen(result.state.entities[0]), true);
+});
+
+test("entity.move reference failure keeps an earlier mixed trial batch atomic", async () => {
+  const state = await loadState();
+  const result = tryApplyEffectBatch(state, [
+    change("blue_paint", -1, "first.consume"),
+    move("painter", "missing-place", "second.invalid-move")
+  ]);
+
+  assert.deepEqual(result, {
+    ok: false,
+    code: "location_not_found",
+    effectIndex: 1,
+    effectType: "entity.move",
+    sourceId: "second.invalid-move"
+  });
+  assert.equal("state" in result, false);
+  assert.equal(state.resources[0].value, 2);
+  assert.equal(state.entities[0].locationId, "workshop");
+
+  const missingEntity = tryApplyEffectBatch(state, [move("missing-entity", "workshop")]);
+  assert.equal(missingEntity.ok, false);
+  assert.equal(missingEntity.code, "entity_not_found");
+  assert.equal("state" in missingEntity, false);
 });
 
 test("T07 mixed batch is atomic when item transfer fails after resource change", async () => {

@@ -2,7 +2,7 @@ import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js
 import { isRecord } from "./result.js";
 import type { WorldItemPosition } from "./world-state.js";
 
-export const GAMEPLAY_EFFECT_TYPES = ["resource.change", "item.transfer"] as const;
+export const GAMEPLAY_EFFECT_TYPES = ["entity.move", "item.transfer", "resource.change"] as const;
 export type GameplayEffectType = (typeof GAMEPLAY_EFFECT_TYPES)[number];
 
 export interface ResourceChangeEffect {
@@ -21,12 +21,20 @@ export interface ItemTransferEffect {
   readonly destination: WorldItemPosition;
 }
 
+export interface EntityMoveEffect {
+  readonly schemaVersion: ContractSchemaVersion;
+  readonly type: "entity.move";
+  readonly sourceId: string;
+  readonly entityId: string;
+  readonly locationId: string;
+}
+
 /**
  * Executable gameplay effects are intentionally separate from the B01 generic
  * Effect envelope. Each executable type is added to this strict union only
  * together with deterministic Core semantics and tests.
  */
-export type GameplayEffect = ResourceChangeEffect | ItemTransferEffect;
+export type GameplayEffect = ResourceChangeEffect | ItemTransferEffect | EntityMoveEffect;
 
 export function isGameplayEffect(value: unknown): value is GameplayEffect {
   if (!isRecord(value) || value.schemaVersion !== CONTRACT_SCHEMA_VERSION) return false;
@@ -42,6 +50,12 @@ export function isGameplayEffect(value: unknown): value is GameplayEffect {
       && isSourceId(value.sourceId)
       && isId(value.itemId)
       && isItemPosition(value.destination);
+  }
+  if (value.type === "entity.move") {
+    return hasOnlyKeys(value, ["schemaVersion", "type", "sourceId", "entityId", "locationId"])
+      && isSourceId(value.sourceId)
+      && isId(value.entityId)
+      && isId(value.locationId);
   }
   return false;
 }

@@ -20,7 +20,7 @@ test("generated agent contracts expose only implemented capabilities", async () 
   assert.deepEqual(openapi.paths, {});
   assert.deepEqual(capabilities.operations, []);
   assert.deepEqual(capabilities.blockKinds, ["core.character", "core.location", "core.resource"]);
-  assert.deepEqual(capabilities.gameplayEffectTypes, ["item.transfer", "resource.change"]);
+  assert.deepEqual(capabilities.gameplayEffectTypes, ["entity.move", "item.transfer", "resource.change"]);
   assert.deepEqual(capabilities.conditionTypes, ["all", "any", "entity.at", "item.heldBy", "not", "resource.atLeast"]);
   assert.deepEqual(capabilities.socialActTypes, ["permission", "request", "response"]);
   assert.deepEqual(capabilities.scheduledEventKinds, ["core.effects", "core.marker", "core.terminal"]);

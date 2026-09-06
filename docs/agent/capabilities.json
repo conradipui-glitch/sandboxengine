@@ -6,6 +6,7 @@
     "core.resource"
   ],
   "gameplayEffectTypes": [
+    "entity.move",
     "item.transfer",
     "resource.change"
   ],

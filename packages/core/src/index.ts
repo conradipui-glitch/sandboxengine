@@ -42,6 +42,10 @@ export {
   type SocialResolutionSuccess
 } from "./social.js";
 export {
+  CORE_DEADLINE_PRIORITY,
+  CORE_TASK_START_INTERNAL_ORDER,
+  CORE_TASK_STEP_PRIORITY,
+  CORE_WORLD_EVENT_PRIORITY,
   DEFAULT_MAX_EVENTS_PER_INTERVAL,
   HARD_MAX_EVENTS_PER_INTERVAL,
   applyTimeAdvancePlan,
@@ -58,6 +62,27 @@ export {
   type TimeAdvancePlanResult,
   type TimeAdvancePlanSuccess
 } from "./scheduler.js";
+export {
+  DEFAULT_MAX_SCHEDULER_EVENTS,
+  DEFAULT_MAX_SCHEDULER_STEPS,
+  HARD_MAX_SCHEDULER_EVENTS,
+  HARD_MAX_SCHEDULER_STEPS,
+  processTimeAdvancePlan,
+  type ProcessedSchedulerEvent,
+  type SchedulerEventHandler,
+  type SchedulerProcessingContext,
+  type SchedulerProcessingFailure,
+  type SchedulerProcessingFailureCode,
+  type SchedulerProcessingOptions,
+  type SchedulerProcessingResult,
+  type SchedulerProcessingSuccess
+} from "./scheduler-process.js";
+export {
+  buildSchedulerReplayFingerprint,
+  type SchedulerReplayFingerprint,
+  type SchedulerReplayFingerprintInput,
+  type SchedulerReplayVersions
+} from "./scheduler-replay.js";
 export {
   projectDeadlineEvent,
   projectTaskEvents,
@@ -87,6 +112,7 @@ export type {
   CalculatedAction,
   Condition,
   EffectRef,
+  EntityMoveEffect,
   GameplayEffect,
   ItemTransferEffect,
   QuestRelease,
