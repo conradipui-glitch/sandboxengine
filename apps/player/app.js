@@ -89,9 +89,7 @@ async function loadMetadata() {
 
 function render() {
   if (!state.meta || !state.session) {
-    root.innerHTML = state.phase === "error"
-      ? `<div class="boot">${escapeHtml(state.message)}</div>`
-      : `<div class="boot">${escapeHtml(state.message)}</div>`;
+    root.innerHTML = `<div class="boot">${escapeHtml(state.message)}</div>`;
     return;
   }
 
@@ -199,8 +197,9 @@ function setError(error) {
 }
 
 function makeIdempotencyKey() {
-  const suffix = typeof crypto?.randomUUID === "function"
-    ? crypto.randomUUID()
+  const randomUuid = globalThis.crypto?.randomUUID;
+  const suffix = typeof randomUuid === "function"
+    ? randomUuid.call(globalThis.crypto)
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `player-paint-${suffix}`;
 }
