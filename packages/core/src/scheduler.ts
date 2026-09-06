@@ -1,9 +1,10 @@
 import {
   CONTRACT_SCHEMA_VERSION,
-  isScheduledEvent,
-  type ScheduledEvent,
+  isSchedulerEvent,
+  type SchedulerEvent,
   type WorldState
 } from "@living-history/contracts";
+import { tryApplyEffectBatch, type EffectBatchFailure } from "./effects.js";
 
 export const DEFAULT_MAX_EVENTS_PER_INTERVAL = 100;
 export const HARD_MAX_EVENTS_PER_INTERVAL = 1000;
@@ -26,8 +27,8 @@ export interface TimeAdvancePlanSuccess {
   readonly ok: true;
   readonly startElapsedSeconds: number;
   readonly endElapsedSeconds: number;
-  readonly dueEvents: readonly ScheduledEvent[];
-  readonly pendingEvents: readonly ScheduledEvent[];
+  readonly dueEvents: readonly SchedulerEvent[];
+  readonly pendingEvents: readonly SchedulerEvent[];
 }
 
 export interface TimeAdvancePlanFailure {
@@ -40,6 +41,30 @@ export interface TimeAdvancePlanFailure {
 
 export type TimeAdvancePlanResult = TimeAdvancePlanSuccess | TimeAdvancePlanFailure;
 
+export type TimeAdvanceApplyFailureCode =
+  | "invalid_state"
+  | "invalid_plan"
+  | "plan_state_mismatch"
+  | "revision_overflow"
+  | "event_effect_failed";
+
+export interface TimeAdvanceApplySuccess {
+  readonly ok: true;
+  readonly state: WorldState;
+  readonly appliedEvents: readonly SchedulerEvent[];
+  readonly pendingEvents: readonly SchedulerEvent[];
+}
+
+export interface TimeAdvanceApplyFailure {
+  readonly ok: false;
+  readonly code: TimeAdvanceApplyFailureCode;
+  readonly eventIndex?: number;
+  readonly eventId?: string;
+  readonly effectFailure?: EffectBatchFailure;
+}
+
+export type TimeAdvanceApplyResult = TimeAdvanceApplySuccess | TimeAdvanceApplyFailure;
+
 /**
  * Creates a deterministic plan for the inclusive game-time interval [start, end].
  * This function never mutates WorldState, never applies event effects, and never
@@ -49,38 +74,38 @@ export type TimeAdvancePlanResult = TimeAdvancePlanSuccess | TimeAdvancePlanFail
 export function planTimeAdvance(
   state: WorldState,
   durationSeconds: number,
-  events: readonly ScheduledEvent[],
+  events: readonly SchedulerEvent[],
   options: TimeAdvanceOptions = {}
 ): TimeAdvancePlanResult {
   const startElapsedSeconds = state.clock?.elapsedSeconds;
   if (state.schemaVersion !== CONTRACT_SCHEMA_VERSION
     || !isSafeNonNegativeInteger(state.revision)
     || !isSafeNonNegativeInteger(startElapsedSeconds)) {
-    return failure("invalid_state");
+    return planFailure("invalid_state");
   }
-  if (!isSafeNonNegativeInteger(durationSeconds)) return failure("invalid_duration");
+  if (!isSafeNonNegativeInteger(durationSeconds)) return planFailure("invalid_duration");
 
   const maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS_PER_INTERVAL;
   if (!Number.isSafeInteger(maxEvents)
     || maxEvents < 1
     || maxEvents > HARD_MAX_EVENTS_PER_INTERVAL) {
-    return failure("invalid_options");
+    return planFailure("invalid_options");
   }
 
   const endElapsedSeconds = startElapsedSeconds + durationSeconds;
-  if (!Number.isSafeInteger(endElapsedSeconds)) return failure("clock_overflow");
+  if (!Number.isSafeInteger(endElapsedSeconds)) return planFailure("clock_overflow");
 
   const seenIds = new Set<string>();
-  const copied: ScheduledEvent[] = [];
+  const copied: SchedulerEvent[] = [];
   for (const event of events) {
-    if (!isScheduledEvent(event)) return failure("invalid_event");
-    if (seenIds.has(event.eventId)) return failure("duplicate_event_id", event.eventId);
+    if (!isSchedulerEvent(event)) return planFailure("invalid_event");
+    if (seenIds.has(event.eventId)) return planFailure("duplicate_event_id", event.eventId);
     seenIds.add(event.eventId);
-    if (event.atElapsedSeconds < startElapsedSeconds) return failure("past_event", event.eventId);
+    if (event.atElapsedSeconds < startElapsedSeconds) return planFailure("past_event", event.eventId);
     copied.push(event);
   }
 
-  copied.sort(compareScheduledEvents);
+  copied.sort(compareSchedulerEvents);
   const dueEvents = copied.filter((event) => event.atElapsedSeconds <= endElapsedSeconds);
   if (dueEvents.length > maxEvents) {
     return Object.freeze({
@@ -101,22 +126,122 @@ export function planTimeAdvance(
   });
 }
 
-export function compareScheduledEvents(left: ScheduledEvent, right: ScheduledEvent): number {
-  if (left.atElapsedSeconds !== right.atElapsedSeconds) {
-    return left.atElapsedSeconds - right.atElapsedSeconds;
+/**
+ * Applies one already-built time plan as a single Core transition. Due events
+ * observe state changes from earlier due events, but a later failure exposes no
+ * partial next state. On complete success clock moves to plan.end and revision
+ * increments exactly once, including a zero-duration committed transition.
+ */
+export function applyTimeAdvancePlan(
+  state: WorldState,
+  plan: TimeAdvancePlanSuccess
+): TimeAdvanceApplyResult {
+  const startElapsedSeconds = state.clock?.elapsedSeconds;
+  if (state.schemaVersion !== CONTRACT_SCHEMA_VERSION
+    || !isSafeNonNegativeInteger(state.revision)
+    || !isSafeNonNegativeInteger(startElapsedSeconds)) {
+    return applyFailure("invalid_state");
   }
-  if (left.order !== right.order) return left.order - right.order;
+  if (!isValidPlanShape(plan)) return applyFailure("invalid_plan");
+  if (plan.startElapsedSeconds !== startElapsedSeconds) {
+    return applyFailure("plan_state_mismatch");
+  }
+  if (state.revision === Number.MAX_SAFE_INTEGER) return applyFailure("revision_overflow");
+
+  let trialState = state;
+  for (let index = 0; index < plan.dueEvents.length; index += 1) {
+    const event = plan.dueEvents[index];
+    if (!event) return applyFailure("invalid_plan");
+    if (event.kind === "core.effects") {
+      const applied = tryApplyEffectBatch(trialState, event.payload.effects);
+      if (!applied.ok) {
+        return Object.freeze({
+          ok: false,
+          code: "event_effect_failed",
+          eventIndex: index,
+          eventId: event.eventId,
+          effectFailure: applied
+        });
+      }
+      trialState = applied.state;
+    }
+  }
+
+  const nextState: WorldState = Object.freeze({
+    ...trialState,
+    revision: state.revision + 1,
+    clock: Object.freeze({ elapsedSeconds: plan.endElapsedSeconds })
+  });
+
+  return Object.freeze({
+    ok: true,
+    state: nextState,
+    appliedEvents: Object.freeze([...plan.dueEvents]),
+    pendingEvents: Object.freeze([...plan.pendingEvents])
+  });
+}
+
+export function compareSchedulerEvents(left: SchedulerEvent, right: SchedulerEvent): number {
+  if (left.atElapsedSeconds < right.atElapsedSeconds) return -1;
+  if (left.atElapsedSeconds > right.atElapsedSeconds) return 1;
+  if (left.order < right.order) return -1;
+  if (left.order > right.order) return 1;
   if (left.eventId < right.eventId) return -1;
   if (left.eventId > right.eventId) return 1;
   return 0;
+}
+
+/** Backward-compatible B03-01 export name. */
+export const compareScheduledEvents = compareSchedulerEvents;
+
+function isValidPlanShape(plan: TimeAdvancePlanSuccess): boolean {
+  if (plan?.ok !== true
+    || !isSafeNonNegativeInteger(plan.startElapsedSeconds)
+    || !isSafeNonNegativeInteger(plan.endElapsedSeconds)
+    || plan.endElapsedSeconds < plan.startElapsedSeconds
+    || !Array.isArray(plan.dueEvents)
+    || !Array.isArray(plan.pendingEvents)) {
+    return false;
+  }
+
+  const allEvents = [...plan.dueEvents, ...plan.pendingEvents];
+  if (!allEvents.every(isSchedulerEvent)) return false;
+  const ids = new Set<string>();
+  for (const event of allEvents) {
+    if (ids.has(event.eventId)) return false;
+    ids.add(event.eventId);
+  }
+
+  for (const event of plan.dueEvents) {
+    if (event.atElapsedSeconds < plan.startElapsedSeconds
+      || event.atElapsedSeconds > plan.endElapsedSeconds) return false;
+  }
+  for (const event of plan.pendingEvents) {
+    if (event.atElapsedSeconds <= plan.endElapsedSeconds) return false;
+  }
+
+  return isSorted(plan.dueEvents) && isSorted(plan.pendingEvents);
+}
+
+function isSorted(events: readonly SchedulerEvent[]): boolean {
+  for (let index = 1; index < events.length; index += 1) {
+    const previous = events[index - 1];
+    const current = events[index];
+    if (!previous || !current || compareSchedulerEvents(previous, current) > 0) return false;
+  }
+  return true;
 }
 
 function isSafeNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-function failure(code: TimeAdvanceFailureCode, eventId?: string): TimeAdvancePlanFailure {
+function planFailure(code: TimeAdvanceFailureCode, eventId?: string): TimeAdvancePlanFailure {
   return eventId === undefined
     ? Object.freeze({ ok: false, code })
     : Object.freeze({ ok: false, code, eventId });
+}
+
+function applyFailure(code: TimeAdvanceApplyFailureCode): TimeAdvanceApplyFailure {
+  return Object.freeze({ ok: false, code });
 }

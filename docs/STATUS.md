@@ -4,44 +4,46 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | B01 и общий B02 приняты; B03-01 реализован | B02-03 merge `2bb15df2f5bb493828ea59c796e776cf01e259fc`; B02-04 merge `ec9b676cf1f424514204c51a63fa37fd3c6e8472`; B03-01 PR #8, CI `34032426350` |
-| Контракты | B03-01 добавил scheduler contract | strict `GameplayEffect`, `Condition`, `SocialAct`, `CalculatedAction`, `ScheduledEvent` v1.0; generated capabilities current |
+| Репозиторий и навигация | B01/B02 приняты; B03-01 и B03-02 реализованы | B03-01 merge `e2605c3f24fd456fb11ed0b8dbcc3b00e97e3893`; B03-02 PR #9, CI `34032919106` |
+| Контракты | B03-02 расширил scheduler без silent widening | marker-only `ScheduledEvent:1.0` сохранён; новый `ScheduledEffectEvent:1.0`; generated capabilities current |
 | Core action execution | B02 принят | read-only authoritative input, explicit resolver, trial effect batch, executed/partial/conditional/blocked |
 | Resources/items | B02 принят | `resource.change`, `item.transfer`, mixed batch atomicity T07 |
 | Conditions | B02 принят | resource/entity/item predicates + all/any/not; false отделён от broken reference |
 | Player/social agency | B02 принят | request ≠ permission ≠ response; request conditional; accept/refuse explicit; no hidden physical effects |
-| Scheduler planning | B03-01 accepted по bounded-приёмке | integer elapsedSeconds, `ScheduledEvent`, inclusive `[start,end]`, deterministic order, past/limit/overflow failures |
-| Scheduler application/tasks | следующий срез | B03-02 — event effects + чистый clock/revision transition; B03-03 — tasks/deadlines/interruptions/terminal/RNG |
+| Scheduler planning | B03-01 принят | integer elapsedSeconds, inclusive `[start,end]`, deterministic `time → order → eventId`, explicit queue failures |
+| Scheduler state transition | B03-02 accepted по bounded-приёмке | `core.effects` через отдельный strict contract; chronological effect application; whole-transition atomicity; clock=end/revision+1 |
+| Tasks/deadlines/interruptions/RNG | следующий срез | [B03-03](tasks/B03-03-tasks-deadlines-interruptions-rng.md); после него сверить общий B03/T05–06/T08 |
 | Runtime/API/storage | не начато | B04 после общего B03 |
 | Studio/Player | не начато | B05/B07 |
 | AI-провайдеры/свободный ввод | не начато | B06; модель должна отображать текст на уже существующие Core-смыслы |
 | Плагины/Builder | не начато | B08/B13 |
 | Миграция Florence | не начато | B11 |
 
-## Что движок умеет после B03-01
+## Что движок умеет после B03-02
 
-B02 invariants остаются принятыми: explicit action resolution, conditions, atomic effects и social/player-agency semantics.
+Поверх принятых B02 invariants scheduler теперь умеет:
 
-Новый scheduler planning layer умеет без wall-clock:
+- построить детерминированный integer-time plan независимо от порядка input-массива;
+- различить marker event и отдельный effect-bearing event contract;
+- применять due `GameplayEffect` по хронологии через единый B02 `tryApplyEffectBatch`;
+- дать более позднему событию увидеть state после более раннего;
+- отклонить весь scheduler transition, если поздний event effect падает, без возврата partial state;
+- на полном success вернуть immutable state с clock=`plan.end` и revision+1 ровно один раз;
+- вернуть future pending events без преждевременного применения;
+- проверить plan/state mismatch, malformed ordering и revision overflow.
 
-- взять authoritative `WorldState.clock.elapsedSeconds` и рассчитанную duration;
-- безопасно вычислить integer interval `[start,end]`;
-- провалиться на past event, duplicate id, unsafe integer, clock overflow или event-limit;
-- отсортировать события независимо от input order по `time → order → eventId`;
-- включить событие ровно в start/end согласно inclusive semantics;
-- оставить событие после end pending;
-- при duration=0 не затронуть будущие события;
-- вернуть plan, не изменяя authoritative state.
+Опорная chronology-регрессия: initial paint=2; input содержит spend -4 at 400 раньше delivery +2 at 300. Планировщик переставляет события по времени: +2 → -4; final paint=0, clock=600, revision 7→8.
 
-Опорная регрессия B03-01: action duration=600 sec, event at=300 sec → event находится в due plan раньше action end; исходный clock при planning остаётся 0.
+Опорная atomicity-регрессия: +2 at 300 успешно на trial, затем item transfer к missing holder at 400 падает; result без state, authoritative input остаётся неизменённым.
 
-## Что B03-01 ещё не делает
+## Что ещё не делает общий B03
 
-- event effects не применяются;
-- `WorldState.clock` и revision не коммитятся;
-- очередь не хранится;
-- NPC tasks/deadlines/interruptions/terminal/RNG отсутствуют.
+- нет task definitions/lifecycle;
+- deadline пока не является terminal interruption;
+- terminal event не обрывает длинное действие;
+- deterministic RNG/provenance ещё отсутствует;
+- очередь/state не сохраняются между HTTP-запросами — это B04.
 
-Следующий шаг — [B03-02](tasks/B03-02-event-effects-and-clock-commit.md).
+Следующий шаг — [B03-03](tasks/B03-03-tasks-deadlines-interruptions-rng.md).
 
 Известное наблюдение CI: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельной проверки не выполнялся.

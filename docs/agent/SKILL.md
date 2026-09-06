@@ -36,6 +36,7 @@ Generated file. Do not edit by hand.
 
 ## Available scheduled events
 
+- `core.effects`
 - `core.marker`
 
 ## Available calculated actions

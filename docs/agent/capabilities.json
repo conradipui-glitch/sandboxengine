@@ -23,6 +23,7 @@
     "response"
   ],
   "scheduledEventKinds": [
+    "core.effects",
     "core.marker"
   ],
   "actionTypes": [

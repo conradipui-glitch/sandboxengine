@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "event.empty",
+  "atElapsedSeconds": 300,
+  "order": 10,
+  "sourceId": "task.empty",
+  "kind": "core.effects",
+  "payload": {
+    "effects": []
+  }
+}
