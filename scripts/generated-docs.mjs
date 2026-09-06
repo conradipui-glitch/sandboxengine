@@ -23,7 +23,7 @@ export async function buildGeneratedDocs(root) {
   let gameplayEffectTypes = [];
   let conditionTypes = [];
   let socialActTypes = [];
-  let scheduledEventKinds = [];
+  const scheduledEventKinds = [];
   let actionTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
@@ -59,8 +59,9 @@ export async function buildGeneratedDocs(root) {
     if (name === "social-act") {
       socialActTypes = ["permission", "request", "response"];
     }
-    if (name === "scheduled-event") {
-      scheduledEventKinds = [schema.properties.kind.const];
+    if (name === "scheduled-event" || name === "scheduled-effect-event") {
+      const kind = schema?.properties?.kind?.const;
+      if (typeof kind === "string") scheduledEventKinds.push(kind);
     }
     if (name === "calculated-action") {
       actionTypes = schema.oneOf
@@ -69,6 +70,7 @@ export async function buildGeneratedDocs(root) {
         .sort();
     }
   }
+  scheduledEventKinds.sort();
 
   if (contractsSchemaVersion === null) throw new Error("No contract schema version found");
 
