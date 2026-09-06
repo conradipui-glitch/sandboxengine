@@ -57,9 +57,7 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
   constructor(options: MemoryRuntimeStorageOptions) {
     this.#clock = options.clock;
     this.#operationIdFactory = options.operationIdFactory ?? ((ordinal) => `op-${ordinal}`);
-
-    const serviceNow = this.#clock.nowMs();
-    if (!isSafeNonNegativeInteger(serviceNow)) throw new RangeError("ServiceClock returned invalid time");
+    this.#serviceNow();
 
     for (const seed of options.sessions) {
       if (!isValidSeedSession(seed) || this.#sessions.has(seed.sessionId)) {
@@ -99,13 +97,14 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     const session = this.#sessions.get(input.sessionId);
     if (!session) return frozen({ kind: "session_not_found" });
 
+    const requestHash = canonicalRequestHash(input.requestHash);
     const key = operationKey(input.sessionId, input.idempotencyKey);
     const existingId = this.#operationByKey.get(key);
+
     if (existingId !== undefined) {
       const existing = this.#operations.get(existingId);
       if (!existing) return frozen({ kind: "invalid_request" });
-
-      if (existing.requestHash !== input.requestHash || existing.expectedRevision !== input.expectedRevision) {
+      if (existing.requestHash !== requestHash || existing.expectedRevision !== input.expectedRevision) {
         return frozen({ kind: "idempotency_key_reused", operationId: existing.operationId });
       }
 
@@ -121,7 +120,6 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
       if (existing.leaseExpiresAtMs !== null && now < existing.leaseExpiresAtMs) {
         return frozen({ kind: "processing", operation: snapshotOperation(existing) });
       }
-
       if (session.revision !== input.expectedRevision) {
         return frozen({ kind: "revision_conflict", currentRevision: session.revision });
       }
@@ -129,15 +127,15 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
         return frozen({ kind: "action_in_progress", operationId: session.activeOperationId });
       }
 
-      const token = nextFencingToken(session);
-      if (token === null) return frozen({ kind: "invalid_request" });
+      const fencingToken = nextFencingToken(session);
+      if (fencingToken === null) return frozen({ kind: "invalid_request" });
       const reacquired: OperationRecord = frozen({
         ...existing,
         leaseExpiresAtMs: now + input.leaseDurationMs,
-        fencingToken: token
+        fencingToken
       });
       session.activeOperationId = existing.operationId;
-      session.fencingCounter = token;
+      session.fencingCounter = fencingToken;
       this.#operations.set(existing.operationId, reacquired);
       return frozen({ kind: "acquired", operation: snapshotOperation(reacquired), reacquired: true });
     }
@@ -149,8 +147,8 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
       return frozen({ kind: "action_in_progress", operationId: session.activeOperationId });
     }
 
-    const token = nextFencingToken(session);
-    if (token === null) return frozen({ kind: "invalid_request" });
+    const fencingToken = nextFencingToken(session);
+    if (fencingToken === null) return frozen({ kind: "invalid_request" });
     const operationId = this.#operationIdFactory(this.#nextOperationOrdinal++);
     if (!isRuntimeId(operationId) || this.#operations.has(operationId)) {
       return frozen({ kind: "invalid_request" });
@@ -160,18 +158,18 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
       operationId,
       sessionId: input.sessionId,
       idempotencyKey: input.idempotencyKey,
-      requestHash: input.requestHash.toLowerCase(),
+      requestHash,
       expectedRevision: input.expectedRevision,
       status: "processing",
       leaseExpiresAtMs: now + input.leaseDurationMs,
-      fencingToken: token,
+      fencingToken,
       completionKind: null,
       turnId: null,
       publicResponse: null
     });
 
     session.activeOperationId = operationId;
-    session.fencingCounter = token;
+    session.fencingCounter = fencingToken;
     this.#operations.set(operationId, operation);
     this.#operationByKey.set(key, operationId);
     return frozen({ kind: "acquired", operation: snapshotOperation(operation), reacquired: false });
@@ -182,7 +180,6 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     if (!isValidRenewInput(input) || !isLeaseEndSafe(now, input.leaseDurationMs)) {
       return frozen({ kind: "invalid_request" });
     }
-
     const session = this.#sessions.get(input.sessionId);
     if (!session) return frozen({ kind: "session_not_found" });
     const operation = this.#operations.get(input.operationId);
@@ -190,14 +187,9 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     if (operation.status !== "processing") return frozen({ kind: "operation_not_processing" });
     if (session.activeOperationId !== operation.operationId) return frozen({ kind: "operation_not_active" });
     if (operation.fencingToken !== input.fencingToken) return frozen({ kind: "stale_fencing_token" });
-    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) {
-      return frozen({ kind: "lease_expired" });
-    }
+    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) return frozen({ kind: "lease_expired" });
 
-    const renewed: OperationRecord = frozen({
-      ...operation,
-      leaseExpiresAtMs: now + input.leaseDurationMs
-    });
+    const renewed: OperationRecord = frozen({ ...operation, leaseExpiresAtMs: now + input.leaseDurationMs });
     this.#operations.set(operation.operationId, renewed);
     return frozen({ kind: "renewed", operation: snapshotOperation(renewed) });
   }
@@ -219,19 +211,12 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     }
     if (session.activeOperationId !== operation.operationId) return frozen({ kind: "operation_not_active" });
     if (operation.fencingToken !== input.fencingToken) return frozen({ kind: "stale_fencing_token" });
-    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) {
-      return frozen({ kind: "lease_expired" });
-    }
-    if (!isValidCandidateState(input.candidateState, input.expectedRevision)) {
-      return frozen({ kind: "invalid_candidate_state" });
-    }
+    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) return frozen({ kind: "lease_expired" });
+    if (!isValidCandidateState(input.candidateState, input.expectedRevision)) return frozen({ kind: "invalid_candidate_state" });
     if (!isValidTurnRecord(input.turnRecord, operation, input.expectedRevision)
-      || this.#turnExists(input.sessionId, input.turnRecord.turnId)) {
-      return frozen({ kind: "invalid_turn_record" });
-    }
+      || this.#turnExists(input.sessionId, input.turnRecord.turnId)) return frozen({ kind: "invalid_turn_record" });
     if (!isPublicResponse(input.publicResponse)) return frozen({ kind: "invalid_public_response" });
 
-    // Prepare every replacement before mutating the authoritative maps.
     const nextState = deepFreeze(cloneJson(input.candidateState));
     const nextResponse = cloneAndFreezePublicResponse(input.publicResponse);
     const nextTurn = deepFreeze(cloneJson(input.turnRecord));
@@ -252,11 +237,7 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     this.#operations.set(operation.operationId, nextOperation);
     this.#turns.set(input.sessionId, nextTurns);
 
-    return frozen({
-      kind: "committed",
-      session: snapshotSession(session),
-      operation: snapshotOperation(nextOperation)
-    });
+    return frozen({ kind: "committed", session: snapshotSession(session), operation: snapshotOperation(nextOperation) });
   }
 
   async finishWithoutTurn(input: FinishWithoutTurnInput): Promise<FinishWithoutTurnResult> {
@@ -276,9 +257,7 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     }
     if (session.activeOperationId !== operation.operationId) return frozen({ kind: "operation_not_active" });
     if (operation.fencingToken !== input.fencingToken) return frozen({ kind: "stale_fencing_token" });
-    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) {
-      return frozen({ kind: "lease_expired" });
-    }
+    if (operation.leaseExpiresAtMs === null || now >= operation.leaseExpiresAtMs) return frozen({ kind: "lease_expired" });
     if (!isPublicResponse(input.publicResponse)) return frozen({ kind: "invalid_public_response" });
 
     const nextResponse = cloneAndFreezePublicResponse(input.publicResponse);
@@ -292,12 +271,7 @@ export class MemoryRuntimeStorage implements RuntimeStorage {
     });
     session.activeOperationId = null;
     this.#operations.set(operation.operationId, nextOperation);
-
-    return frozen({
-      kind: "finished",
-      session: snapshotSession(session),
-      operation: snapshotOperation(nextOperation)
-    });
+    return frozen({ kind: "finished", session: snapshotSession(session), operation: snapshotOperation(nextOperation) });
   }
 
   /** Test-only inspection; not part of RuntimeStorage or future public API. */
@@ -434,6 +408,10 @@ function isIdempotencyKey(value: unknown): value is string {
 
 function isSha256(value: unknown): value is string {
   return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
+}
+
+function canonicalRequestHash(value: string): string {
+  return value.toLowerCase();
 }
 
 function isSafeNonNegativeInteger(value: unknown): value is number {
