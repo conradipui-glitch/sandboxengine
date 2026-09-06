@@ -7,9 +7,7 @@ import {
   projectPlayerView,
   type PinnedReleaseIdentity,
   type RuntimeGuestSessionAccess,
-  type RuntimePublicResponse,
-  type RuntimeStorage,
-  type SessionRecord
+  type RuntimeStorage
 } from "@living-history/runtime";
 import type { WorldState } from "@living-history/contracts";
 import {
@@ -61,16 +59,19 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
     throw new RangeError("leaseDurationMs outside runtime bounds");
   }
 
+  const resolved: ResolvedServerDependencies = {
+    storage: dependencies.storage,
+    guestAccess: dependencies.guestAccess,
+    templates,
+    executor,
+    createSessionId,
+    createCredential,
+    leaseDurationMs
+  };
+
   const server = createServer(async (request: any, response: any) => {
     try {
-      await routeRequest(request, response, {
-        ...dependencies,
-        templates,
-        executor,
-        createSessionId,
-        createCredential,
-        leaseDurationMs
-      });
+      await routeRequest(request, response, resolved);
     } catch (error) {
       if (error instanceof SQLiteStorageBusyError) {
         sendJson(response, 503, { error: { code: "STORAGE_BUSY" } });
@@ -111,13 +112,15 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
   });
 }
 
-interface ResolvedServerDependencies extends RuntimeServerDependencies {
+type ResolvedServerDependencies = {
+  readonly storage: RuntimeStorage;
+  readonly guestAccess: RuntimeGuestSessionAccess;
   readonly templates: ReadonlyMap<string, RuntimeSessionTemplate>;
   readonly executor: ExplicitActionExecutor;
   readonly createSessionId: () => string;
   readonly createCredential: () => string;
   readonly leaseDurationMs: number;
-}
+};
 
 async function routeRequest(request: any, response: any, deps: ResolvedServerDependencies): Promise<void> {
   const method = String(request.method ?? "GET").toUpperCase();
@@ -188,8 +191,12 @@ async function routeRequest(request: any, response: any, deps: ResolvedServerDep
 
 async function createGuestSession(request: any, response: any, deps: ResolvedServerDependencies): Promise<void> {
   const body = await readJsonBody(request);
-  if (!body.ok || !isPlainObject(body.value) || Object.keys(body.value).length !== 1 || typeof body.value.templateId !== "string") {
+  if (!body.ok) {
     sendJson(response, body.status, { error: { code: body.code } });
+    return;
+  }
+  if (!isPlainObject(body.value) || Object.keys(body.value).length !== 1 || typeof body.value.templateId !== "string") {
+    sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
     return;
   }
   const template = deps.templates.get(body.value.templateId);
