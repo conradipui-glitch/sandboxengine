@@ -23,6 +23,7 @@ export async function buildGeneratedDocs(root) {
   let gameplayEffectTypes = [];
   let conditionTypes = [];
   let socialActTypes = [];
+  let scheduledEventKinds = [];
   let actionTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
@@ -58,6 +59,9 @@ export async function buildGeneratedDocs(root) {
     if (name === "social-act") {
       socialActTypes = ["permission", "request", "response"];
     }
+    if (name === "scheduled-event") {
+      scheduledEventKinds = [schema.properties.kind.const];
+    }
     if (name === "calculated-action") {
       actionTypes = schema.oneOf
         .map((variant) => variant?.properties?.actionType?.const)
@@ -82,6 +86,7 @@ export async function buildGeneratedDocs(root) {
     gameplayEffectTypes,
     conditionTypes,
     socialActTypes,
+    scheduledEventKinds,
     actionTypes,
     operations: availableOperations
   };
@@ -100,6 +105,7 @@ export async function buildGeneratedDocs(root) {
     gameplayEffectTypes,
     conditionTypes,
     socialActTypes,
+    scheduledEventKinds,
     actionTypes,
     schemas
   }));
@@ -117,6 +123,7 @@ export async function buildGeneratedDocs(root) {
     gameplayEffectTypes,
     conditionTypes,
     socialActTypes,
+    scheduledEventKinds,
     actionTypes,
     availableOperations
   });
@@ -176,7 +183,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, actionTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, scheduledEventKinds, actionTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -190,6 +197,9 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
   const socialLines = socialActTypes.length === 0
     ? "- Нет social act contracts."
     : socialActTypes.map((type) => `- \`${type}\``).join("\n");
+  const scheduledEventLines = scheduledEventKinds.length === 0
+    ? "- Нет scheduler event contracts."
+    : scheduledEventKinds.map((kind) => `- \`${kind}\``).join("\n");
   const actionLines = actionTypes.length === 0
     ? "- Нет рассчитанных action types."
     : actionTypes.map((type) => `- \`${type}\``).join("\n");
@@ -204,6 +214,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
     `## Available gameplay effects\n\n${effectLines}\n\n` +
     `## Available conditions\n\n${conditionLines}\n\n` +
     `## Available social acts\n\n${socialLines}\n\n` +
+    `## Available scheduled events\n\n${scheduledEventLines}\n\n` +
     `## Available calculated actions\n\n${actionLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +

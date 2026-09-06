@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "event.invalid",
+  "atElapsedSeconds": -1,
+  "order": 0,
+  "sourceId": "task.invalid",
+  "kind": "core.marker",
+  "payload": {
+    "markerId": "invalid"
+  }
+}

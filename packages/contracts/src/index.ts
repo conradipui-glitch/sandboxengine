@@ -56,6 +56,13 @@ export {
   type SocialResponseDecision
 } from "./social-act.js";
 export {
+  SCHEDULED_EVENT_KINDS,
+  isScheduledEvent,
+  type MarkerEventPayload,
+  type ScheduledEvent,
+  type ScheduledEventKind
+} from "./scheduled-event.js";
+export {
   CALCULATED_ACTION_TYPES,
   isCalculatedAction,
   type CalculatedAction,

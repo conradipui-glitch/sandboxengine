@@ -41,6 +41,17 @@ export {
   type SocialResolutionResult,
   type SocialResolutionSuccess
 } from "./social.js";
+export {
+  DEFAULT_MAX_EVENTS_PER_INTERVAL,
+  HARD_MAX_EVENTS_PER_INTERVAL,
+  compareScheduledEvents,
+  planTimeAdvance,
+  type TimeAdvanceFailureCode,
+  type TimeAdvanceOptions,
+  type TimeAdvancePlanFailure,
+  type TimeAdvancePlanResult,
+  type TimeAdvancePlanSuccess
+} from "./scheduler.js";
 export type {
   ActionResultEnvelope,
   Block,
@@ -52,6 +63,7 @@ export type {
   QuestRelease,
   ResolvedIntent,
   ResourceChangeEffect,
+  ScheduledEvent,
   SocialAct,
   SocialPermission,
   SocialRequest,

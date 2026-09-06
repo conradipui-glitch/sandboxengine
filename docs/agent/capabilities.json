@@ -22,6 +22,9 @@
     "request",
     "response"
   ],
+  "scheduledEventKinds": [
+    "core.marker"
+  ],
   "actionTypes": [
     "core.paint",
     "core.social.permission",
