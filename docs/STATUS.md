@@ -4,93 +4,73 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B05-03 published; B05-04 functional gate green на PR #18** | B05-03 merge `158fbd3169d3402621faf079b39bd5e8dc8d0c69`, main CI `34055023933`; B05-04 audit CI `34055820343` success → final docs/current-head gate → merge/main CI |
+| Репозиторий | **B01–B05 published; B06-01 functional gate green на PR #19** | B05 merge `002c2cd7c802f06d23f62ac8cde726afef845c24`, main CI `34055962204`; B06-01 hardened CI `34056571152` success → final docs/current-head gate → merge/main CI |
 | Контракты/Core | B01–B03 published | deterministic actions/effects/conditions/social/scheduler/RNG/replay |
 | Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP; T10–12/T15 |
-| Authoring / Control | **B05-01 published** | authoritative draft, validation, frozen playtest; ADR 0014 |
-| Studio UI | **B05-02/B05-03 published; B05-04 Help/Tour implemented** | human forms + frozen bridge + static repeatable onboarding |
-| Player basic author path | **B05-03 published** | frozen bootstrap → Runtime/Core → Player UI/reset; ADR 0016 |
-| Onboarding/help | **B05-04 accepted functionally на PR #18** | static Help, deterministic replayable tour, no AI/network mutation; ADR 0017 |
-| AI/free text | не начато | B06 после публикации всего B05 |
+| Authoring / Control | **B05 published** | authoritative draft → validation → frozen playtest → Player; T29 help/onboarding included |
+| Runtime AI provider | **B06-01 accepted functionally на PR #19** | `@living-history/ai`, compatible adapter, OpenRouter/custom connections, T30/T31 quota contracts; ADR 0018 |
+| Free-text intent | не начато | B06-02 after B06-01 publication |
+| Narration/fallback | не начато | B06-03 |
+| Agent backend / B06 audit | не начато | B06-04 |
 | Presentation/assets | не начато | B07 |
 | Plugins | не начато | B08 |
 | Auth/publish | не начато | B09 |
 | Author AI helper | не начато | B10 |
 | Florence migration | не начато | B11 |
 
-## Published B05-03 base
+## Published B05
 
-PR #17 merged в `main` как `158fbd3169d3402621faf079b39bd5e8dc8d0c69`.  
-Push-CI на этом published main: `34055023933` — success.
+PR #18 merged в `main` как `002c2cd7c802f06d23f62ac8cde726afef845c24`.  
+Push-CI на exact merge SHA: `34055962204` — success.
 
-Опубликованный B05-03 causal path:
+B05 теперь целиком published: Studio authoring, revision/conflict, validation, immutable frozen playtest, Player→Runtime/Core causal path, reset/idempotency proof и repeatable static Help/T29.
 
-- Studio validation → immutable frozen playtest;
-- Player bootstrap только из frozen snapshot;
-- authored `core.paint` definition доходит в Runtime/Core;
-- P1 initial=2/cost=1/request2 → executed2/600;
-- reset P1 остаётся на cost=1;
-- draft edit cost=2 не меняет P1;
-- P2 → partial1/300;
-- idempotent retry не исполняет Core второй раз;
-- browser не вычисляет gameplay cost/duration.
+## B06-01 — provider/connection/quota foundation
 
-## B05-04 — final B05 slice
-
-Ветка: `b05-04-repeatable-onboarding-help-t29`.  
-PR: #18.  
-Карточка: [B05-04](tasks/B05-04-repeatable-onboarding-help-t29.md).  
-Решение: [ADR 0017](decisions/0017-static-repeatable-onboarding-boundary.md).  
-Worklog: [2026-09-07 B05-04](worklog/2026-09-07-b05-04.md).
+Ветка: `b06-01-provider-connection-quota-contracts`.  
+PR: #19.  
+Карточка: [B06-01](tasks/B06-01-provider-connection-quota-contracts.md).  
+Решение: [ADR 0018](decisions/0018-runtime-ai-provider-connection-quota-boundary.md).  
+Worklog: [2026-09-07 B06-01](worklog/2026-09-07-b06-01.md).
 
 ### Реализовано
 
-- постоянная `? Справка` до проекта, внутри quest workspace и после onboarding;
-- статический versioned vocabulary ровно по B05;
-- 8-step deterministic tour поверх существующих Studio regions;
-- Next / Back / Skip / explicit completion;
-- replay через `Повторить обучение`;
-- missing quest/validation/playtest объясняется prerequisite без synthetic data;
-- completion/skipped хранится только как optional browser UX preference;
-- localStorage failure-safe;
-- Escape/focus return/keyboard buttons/mobile controls;
-- onboarding module не использует `fetch` и не импортирует Control/Runtime/Player/Core/provider/LLM boundaries.
+- отдельный `@living-history/ai` workspace;
+- stable `ModelProvider.generate` + deterministic fake;
+- bounded OpenAI-compatible Chat Completions adapter;
+- OpenRouter preset + explicit compatible endpoint;
+- safe connection view без raw credential;
+- connection capability test без guessing;
+- absolute deadline/abort, no adapter retries, sanitized errors;
+- honest optional usage/model/request IDs;
+- static endpoint target policy + redirect prohibition;
+- `QuotaAdapter`/`QuotaMetric` with null-vs-zero semantics;
+- inference-key quota отдельно от account management credits;
+- optional management credential / `permission_required`;
+- explicit reset timestamp preservation, no invented reset from `monthly`;
+- credential/account/revision-aware quota cache + `stale` state;
+- `test:ai` включён в root verify;
+- architectural boundary запрещает gameplay/UI/storage coupling.
 
-### T29 / canonical evidence
+### T30/T31 evidence
 
-Implementation commit `aabb889de6523b2b340f91870b671408bf429822` прошёл PR CI `34055778084`.
+Functional hardened head `64c644eee9e9bf66c199b082d12efedf25c9fa7f` прошёл PR CI `34056571152` — **success**, включая root `npm run verify`.
 
-Canonical audit commit `fd18beab06b0c47a6622ab5c76c6ad68baef4282` проходит в одном regression:
+До этого CI также зафиксировал lockfile bootstrap correction: initial `npm ci` failed on unsynced new workspace, после lock sync полный verify green. Это инфраструктурное расхождение устранено в ветке.
 
-1. fresh Studio/Control;
-2. project + quest/location;
-3. resource initial=2;
-4. paint cost=1;
-5. validation + frozen P1;
-6. P1 request2 → executed2/600;
-7. idempotent retry без второго Core execution;
-8. reset/new P1 session → executed2/600;
-9. edit cost=2;
-10. old P1 остаётся cost=1;
-11. validation + frozen P2;
-12. P2 request2 → partial1/300;
-13. Help/onboarding bundle доступен;
-14. onboarding no-fetch boundary закреплён тестом.
+## Publication gate B06-01
 
-PR CI `34055820343` — **success**, root `npm run verify` green.
+До слова **published** остаётся:
 
-## Publication gate B05
+1. final current-head CI после docs sync;
+2. PR #19 mark ready;
+3. merge с pinned expected head SHA;
+4. push-to-main CI именно на merge SHA.
 
-До слова **published** для всего B05 остаётся:
-
-1. final current-head CI после этой docs sync;
-2. PR #18 merge с expected head;
-3. push-to-main CI именно на merge SHA.
-
-После этого B05 закрыт целиком, и следующий bounded block — B06 free-text/LLM intent + narration. Не смешивать B06 с PR #18.
+После green main B06-01 published. Следующий bounded slice — **B06-02 free-text intent boundary**; не смешивать его с PR #19.
 
 ## Scope boundary
 
-Не добавлять в B05-04 LLM/free text, B07 presentation/assets/animations, plugins, auth/public publish, AI author helper, Florence migration или force dependency upgrade.
+B06-01 не содержит free-text gameplay route, narrator, Codex/AgentBackend session implementation или final Studio connection UI.
 
-Известно: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельного аудита не выполнялся.
+Known dependency vulnerabilities остаются отдельной задачей; force upgrade без отдельного аудита не выполняется.
