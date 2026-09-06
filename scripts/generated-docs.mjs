@@ -82,7 +82,13 @@ export async function buildGeneratedDocs(root) {
 
   const availableOperations = registry.operations
     .filter((operation) => operation.readiness === "available")
-    .map(({ id, method, path, summary }) => ({ id, method, path, summary }));
+    .map(({ id, method, path, summary, successStatus = 200 }) => ({
+      id,
+      method,
+      path,
+      summary,
+      successStatus
+    }));
 
   const schemaIndex = {
     contractsSchemaVersion,
@@ -187,7 +193,7 @@ function buildOpenApiPaths(operations) {
       operationId: operation.id.replace(/[^A-Za-z0-9_]/g, "_"),
       summary: operation.summary,
       responses: {
-        "200": { description: "Successful response" }
+        [String(operation.successStatus)]: { description: "Successful response" }
       }
     };
   }
