@@ -7,6 +7,7 @@
     { "path": "./packages/control" },
     { "path": "./packages/player" },
     { "path": "./apps/server" },
-    { "path": "./apps/studio" }
+    { "path": "./apps/studio" },
+    { "path": "./apps/player" }
   ]
 }
