@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "durationSeconds": 1.5,
+  "effects": [
+    {
+      "type": "resource.change"
+    }
+  ]
+}
+

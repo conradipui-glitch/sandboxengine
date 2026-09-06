@@ -1,0 +1,11 @@
+{
+  "status": "executed",
+  "durationSeconds": 12,
+  "effects": [
+    {
+      "type": "resource.change",
+      "sourceId": "action.demo"
+    }
+  ]
+}
+

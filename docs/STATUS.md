@@ -5,8 +5,8 @@
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
 | Репозиторий и навигация | bootstrap опубликован в `main` | commits `57765966e3e04638b38df989fb43f170104800c2` + CI `f174603b20d8ef7f792b09b5e8a4b115ddda07a8`; README, AGENTS, CONTRIBUTING, handoff |
-| Контракты | минимальный срез | `packages/contracts`, B01-01 |
-| Core | минимальный guard/result без изменения state | `packages/core`, B01-01 |
+| Контракты | B01-01 принят | `packages/contracts`, guard и 2 JSON fixtures; следующий шаг B01-02 |
+| Core | минимальный guard/result без изменения state | `packages/core`, 2 Core-проверки; следующий шаг B01-02 |
 | Runtime/API/storage | не начато | B04 после B02–B03 |
 | Studio/Player | не начато | B05/B07 |
 | AI-провайдеры, квоты, авторский помощник | не начато | B06/B10 |

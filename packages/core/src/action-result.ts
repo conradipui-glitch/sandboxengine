@@ -1,7 +1,5 @@
 import {
-  isActionStatus,
-  isEffectRef,
-  isRecord,
+  isActionResultEnvelope,
   type ActionResultEnvelope
 } from "@living-history/contracts";
 
@@ -10,12 +8,7 @@ import {
  * It validates shape only; applying effects belongs to a later transaction block.
  */
 export function isCanonicalActionResult(value: unknown): value is ActionResultEnvelope {
-  if (!isRecord(value)) return false;
-  if (!isActionStatus(value.status)) return false;
-  if (typeof value.durationSeconds !== "number"
-    || !Number.isInteger(value.durationSeconds)
-    || value.durationSeconds < 0) return false;
-  return Array.isArray(value.effects) && value.effects.every(isEffectRef);
+  return isActionResultEnvelope(value);
 }
 
 export function executedResult(
@@ -27,4 +20,3 @@ export function executedResult(
   }
   return { status: "executed", durationSeconds, effects: [...effects] };
 }
-

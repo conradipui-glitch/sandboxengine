@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   ACTION_STATUSES,
   PROCESSING_STATUSES,
+  isActionResultEnvelope,
   isActionStatus,
   isProcessingStatus
 } from "../dist/index.js";
@@ -23,3 +25,9 @@ test("unknown values are rejected", () => {
   }
 });
 
+test("canonical JSON fixtures are checked at the public contract boundary", async () => {
+  const valid = JSON.parse(await readFile(new URL("../fixtures/action-result.executed.json", import.meta.url), "utf8"));
+  const invalid = JSON.parse(await readFile(new URL("../fixtures/action-result.invalid.json", import.meta.url), "utf8"));
+  assert.equal(isActionResultEnvelope(valid), true);
+  assert.equal(isActionResultEnvelope(invalid), false);
+});
