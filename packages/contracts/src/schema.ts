@@ -14,6 +14,8 @@ export const CONTRACT_SCHEMA_IDS = {
   socialAct: "urn:living-history:schema:social-act:1.0",
   scheduledEvent: "urn:living-history:schema:scheduled-event:1.0",
   scheduledEffectEvent: "urn:living-history:schema:scheduled-effect-event:1.0",
+  scheduledTerminalEvent: "urn:living-history:schema:scheduled-terminal-event:1.0",
+  scheduledTask: "urn:living-history:schema:scheduled-task:1.0",
   calculatedAction: "urn:living-history:schema:calculated-action:1.0",
   actionResult: "urn:living-history:schema:action-result:1.0",
   worldState: "urn:living-history:schema:world-state:1.0",
