@@ -1,0 +1,153 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #f6f7f9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: #f6f7f9; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+input {
+  width: 100%;
+  border: 1px solid #ccd2dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  padding: 9px 10px;
+  min-height: 42px;
+}
+input:focus, button:focus-visible { outline: 3px solid rgba(49, 102, 255, .22); outline-offset: 2px; }
+button {
+  min-height: 42px;
+  border: 1px solid #cbd2dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #253047;
+  padding: 9px 14px;
+  font-weight: 680;
+}
+button.primary { background: #285fd6; border-color: #285fd6; color: #fff; }
+button.secondary:hover { background: #f3f5f8; }
+h1, h2, p { margin-top: 0; }
+
+.boot { padding: 40px; color: #667085; }
+.player-shell { min-height: 100vh; }
+.player-topbar {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #e3e6eb;
+  background: #fff;
+}
+.brand { font-size: 18px; line-height: 1.2; font-weight: 760; letter-spacing: -.02em; }
+.brand-subtitle { margin-top: 3px; color: #7a8494; font-size: 12px; }
+.session-state {
+  min-width: 130px;
+  text-align: right;
+  color: #697486;
+  font-size: 12px;
+}
+.session-state strong { display: block; color: #334057; font-size: 13px; }
+
+.player-main { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 38px 0 64px; }
+.quest-header { display: grid; gap: 8px; padding-bottom: 22px; border-bottom: 1px solid #e1e5ea; }
+.quest-header h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.04em; }
+.quest-header p { margin: 0; max-width: 680px; color: #747e8e; line-height: 1.6; }
+.playtest-id { color: #697486; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.scene-surface {
+  margin-top: 24px;
+  min-height: 220px;
+  display: grid;
+  align-content: end;
+  padding: clamp(24px, 5vw, 48px);
+  border: 1px solid #dde2e8;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #ffffff 0%, #f0f3f8 100%);
+  overflow: hidden;
+}
+.scene-copy { max-width: 620px; }
+.scene-copy h2 { margin-bottom: 8px; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.03em; }
+.scene-copy p { margin-bottom: 0; color: #687386; line-height: 1.6; }
+
+.game-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 22px; margin-top: 22px; }
+.panel {
+  background: #fff;
+  border: 1px solid #e0e4ea;
+  border-radius: 12px;
+  padding: 20px;
+}
+.panel h2 { margin-bottom: 5px; font-size: 17px; letter-spacing: -.02em; }
+.panel-intro { margin-bottom: 18px; color: #7b8493; font-size: 13px; line-height: 1.5; }
+.resource-value {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+  padding: 15px 0;
+  border-top: 1px solid #edf0f3;
+  border-bottom: 1px solid #edf0f3;
+}
+.resource-value strong { display: block; font-size: 15px; }
+.resource-value span { display: block; margin-top: 4px; color: #8992a1; font-size: 12px; }
+.resource-number { text-align: right; font-size: 30px; line-height: 1; font-weight: 780; letter-spacing: -.04em; }
+.resource-number small { display: block; margin-top: 6px; color: #8992a1; font-size: 12px; font-weight: 560; letter-spacing: 0; }
+.clock-row { margin-top: 16px; display: flex; justify-content: space-between; gap: 16px; color: #667085; font-size: 13px; }
+.clock-row strong { color: #334057; }
+
+.action-form { display: grid; gap: 14px; }
+.action-form label { display: grid; gap: 6px; color: #566174; font-size: 13px; font-weight: 650; }
+.action-controls { display: grid; grid-template-columns: minmax(110px, .45fr) minmax(0, 1fr); gap: 10px; align-items: end; }
+.action-controls button { width: 100%; }
+.action-note { color: #8992a1; font-size: 12px; line-height: 1.5; }
+
+.result-box {
+  margin-top: 18px;
+  min-height: 88px;
+  padding: 14px 15px;
+  border-radius: 9px;
+  border: 1px solid #e3e7ec;
+  background: #fafbfc;
+}
+.result-box.empty { display: grid; align-items: center; color: #929aa8; font-size: 13px; }
+.result-box.executed { background: #edf8f1; border-color: #cfe7d8; }
+.result-box.partial { background: #fff7df; border-color: #ead9a1; }
+.result-box.blocked, .result-box.error { background: #fff1ef; border-color: #efcac4; }
+.result-box strong { display: block; margin-bottom: 5px; font-size: 14px; }
+.result-box p { margin: 0; color: #5f697a; font-size: 13px; line-height: 1.55; }
+.result-box code { color: #5c6676; font-size: 11px; }
+
+.player-footer {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid #e1e5ea;
+}
+.player-footer p { margin: 0; color: #8992a1; font-size: 12px; line-height: 1.5; }
+.error-banner { margin-top: 18px; padding: 12px 14px; border-radius: 9px; background: #fff1ef; color: #9b4034; font-size: 13px; }
+
+@media (max-width: 720px) {
+  .player-topbar { align-items: flex-start; padding: 14px 16px; }
+  .session-state { min-width: 0; }
+  .player-main { width: min(100% - 28px, 920px); padding-top: 24px; }
+  .game-grid { grid-template-columns: 1fr; }
+  .scene-surface { min-height: 180px; }
+}
+
+@media (max-width: 480px) {
+  .player-topbar { display: grid; }
+  .session-state { text-align: left; }
+  .action-controls { grid-template-columns: 1fr; }
+  .player-footer { align-items: stretch; flex-direction: column; }
+  .player-footer button { width: 100%; }
+}
