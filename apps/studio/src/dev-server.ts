@@ -1,0 +1,148 @@
+// @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
+import { createServer } from "node:http";
+// @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
+import { readFile } from "node:fs/promises";
+// @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
+import { extname, join, normalize } from "node:path";
+// @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
+import { fileURLToPath } from "node:url";
+
+const studioRoot = fileURLToPath(new URL("../", import.meta.url));
+
+export interface StudioDevServerOptions {
+  readonly controlOrigin: string;
+}
+
+export interface StudioDevServer {
+  readonly server: any;
+  listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }>;
+  close(): Promise<void>;
+}
+
+export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
+  const control = new URL(options.controlOrigin);
+  if (!isLoopbackHost(control.hostname)) throw new Error("Studio proxy may target loopback Control only in B05-02");
+
+  const server = createServer(async (request: any, response: any) => {
+    try {
+      const url = new URL(String(request.url ?? "/"), "http://studio.local");
+      if (url.pathname.startsWith("/control/")) {
+        await proxyControl(request, response, control, url);
+        return;
+      }
+      await serveStatic(response, url.pathname);
+    } catch {
+      sendText(response, 500, "Studio server error");
+    }
+  });
+
+  return Object.freeze({
+    server,
+    listen(port = 0, host = "127.0.0.1"): Promise<{ readonly port: number; readonly host: string }> {
+      if (!isLoopbackHost(host)) return Promise.reject(new Error("Studio dev server may listen on loopback only"));
+      return new Promise((resolve, reject) => {
+        const onError = (error: unknown) => {
+          server.off("listening", onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.off("error", onError);
+          const address = server.address();
+          if (!address || typeof address === "string") {
+            reject(new Error("Studio server has no TCP address"));
+            return;
+          }
+          resolve(Object.freeze({ port: address.port, host }));
+        };
+        server.once("error", onError);
+        server.once("listening", onListening);
+        server.listen(port, host);
+      });
+    },
+    close(): Promise<void> {
+      if (!server.listening) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        server.close((error: unknown) => error ? reject(error) : resolve());
+      });
+    }
+  });
+}
+
+async function proxyControl(request: any, response: any, control: URL, url: URL): Promise<void> {
+  const target = new URL(url.pathname + url.search, control);
+  const method = String(request.method ?? "GET").toUpperCase();
+  const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+  const headers: Record<string, string> = {};
+  const contentType = request.headers?.["content-type"];
+  if (typeof contentType === "string") headers["content-type"] = contentType;
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, { method, headers, body });
+  } catch {
+    sendJson(response, 503, { error: { code: "CONTROL_UNAVAILABLE" } });
+    return;
+  }
+
+  const payload = await upstream.arrayBuffer();
+  response.statusCode = upstream.status;
+  response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  response.end(Buffer.from(payload));
+}
+
+async function serveStatic(response: any, pathname: string): Promise<void> {
+  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "");
+  const allowed = normalized === "index.html"
+    || normalized === "styles.css"
+    || normalized.startsWith("dist/");
+  if (!allowed) {
+    sendText(response, 404, "Not found");
+    return;
+  }
+
+  const filePath = join(studioRoot, normalized);
+  try {
+    const bytes = await readFile(filePath);
+    response.statusCode = 200;
+    response.setHeader("content-type", mimeType(filePath));
+    response.setHeader("cache-control", "no-store");
+    response.end(bytes);
+  } catch {
+    sendText(response, 404, "Not found");
+  }
+}
+
+async function readRequestBody(request: any): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  return Buffer.concat(chunks);
+}
+
+function mimeType(path: string): string {
+  switch (extname(path)) {
+    case ".html": return "text/html; charset=utf-8";
+    case ".css": return "text/css; charset=utf-8";
+    case ".js": return "text/javascript; charset=utf-8";
+    case ".map": return "application/json; charset=utf-8";
+    default: return "application/octet-stream";
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
+function sendJson(response: any, status: number, body: unknown): void {
+  response.statusCode = status;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  response.end(JSON.stringify(body));
+}
+
+function sendText(response: any, status: number, body: string): void {
+  response.statusCode = status;
+  response.setHeader("content-type", "text/plain; charset=utf-8");
+  response.end(body);
+}
