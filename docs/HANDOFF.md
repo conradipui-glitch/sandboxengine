@@ -2,79 +2,117 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B03-03 — tasks, deadlines, interruptions, deterministic RNG  
-Базовый commit: `9dbdc4e32ac6118cc665243a6cb8b6126bc26cc3`  
-Последний functional/docs commit перед финальным gate: `1919b6cc6f54799e8327161bdf4c3508f5b2f37d`  
-Статус: accepted по bounded-приёмке; публикация через PR #10; общий B03 **ещё не принят** из-за конкретных gaps T05/T06/T08/replay hash
+Текущий блок: B03-04 — closure of T05/T06/T08 and replay hash  
+База ветки: B03-03 merge `53285ba13407c19678ef8f5163dadb63dad83b86`  
+Последний functional priority-policy commit перед acceptance docs: `5cfe3f45dc6caf1af2c9dbfe120b35fc3cd5b38a`  
+Статус: **общий B03 принят по canonical/code acceptance**; публикация выполняется через PR #11. Перед merge текущий head обязан пройти `npm run verify`; после merge нужен push-CI `main`.
 
-## Выполнено в B03-03
+## Что принято в B03 целиком
 
-- Добавлен strict `ScheduledTask:1.0`, kind `core.task`.
-- `projectTaskEvents(state, task)` проверяет actor reference, safe integer time, `complete >= start` и возвращает deterministic start/completion events со stable IDs/order; authored task не мутируется.
-- Добавлен отдельный strict `ScheduledTerminalEvent:1.0`, kind `core.terminal`; существующие `ScheduledEvent:1.0` и `ScheduledEffectEvent:1.0` не widened.
-- `projectDeadlineEvent(...)` создаёт bounded terminal event по absolute elapsed seconds без `Date`/wall-clock.
-- `SchedulerEvent` включает marker/effects/terminal.
-- `applyTimeAdvancePlan` трактует terminal как успешное interruption:
-  - previous effect events применяются;
-  - `WorldState.terminal` устанавливается;
-  - clock фиксируется на terminal timestamp, не `plan.end`;
-  - revision увеличивается ровно один раз;
-  - later due events не выполняются и возвращаются как `unprocessedEvents`.
-- Уже terminal authoritative state получает explicit `already_terminal` для нового normal interval/apply.
-- Добавлен functional RNG `lcg32-v1`: explicit immutable seed/stream/drawIndex/state, bounded integer draw, provenance; без `Math.random`, `Date` или process entropy.
-- Generated capabilities публикуют `core.effects`, `core.marker`, `core.terminal`, task kind `core.task`; HTTP operations остаются 0.
-- Решение зафиксировано ADR 0009.
+### B03-01 — static integer scheduler
 
-## Проверено
+- integer absolute elapsed seconds;
+- inclusive `[start,end]`;
+- deterministic static ordering;
+- past/duplicate/overflow/event-limit failures;
+- planning read-only.
 
-Первый PR #10 run `34033798512`:
+### B03-02 — scheduled effects и atomic transition
 
-- typecheck — passed;
-- contract tests — 34/34 passed;
-- Core tests — 47/47 passed;
-- boundaries — passed;
-- `docs:check` нашёл только byte-format mismatch ручного `schema-index.json`.
+- отдельный strict `ScheduledEffectEvent:1.0`;
+- due effects применяются только через `tryApplyEffectBatch`;
+- поздний effect failure отклоняет весь candidate transition;
+- success коммитит clock/revision ровно один раз;
+- future events остаются pending.
 
-После приведения generated formatting к output генератора второй PR run `34033842749` полностью прошёл `npm ci` + `npm run verify`.
+### B03-03 — tasks, terminal interruption и RNG
 
-Ключевые regressions:
+- strict `ScheduledTask:1.0`, kind `core.task`;
+- pure deterministic `projectTaskEvents`;
+- отдельный strict `ScheduledTerminalEvent:1.0`, kind `core.terminal`;
+- `projectDeadlineEvent` без `Date`/wall-clock;
+- terminal прерывает interval в своём timestamp и оставляет later due events `unprocessedEvents`;
+- already-terminal state блокирует новый normal interval;
+- explicit immutable `lcg32-v1` RNG state + provenance, без hidden entropy.
 
-- task projection детерминирован и actor-reference-safe;
-- interval 0→600: effect@200 → terminal@300 → effect@400; final clock=300, terminal set, late event не применён;
-- terminal state блокирует новый normal interval;
-- same RNG seed/draw sequence даёт byte-for-byte одинаковые values/provenance;
-- invalid seed/bound/draw overflow explicit.
+### B03-04 — canonical matrix closure
 
-## Каноническая сверка общего B03
+- strict `entity.move` как зарегистрированный `GameplayEffect:1.0` variant;
+- existing entity → existing location через тот же atomic reducer;
+- отдельный `processTimeAdvancePlan` для deterministic generated child events; B03-01 planner не переписан;
+- handler получает frozen snapshot и может вернуть только strict `SchedulerEvent[]`;
+- child in past / duplicate / invalid / handler failure → explicit failure без candidate state;
+- один global `maxSteps/maxEvents` охватывает initial + generated processing;
+- same-time child использует effective priority не ниже parent и monotonic sequence;
+- fixed first-release policy: world event `10`, task/step completion `20`, deadline `100`; synthetic task-start internal order `19`;
+- deterministic scheduler replay fingerprint переиспользует `canonicalStringify` + SHA-256.
 
-По `docs/SPECIFICATION.md` B03 требует T05–06/T08, same plan+seed deterministic effects/hash, задачи NPC, generated-event step limit и однозначную same-time причинность.
+## Canonical acceptance B03
 
-После B03-03 остаются **ровно следующие bounded gaps**:
+Final functional PR #11 CI run `34034950071`, Node `24.19.0`, npm `11.17.0`:
 
-1. **T05 / entity movement.** Нужен typed `entity.move` (или минимальный эквивалент) в GameplayEffect + exact regression: NPC возвращается at=900 внутри interval до 2400, а последующий step видит его уже в workshop.
-2. **T06 / same timestamp + midnight.** Нужно доказать task completion и deadline на одном timestamp с completion-first order; integer clock должен однозначно пройти 86_400 без timezone/Date.
-3. **T08 / generated child events.** Нужен deterministic processing sequence и общий step budget для events, порождённых обработчиком; self-generating immediate event должен завершиться explicit limit failure без partial candidate state.
-4. **Replay hash.** Same plan+seed+versions должен давать одинаковые ordered effects/final state fingerprint; meaningful input/seed change — другой hash.
+- contract tests 35/35 passed;
+- Core tests 55/55 passed;
+- `check:boundaries` passed;
+- `docs:check` passed.
 
-Эти пункты оформлены как [B03-04](tasks/B03-04-b03-matrix-closure.md). Не смешивать их с persistence/API B04.
+Именованные доказательства из лога:
 
-## Следующее действие
+1. `T05 NPC returns at 900 inside work to 2400 and later step sees new location`.
+2. `T06 completion at exact deadline uses canonical 20-before-100 priority and crosses midnight unambiguously`.
+3. `T08 self-generated immediate events hit one global step budget with no partial commit`.
+4. `B03 replay: same plan+seed yields identical ordered effects, final state and sha256 hash`.
+5. `ScheduledTask projects canonical start/completion priorities`.
+6. `deadline uses fixed priority 100` и noncanonical deadline priority отклоняется.
 
-После merge PR #10 создать ветку от проверенного `main` и выполнить **только B03-04**. Не открывать B04, пока exact T05/T06/T08 и replay/hash не пройдут clean CI и повторную canonical сверку.
+В PR diff отсутствуют `Math.random`, `Date` и timers. B03 не добавил HTTP/storage/LLM/background realtime.
+
+Решение зафиксировано ADR 0010; подробный журнал — `docs/worklog/2026-09-06-b03-04.md`.
+
+## Что B03 намеренно не делает
+
+- persistence очереди/task/session state;
+- operation idempotency;
+- leases/fencing;
+- Runtime/Control HTTP API;
+- wall-clock/background simulation;
+- LLM/NPC decisions;
+- Studio/Player;
+- generic plugin manager.
+
+Это не долги B03, а границы следующих блоков.
+
+## Следующее действие после merge/push-CI
+
+Начать **B04 — persistent runtime и Runtime API** от чистого проверенного `main`.
+
+Каноническая цель B04 из `docs/SPECIFICATION.md`:
+
+- Memory/SQLite storage contract;
+- `claimOperation(sessionId, key, requestHash, expectedRevision)`;
+- lease + fencing token;
+- atomic `commitTurn(expectedRevision, fencingToken, candidateState, turnRecord, publicResponse)`;
+- `finishWithoutTurn` и `getOperation`;
+- idempotent replay сохранённого ответа;
+- Runtime API и ownership/player projection;
+- fault-injection для crash-before-commit, crash-after-commit, stale lease/worker;
+- T10–12/T15.
+
+Критическая граница B04: persistence **не рассчитывает заново причинность** и не меняет scheduler priority/terminal semantics. Core даёт candidate transition; storage/runtime отвечает за единственный атомарный commit, конкуренцию, восстановление и безопасный transport.
+
+Перед кодом B04 создать bounded task-card первого среза от этой канонической цели; не пытаться реализовать SQLite + HTTP + auth + concurrency одним неразделённым change set.
 
 ## Решения
 
 - ADR 0003: executable GameplayEffect отдельно от generic Effect v1.0.
-- ADR 0004: CalculatedAction отдельно от public transport ActionResult v1.0.
-- ADR 0005: declarative Condition и mixed atomicity.
-- ADR 0006: request, permission и response — разные social semantics.
-- ADR 0007: inclusive integer scheduler planning и deterministic static order.
-- ADR 0008: effect-bearing events — отдельный strict contract; whole interval atomic.
-- ADR 0009: task projection, separate terminal interruption и explicit functional RNG.
+- ADR 0004: CalculatedAction отдельно от transport ActionResult.
+- ADR 0005: declarative conditions и mixed atomicity.
+- ADR 0006: request, permission, response — разные social semantics.
+- ADR 0007: inclusive integer scheduler planning.
+- ADR 0008: scheduled effects и whole-transition atomicity.
+- ADR 0009: task projection, separate terminal interruption, explicit functional RNG.
+- ADR 0010: dynamic generated-event processing, fixed 10/20/100 priorities и replay fingerprint закрывают общий B03.
 
-## Ограничения
+## Известное наблюдение dependency layer
 
-- Queue/task persistence, operation idempotency, leases/fencing, Runtime API — B04.
-- Background realtime/timers отсутствуют намеренно.
-- LLM/NPC decisions отсутствуют.
-- `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельной проверки не выполнялся.
+`npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Force-upgrade в B03 не выполнялся; это отдельная dependency-задача и не должно смешиваться с runtime semantics.
