@@ -22,6 +22,7 @@ export async function buildGeneratedDocs(root) {
   let blockKinds = [];
   let gameplayEffectTypes = [];
   let conditionTypes = [];
+  let socialActTypes = [];
   let actionTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
@@ -33,7 +34,8 @@ export async function buildGeneratedDocs(root) {
       id: schema.$id
     });
     const version = schema?.properties?.schemaVersion?.const
-      ?? schema?.oneOf?.[0]?.properties?.schemaVersion?.const;
+      ?? schema?.oneOf?.[0]?.properties?.schemaVersion?.const
+      ?? schema?.$defs?.request?.properties?.schemaVersion?.const;
     if (version !== undefined) {
       if (contractsSchemaVersion === null) contractsSchemaVersion = version;
       if (contractsSchemaVersion !== version) {
@@ -52,6 +54,9 @@ export async function buildGeneratedDocs(root) {
         .map((variant) => variant?.properties?.type?.const)
         .filter((value) => typeof value === "string")
         .sort();
+    }
+    if (name === "social-act") {
+      socialActTypes = ["permission", "request", "response"];
     }
     if (name === "calculated-action") {
       actionTypes = schema.oneOf
@@ -76,6 +81,7 @@ export async function buildGeneratedDocs(root) {
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
+    socialActTypes,
     actionTypes,
     operations: availableOperations
   };
@@ -93,6 +99,7 @@ export async function buildGeneratedDocs(root) {
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
+    socialActTypes,
     actionTypes,
     schemas
   }));
@@ -109,6 +116,7 @@ export async function buildGeneratedDocs(root) {
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
+    socialActTypes,
     actionTypes,
     availableOperations
   });
@@ -168,7 +176,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, actionTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, actionTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -179,6 +187,9 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
   const conditionLines = conditionTypes.length === 0
     ? "- Нет декларативных conditions."
     : conditionTypes.map((type) => `- \`${type}\``).join("\n");
+  const socialLines = socialActTypes.length === 0
+    ? "- Нет social act contracts."
+    : socialActTypes.map((type) => `- \`${type}\``).join("\n");
   const actionLines = actionTypes.length === 0
     ? "- Нет рассчитанных action types."
     : actionTypes.map((type) => `- \`${type}\``).join("\n");
@@ -192,6 +203,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
     `## Available block kinds\n\n${blockLines}\n\n` +
     `## Available gameplay effects\n\n${effectLines}\n\n` +
     `## Available conditions\n\n${conditionLines}\n\n` +
+    `## Available social acts\n\n${socialLines}\n\n` +
     `## Available calculated actions\n\n${actionLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +

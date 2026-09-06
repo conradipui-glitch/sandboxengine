@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "type": "request",
+  "proposalId": "request.leave-copy",
+  "fromEntityId": "painter",
+  "toEntityId": "luca",
+  "subject": {
+    "actionType": "core.item.leave-copy",
+    "targetIds": ["contract"],
+    "args": {
+      "until": "morning"
+    }
+  }
+}

@@ -34,6 +34,66 @@
           "items": { "$ref": "urn:living-history:schema:gameplay-effect:1.0" }
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "actionType", "status", "reasonCode", "proposalId",
+        "fromEntityId", "toEntityId", "subject", "durationSeconds", "effects"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "actionType": { "const": "core.social.request" },
+        "status": { "const": "conditional" },
+        "reasonCode": { "const": "AWAITING_RESPONSE" },
+        "proposalId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "fromEntityId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "toEntityId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "subject": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/subject" },
+        "durationSeconds": { "const": 0 },
+        "effects": { "type": "array", "maxItems": 0 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "actionType", "status", "reasonCode", "permissionId",
+        "fromEntityId", "toEntityId", "subject", "durationSeconds", "effects"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "actionType": { "const": "core.social.permission" },
+        "status": { "const": "executed" },
+        "reasonCode": { "type": "null" },
+        "permissionId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "fromEntityId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "toEntityId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "subject": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/subject" },
+        "durationSeconds": { "const": 0 },
+        "effects": { "type": "array", "maxItems": 0 }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "actionType", "status", "reasonCode", "responseId",
+        "proposalId", "responderId", "decision", "durationSeconds", "effects"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "actionType": { "const": "core.social.response" },
+        "status": { "const": "executed" },
+        "reasonCode": { "type": "null" },
+        "responseId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "proposalId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "responderId": { "$ref": "urn:living-history:schema:social-act:1.0#/$defs/id" },
+        "decision": { "enum": ["accept", "refuse"] },
+        "durationSeconds": { "const": 0 },
+        "effects": { "type": "array", "maxItems": 0 }
+      }
     }
   ]
 }

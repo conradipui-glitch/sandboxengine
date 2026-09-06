@@ -17,8 +17,16 @@
     "not",
     "resource.atLeast"
   ],
+  "socialActTypes": [
+    "permission",
+    "request",
+    "response"
+  ],
   "actionTypes": [
-    "core.paint"
+    "core.paint",
+    "core.social.permission",
+    "core.social.request",
+    "core.social.response"
   ],
   "operations": []
 }

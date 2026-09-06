@@ -52,6 +52,11 @@
       "id": "urn:living-history:schema:scene-frame:1.0"
     },
     {
+      "name": "social-act",
+      "file": "packages/contracts/schemas/v1/social-act.schema.json",
+      "id": "urn:living-history:schema:social-act:1.0"
+    },
+    {
       "name": "world-state",
       "file": "packages/contracts/schemas/v1/world-state.schema.json",
       "id": "urn:living-history:schema:world-state:1.0"

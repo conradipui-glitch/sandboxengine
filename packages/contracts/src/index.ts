@@ -43,12 +43,28 @@ export {
   type ResourceAtLeastCondition
 } from "./condition.js";
 export {
+  SOCIAL_ACT_TYPES,
+  SOCIAL_RESPONSE_DECISIONS,
+  isSocialAct,
+  isSocialActionSubject,
+  type SocialAct,
+  type SocialActType,
+  type SocialActionSubject,
+  type SocialPermission,
+  type SocialRequest,
+  type SocialResponse,
+  type SocialResponseDecision
+} from "./social-act.js";
+export {
   CALCULATED_ACTION_TYPES,
   isCalculatedAction,
   type CalculatedAction,
   type CalculatedActionStatus,
   type CalculatedActionType,
-  type PaintCalculatedAction
+  type PaintCalculatedAction,
+  type SocialPermissionCalculatedAction,
+  type SocialRequestCalculatedAction,
+  type SocialResponseCalculatedAction
 } from "./calculated-action.js";
 export {
   type WorldClock,

@@ -28,9 +28,18 @@ Generated file. Do not edit by hand.
 - `not`
 - `resource.atLeast`
 
+## Available social acts
+
+- `permission`
+- `request`
+- `response`
+
 ## Available calculated actions
 
 - `core.paint`
+- `core.social.permission`
+- `core.social.request`
+- `core.social.response`
 
 ## Available HTTP operations
 

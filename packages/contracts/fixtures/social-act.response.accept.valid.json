@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "type": "response",
+  "responseId": "response.leave-copy.accept",
+  "proposalId": "request.leave-copy",
+  "responderId": "luca",
+  "decision": "accept"
+}
