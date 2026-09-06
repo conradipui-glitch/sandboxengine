@@ -2,48 +2,54 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B01-02 — канонические схемы первого слоя  
-Базовый commit: `3b77e644925bd2b2821139f8dca6bec97c0a1ce0`  
-Последний кодовый commit: `ca726301c827a5eb4199592864fd4d83a2e6b2bc`  
-Статус: accepted по bounded-приёмке; публикация выполняется через PR #1
+Текущий блок: B01-03 — авторские схемы и минимальный пакет квеста  
+Базовый commit: `270c98bd272dbe43879fb023df6e01f647782d35`  
+Последний кодовый commit: `08878f9db0598acf0db20a0aa48136f584f4ada1`  
+Статус: accepted по bounded-приёмке; публикация выполняется через PR #2
 
 ## Выполнено
 
-- Добавлены канонические JSON Schema Draft 2020-12 v1.0 для `Effect`, `ActionResult`, минимального `WorldState`, `SceneFrame` и `PresentationPlan` в `packages/contracts/schemas/v1/`.
-- Версия и `$id` схем закреплены публичными `CONTRACT_SCHEMA_VERSION` / `CONTRACT_SCHEMA_IDS`.
-- Неизвестные поля запрещены; неподдерживаемая `schemaVersion` не приводится молча к текущей.
-- TypeScript DTO первого слоя и публичный guard `ActionResult` синхронизированы с проверяемыми fixtures; B01-01 имя `ActionResultEnvelope` сохранено совместимым alias/экспортом.
-- Добавлены отдельные semantic reference checks: позиция сущности/предмета должна ссылаться на существующий ID, а `dialogue.show.lineId` — на строку текущего `SceneFrame`.
-- `PresentationPlan` пока рекламирует только конкретно специфицированные узлы первого примера: `sequence`, `parallel`, `actor.show`, `item.show`, `dialogue.show`.
-- `WorldState` намеренно минимален; задачи, события, knowledge, RNG и extensions не объявлены готовыми раньше своих bounded-блоков.
-- Core по-прежнему импортирует только публичный `@living-history/contracts` и не знает инфраструктуру.
+- Добавлены canonical JSON Schema v1.0 для `Block`, минимального `QuestRelease` и `ResolvedIntent`.
+- Текущий Block registry ограничен тремя реально описанными kinds: `core.location`, `core.character`, `core.resource`. Неописанные kinds не принимаются.
+- Добавлены TypeScript authoring DTO и публичные exports без изменения Core execution.
+- Собран целостный `packages/contracts/fixtures/minimal-quest/`: workshop location, painter character, integer blue-paint resource и release manifest.
+- `QuestRelease` semantic validation проверяет уникальность block IDs, точное membership release↔package, entry location, initial character location и resource bounds.
+- `ResolvedIntent` хранит только понятое действие (`actionType`, participant/target IDs, args, исходный input). Schema запрещает `durationSeconds`, effects и `statePatch`.
+- Добавлены negative fixtures на unknown block kind, несовместимую release version, broken release reference, duplicate block ID и попытку mutation через intent.
+- Следующая bounded-карточка B01-04 зафиксирована отдельно; B02 не начинается до полной приёмки общего B01.
 
 ## Проверено
 
-GitHub Actions PR run [34021918840](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34021918840) на Node `24.19.0`:
+GitHub Actions PR run [34022346033](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34022346033), Node `24.19.0`, npm `11.17.0`:
 
 - `npm ci` → успешно;
 - `npm run verify` → успешно;
-- contract tests → 9/9 passed;
+- contract tests → 16/16 passed;
 - Core tests → 2/2 passed;
 - `check:boundaries` → успешно;
 - `docs:check` → успешно.
 
-Отдельно проверено различие shape/semantic validation: fixtures с несуществующим `locationId` и `dialogue lineId` проходят JSON Schema по форме, но отклоняются semantic reference checks.
+Отдельно доказано тестами:
+
+- неизвестный block kind и другая release schemaVersion отклоняются JSON Schema;
+- broken release ref и duplicate block ID могут быть shape-valid, но отклоняются semantic validation;
+- `ResolvedIntent` с duration/statePatch отклоняется;
+- invalid resource bounds отклоняются semantic invariant check.
 
 ## Не выполнено / ограничения
 
-- B01 целиком ещё не завершён: нет канонических Block/Quest/ResolvedIntent, compile skeleton, endpoint readiness registry, генерации OpenAPI/Skill и двух полных fixture-пакетов.
-- Runtime API, storage, LLM, Studio, Player, plugin SDK и Florence migration не начинались этим блоком.
-- T01–T37 не считаются выполненными по контрактным fixtures B01-02.
-- `npm ci` сообщил 2 dependency vulnerabilities (1 moderate, 1 high). Источник и безопасный способ устранения в рамках B01-02 не исследованы; не выполнять `npm audit fix --force` без отдельной проверки совместимости.
+- B01 целиком ещё не завершён: нет compile skeleton/content hash, endpoint readiness registry, generated OpenAPI/agent-contract pipeline и второго полного fixture-пакета.
+- `minimal-quest` пока не исполняется; action resolver и scheduler принадлежат B02/B03.
+- Runtime API, storage, LLM, Studio, Player, plugin SDK и Florence migration не начинались.
+- T01–T37 не считаются выполненными.
+- `npm ci` по-прежнему сообщает 2 dependency vulnerabilities (1 moderate, 1 high); источник не исследован в этом bounded-срезе.
 
 ## Следующее действие
 
-После публикации PR #1 выполнить [B01-03 — авторские схемы и минимальный пакет квеста](tasks/B01-03-authoring-schemas.md): Block envelope, минимальный QuestRelease, `ResolvedIntent` и целостный fixture-пакет. Не переходить к B02, пока общий B01 не закрыт по своей приёмке.
+После публикации PR #2 выполнить [B01-04 — compile skeleton, readiness registry и generated contracts](tasks/B01-04-compile-registry-docs.md). По завершении B01-04 отдельно сверить полный B01 с общей приёмкой ТЗ и только после этого решать переход к B02.
 
 ## Решения
 
-- JSON Schema — источник истины для формы DTO; TypeScript-экспорты проверяются на общих fixtures.
-- Cross-object ID membership — semantic validation поверх JSON Schema, а не выдуманный JSON Schema «foreign key».
-- Необъявленные будущие поля/команды не считаются capabilities текущей версии.
+- Block kinds становятся capabilities только после появления точной schema их `data`, а не по одному упоминанию в ТЗ.
+- `ResolvedIntent` не является ActionResult и не имеет права менять мир.
+- Cross-block references и числовые отношения проверяются deterministic semantic layer поверх JSON Schema.
