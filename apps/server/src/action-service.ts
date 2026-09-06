@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import {
   CONTRACT_SCHEMA_VERSION,
+  type JsonValue,
   type ResolvedIntent,
   type WorldState
 } from "@living-history/contracts";
@@ -109,8 +110,8 @@ export function buildCommittedPublicResponse(input: {
       durationSeconds: input.execution.durationSeconds,
       reasonCode: input.execution.reasonCode
     },
-    playerView
-  }) as RuntimePublicResponse;
+    playerView: toJsonValue(playerView)
+  });
 }
 
 export function buildFailedPublicResponse(operationId: string): RuntimePublicResponse {
@@ -127,6 +128,10 @@ export function hashCanonicalJson(value: unknown): string {
 
 export function stateHash(state: WorldState): string {
   return hashCanonicalJson(state);
+}
+
+function toJsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
 function deepFreeze<T>(value: T): T {
