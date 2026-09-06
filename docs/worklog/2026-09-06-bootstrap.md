@@ -18,11 +18,11 @@
 ## Проверки
 
 - TypeScript build: прошёл (`tsc -b --pretty false`, TypeScript `7.0.2` из рабочего окружения).
-- Node test runner: 4/4 теста прошли.
+- Node test runner: 5/5 тестов прошли.
 - `node scripts/check-boundaries.mjs`: прошёл.
 - `node scripts/docs-check.mjs`: прошёл.
 - `git diff --check`: прошёл.
-- GitHub Actions run [34019976966](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34019976966): `npm ci` и `npm run verify` на чистом runner прошли успешно.
+- GitHub Actions run [34021026781](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34021026781): `npm ci` и `npm run verify` на чистом runner прошли успешно.
 
 ## Не сделано
 

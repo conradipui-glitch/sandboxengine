@@ -4,7 +4,7 @@
 
 ## Где мы
 
-Удалённый `conradipui-glitch/sandboxengine` был проверен и оказался пустым. Bootstrap-каркас опубликован в `main` commit `57765966e3e04638b38df989fb43f170104800c2`: npm workspaces, строгий TypeScript, `contracts`, чистый `core`, контрактные тесты, проверки границ, CI и документация. Полный движок не написан и не должен считаться написанным.
+Удалённый `conradipui-glitch/sandboxengine` был проверен и оказался пустым. Bootstrap-каркас и B01-01 опубликованы в `main` (последний B01 commit `2da57891ddeea280120a18afb29519c4176b4c7c`): npm workspaces, строгий TypeScript, `contracts`, чистый `core`, контрактные тесты, проверки границ, CI и документация. Полный движок не написан и не должен считаться написанным.
 
 Исходная игра проверена на commit `092bcef0be5943e32bf02f08f9e9d4cde393fa95`. В ней уже есть отдельные модули Florence, AI-контур, worker/API и тесты; это ориентир для B00, а не готовый перенос.
 
@@ -18,7 +18,7 @@
 
 ## Проверки
 
-Локальный gate проверен на Node `24.19.0` с TypeScript `7.0.2` из рабочего окружения (объявленная зависимость проекта — `5.9.3`): 4 теста прошли, boundary-check и docs-check прошли. Затем GitHub Actions run [34019976966](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34019976966) на чистом runner успешно выполнил `npm ci` и `npm run verify` с pinned-зависимостью проекта.
+Локальный gate проверен на Node `24.19.0` с TypeScript `7.0.2` из рабочего окружения (объявленная зависимость проекта — `5.9.3`): 5 тестов прошли, boundary-check и docs-check прошли. Затем GitHub Actions run [34021026781](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34021026781) на чистом runner успешно выполнил `npm ci` и `npm run verify` с pinned-зависимостью проекта.
 
 Если проверка падает, сохранить вывод и причину в `docs/worklog/`, исправить или явно оставить блокировку. Не писать «всё готово» без команды и результата.
 
