@@ -2,117 +2,79 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B03-04 — closure of T05/T06/T08 and replay hash  
-База ветки: B03-03 merge `53285ba13407c19678ef8f5163dadb63dad83b86`  
-Последний functional priority-policy commit перед acceptance docs: `5cfe3f45dc6caf1af2c9dbfe120b35fc3cd5b38a`  
-Статус: **общий B03 принят по canonical/code acceptance**; публикация выполняется через PR #11. Перед merge текущий head обязан пройти `npm run verify`; после merge нужен push-CI `main`.
+Текущий блок: **B04-01 — operation/storage contract и Memory reference semantics**  
+База ветки: опубликованный B03 merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`  
+Текущая ветка: `b04-01-operation-storage-contracts`  
+Task-card commit: `30b8790894b27abe2ebe075f57d01d93b02d192b`  
+Статус: `in_progress`; код B04-01 ещё не реализован
 
-## Что принято в B03 целиком
+## Принятая база
 
-### B03-01 — static integer scheduler
+Общий B03 полностью принят и опубликован. Main push-CI `34035223262` — success. Принятые Core semantics, включая scheduler priority/terminal/RNG/replay, в B04 не переписываются.
 
-- integer absolute elapsed seconds;
-- inclusive `[start,end]`;
-- deterministic static ordering;
-- past/duplicate/overflow/event-limit failures;
-- planning read-only.
+B04 хранит и атомарно публикует уже рассчитанный Core candidate transition либо не сохраняет ничего.
 
-### B03-02 — scheduled effects и atomic transition
+## Текущий bounded scope
 
-- отдельный strict `ScheduledEffectEvent:1.0`;
-- due effects применяются только через `tryApplyEffectBatch`;
-- поздний effect failure отклоняет весь candidate transition;
-- success коммитит clock/revision ровно один раз;
-- future events остаются pending.
+Карточка: [B04-01 — operation/storage contract и Memory reference semantics](tasks/B04-01-operation-storage-contracts.md).
 
-### B03-03 — tasks, terminal interruption и RNG
+Этот срез закрывает только foundation вокруг operation ownership:
 
-- strict `ScheduledTask:1.0`, kind `core.task`;
-- pure deterministic `projectTaskEvents`;
-- отдельный strict `ScheduledTerminalEvent:1.0`, kind `core.terminal`;
-- `projectDeadlineEvent` без `Date`/wall-clock;
-- terminal прерывает interval в своём timestamp и оставляет later due events `unprocessedEvents`;
-- already-terminal state блокирует новый normal interval;
-- explicit immutable `lcg32-v1` RNG state + provenance, без hidden entropy.
+- строгие runtime/storage domain types;
+- единый semantic `RuntimeStorage` contract;
+- `claimOperation(sessionId, idempotencyKey, requestHash, expectedRevision, lease)`;
+- explicit outcomes для duplicate/reuse/action-in-progress/revision-conflict;
+- Memory reference adapter;
+- одна active operation на session;
+- unique `(sessionId, idempotencyKey)`;
+- monotonic fencing token;
+- injected service clock для lease, отдельно от game clock;
+- commit проверяет expected revision + active owner + current unexpired token;
+- atomic state + turn record + public response + operation completion;
+- `finishWithoutTurn` / `getOperation` foundation;
+- реальные storage tests для T10 Memory, T11 Memory и stale-worker fencing foundation T12.
 
-### B03-04 — canonical matrix closure
+## Что B04-01 не делает
 
-- strict `entity.move` как зарегистрированный `GameplayEffect:1.0` variant;
-- existing entity → existing location через тот же atomic reducer;
-- отдельный `processTimeAdvancePlan` для deterministic generated child events; B03-01 planner не переписан;
-- handler получает frozen snapshot и может вернуть только strict `SchedulerEvent[]`;
-- child in past / duplicate / invalid / handler failure → explicit failure без candidate state;
-- один global `maxSteps/maxEvents` охватывает initial + generated processing;
-- same-time child использует effective priority не ниже parent и monotonic sequence;
-- fixed first-release policy: world event `10`, task/step completion `20`, deadline `100`; synthetic task-start internal order `19`;
-- deterministic scheduler replay fingerprint переиспользует `canonicalStringify` + SHA-256.
+- SQLite;
+- restart/crash durability claim;
+- Fastify/HTTP;
+- guest auth/session tokens;
+- PlayerView/public projection;
+- bundled release server startup;
+- JS client;
+- LLM/provider logic;
+- Studio/Control API;
+- background workers/queues;
+- изменение B03 Core semantics.
 
-## Canonical acceptance B03
+Поэтому B04-01 **не принимает общий B04** и не закрывает T12 целиком.
 
-Final functional PR #11 CI run `34034950071`, Node `24.19.0`, npm `11.17.0`:
+## Следующее точное действие
 
-- contract tests 35/35 passed;
-- Core tests 55/55 passed;
-- `check:boundaries` passed;
-- `docs:check` passed.
+1. Прочитать `docs/tasks/B04-01-operation-storage-contracts.md` и фактический каркас `packages/runtime`.
+2. Спроектировать минимальные domain result unions и `RuntimeStorage` interface без HTTP status codes.
+3. Сразу написать Memory adapter + fake service clock tests для T10/T11/stale fencing; не начинать SQLite до зелёной Memory semantics.
+4. Если `npm run test:storage` отсутствует или является заглушкой — сделать его реальной командой и включить в обязательный verify только после появления настоящих storage tests.
+5. После functional gate обновить STATUS/HANDOFF/worklog и только затем решить B04-01 acceptance.
 
-Именованные доказательства из лога:
+## Следующие bounded slices после B04-01
 
-1. `T05 NPC returns at 900 inside work to 2400 and later step sees new location`.
-2. `T06 completion at exact deadline uses canonical 20-before-100 priority and crosses midnight unambiguously`.
-3. `T08 self-generated immediate events hit one global step budget with no partial commit`.
-4. `B03 replay: same plan+seed yields identical ordered effects, final state and sha256 hash`.
-5. `ScheduledTask projects canonical start/completion priorities`.
-6. `deadline uses fixed priority 100` и noncanonical deadline priority отклоняется.
+- **B04-02:** SQLite atomicity + restart/fault injection, durable T10–12.
+- **B04-03:** Runtime API + guest access + player-safe projection, T15 и общая B04 canonical acceptance.
 
-В PR diff отсутствуют `Math.random`, `Date` и timers. B03 не добавил HTTP/storage/LLM/background realtime.
+Не объявлять общий B04 принятым до повторной сверки T10–12/T15.
 
-Решение зафиксировано ADR 0010; подробный журнал — `docs/worklog/2026-09-06-b03-04.md`.
+## Архитектурные решения, которые нельзя размыть
 
-## Что B03 намеренно не делает
-
-- persistence очереди/task/session state;
-- operation idempotency;
-- leases/fencing;
-- Runtime/Control HTTP API;
-- wall-clock/background simulation;
-- LLM/NPC decisions;
-- Studio/Player;
-- generic plugin manager.
-
-Это не долги B03, а границы следующих блоков.
-
-## Следующее действие после merge/push-CI
-
-Начать **B04 — persistent runtime и Runtime API** от чистого проверенного `main`.
-
-Каноническая цель B04 из `docs/SPECIFICATION.md`:
-
-- Memory/SQLite storage contract;
-- `claimOperation(sessionId, key, requestHash, expectedRevision)`;
-- lease + fencing token;
-- atomic `commitTurn(expectedRevision, fencingToken, candidateState, turnRecord, publicResponse)`;
-- `finishWithoutTurn` и `getOperation`;
-- idempotent replay сохранённого ответа;
-- Runtime API и ownership/player projection;
-- fault-injection для crash-before-commit, crash-after-commit, stale lease/worker;
-- T10–12/T15.
-
-Критическая граница B04: persistence **не рассчитывает заново причинность** и не меняет scheduler priority/terminal semantics. Core даёт candidate transition; storage/runtime отвечает за единственный атомарный commit, конкуренцию, восстановление и безопасный transport.
-
-Перед кодом B04 создать bounded task-card первого среза от этой канонической цели; не пытаться реализовать SQLite + HTTP + auth + concurrency одним неразделённым change set.
-
-## Решения
-
-- ADR 0003: executable GameplayEffect отдельно от generic Effect v1.0.
-- ADR 0004: CalculatedAction отдельно от transport ActionResult.
-- ADR 0005: declarative conditions и mixed atomicity.
-- ADR 0006: request, permission, response — разные social semantics.
-- ADR 0007: inclusive integer scheduler planning.
-- ADR 0008: scheduled effects и whole-transition atomicity.
-- ADR 0009: task projection, separate terminal interruption, explicit functional RNG.
-- ADR 0010: dynamic generated-event processing, fixed 10/20/100 priorities и replay fingerprint закрывают общий B03.
+- Core не импортирует Runtime/Storage.
+- Service lease time ≠ `WorldState.clock`.
+- Storage не пересчитывает candidate transition.
+- Duplicate completed request возвращает сохранённый response без второго Core/commit.
+- Reused idempotency key с другим request hash никогда не становится новым действием.
+- Старый fencing token не может commit после reacquire.
+- HTTP-коды появляются только в transport layer будущего B04-03.
 
 ## Известное наблюдение dependency layer
 
-`npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Force-upgrade в B03 не выполнялся; это отдельная dependency-задача и не должно смешиваться с runtime semantics.
+`npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Force-upgrade не смешивать с B04-01 semantics без отдельного change set.
