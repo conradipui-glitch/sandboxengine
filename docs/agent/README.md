@@ -11,62 +11,38 @@
 3. Action/social resolver — что реально возможно и какой смысл имеет explicit действие.
 4. `CalculatedAction` — строгий рассчитанный outcome.
 5. `tryApplyEffectBatch` — all-or-nothing trial application typed `GameplayEffect`.
-6. B03 добавляет игровое время/scheduler поверх уже рассчитанной duration; B02 сам clock не двигает.
+6. `planTimeAdvance` — чистый B03-01 planning-layer: какие события попадают в integer interval и в каком порядке.
+7. Следующий B03-02 впервые применяет event effects и возвращает новый clock/revision state; persistence всё ещё позже.
 
 ## Принятые B02 capabilities
 
-Gameplay effects:
+Gameplay effects: `resource.change`, `item.transfer`.
 
-- `resource.change`;
-- `item.transfer`.
+Conditions: `resource.atLeast`, `entity.at`, `item.heldBy`, `all`, `any`, `not`.
 
-Conditions:
+Social acts: `request`, `permission`, `response (accept|refuse)`.
 
-- `resource.atLeast`;
-- `entity.at`;
-- `item.heldBy`;
-- `all`;
-- `any`;
-- `not`.
+Calculated actions: `core.paint`, `core.social.request`, `core.social.permission`, `core.social.response`.
 
-Social acts:
+Player/social invariant: request ≠ permission ≠ response ≠ physical execution. Даже `accept` сам не выполняет proposed item/resource mutation.
 
-- `request`;
-- `permission`;
-- `response` (`accept|refuse`).
+## Принятый B03-01 scheduler contract
 
-Calculated actions:
-
-- `core.paint`;
-- `core.social.request`;
-- `core.social.permission`;
-- `core.social.response`.
+- `ScheduledEvent` v1.0;
+- implemented kind: `core.marker`;
+- integer absolute `atElapsedSeconds`;
+- deterministic `time → order → eventId`;
+- inclusive interval `[start,end]`;
+- past event = failure, future event = pending;
+- duplicate id / unsafe integer / overflow / event-limit = explicit failure;
+- planning read-only: clock/revision не коммитятся, effects не применяются.
 
 Generated `capabilities.json` — машинный источник реально опубликованных типов. Planned HTTP operations по-прежнему не являются available.
 
-## Player/social agency — обязательный Core-инвариант
-
-`request`, `permission` и `response` нельзя преобразовывать друг в друга.
-
-- Request → `conditional / AWAITING_RESPONSE`, effects=[].
-- Permission → `executed` только как состоявшееся разрешение; permitted physical action не считается выполненным.
-- Response обязан ссылаться на конкретный known request и его адресата.
-- `accept`/`refuse` фиксируют решение, но даже `accept` не выполняет proposed physical action.
-
-Если proposed action должен передать item, потратить ресурс или иначе изменить world state, он проходит отдельный resolver/effect pipeline. Это правило нельзя обходить LLM, клиентом или будущим plugin.
-
-Регрессии B02: T01, T02, T03, T04, T07. Общий B02 принят.
-
-## Condition/effect invariants
-
-Known condition может дать true/false; broken reference — failure, не false. Composite conditions проверяют целостность всех children.
-
-`tryApplyEffectBatch` возвращает либо полный trial next state, либо failure без state. Mixed resource/item batch не имеет partial commit.
-
 ## Что ещё не реализовано
 
-Clock/revision commit, event queue, tasks, deadlines, interruptions, terminal/RNG — B03. Runtime API/storage/idempotency — B04. Natural-language/LLM — B06. Studio/Player и Florence migration позже.
+Event effect application и clock/revision transition — B03-02. NPC task lifecycle, deadlines, interruption/terminal/RNG — B03-03. Runtime API/storage/idempotency — B04. Natural-language/LLM — B06. Studio/Player и Florence migration позже.
 
-Следующая карточка: `docs/tasks/B03-01-clock-event-queue.md`. Начинай с чистого integer-time plan; не добавляй HTTP, storage, `Date`, wall-clock timers или LLM.
+Следующая карточка: `docs/tasks/B03-02-event-effects-and-clock-commit.md`. Не добавляй persistence, HTTP, `Date`, wall-clock timers или LLM.
 
 Минимальный цикл: один bounded-шаг → тест реального риска → `npm run verify` → STATUS/HANDOFF/worklog.
