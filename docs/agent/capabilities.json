@@ -6,7 +6,16 @@
     "core.resource"
   ],
   "gameplayEffectTypes": [
+    "item.transfer",
     "resource.change"
+  ],
+  "conditionTypes": [
+    "all",
+    "any",
+    "entity.at",
+    "item.heldBy",
+    "not",
+    "resource.atLeast"
   ],
   "actionTypes": [
     "core.paint"

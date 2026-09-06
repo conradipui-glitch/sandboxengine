@@ -2,61 +2,67 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B02-02 — explicit action resolver  
-Базовый commit: `82d554f1933087e95a08d97c2fa6625d3a5c93b3`  
-Последний кодовый commit: `9be90f57a1bcf0085095fc057e39244cc0a16c5c`  
-Статус: accepted по bounded-приёмке; публикация выполняется через PR #5
+Текущий блок: B02-03 — declarative conditions и item transfer  
+Базовый commit: `b675fbd7e2e9ad8f583d20faeeed2b1ccbb3b9ed`  
+Последний кодовый commit: `5c06e182614869d2f360389a0e5471facc236162`  
+Статус: accepted по bounded-приёмке; публикация выполняется через PR #6
 
 ## Выполнено
 
-- Добавлен strict `CalculatedAction` v1.0 как отдельный gameplay outcome contract; B01 `ActionResult` v1.0 не изменён.
-- Первый calculated action type — `core.paint`.
-- `resolvePaintAction(state, definition, intent)` принимает уже resolved explicit intent и authoritative state; natural language здесь не интерпретируется.
-- Определение `core.paint` задаёт resource ID, расход на completed unit, duration/unit и allowPartial.
-- Достаточный ресурс → `executed`; ограниченный ресурс при allowPartial → `partial` + `RESOURCE_LIMIT`; отсутствие доступного ресурса или запрет partial → `blocked` с 0 sec/effects[].
-- Рассчитанный effect перед success обязательно проходит B02-01 `tryApplyEffectBatch`.
-- Duration рассчитывается, но clock/revision не изменяются.
-- Invalid intent/definition не возвращают calculated state.
-- Generated capabilities/SKILL теперь содержат `core.paint`; HTTP operations всё ещё 0 available.
-- Разделение `CalculatedAction`/public `ActionResult` зафиксировано ADR 0004.
+- Добавлен strict `Condition` v1.0: `resource.atLeast`, `entity.at`, `item.heldBy`, `all`, `any`, `not`.
+- `evaluateCondition` работает только по authoritative `WorldState`, не меняет state и не использует `eval`/произвольные expressions.
+- Нормальный `false` отделён от invalid condition и broken reference. Несуществующий resource/entity/location/item/holder возвращает failure.
+- `all`/`any` не скрывают broken reference short-circuit'ом: все дети проверяются на целостность.
+- `GameplayEffect` расширен вторым реально исполняемым типом `item.transfer`.
+- Destination предмета — ровно одна позиция: `location` или `holder`; item/destination refs проверяются перед применением.
+- `tryApplyEffectBatch` теперь trial-применяет и resources, и items. При любой ошибке batch новый state не возвращается.
+- Valid item transfer создаёт immutable next state, исходный state не мутируется.
+- Generated capabilities/SKILL публикуют conditions и оба effect type; HTTP operations всё ещё 0 available.
+- Решение зафиксировано ADR 0005.
 
 ## Проверено
 
-GitHub Actions PR run [34024417932](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34024417932), Node `24.19.0`, npm `11.17.0`:
+GitHub Actions PR run [34028543840](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34028543840), Node `24.19.0`, npm `11.17.0`:
 
 - `npm ci` → успешно;
-- `npm run verify` → успешно;
-- contract tests → 22/22 passed;
-- Core tests → 15/15 passed;
+- `npm run verify` → успешно после точечного TypeScript narrowing fix;
+- contract tests → 24/24 passed;
+- Core tests → 21/21 passed;
 - `check:boundaries` → успешно;
 - `docs:check` → успешно.
 
-Опорный T01 Core:
+Опорный T07 Core:
 
-- state: `blue_paint=2`, min=0;
-- definition: cost=1, duration=300 sec/unit, allowPartial=true;
-- explicit intent: `core.paint`, units=8;
-- результат: `partial`, requested=8, completed=2, reason=`RESOURCE_LIMIT`, duration=600, `resource.change delta=-2`, trial next state paint=0;
-- повтор на paint=0 → `blocked`, duration=0, effects=[], state не изменён.
+1. authoritative state: `blue_paint=2`, `sealed-box` находится в `workshop`;
+2. effect #0: `resource.change blue_paint -1` — валиден;
+3. effect #1: `item.transfer sealed-box → holder missing-holder` — ссылка не существует;
+4. итог: `holder_not_found`, `effectIndex=1`, новый state отсутствует;
+5. исходный `blue_paint` остаётся 2, `sealed-box` остаётся в исходной position.
 
-Также проверены executed при достаточном ресурсе, partial-disabled blocking и rejection invalid intent/definition.
+Также проверено:
+
+- valid transfer `sealed-box → painter` создаёт новую единственную holder-position без mutation input;
+- `resource.atLeast` даёт true/false на известных IDs;
+- `entity.at` и `item.heldBy` дают deterministic boolean на известных IDs;
+- broken ref возвращает failure даже если предыдущий child в `all` уже дал false;
+- unknown condition/effect types и unknown fields отклоняются strict contract.
 
 ## Не выполнено / ограничения
 
-- Нет общего condition/precondition языка; resolver `core.paint` пока использует свою типизированную арифметику ресурса.
-- Из gameplay effects реализован только `resource.change`; item/entity/variable effects отсутствуют.
-- `conditional` ещё не рассчитывается; социальные просьбы/согласия T02–04 не реализованы.
-- Clock/revision/storage commit отсутствуют; duration пока только число расчёта.
-- Public `ActionResult` v1.0 не несёт `CalculatedAction`; API migration будет отдельным решением B04.
+- Conditions пока не подключены к общему registry action definitions; B02-03 доказывает evaluator и contracts как отдельный reusable слой.
+- Social request/permission/acceptance и status `conditional` ещё не имеют отдельной semantics — это B02-04.
+- Из effects пока только `resource.change` и `item.transfer`; entity/variable/task/event effects не объявлены доступными.
+- Clock/revision/storage commit отсутствуют; scheduler — B03.
 - Свободный текст/LLM/HTTP/Studio/Florence не затрагивались.
 - `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade не выполнялся.
 
 ## Следующее действие
 
-После публикации PR #5 выполнить [B02-03 — declarative conditions и item transfer](tasks/B02-03-conditions-item-transfer.md): добавить минимальный общий condition evaluator и `item.transfer` в `GameplayEffect`, доказать ownership/reference invariants и atomic batch T07 без scheduler/LLM.
+После публикации PR #6 выполнить [B02-04 — social/player-agency semantics](tasks/B02-04-social-agency.md): на explicit actions разделить просьбу, разрешение и фактическое согласие/исполнение, зафиксировать `conditional` как ожидание решения другого участника и доказать T02–04 без LLM, scheduler или runtime storage.
 
 ## Решения
 
 - См. ADR 0003: executable `GameplayEffect` отдельно от generic Effect v1.0.
 - См. ADR 0004: gameplay `CalculatedAction` отдельно от public transport ActionResult v1.0.
-- `ResolvedIntent` сообщает намерение; resolver сам вычисляет completion/duration/effects по state. Модель или клиент не передают эти значения как авторитетные.
+- См. ADR 0005: declarative Condition отделяет false от broken definition; mixed effect batch атомарен.
+- Модель/клиент не получают права превращать request/permission в agreement — следующий bounded-срез закрепляет это в explicit social contracts.

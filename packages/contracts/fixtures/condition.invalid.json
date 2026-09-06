@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "type": "resource.lessThan",
+  "resourceId": "blue_paint",
+  "value": 2
+}

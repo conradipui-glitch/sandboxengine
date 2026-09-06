@@ -10,6 +10,7 @@ export type ContractSchemaVersion = typeof CONTRACT_SCHEMA_VERSION;
 export const CONTRACT_SCHEMA_IDS = {
   effect: "urn:living-history:schema:effect:1.0",
   gameplayEffect: "urn:living-history:schema:gameplay-effect:1.0",
+  condition: "urn:living-history:schema:condition:1.0",
   calculatedAction: "urn:living-history:schema:calculated-action:1.0",
   actionResult: "urn:living-history:schema:action-result:1.0",
   worldState: "urn:living-history:schema:world-state:1.0",

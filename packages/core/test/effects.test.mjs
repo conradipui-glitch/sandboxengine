@@ -17,6 +17,16 @@ function change(resourceId, delta, sourceId = "action.test") {
   };
 }
 
+function transfer(itemId, destination, sourceId = "action.transfer") {
+  return {
+    schemaVersion: "1.0",
+    type: "item.transfer",
+    sourceId,
+    itemId,
+    destination
+  };
+}
+
 test("resource.change batch applies sequentially to a new state", async () => {
   const state = await loadState();
   const result = tryApplyEffectBatch(state, [
@@ -34,7 +44,42 @@ test("resource.change batch applies sequentially to a new state", async () => {
   assert.equal(Object.isFrozen(result.state.resources), true);
 });
 
-test("failure in the second effect rejects the whole batch without partial state", async () => {
+test("valid item.transfer moves one unique item without mutating authoritative input", async () => {
+  const state = await loadState();
+  const originalPosition = structuredClone(state.items[0].position);
+  const result = tryApplyEffectBatch(state, [
+    transfer("sealed-box", { kind: "holder", holderId: "painter" })
+  ]);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(state.items[0].position, originalPosition, "authoritative item position must not mutate");
+  assert.deepEqual(result.state.items[0].position, { kind: "holder", holderId: "painter" });
+  assert.equal(Object.keys(result.state.items[0].position).length, 2, "item has exactly one position representation");
+  assert.equal(Object.isFrozen(result.state.items), true);
+  assert.equal(Object.isFrozen(result.state.items[0].position), true);
+});
+
+test("T07 mixed batch is atomic when item transfer fails after resource change", async () => {
+  const state = await loadState();
+  const originalItem = structuredClone(state.items[0]);
+  const result = tryApplyEffectBatch(state, [
+    change("blue_paint", -1, "first.consume"),
+    transfer("sealed-box", { kind: "holder", holderId: "missing-holder" }, "second.invalid-transfer")
+  ]);
+
+  assert.deepEqual(result, {
+    ok: false,
+    code: "holder_not_found",
+    effectIndex: 1,
+    effectType: "item.transfer",
+    sourceId: "second.invalid-transfer"
+  });
+  assert.equal("state" in result, false);
+  assert.equal(state.resources[0].value, 2, "first effect was never committed");
+  assert.deepEqual(state.items[0], originalItem, "item was never partially moved");
+});
+
+test("failure in the second resource effect rejects the whole batch without partial state", async () => {
   const state = await loadState();
   const result = tryApplyEffectBatch(state, [
     change("blue_paint", -1, "first.valid"),
@@ -52,19 +97,24 @@ test("failure in the second effect rejects the whole batch without partial state
   assert.equal(state.resources[0].value, 2);
 });
 
-test("missing resources and unsupported effects fail without state", async () => {
+test("missing references and unsupported effects fail without state", async () => {
   const state = await loadState();
-  const missing = tryApplyEffectBatch(state, [change("missing", 1)]);
+  const missingResource = tryApplyEffectBatch(state, [change("missing", 1)]);
+  const missingItem = tryApplyEffectBatch(state, [transfer("missing-item", { kind: "holder", holderId: "painter" })]);
+  const missingLocation = tryApplyEffectBatch(state, [transfer("sealed-box", { kind: "location", locationId: "missing-place" })]);
   const unsupported = tryApplyEffectBatch(state, [{
     schemaVersion: "1.0",
-    type: "item.transfer",
+    type: "item.destroy",
     sourceId: "action.test",
     itemId: "sealed-box"
   }]);
 
-  assert.equal(missing.ok, false);
-  assert.equal(missing.code, "resource_not_found");
-  assert.equal("state" in missing, false);
+  assert.equal(missingResource.ok, false);
+  assert.equal(missingResource.code, "resource_not_found");
+  assert.equal(missingItem.ok, false);
+  assert.equal(missingItem.code, "item_not_found");
+  assert.equal(missingLocation.ok, false);
+  assert.equal(missingLocation.code, "location_not_found");
   assert.equal(unsupported.ok, false);
   assert.equal(unsupported.code, "unsupported_effect");
   assert.equal("state" in unsupported, false);

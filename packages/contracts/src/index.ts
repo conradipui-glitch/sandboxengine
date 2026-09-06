@@ -27,8 +27,21 @@ export {
   isGameplayEffect,
   type GameplayEffect,
   type GameplayEffectType,
+  type ItemTransferEffect,
   type ResourceChangeEffect
 } from "./gameplay-effect.js";
+export {
+  CONDITION_TYPES,
+  isCondition,
+  type AllCondition,
+  type AnyCondition,
+  type Condition,
+  type ConditionType,
+  type EntityAtCondition,
+  type ItemHeldByCondition,
+  type NotCondition,
+  type ResourceAtLeastCondition
+} from "./condition.js";
 export {
   CALCULATED_ACTION_TYPES,
   isCalculatedAction,
