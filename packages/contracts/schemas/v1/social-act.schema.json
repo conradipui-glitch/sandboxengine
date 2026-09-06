@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:social-act:1.0",
+  "title": "SocialAct",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/permission" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "jsonValue": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/jsonValue" }
+        },
+        {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actionType", "targetIds", "args"],
+      "properties": {
+        "actionType": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+        },
+        "targetIds": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "args": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "proposalId", "fromEntityId", "toEntityId", "subject"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "request" },
+        "proposalId": { "$ref": "#/$defs/id" },
+        "fromEntityId": { "$ref": "#/$defs/id" },
+        "toEntityId": { "$ref": "#/$defs/id" },
+        "subject": { "$ref": "#/$defs/subject" }
+      }
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "permissionId", "fromEntityId", "toEntityId", "subject"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "permission" },
+        "permissionId": { "$ref": "#/$defs/id" },
+        "fromEntityId": { "$ref": "#/$defs/id" },
+        "toEntityId": { "$ref": "#/$defs/id" },
+        "subject": { "$ref": "#/$defs/subject" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "responseId", "proposalId", "responderId", "decision"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "response" },
+        "responseId": { "$ref": "#/$defs/id" },
+        "proposalId": { "$ref": "#/$defs/id" },
+        "responderId": { "$ref": "#/$defs/id" },
+        "decision": { "enum": ["accept", "refuse"] }
+      }
+    }
+  }
+}

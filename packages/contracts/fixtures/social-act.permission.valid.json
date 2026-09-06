@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "type": "permission",
+  "permissionId": "permission.relay-response",
+  "fromEntityId": "painter",
+  "toEntityId": "luca",
+  "subject": {
+    "actionType": "core.message.relay",
+    "targetIds": ["cardinal"],
+    "args": {
+      "messageId": "player-response"
+    }
+  }
+}

@@ -32,6 +32,15 @@ export {
   type ResolvePaintResult,
   type ResolvePaintSuccess
 } from "./actions.js";
+export {
+  resolveSocialPermission,
+  resolveSocialRequest,
+  resolveSocialResponse,
+  type SocialResolutionFailure,
+  type SocialResolutionFailureCode,
+  type SocialResolutionResult,
+  type SocialResolutionSuccess
+} from "./social.js";
 export type {
   ActionResultEnvelope,
   Block,
@@ -43,6 +52,10 @@ export type {
   QuestRelease,
   ResolvedIntent,
   ResourceChangeEffect,
+  SocialAct,
+  SocialPermission,
+  SocialRequest,
+  SocialResponse,
   WorldState,
   ActionStatus,
   ProcessingStatus
