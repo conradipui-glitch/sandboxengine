@@ -6,17 +6,17 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "type", "sourceId", "resourceId", "delta"],
+      "required": ["schemaVersion", "type", "sourceId", "entityId", "locationId"],
       "properties": {
         "schemaVersion": { "const": "1.0" },
-        "type": { "const": "resource.change" },
+        "type": { "const": "entity.move" },
         "sourceId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 200
         },
-        "resourceId": { "$ref": "#/$defs/id" },
-        "delta": { "type": "integer" }
+        "entityId": { "$ref": "#/$defs/id" },
+        "locationId": { "$ref": "#/$defs/id" }
       }
     },
     {
@@ -33,6 +33,22 @@
         },
         "itemId": { "$ref": "#/$defs/id" },
         "destination": { "$ref": "#/$defs/itemPosition" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "sourceId", "resourceId", "delta"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "resource.change" },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "resourceId": { "$ref": "#/$defs/id" },
+        "delta": { "type": "integer" }
       }
     }
   ],
