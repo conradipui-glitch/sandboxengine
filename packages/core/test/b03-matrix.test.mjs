@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  CORE_DEADLINE_PRIORITY,
+  CORE_TASK_START_INTERNAL_ORDER,
+  CORE_TASK_STEP_PRIORITY,
+  CORE_WORLD_EVENT_PRIORITY,
   planTimeAdvance,
   processTimeAdvancePlan,
   projectDeadlineEvent,
@@ -61,14 +65,15 @@ test("T05 NPC returns at 900 inside work to 2400 and later step sees new locatio
     actorEntityId: "painter",
     startAtElapsedSeconds: 0,
     completeAtElapsedSeconds: 900,
-    baseOrder: 10,
+    baseOrder: CORE_TASK_START_INTERNAL_ORDER,
     startEffects: [],
     completionEffects: [moveEffect("task.painter.return-from-doctor", "painter", "workshop")]
   };
   const projected = projectTaskEvents(state, task);
   assert.equal(projected.ok, true);
+  assert.equal(projected.events[1].order, CORE_TASK_STEP_PRIORITY);
 
-  const observe = marker("event.observe-return", 1200, 20, "observe.return");
+  const observe = marker("event.observe-return", 1200, CORE_WORLD_EVENT_PRIORITY, "observe.return");
   const plan = planTimeAdvance(state, 2400, [...projected.events, observe]);
   assert.equal(plan.ok, true);
 
@@ -81,7 +86,7 @@ test("T05 NPC returns at 900 inside work to 2400 and later step sees new locatio
         schemaVersion: "1.0",
         eventId: "event.observed-return",
         atElapsedSeconds: 1200,
-        order: 20,
+        order: CORE_WORLD_EVENT_PRIORITY,
         sourceId: "test.t05",
         kind: "core.marker",
         payload: { markerId: "return.was.visible" }
@@ -101,7 +106,7 @@ test("T05 NPC returns at 900 inside work to 2400 and later step sees new locatio
   assert.equal(state.entities[0].locationId, "doctor", "authoritative input remains unchanged");
 });
 
-test("T06 completion at exact deadline is ordered first and integer clock crosses midnight unambiguously", async () => {
+test("T06 completion at exact deadline uses canonical 20-before-100 priority and crosses midnight unambiguously", async () => {
   const base = await baseState();
   const state = {
     ...base,
@@ -117,7 +122,7 @@ test("T06 completion at exact deadline is ordered first and integer clock crosse
     actorEntityId: "painter",
     startAtElapsedSeconds: 86_300,
     completeAtElapsedSeconds: 86_500,
-    baseOrder: 10,
+    baseOrder: CORE_TASK_START_INTERNAL_ORDER,
     startEffects: [],
     completionEffects: [moveEffect("task.painter.midnight-return", "painter", "workshop")]
   };
@@ -126,7 +131,7 @@ test("T06 completion at exact deadline is ordered first and integer clock crosse
   const deadline = projectDeadlineEvent({
     deadlineId: "deadline.after-midnight",
     atElapsedSeconds: 86_500,
-    order: 20,
+    order: CORE_DEADLINE_PRIORITY,
     sourceId: "quest.t06",
     reason: "DEADLINE",
     outcome: "Deadline reached after the task completion."
@@ -136,9 +141,9 @@ test("T06 completion at exact deadline is ordered first and integer clock crosse
   const plan = planTimeAdvance(state, 400, [...projected.events, deadline.event]);
   assert.equal(plan.ok, true);
   assert.deepEqual(plan.dueEvents.map((event) => [event.eventId, event.atElapsedSeconds, event.order]), [
-    ["task.painter.midnight-return.start", 86_300, 10],
-    ["task.painter.midnight-return.complete", 86_500, 11],
-    ["deadline.after-midnight.terminal", 86_500, 20]
+    ["task.painter.midnight-return.start", 86_300, CORE_TASK_START_INTERNAL_ORDER],
+    ["task.painter.midnight-return.complete", 86_500, CORE_TASK_STEP_PRIORITY],
+    ["deadline.after-midnight.terminal", 86_500, CORE_DEADLINE_PRIORITY]
   ]);
 
   const first = processTimeAdvancePlan(state, plan);
@@ -147,14 +152,14 @@ test("T06 completion at exact deadline is ordered first and integer clock crosse
   assert.deepEqual(first, second, "same integer-time input is deterministic across the midnight boundary");
   assert.equal(first.interrupted, true);
   assert.equal(first.state.clock.elapsedSeconds, 86_500);
-  assert.equal(first.state.entities[0].locationId, "workshop", "completion at the same timestamp applies before terminal");
+  assert.equal(first.state.entities[0].locationId, "workshop", "completion at priority 20 applies before deadline priority 100");
   assert.equal(first.state.terminal.reason, "DEADLINE");
   assert.equal(86_300 < 86_400 && 86_500 > 86_400, true, "test explicitly crosses the day boundary by integer arithmetic");
 });
 
 test("T08 self-generated immediate events hit one global step budget with no partial commit", async () => {
   const state = await baseState();
-  const root = marker("loop.root", 100, 10, "loop");
+  const root = marker("loop.root", 100, CORE_WORLD_EVENT_PRIORITY, "loop");
   const plan = planTimeAdvance(state, 10_000, [root]);
   assert.equal(plan.ok, true);
   const before = JSON.stringify(state);
@@ -182,11 +187,11 @@ test("T08 self-generated immediate events hit one global step budget with no par
   assert.equal(state.clock.elapsedSeconds, 0, "long wait does not turn an event loop into a partial time commit");
 });
 
-test("same-time generated child cannot jump before its parent effective order", async () => {
+test("same-time generated child cannot jump before its parent effective priority/sequence", async () => {
   const state = await baseState();
   const plan = planTimeAdvance(state, 10, [
-    marker("parent", 5, 50),
-    marker("peer", 5, 50)
+    marker("parent", 5, CORE_WORLD_EVENT_PRIORITY),
+    marker("peer", 5, CORE_WORLD_EVENT_PRIORITY)
   ]);
   assert.equal(plan.ok, true);
   const result = processTimeAdvancePlan(state, plan, {
@@ -201,8 +206,8 @@ test("same-time generated child cannot jump before its parent effective order", 
     effectiveOrder,
     sequence
   })), [
-    { id: "parent", effectiveOrder: 50, sequence: 0 },
-    { id: "peer", effectiveOrder: 50, sequence: 1 },
-    { id: "child.lower-declared-order", effectiveOrder: 50, sequence: 2 }
+    { id: "parent", effectiveOrder: CORE_WORLD_EVENT_PRIORITY, sequence: 0 },
+    { id: "peer", effectiveOrder: CORE_WORLD_EVENT_PRIORITY, sequence: 1 },
+    { id: "child.lower-declared-order", effectiveOrder: CORE_WORLD_EVENT_PRIORITY, sequence: 2 }
   ]);
 });
