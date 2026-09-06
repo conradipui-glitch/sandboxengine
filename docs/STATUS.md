@@ -4,28 +4,40 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | B01 принят; B02-01, B02-02 и B02-03 реализованы | B02-01 merge `82d554f1933087e95a08d97c2fa6625d3a5c93b3`; B02-02 merge `b675fbd7e2e9ad8f583d20faeeed2b1ccbb3b9ed`; B02-03 code `5c06e182614869d2f360389a0e5471facc236162`, PR #6, CI `34028543840` |
-| Контракты | `GameplayEffect`, `Condition`, `CalculatedAction` v1.0 | effects: `resource.change`, `item.transfer`; conditions: resource/entity/item + all/any/not; action: `core.paint` |
-| Core effects | B02-03 принят по bounded-приёмке | all-or-nothing `tryApplyEffectBatch` над trial-copy resources/items; T07 mixed batch доказан |
-| Conditions | B02-03 принят | deterministic evaluator; valid false отделён от invalid/broken reference; no eval/JS expressions |
-| Action resolver | B02-02 принят | `resolvePaintAction`: executed/partial/blocked, resource limit, calculated duration; no clock/revision commit |
-| Social/player agency semantics | не реализованы | следующий B02-04 — request/permission/acceptance и `conditional` без LLM/scheduler |
-| Scheduler/time/tasks | не начато | B03 после общей приёмки B02 |
-| Runtime/API/storage | не начато | B04 |
+| Репозиторий и навигация | B01 и общий B02 приняты | B02-01 merge `82d554f1933087e95a08d97c2fa6625d3a5c93b3`; B02-02 merge `b675fbd7e2e9ad8f583d20faeeed2b1ccbb3b9ed`; B02-03 merge `2bb15df2f5bb493828ea59c796e776cf01e259fc`; B02-04 code `be9c2d76f2b30252c72ed4044010f3623b1664eb`, PR #7, CI `34029126259` |
+| Контракты | B02 принят | strict `GameplayEffect`, `Condition`, `SocialAct`, `CalculatedAction` v1.0; generated capabilities current |
+| Core action execution | B02 принят | read-only authoritative input, explicit resolver, trial effect batch, executed/partial/conditional/blocked |
+| Resources/items | B02 принят | `resource.change`, `item.transfer`, mixed batch atomicity T07 |
+| Conditions | B02 принят | resource/entity/item predicates + all/any/not; false отделён от broken reference |
+| Player/social agency | B02 принят | request ≠ permission ≠ response; request conditional; accept/refuse explicit; no hidden physical effects |
+| B02 test matrix | accepted | T01, T02, T03, T04, T07 реализованы детерминированно без AI |
+| Scheduler/time/tasks | следующий блок | B03-01 — integer clock + ordered scheduler plan; B03 целиком отвечает за T05–06/T08 |
+| Runtime/API/storage | не начато | B04 после B03 |
 | Studio/Player | не начато | B05/B07 |
-| AI-провайдеры/свободный ввод | не начато | B06 |
+| AI-провайдеры/свободный ввод | не начато | B06; модель должна отображать текст на уже существующие Core-смыслы |
 | Плагины/Builder | не начато | B08/B13 |
 | Миграция Florence | не начато | B11 |
-| T01–T37 | частично | T01 Core-ядро принято B02-02; T07 принят B02-03; T02–04 следующие |
 
-## Что движок реально умеет сейчас
+## Что означает приёмка B02
 
-Для explicit resolved `core.paint` Core сам рассчитывает выполнимый объём по authoritative resource state. При `blue_paint=2`, запросе 8 единиц, цене 1 и 300 сек/единицу получается `partial`: completed=2, duration=600, `resource.change delta=-2`. Повтор при paint=0 даёт `blocked`, duration=0, effects=[].
+Core уже умеет без AI:
 
-Отдельный `Condition` позволяет детерминированно проверить `resource.atLeast`, `entity.at`, `item.heldBy` и композиции `all/any/not`. Несуществующий ID считается ошибкой определения, а не обычным `false`.
+- вычислить explicit `core.paint` по authoritative ресурсу;
+- вернуть `executed`, `partial` или `blocked` и рассчитанную duration;
+- проверить декларативные preconditions;
+- trial-применить typed resource/item effects all-or-nothing;
+- сохранить request как `conditional`, пока нет explicit response;
+- отличить permission от request;
+- записать explicit accept/refuse без автоматического выполнения proposed action.
 
-`item.transfer` переносит уникальный item ровно в одну destination position (`location` или `holder`). Смешанный batch `resource.change` + ошибочный `item.transfer` целиком отклоняется: новый state не возвращается и первый расход не применяется.
+Опорные регрессии:
 
-Это всё ещё не runtime-ход: рассчитанная duration не двигает clock, revision не увеличивается, storage commit отсутствует. Свободный текст и LLM не подключены.
+- T01: paint=2, request=8 → partial 2, −2 paint, 600 sec; повтор → blocked 0 sec;
+- T02: «оставить мне копию» → pending request, без обратного item transfer;
+- T03: «не запрещаю передать ответ» → permission `core.message.relay`, не новая просьба о переносе;
+- T04: request остаётся conditional до explicit accept/refuse; response не исполняет physical action;
+- T07: валидный resource effect перед ошибочным item transfer отклоняется целиком.
+
+B02 всё ещё не является runtime: duration пока не двигает `WorldState.clock`, revision не увеличивается, pending social request не хранится в БД, фоновые задачи/events отсутствуют. Это граница B03/B04.
 
 Известное наблюдение CI: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельной проверки не выполнялся.

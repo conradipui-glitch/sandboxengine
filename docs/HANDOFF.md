@@ -2,67 +2,68 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B02-03 — declarative conditions и item transfer  
-Базовый commit: `b675fbd7e2e9ad8f583d20faeeed2b1ccbb3b9ed`  
-Последний кодовый commit: `5c06e182614869d2f360389a0e5471facc236162`  
-Статус: accepted по bounded-приёмке; публикация выполняется через PR #6
+Текущий блок: B02-04 — social/player-agency semantics  
+Базовый commit: `2bb15df2f5bb493828ea59c796e776cf01e259fc`  
+Последний кодовый commit: `be9c2d76f2b30252c72ed4044010f3623b1664eb`  
+Статус: accepted по bounded-приёмке; общая приёмка B02 также пройдена; публикация выполняется через PR #7
 
 ## Выполнено
 
-- Добавлен strict `Condition` v1.0: `resource.atLeast`, `entity.at`, `item.heldBy`, `all`, `any`, `not`.
-- `evaluateCondition` работает только по authoritative `WorldState`, не меняет state и не использует `eval`/произвольные expressions.
-- Нормальный `false` отделён от invalid condition и broken reference. Несуществующий resource/entity/location/item/holder возвращает failure.
-- `all`/`any` не скрывают broken reference short-circuit'ом: все дети проверяются на целостность.
-- `GameplayEffect` расширен вторым реально исполняемым типом `item.transfer`.
-- Destination предмета — ровно одна позиция: `location` или `holder`; item/destination refs проверяются перед применением.
-- `tryApplyEffectBatch` теперь trial-применяет и resources, и items. При любой ошибке batch новый state не возвращается.
-- Valid item transfer создаёт immutable next state, исходный state не мутируется.
-- Generated capabilities/SKILL публикуют conditions и оба effect type; HTTP operations всё ещё 0 available.
-- Решение зафиксировано ADR 0005.
+- Добавлен strict `SocialAct` v1.0: `request`, `permission`, `response`.
+- Social subject хранит только `actionType`, `targetIds`, `args`; duration/effects/statePatch запрещены.
+- `CalculatedAction` расширен `core.social.request`, `core.social.permission`, `core.social.response`.
+- request всегда остаётся `conditional / AWAITING_RESPONSE`, effects=[].
+- permission считается `executed` только как состоявшийся акт разрешения; permitted physical action не исполняется, effects=[].
+- response содержит explicit `accept|refuse`, обязан ссылаться на конкретный known request и исходного адресата; effects=[].
+- Даже acceptance не выполняет proposed physical action: item/resource mutation обязаны проходить обычный resolver/effect pipeline отдельно.
+- Generated agent kit публикует social act types и social calculated action types; HTTP operations по-прежнему отсутствуют.
+- Решение зафиксировано ADR 0006.
 
 ## Проверено
 
-GitHub Actions PR run [34028543840](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34028543840), Node `24.19.0`, npm `11.17.0`:
+Первый PR run `34029050442` обнаружил TypeScript union regression после расширения `CalculatedAction`: старый paint helper использовал `Omit<CalculatedAction,...>` и потерял variant-specific поля; social `effects` выводились как `readonly never[]` вместо exact empty tuple. Семантика не менялась.
+
+Fix commit `be9c2d76f2b30252c72ed4044010f3623b1664eb`:
+
+- paint resolver теперь типизирован через `PaintCalculatedAction`;
+- social outcomes используют конкретные calculated variants и exact `readonly []` effects.
+
+Финальный GitHub Actions PR run [34029126259](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34029126259), Node `24.19.0`, npm `11.17.0`:
 
 - `npm ci` → успешно;
-- `npm run verify` → успешно после точечного TypeScript narrowing fix;
-- contract tests → 24/24 passed;
-- Core tests → 21/21 passed;
+- `npm run verify` → успешно;
+- contract tests → 28/28 passed;
+- Core tests → 26/26 passed;
 - `check:boundaries` → успешно;
 - `docs:check` → успешно.
 
-Опорный T07 Core:
+## B02 regression matrix
 
-1. authoritative state: `blue_paint=2`, `sealed-box` находится в `workshop`;
-2. effect #0: `resource.change blue_paint -1` — валиден;
-3. effect #1: `item.transfer sealed-box → holder missing-holder` — ссылка не существует;
-4. итог: `holder_not_found`, `effectIndex=1`, новый state отсутствует;
-5. исходный `blue_paint` остаётся 2, `sealed-box` остаётся в исходной position.
+- T01 — resource-limited explicit action: принято B02-02.
+- T02 — request «оставить копию» не превращается в inverse item transfer: принято B02-04.
+- T03 — permission «не запрещаю передать ответ» не превращается в новую request/postpone: принято B02-04.
+- T04 — request остаётся conditional до explicit accept/refuse; acceptance не исполняет proposed physical action: принято B02-04.
+- T07 — mixed resource/item batch all-or-nothing: принято B02-03.
 
-Также проверено:
-
-- valid transfer `sealed-box → painter` создаёт новую единственную holder-position без mutation input;
-- `resource.atLeast` даёт true/false на известных IDs;
-- `entity.at` и `item.heldBy` дают deterministic boolean на известных IDs;
-- broken ref возвращает failure даже если предыдущий child в `all` уже дал false;
-- unknown condition/effect types и unknown fields отклоняются strict contract.
+Каноническая карточка B02 требует typed conditions/effects, read-only inputs, trial effect batch, resolver, executed/partial/conditional/blocked и T01–04/T07. Эти пункты теперь имеют код и regression tests, поэтому общий B02 принят.
 
 ## Не выполнено / ограничения
 
-- Conditions пока не подключены к общему registry action definitions; B02-03 доказывает evaluator и contracts как отдельный reusable слой.
-- Social request/permission/acceptance и status `conditional` ещё не имеют отдельной semantics — это B02-04.
-- Из effects пока только `resource.change` и `item.transfer`; entity/variable/task/event effects не объявлены доступными.
-- Clock/revision/storage commit отсутствуют; scheduler — B03.
-- Свободный текст/LLM/HTTP/Studio/Florence не затрагивались.
-- `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade не выполнялся.
+- Duration пока не двигает `WorldState.clock` и не делает commit revision.
+- Pending social requests не сохраняются в WorldState/storage; response resolver получает конкретный known request явным аргументом.
+- NPC decision AI отсутствует.
+- Tasks/events/deadlines/interruptions/RNG относятся к B03.
+- Runtime API/storage/idempotency относятся к B04.
+- Natural-language interpretation и LLM относятся к B06.
+- `npm ci` продолжает сообщать 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade не выполнялся.
 
 ## Следующее действие
 
-После публикации PR #6 выполнить [B02-04 — social/player-agency semantics](tasks/B02-04-social-agency.md): на explicit actions разделить просьбу, разрешение и фактическое согласие/исполнение, зафиксировать `conditional` как ожидание решения другого участника и доказать T02–04 без LLM, scheduler или runtime storage.
+После публикации PR #7 начать [B03-01 — integer clock и ordered scheduler plan](tasks/B03-01-clock-event-queue.md). Не добавлять HTTP/storage/LLM. Первый scheduler slice должен доказать хронологический порядок событий внутри рассчитанной duration и стабильный tie-break, но не пытаться сразу реализовать весь task/deadline subsystem.
 
 ## Решения
 
-- См. ADR 0003: executable `GameplayEffect` отдельно от generic Effect v1.0.
-- См. ADR 0004: gameplay `CalculatedAction` отдельно от public transport ActionResult v1.0.
-- См. ADR 0005: declarative Condition отделяет false от broken definition; mixed effect batch атомарен.
-- Модель/клиент не получают права превращать request/permission в agreement — следующий bounded-срез закрепляет это в explicit social contracts.
+- ADR 0003: executable GameplayEffect отдельно от generic Effect v1.0.
+- ADR 0004: CalculatedAction отдельно от public transport ActionResult v1.0.
+- ADR 0005: declarative Condition и mixed atomicity.
+- ADR 0006: request, permission и response являются отдельными social semantics; consent не исполняет чужое действие.
