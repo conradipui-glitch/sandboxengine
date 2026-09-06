@@ -99,11 +99,12 @@ export function tryApplyEffectBatch(
       const itemIndex = items.findIndex((item) => item.id === effect.itemId);
       if (itemIndex < 0) return failure("item_not_found", index, effect);
 
-      if (effect.destination.kind === "holder") {
-        if (!state.entities.some((entity) => entity.id === effect.destination.holderId)) {
+      const destination = effect.destination;
+      if (destination.kind === "holder") {
+        if (!state.entities.some((entity) => entity.id === destination.holderId)) {
           return failure("holder_not_found", index, effect);
         }
-      } else if (!state.locations.some((location) => location.id === effect.destination.locationId)) {
+      } else if (!state.locations.some((location) => location.id === destination.locationId)) {
         return failure("location_not_found", index, effect);
       }
 
@@ -111,7 +112,7 @@ export function tryApplyEffectBatch(
       if (!item) return failure("invalid_state", index, effect);
       items[itemIndex] = Object.freeze({
         ...item,
-        position: Object.freeze({ ...effect.destination })
+        position: Object.freeze({ ...destination })
       });
     }
 
