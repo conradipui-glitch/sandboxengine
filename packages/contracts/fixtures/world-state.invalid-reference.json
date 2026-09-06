@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "revision": 7,
+  "clock": { "elapsedSeconds": 0 },
+  "locations": [
+    { "id": "workshop" }
+  ],
+  "entities": [
+    { "id": "painter", "type": "character", "status": "available", "locationId": "missing-shop" }
+  ],
+  "resources": [],
+  "items": [],
+  "terminal": null
+}

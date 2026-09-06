@@ -1,6 +1,8 @@
 import {
+  CONTRACT_SCHEMA_VERSION,
   isActionResultEnvelope,
-  type ActionResultEnvelope
+  type ActionResultEnvelope,
+  type Effect
 } from "@living-history/contracts";
 
 /**
@@ -13,10 +15,15 @@ export function isCanonicalActionResult(value: unknown): value is ActionResultEn
 
 export function executedResult(
   durationSeconds: number,
-  effects: readonly ActionResultEnvelope["effects"][number][] = []
+  effects: readonly Omit<Effect, "schemaVersion">[] = []
 ): ActionResultEnvelope {
   if (!Number.isInteger(durationSeconds) || durationSeconds < 0) {
     throw new RangeError("durationSeconds must be a non-negative integer");
   }
-  return { status: "executed", durationSeconds, effects: [...effects] };
+  return {
+    schemaVersion: CONTRACT_SCHEMA_VERSION,
+    status: "executed",
+    durationSeconds,
+    effects: effects.map((effect) => ({ schemaVersion: CONTRACT_SCHEMA_VERSION, ...effect }))
+  };
 }
