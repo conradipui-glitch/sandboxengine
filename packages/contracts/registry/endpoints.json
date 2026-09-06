@@ -5,8 +5,9 @@
       "id": "runtime.healthz",
       "method": "GET",
       "path": "/healthz",
-      "readiness": "planned",
-      "summary": "Проверка доступности будущего Runtime API"
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Проверка доступности Runtime API"
     },
     {
       "id": "runtime.quests.list",
@@ -19,15 +20,33 @@
       "id": "runtime.sessions.create",
       "method": "POST",
       "path": "/v1/sessions",
-      "readiness": "planned",
-      "summary": "Создание игрового прохождения"
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Создание гостевой игровой сессии"
+    },
+    {
+      "id": "runtime.sessions.get",
+      "method": "GET",
+      "path": "/v1/sessions/{sessionId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Получение player-safe состояния своей игровой сессии"
     },
     {
       "id": "runtime.sessions.action",
       "method": "POST",
       "path": "/v1/sessions/{sessionId}/actions",
-      "readiness": "planned",
-      "summary": "Отправка одного игрового действия"
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Отправка одного поддержанного explicit игрового действия"
+    },
+    {
+      "id": "runtime.operations.get",
+      "method": "GET",
+      "path": "/v1/sessions/{sessionId}/operations/{operationId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Восстановление публичного статуса или результата операции"
     },
     {
       "id": "control.capabilities",
