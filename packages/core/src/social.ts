@@ -2,13 +2,23 @@ import {
   CONTRACT_SCHEMA_VERSION,
   hasValidWorldStateReferences,
   isSocialAct,
-  type CalculatedAction,
+  type JsonValue,
   type SocialActionSubject,
   type SocialPermission,
+  type SocialPermissionCalculatedAction,
   type SocialRequest,
+  type SocialRequestCalculatedAction,
   type SocialResponse,
+  type SocialResponseCalculatedAction,
   type WorldState
 } from "@living-history/contracts";
+
+type SocialCalculatedAction =
+  | SocialRequestCalculatedAction
+  | SocialPermissionCalculatedAction
+  | SocialResponseCalculatedAction;
+
+const NO_EFFECTS = Object.freeze([]) as readonly [];
 
 export type SocialResolutionFailureCode =
   | "invalid_state"
@@ -19,7 +29,7 @@ export type SocialResolutionFailureCode =
 
 export interface SocialResolutionSuccess {
   readonly ok: true;
-  readonly action: CalculatedAction;
+  readonly action: SocialCalculatedAction;
 }
 
 export interface SocialResolutionFailure {
@@ -39,7 +49,7 @@ export function resolveSocialRequest(state: WorldState, raw: unknown): SocialRes
   if (entityFailure) return entityFailure;
 
   const request = raw as SocialRequest;
-  return success(Object.freeze({
+  const action: SocialRequestCalculatedAction = Object.freeze({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     actionType: "core.social.request",
     status: "conditional",
@@ -49,8 +59,9 @@ export function resolveSocialRequest(state: WorldState, raw: unknown): SocialRes
     toEntityId: request.toEntityId,
     subject: freezeSubject(request.subject),
     durationSeconds: 0,
-    effects: Object.freeze([])
-  }));
+    effects: NO_EFFECTS
+  });
+  return success(action);
 }
 
 export function resolveSocialPermission(state: WorldState, raw: unknown): SocialResolutionResult {
@@ -62,7 +73,7 @@ export function resolveSocialPermission(state: WorldState, raw: unknown): Social
   if (entityFailure) return entityFailure;
 
   const permission = raw as SocialPermission;
-  return success(Object.freeze({
+  const action: SocialPermissionCalculatedAction = Object.freeze({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     actionType: "core.social.permission",
     status: "executed",
@@ -72,8 +83,9 @@ export function resolveSocialPermission(state: WorldState, raw: unknown): Social
     toEntityId: permission.toEntityId,
     subject: freezeSubject(permission.subject),
     durationSeconds: 0,
-    effects: Object.freeze([])
-  }));
+    effects: NO_EFFECTS
+  });
+  return success(action);
 }
 
 /**
@@ -109,7 +121,7 @@ export function resolveSocialResponse(
     return failure("responder_mismatch", response.responderId);
   }
 
-  return success(Object.freeze({
+  const action: SocialResponseCalculatedAction = Object.freeze({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     actionType: "core.social.response",
     status: "executed",
@@ -119,8 +131,9 @@ export function resolveSocialResponse(
     responderId: response.responderId,
     decision: response.decision,
     durationSeconds: 0,
-    effects: Object.freeze([])
-  }));
+    effects: NO_EFFECTS
+  });
+  return success(action);
 }
 
 function validateState(state: WorldState): SocialResolutionFailure | null {
@@ -143,19 +156,21 @@ function freezeSubject(subject: SocialActionSubject): SocialActionSubject {
   });
 }
 
-function freezeJsonRecord(value: Readonly<Record<string, unknown>>): Readonly<Record<string, any>> {
-  const result: Record<string, any> = {};
+function freezeJsonRecord(value: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
+  const result: Record<string, JsonValue> = {};
   for (const [key, entry] of Object.entries(value)) result[key] = freezeJsonValue(entry);
   return Object.freeze(result);
 }
 
-function freezeJsonValue(value: unknown): any {
-  if (Array.isArray(value)) return Object.freeze(value.map(freezeJsonValue));
-  if (typeof value === "object" && value !== null) return freezeJsonRecord(value as Record<string, unknown>);
+function freezeJsonValue(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return Object.freeze(value.map((entry) => freezeJsonValue(entry)));
+  if (typeof value === "object" && value !== null) {
+    return freezeJsonRecord(value as Readonly<Record<string, JsonValue>>);
+  }
   return value;
 }
 
-function success(action: CalculatedAction): SocialResolutionSuccess {
+function success(action: SocialCalculatedAction): SocialResolutionSuccess {
   return Object.freeze({ ok: true, action });
 }
 

@@ -1,7 +1,7 @@
 import {
   CONTRACT_SCHEMA_VERSION,
   isCalculatedAction,
-  type CalculatedAction,
+  type PaintCalculatedAction,
   type ResolvedIntent,
   type WorldState
 } from "@living-history/contracts";
@@ -26,7 +26,7 @@ export type ResolvePaintFailureCode =
 
 export interface ResolvePaintSuccess {
   readonly ok: true;
-  readonly action: CalculatedAction;
+  readonly action: PaintCalculatedAction;
   readonly state: WorldState;
 }
 
@@ -107,8 +107,10 @@ export function resolvePaintAction(
   return Object.freeze({ ok: true, action, state: applied.state });
 }
 
-function createCalculatedAction(input: Omit<CalculatedAction, "schemaVersion" | "actionType">): CalculatedAction | null {
-  const action: CalculatedAction = Object.freeze({
+function createCalculatedAction(
+  input: Omit<PaintCalculatedAction, "schemaVersion" | "actionType">
+): PaintCalculatedAction | null {
+  const action: PaintCalculatedAction = Object.freeze({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     actionType: "core.paint",
     ...input,
