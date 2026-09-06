@@ -15,6 +15,7 @@ export interface TimeAdvanceOptions {
 
 export type TimeAdvanceFailureCode =
   | "invalid_state"
+  | "already_terminal"
   | "invalid_duration"
   | "invalid_options"
   | "invalid_event"
@@ -43,6 +44,7 @@ export type TimeAdvancePlanResult = TimeAdvancePlanSuccess | TimeAdvancePlanFail
 
 export type TimeAdvanceApplyFailureCode =
   | "invalid_state"
+  | "already_terminal"
   | "invalid_plan"
   | "plan_state_mismatch"
   | "revision_overflow"
@@ -53,6 +55,9 @@ export interface TimeAdvanceApplySuccess {
   readonly state: WorldState;
   readonly appliedEvents: readonly SchedulerEvent[];
   readonly pendingEvents: readonly SchedulerEvent[];
+  readonly interrupted: boolean;
+  readonly interruptionEventId: string | null;
+  readonly unprocessedEvents: readonly SchedulerEvent[];
 }
 
 export interface TimeAdvanceApplyFailure {
@@ -83,6 +88,7 @@ export function planTimeAdvance(
     || !isSafeNonNegativeInteger(startElapsedSeconds)) {
     return planFailure("invalid_state");
   }
+  if (state.terminal !== null) return planFailure("already_terminal");
   if (!isSafeNonNegativeInteger(durationSeconds)) return planFailure("invalid_duration");
 
   const maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS_PER_INTERVAL;
@@ -128,9 +134,9 @@ export function planTimeAdvance(
 
 /**
  * Applies one already-built time plan as a single Core transition. Due events
- * observe state changes from earlier due events, but a later failure exposes no
- * partial next state. On complete success clock moves to plan.end and revision
- * increments exactly once, including a zero-duration committed transition.
+ * observe state changes from earlier due events. A terminal event is an explicit
+ * successful interruption: it commits state at its own game-time and leaves all
+ * later due events unprocessed. Any effect failure still exposes no partial state.
  */
 export function applyTimeAdvancePlan(
   state: WorldState,
@@ -142,6 +148,7 @@ export function applyTimeAdvancePlan(
     || !isSafeNonNegativeInteger(startElapsedSeconds)) {
     return applyFailure("invalid_state");
   }
+  if (state.terminal !== null) return applyFailure("already_terminal");
   if (!isValidPlanShape(plan)) return applyFailure("invalid_plan");
   if (plan.startElapsedSeconds !== startElapsedSeconds) {
     return applyFailure("plan_state_mismatch");
@@ -149,9 +156,16 @@ export function applyTimeAdvancePlan(
   if (state.revision === Number.MAX_SAFE_INTEGER) return applyFailure("revision_overflow");
 
   let trialState = state;
+  const appliedEvents: SchedulerEvent[] = [];
+  let interrupted = false;
+  let interruptionEventId: string | null = null;
+  let effectiveEnd = plan.endElapsedSeconds;
+  let unprocessedEvents: SchedulerEvent[] = [];
+
   for (let index = 0; index < plan.dueEvents.length; index += 1) {
     const event = plan.dueEvents[index];
     if (!event) return applyFailure("invalid_plan");
+
     if (event.kind === "core.effects") {
       const applied = tryApplyEffectBatch(trialState, event.payload.effects);
       if (!applied.ok) {
@@ -164,20 +178,39 @@ export function applyTimeAdvancePlan(
         });
       }
       trialState = applied.state;
+    } else if (event.kind === "core.terminal") {
+      trialState = Object.freeze({
+        ...trialState,
+        terminal: Object.freeze({
+          reason: event.payload.reason,
+          outcome: event.payload.outcome
+        })
+      });
+      interrupted = true;
+      interruptionEventId = event.eventId;
+      effectiveEnd = event.atElapsedSeconds;
+      appliedEvents.push(event);
+      unprocessedEvents = [...plan.dueEvents.slice(index + 1)];
+      break;
     }
+
+    appliedEvents.push(event);
   }
 
   const nextState: WorldState = Object.freeze({
     ...trialState,
     revision: state.revision + 1,
-    clock: Object.freeze({ elapsedSeconds: plan.endElapsedSeconds })
+    clock: Object.freeze({ elapsedSeconds: effectiveEnd })
   });
 
   return Object.freeze({
     ok: true,
     state: nextState,
-    appliedEvents: Object.freeze([...plan.dueEvents]),
-    pendingEvents: Object.freeze([...plan.pendingEvents])
+    appliedEvents: Object.freeze([...appliedEvents]),
+    pendingEvents: Object.freeze([...plan.pendingEvents]),
+    interrupted,
+    interruptionEventId,
+    unprocessedEvents: Object.freeze(unprocessedEvents)
   });
 }
 

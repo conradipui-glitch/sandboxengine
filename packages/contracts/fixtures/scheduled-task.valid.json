@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "core.task",
+  "taskId": "task.painter.prepares-blue",
+  "sourceId": "quest.demo",
+  "actorEntityId": "painter",
+  "startAtElapsedSeconds": 60,
+  "completeAtElapsedSeconds": 300,
+  "baseOrder": 20,
+  "startEffects": [],
+  "completionEffects": [
+    {
+      "schemaVersion": "1.0",
+      "type": "resource.change",
+      "sourceId": "task.painter.prepares-blue",
+      "resourceId": "blue_paint",
+      "delta": 1
+    }
+  ]
+}

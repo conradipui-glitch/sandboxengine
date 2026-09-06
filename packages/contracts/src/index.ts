@@ -72,6 +72,18 @@ export {
   type SchedulerEvent
 } from "./scheduled-effect-event.js";
 export {
+  SCHEDULED_TERMINAL_EVENT_KIND,
+  isScheduledTerminalEvent,
+  type ScheduledTerminalEvent,
+  type ScheduledTerminalEventPayload
+} from "./scheduled-terminal-event.js";
+export {
+  MAX_EFFECTS_PER_TASK_PHASE,
+  SCHEDULED_TASK_KIND,
+  isScheduledTask,
+  type ScheduledTask
+} from "./scheduled-task.js";
+export {
   CALCULATED_ACTION_TYPES,
   isCalculatedAction,
   type CalculatedAction,

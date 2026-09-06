@@ -58,6 +58,29 @@ export {
   type TimeAdvancePlanResult,
   type TimeAdvancePlanSuccess
 } from "./scheduler.js";
+export {
+  projectDeadlineEvent,
+  projectTaskEvents,
+  type DeadlineDefinition,
+  type DeadlineProjectionFailure,
+  type DeadlineProjectionResult,
+  type DeadlineProjectionSuccess,
+  type TaskProjectionFailure,
+  type TaskProjectionFailureCode,
+  type TaskProjectionResult,
+  type TaskProjectionSuccess
+} from "./tasks.js";
+export {
+  DETERMINISTIC_RNG_ALGORITHM,
+  UINT32_MAX,
+  createDeterministicRngState,
+  drawDeterministicInt,
+  type DeterministicRngDrawFailure,
+  type DeterministicRngDrawResult,
+  type DeterministicRngDrawSuccess,
+  type DeterministicRngProvenance,
+  type DeterministicRngState
+} from "./rng.js";
 export type {
   ActionResultEnvelope,
   Block,
@@ -71,6 +94,8 @@ export type {
   ResourceChangeEffect,
   ScheduledEffectEvent,
   ScheduledEvent,
+  ScheduledTask,
+  ScheduledTerminalEvent,
   SchedulerEvent,
   SocialAct,
   SocialPermission,
