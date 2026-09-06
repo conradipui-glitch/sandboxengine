@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { dirname, resolve } from "node:path";
+import type { ActionBlock, LocationBlock, ResourceBlock } from "@living-history/contracts";
 import { SQLiteControlStore } from "@living-history/control";
 import { bootstrapFrozenPlaytest } from "@living-history/player";
 import { SQLiteGuestSessionAccess, SQLiteRuntimeStorage, type ServiceClock } from "@living-history/runtime";
@@ -42,9 +43,15 @@ if (!definition) {
   throw new Error("B05-03 Player has no supported action definition");
 }
 
-const actionBlock = playtest.snapshot.blocks.find((block) => block.kind === "core.action" && block.id === definition.id);
-const resourceBlock = playtest.snapshot.blocks.find((block) => block.kind === "core.resource" && block.id === definition.resourceId);
-const locationBlock = playtest.snapshot.blocks.find((block) => block.kind === "core.location" && block.id === playtest.snapshot.entryLocationId);
+const actionBlock = playtest.snapshot.blocks.find(
+  (block): block is ActionBlock => block.kind === "core.action" && block.id === definition.id
+);
+const resourceBlock = playtest.snapshot.blocks.find(
+  (block): block is ResourceBlock => block.kind === "core.resource" && block.id === definition.resourceId
+);
+const locationBlock = playtest.snapshot.blocks.find(
+  (block): block is LocationBlock => block.kind === "core.location" && block.id === playtest.snapshot.entryLocationId
+);
 if (!actionBlock || !resourceBlock || !locationBlock) {
   controlStore.close();
   throw new Error("Frozen playtest display metadata is incomplete");
