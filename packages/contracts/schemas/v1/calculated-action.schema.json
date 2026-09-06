@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:calculated-action:1.0",
+  "title": "CalculatedAction",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "actionType",
+        "status",
+        "reasonCode",
+        "requestedUnits",
+        "completedUnits",
+        "durationSeconds",
+        "effects"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "actionType": { "const": "core.paint" },
+        "status": { "enum": ["executed", "partial", "blocked"] },
+        "reasonCode": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 100 },
+            { "type": "null" }
+          ]
+        },
+        "requestedUnits": { "type": "integer", "minimum": 1 },
+        "completedUnits": { "type": "integer", "minimum": 0 },
+        "durationSeconds": { "type": "integer", "minimum": 0 },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "urn:living-history:schema:gameplay-effect:1.0" }
+        }
+      }
+    }
+  ]
+}

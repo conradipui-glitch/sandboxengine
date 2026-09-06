@@ -2,29 +2,32 @@
 
 Это короткая человеческая точка входа. Сначала прочитай [README](../../README.md), [STATUS](../STATUS.md), [HANDOFF](../HANDOFF.md) и карточку текущей задачи. Полное ТЗ — [docs/SPECIFICATION.md](../SPECIFICATION.md). Машинно собранный текущий контракт находится в [SKILL.md](SKILL.md).
 
-## Текущий контрактный слой
+## Текущая лестница причинности
 
-Канонический источник DTO — JSON Schema Draft 2020-12 в [`packages/contracts/schemas/v1/`](../../packages/contracts/schemas/v1/). Текущая schema family version — `1.0`.
+Не смешивай четыре разных слоя:
 
-B01 generic `Effect` v1.0 — только envelope `schemaVersion/type/sourceId`; он **не является автоматически исполняемым изменением мира**. С B02-01 добавлен отдельный strict `GameplayEffect` v1.0. Сейчас зарегистрирован один executable type:
+1. `ResolvedIntent` — что понял ввод. Он не задаёт duration/effects/state mutation.
+2. Action resolver — что реально можно выполнить по authoritative `WorldState` и definition.
+3. `CalculatedAction` — строгий рассчитанный outcome (`executed/partial/blocked`, completion, reason, duration, gameplay effects).
+4. `tryApplyEffectBatch` — all-or-nothing trial application typed `GameplayEffect` к копии state.
 
-- `resource.change` — `resourceId`, целочисленная `delta`, provenance `sourceId`.
+Сейчас зарегистрировано:
 
-Причина разделения записана в [ADR 0003](../decisions/0003-gameplay-effect-versioning.md): нельзя тихо расширять strict `Effect` v1.0 новыми обязательными/payload полями с тем же schema ID.
+- gameplay effect `resource.change`;
+- calculated action `core.paint`.
 
-## Что Core реально умеет сейчас
+`core.paint` получает `args.units` из уже resolved explicit intent. Определение задаёт расход ресурса на единицу, duration/unit и partial policy. Resolver сам считает completed units и не доверяет клиенту/модели duration или delta.
 
-- `compileQuest` проверяет/нормализует schema-valid package и строит immutable artifact + SHA-256; он не исполняет действия.
-- `tryApplyEffectBatch` принимает уже рассчитанный batch `GameplayEffect`, проверяет его на копии `WorldState` и возвращает либо полный новый state, либо failure без state.
-- `resource.change` соблюдает существование resource, integer/safe-integer и min/max.
-- Исходный state, revision и clock не изменяются этим trial-layer.
+## Контрактные границы
 
-Core **ещё не** умеет по `ResolvedIntent` выбирать action definition, проверять action preconditions, вычислять duration/partial/blocked или делать игровой commit. Это следующий B02-02.
+B01 generic `Effect` v1.0 и public `ActionResult` v1.0 не переписаны. B02 использует отдельные strict `GameplayEffect` и `CalculatedAction`; см. ADR 0003 и 0004. Не расширяй старые strict schemas с тем же ID молча.
 
-## Generated contracts
+Duration в `CalculatedAction` — только вычисленное число. `WorldState.clock` и `revision` пока не продвигаются; scheduler/commit начинаются позже. `blocked` в текущем `core.paint` означает no effects и duration 0.
 
-`npm run docs:generate` собирает `SKILL.md`, schema index, capabilities, OpenAPI и compatibility. `capabilities.json` теперь показывает `resource.change`, потому что он реально реализован. Planned HTTP endpoints по-прежнему не попадают в available operations; OpenAPI `paths` пуст.
+Generated `capabilities.json` является машинным списком реально реализованного: сейчас block kinds, `resource.change`, `core.paint`; HTTP operations отсутствуют. `npm run docs:generate`/`docs:check` обязательны при изменении схем/capabilities.
 
-`docs:check` должен проходить после любого изменения схем/registry/capabilities. Не редактируй generated files вручную как источник истины.
+## Что ещё не реализовано
 
-Минимальный рабочий цикл: один bounded-шаг; Core без HTTP/storage/LLM; модель не меняет state напрямую; `npm run verify`; затем STATUS/HANDOFF/worklog.
+Нет общего языка conditions/preconditions, item/entity effects, social request/consent actions, `conditional`, scheduler, Runtime API, storage, LLM и Studio. Следующая карточка B02-03 расширяет общие механики, а не добавляет Florence-specific ветки.
+
+Минимальный цикл: один bounded-шаг → тест реального риска → `npm run verify` → STATUS/HANDOFF/worklog. Core остаётся без HTTP/storage/LLM.

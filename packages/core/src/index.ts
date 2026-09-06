@@ -17,12 +17,22 @@ export {
   type EffectBatchResult,
   type EffectBatchSuccess
 } from "./effects.js";
+export {
+  resolvePaintAction,
+  type PaintActionDefinition,
+  type ResolvePaintFailure,
+  type ResolvePaintFailureCode,
+  type ResolvePaintResult,
+  type ResolvePaintSuccess
+} from "./actions.js";
 export type {
   ActionResultEnvelope,
   Block,
+  CalculatedAction,
   EffectRef,
   GameplayEffect,
   QuestRelease,
+  ResolvedIntent,
   ResourceChangeEffect,
   WorldState,
   ActionStatus,

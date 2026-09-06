@@ -30,6 +30,14 @@ export {
   type ResourceChangeEffect
 } from "./gameplay-effect.js";
 export {
+  CALCULATED_ACTION_TYPES,
+  isCalculatedAction,
+  type CalculatedAction,
+  type CalculatedActionStatus,
+  type CalculatedActionType,
+  type PaintCalculatedAction
+} from "./calculated-action.js";
+export {
   type WorldClock,
   type WorldEntity,
   type WorldItem,

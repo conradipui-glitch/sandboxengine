@@ -9,7 +9,7 @@ import {
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
-test("generated agent contracts expose only available operations", async () => {
+test("generated agent contracts expose only implemented capabilities", async () => {
   const registry = JSON.parse(await readFile(new URL("../registry/endpoints.json", import.meta.url), "utf8"));
   assert.equal(registry.operations.some((operation) => operation.readiness === "planned"), true);
 
@@ -21,7 +21,9 @@ test("generated agent contracts expose only available operations", async () => {
   assert.deepEqual(capabilities.operations, []);
   assert.deepEqual(capabilities.blockKinds, ["core.character", "core.location", "core.resource"]);
   assert.deepEqual(capabilities.gameplayEffectTypes, ["resource.change"]);
+  assert.deepEqual(capabilities.actionTypes, ["core.paint"]);
   assert.equal(generated.get("docs/agent/SKILL.md").includes("resource.change"), true);
+  assert.equal(generated.get("docs/agent/SKILL.md").includes("core.paint"), true);
   assert.equal(generated.get("docs/agent/SKILL.md").includes("/v1/sessions"), false);
 });
 
