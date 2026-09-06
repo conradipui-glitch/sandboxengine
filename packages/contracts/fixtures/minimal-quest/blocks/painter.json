@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "painter",
+  "kind": "core.character",
+  "title": "Художник",
+  "description": "Персонаж минимального квеста.",
+  "data": {
+    "initialLocationId": "workshop",
+    "initialStatus": "available"
+  }
+}

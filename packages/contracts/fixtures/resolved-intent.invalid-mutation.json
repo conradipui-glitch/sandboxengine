@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "actionType": "core.wait",
+  "participantIds": ["painter"],
+  "targetIds": [],
+  "args": {
+    "seconds": 60
+  },
+  "sourceInput": {
+    "kind": "text",
+    "text": "Подождать минуту"
+  },
+  "durationSeconds": 60,
+  "statePatch": {
+    "clock": 60
+  }
+}

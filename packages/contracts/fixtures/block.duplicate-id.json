@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "id": "workshop",
+  "kind": "core.character",
+  "title": "Дубликат ID",
+  "description": "Форма валидна, но пакет с таким блоком должен быть отклонён семантически.",
+  "data": {
+    "initialLocationId": "workshop",
+    "initialStatus": "available"
+  }
+}

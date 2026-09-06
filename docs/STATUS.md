@@ -4,18 +4,26 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | bootstrap, B01-01 и B01-02 реализованы | B01-02 implementation `ca726301c827a5eb4199592864fd4d83a2e6b2bc`, PR #1, CI `34021918840`; README, AGENTS, CONTRIBUTING, handoff |
-| Контракты | B01-02 принят по bounded-приёмке | 5 JSON Schema Draft 2020-12 v1.0, Ajv, TypeScript DTO/guard parity, fixtures на version/type/reference; следующий шаг остаётся внутри B01 |
-| Core | минимальный versioned ActionResult без изменения state | Core создаёт только проверяемый envelope и остаётся чистым от инфраструктуры; B02 ещё не начат |
+| Репозиторий и навигация | bootstrap, B01-01, B01-02 и B01-03 реализованы | B01-02 merge `270c98bd272dbe43879fb023df6e01f647782d35`; B01-03 code `08878f9db0598acf0db20a0aa48136f584f4ada1`, PR #2, CI `34022346033` |
+| Контракты | B01-03 принят по bounded-приёмке | 8 canonical schemas v1.0, Ajv, semantic refs, minimal quest package; следующий шаг B01-04 |
+| Core | versioned ActionResult без исполнения state | Core остаётся чистым от инфраструктуры; resolver B02 ещё не начат |
+| Compile/registry/generated docs | не реализовано | B01-04 — compile skeleton, readiness registry, deterministic docs generation, второй fixture-пакет |
 | Runtime/API/storage | не начато | B04 после B02–B03 |
 | Studio/Player | не начато | B05/B07 |
 | AI-провайдеры, квоты, авторский помощник | не начато | B06/B10 |
 | Плагины и Builder/GitHub | не начато | B08/B13 |
 | Миграция Florence | не начато | B00/B11; baseline не заменяет миграцию |
-| T01–T37 | не выполнены | B01-02 fixtures проверяют контракты, но не являются приёмкой сценариев T01–T37 |
+| T01–T37 | не выполнены | B01 fixtures проверяют контракты, но не являются приёмкой сценариев T01–T37 |
 
-B01 в целом ещё не закрыт: отсутствуют оставшиеся канонические схемы Block/Quest/Intent, compile skeleton, endpoint readiness registry, воспроизводимая генерация агентных контрактов и два полных fixture-пакета, требуемые общей карточкой B01 в ТЗ.
+Принятые B01-03 границы:
 
-Известное наблюдение CI: `npm ci` 2026-09-06 сообщил 2 dependency vulnerabilities (1 moderate, 1 high). Их происхождение и исправление в B01-02 не исследовались, чтобы не выполнять неограниченный dependency upgrade без отдельной проверки.
+- `Block` пока регистрирует только `core.location`, `core.character`, `core.resource`;
+- минимальный `QuestRelease` ссылается на blocks устойчивыми ID и указывает contracts compatibility;
+- `ResolvedIntent` не имеет права возвращать duration/effects/state mutation;
+- `minimal-quest` является schema/semantic fixture, а не уже исполняемой игрой.
+
+B01 в целом ещё не закрыт. Для его общей приёмки остаются compile skeleton, endpoint readiness registry, reproducible generated agent contracts/OpenAPI readiness и второй полный fixture-пакет.
+
+Известное наблюдение CI остаётся: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Их источник и безопасный upgrade ещё не исследованы; не выполнять `npm audit fix --force` без отдельной проверки совместимости.
 
 Статус «готово» здесь означает наличие артефакта и проверяемого результата, а не написанный план.

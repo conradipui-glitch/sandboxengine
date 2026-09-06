@@ -50,6 +50,26 @@ export {
   type SceneOverlayLayer
 } from "./scene.js";
 export {
+  BLOCK_KINDS,
+  type ActionIntentSource,
+  type Block,
+  type BlockBase,
+  type BlockKind,
+  type CharacterBlock,
+  type CharacterBlockData,
+  type IntentSource,
+  type JsonPrimitive,
+  type JsonValue,
+  type LocationBlock,
+  type QuestRelease,
+  type QuestReleaseCompatibility,
+  type ResolvedIntent,
+  type ResourceBlock,
+  type ResourceBlockData,
+  type TextIntentSource
+} from "./authoring.js";
+export {
   hasValidPresentationPlanReferences,
+  hasValidQuestReleaseReferences,
   hasValidWorldStateReferences
 } from "./references.js";

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0",
+  "id": "workshop",
+  "kind": "core.location",
+  "title": "Мастерская",
+  "description": "Стартовая локация минимального квеста.",
+  "data": {}
+}

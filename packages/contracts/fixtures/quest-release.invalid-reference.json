@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "questId": "minimal-workshop",
+  "releaseId": "minimal-workshop-r1",
+  "title": "Минимальная мастерская",
+  "compatibility": {
+    "contractsSchemaVersion": "1.0"
+  },
+  "blockIds": ["workshop", "painter", "missing-resource"],
+  "entryLocationId": "workshop"
+}

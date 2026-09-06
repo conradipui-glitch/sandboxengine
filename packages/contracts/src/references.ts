@@ -1,3 +1,4 @@
+import type { Block, QuestRelease } from "./authoring.js";
 import type { PresentationNode, PresentationPlan, SceneFrame } from "./scene.js";
 import type { WorldState } from "./world-state.js";
 
@@ -23,6 +24,44 @@ export function hasValidWorldStateReferences(state: WorldState): boolean {
   for (const item of state.items) {
     if (item.position.kind === "location" && !locationIds.has(item.position.locationId)) return false;
     if (item.position.kind === "holder" && !entityIds.has(item.position.holderId)) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Validate references in one authoring fixture/release snapshot. B01-03 keeps
+ * this intentionally small: block membership, entry location, character start
+ * locations and resource numeric bounds.
+ */
+export function hasValidQuestReleaseReferences(release: QuestRelease, blocks: readonly Block[]): boolean {
+  const byId = new Map<string, Block>();
+  for (const block of blocks) {
+    if (byId.has(block.id)) return false;
+    byId.set(block.id, block);
+  }
+
+  if (new Set(release.blockIds).size !== release.blockIds.length) return false;
+  if (release.blockIds.length !== blocks.length) return false;
+  for (const id of release.blockIds) {
+    if (!byId.has(id)) return false;
+  }
+  for (const id of byId.keys()) {
+    if (!release.blockIds.includes(id)) return false;
+  }
+
+  const entry = byId.get(release.entryLocationId);
+  if (!entry || entry.kind !== "core.location") return false;
+
+  for (const block of blocks) {
+    if (block.kind === "core.character" && block.data.initialLocationId !== null) {
+      const location = byId.get(block.data.initialLocationId);
+      if (!location || location.kind !== "core.location") return false;
+    }
+    if (block.kind === "core.resource") {
+      if (block.data.min > block.data.max) return false;
+      if (block.data.initialValue < block.data.min || block.data.initialValue > block.data.max) return false;
+    }
   }
 
   return true;
