@@ -145,11 +145,13 @@ function buildTaskEvent(
 }
 
 function cloneEffect(effect: GameplayEffect): GameplayEffect {
-  if (effect.type === "resource.change") return Object.freeze({ ...effect });
-  return Object.freeze({
-    ...effect,
-    destination: Object.freeze({ ...effect.destination })
-  });
+  if (effect.type === "item.transfer") {
+    return Object.freeze({
+      ...effect,
+      destination: Object.freeze({ ...effect.destination })
+    });
+  }
+  return Object.freeze({ ...effect });
 }
 
 function freezeTerminalEvent(event: ScheduledTerminalEvent): ScheduledTerminalEvent {
