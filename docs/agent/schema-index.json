@@ -1,21 +1,85 @@
 {
   "contractsSchemaVersion": "1.0",
   "schemas": [
-    { "name": "action-result", "file": "packages/contracts/schemas/v1/action-result.schema.json", "id": "urn:living-history:schema:action-result:1.0" },
-    { "name": "block", "file": "packages/contracts/schemas/v1/block.schema.json", "id": "urn:living-history:schema:block:1.0" },
-    { "name": "calculated-action", "file": "packages/contracts/schemas/v1/calculated-action.schema.json", "id": "urn:living-history:schema:calculated-action:1.0" },
-    { "name": "condition", "file": "packages/contracts/schemas/v1/condition.schema.json", "id": "urn:living-history:schema:condition:1.0" },
-    { "name": "effect", "file": "packages/contracts/schemas/v1/effect.schema.json", "id": "urn:living-history:schema:effect:1.0" },
-    { "name": "gameplay-effect", "file": "packages/contracts/schemas/v1/gameplay-effect.schema.json", "id": "urn:living-history:schema:gameplay-effect:1.0" },
-    { "name": "presentation-plan", "file": "packages/contracts/schemas/v1/presentation-plan.schema.json", "id": "urn:living-history:schema:presentation-plan:1.0" },
-    { "name": "quest-release", "file": "packages/contracts/schemas/v1/quest-release.schema.json", "id": "urn:living-history:schema:quest-release:1.0" },
-    { "name": "resolved-intent", "file": "packages/contracts/schemas/v1/resolved-intent.schema.json", "id": "urn:living-history:schema:resolved-intent:1.0" },
-    { "name": "scene-frame", "file": "packages/contracts/schemas/v1/scene-frame.schema.json", "id": "urn:living-history:schema:scene-frame:1.0" },
-    { "name": "scheduled-effect-event", "file": "packages/contracts/schemas/v1/scheduled-effect-event.schema.json", "id": "urn:living-history:schema:scheduled-effect-event:1.0" },
-    { "name": "scheduled-event", "file": "packages/contracts/schemas/v1/scheduled-event.schema.json", "id": "urn:living-history:schema:scheduled-event:1.0" },
-    { "name": "scheduled-task", "file": "packages/contracts/schemas/v1/scheduled-task.schema.json", "id": "urn:living-history:schema:scheduled-task:1.0" },
-    { "name": "scheduled-terminal-event", "file": "packages/contracts/schemas/v1/scheduled-terminal-event.schema.json", "id": "urn:living-history:schema:scheduled-terminal-event:1.0" },
-    { "name": "social-act", "file": "packages/contracts/schemas/v1/social-act.schema.json", "id": "urn:living-history:schema:social-act:1.0" },
-    { "name": "world-state", "file": "packages/contracts/schemas/v1/world-state.schema.json", "id": "urn:living-history:schema:world-state:1.0" }
+    {
+      "name": "action-result",
+      "file": "packages/contracts/schemas/v1/action-result.schema.json",
+      "id": "urn:living-history:schema:action-result:1.0"
+    },
+    {
+      "name": "block",
+      "file": "packages/contracts/schemas/v1/block.schema.json",
+      "id": "urn:living-history:schema:block:1.0"
+    },
+    {
+      "name": "calculated-action",
+      "file": "packages/contracts/schemas/v1/calculated-action.schema.json",
+      "id": "urn:living-history:schema:calculated-action:1.0"
+    },
+    {
+      "name": "condition",
+      "file": "packages/contracts/schemas/v1/condition.schema.json",
+      "id": "urn:living-history:schema:condition:1.0"
+    },
+    {
+      "name": "effect",
+      "file": "packages/contracts/schemas/v1/effect.schema.json",
+      "id": "urn:living-history:schema:effect:1.0"
+    },
+    {
+      "name": "gameplay-effect",
+      "file": "packages/contracts/schemas/v1/gameplay-effect.schema.json",
+      "id": "urn:living-history:schema:gameplay-effect:1.0"
+    },
+    {
+      "name": "presentation-plan",
+      "file": "packages/contracts/schemas/v1/presentation-plan.schema.json",
+      "id": "urn:living-history:schema:presentation-plan:1.0"
+    },
+    {
+      "name": "quest-release",
+      "file": "packages/contracts/schemas/v1/quest-release.schema.json",
+      "id": "urn:living-history:schema:quest-release:1.0"
+    },
+    {
+      "name": "resolved-intent",
+      "file": "packages/contracts/schemas/v1/resolved-intent.schema.json",
+      "id": "urn:living-history:schema:resolved-intent:1.0"
+    },
+    {
+      "name": "scene-frame",
+      "file": "packages/contracts/schemas/v1/scene-frame.schema.json",
+      "id": "urn:living-history:schema:scene-frame:1.0"
+    },
+    {
+      "name": "scheduled-effect-event",
+      "file": "packages/contracts/schemas/v1/scheduled-effect-event.schema.json",
+      "id": "urn:living-history:schema:scheduled-effect-event:1.0"
+    },
+    {
+      "name": "scheduled-event",
+      "file": "packages/contracts/schemas/v1/scheduled-event.schema.json",
+      "id": "urn:living-history:schema:scheduled-event:1.0"
+    },
+    {
+      "name": "scheduled-task",
+      "file": "packages/contracts/schemas/v1/scheduled-task.schema.json",
+      "id": "urn:living-history:schema:scheduled-task:1.0"
+    },
+    {
+      "name": "scheduled-terminal-event",
+      "file": "packages/contracts/schemas/v1/scheduled-terminal-event.schema.json",
+      "id": "urn:living-history:schema:scheduled-terminal-event:1.0"
+    },
+    {
+      "name": "social-act",
+      "file": "packages/contracts/schemas/v1/social-act.schema.json",
+      "id": "urn:living-history:schema:social-act:1.0"
+    },
+    {
+      "name": "world-state",
+      "file": "packages/contracts/schemas/v1/world-state.schema.json",
+      "id": "urn:living-history:schema:world-state:1.0"
+    }
   ]
 }
