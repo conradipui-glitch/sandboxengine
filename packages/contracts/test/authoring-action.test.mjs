@@ -12,7 +12,7 @@ async function readJson(relativeUrl) {
   return JSON.parse(await readFile(new URL(relativeUrl, import.meta.url), "utf8"));
 }
 
-function paintAction(resourceId = "blue_paint", cost = 1) {
+function paintAction(resourceId = "blue-paint", cost = 1) {
   return {
     schemaVersion: "1.0",
     id: "paint",
@@ -65,7 +65,7 @@ test("B05 core.action resource reference is semantic and cannot point to a missi
     releaseId: "release-1",
     title: "Authoring action",
     compatibility: { contractsSchemaVersion: "1.0" },
-    blockIds: ["workshop", "blue_paint", "paint"],
+    blockIds: ["workshop", "blue-paint", "paint"],
     entryLocationId: "workshop"
   };
 
