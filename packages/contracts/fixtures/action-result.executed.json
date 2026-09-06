@@ -1,11 +1,12 @@
 {
+  "schemaVersion": "1.0",
   "status": "executed",
   "durationSeconds": 12,
   "effects": [
     {
+      "schemaVersion": "1.0",
       "type": "resource.change",
       "sourceId": "action.demo"
     }
   ]
 }
-

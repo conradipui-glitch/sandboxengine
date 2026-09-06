@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:world-state:1.0",
+  "title": "WorldState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "clock", "locations", "entities", "resources", "items", "terminal"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["elapsedSeconds"],
+      "properties": {
+        "elapsedSeconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "locations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/location" }
+    },
+    "entities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resource" }
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "terminal": {
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/terminal" }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "status", "locationId"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "locationId": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "unit", "value", "min", "max"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "value": { "type": "integer" },
+        "min": { "type": "integer" },
+        "max": { "type": "integer" }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "position": {
+          "oneOf": [
+            { "$ref": "#/$defs/locationPosition" },
+            { "$ref": "#/$defs/holderPosition" }
+          ]
+        }
+      }
+    },
+    "locationPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locationId"],
+      "properties": {
+        "kind": { "const": "location" },
+        "locationId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "holderPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "holderId"],
+      "properties": {
+        "kind": { "const": "holder" },
+        "holderId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "outcome"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "outcome": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    }
+  }
+}

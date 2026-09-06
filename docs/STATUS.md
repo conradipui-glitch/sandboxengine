@@ -4,14 +4,18 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | bootstrap и B01-01 опубликованы в `main` | B01 commit `2da57891ddeea280120a18afb29519c4176b4c7c`; README, AGENTS, CONTRIBUTING, handoff |
-| Контракты | B01-01 принят | `packages/contracts`, guard и 2 JSON fixtures; следующий шаг B01-02 |
-| Core | минимальный guard/result без изменения state | `packages/core`, 2 Core-проверки; следующий шаг B01-02 |
+| Репозиторий и навигация | bootstrap, B01-01 и B01-02 реализованы | B01-02 implementation `ca726301c827a5eb4199592864fd4d83a2e6b2bc`, PR #1, CI `34021918840`; README, AGENTS, CONTRIBUTING, handoff |
+| Контракты | B01-02 принят по bounded-приёмке | 5 JSON Schema Draft 2020-12 v1.0, Ajv, TypeScript DTO/guard parity, fixtures на version/type/reference; следующий шаг остаётся внутри B01 |
+| Core | минимальный versioned ActionResult без изменения state | Core создаёт только проверяемый envelope и остаётся чистым от инфраструктуры; B02 ещё не начат |
 | Runtime/API/storage | не начато | B04 после B02–B03 |
 | Studio/Player | не начато | B05/B07 |
 | AI-провайдеры, квоты, авторский помощник | не начато | B06/B10 |
 | Плагины и Builder/GitHub | не начато | B08/B13 |
 | Миграция Florence | не начато | B00/B11; baseline не заменяет миграцию |
-| T01–T37 | не выполнены | см. матрицу в ТЗ; локальные bootstrap-тесты не являются этой приёмкой |
+| T01–T37 | не выполнены | B01-02 fixtures проверяют контракты, но не являются приёмкой сценариев T01–T37 |
+
+B01 в целом ещё не закрыт: отсутствуют оставшиеся канонические схемы Block/Quest/Intent, compile skeleton, endpoint readiness registry, воспроизводимая генерация агентных контрактов и два полных fixture-пакета, требуемые общей карточкой B01 в ТЗ.
+
+Известное наблюдение CI: `npm ci` 2026-09-06 сообщил 2 dependency vulnerabilities (1 moderate, 1 high). Их происхождение и исправление в B01-02 не исследовались, чтобы не выполнять неограниченный dependency upgrade без отдельной проверки.
 
 Статус «готово» здесь означает наличие артефакта и проверяемого результата, а не написанный план.

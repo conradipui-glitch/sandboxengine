@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "id": "presentation-8",
+  "turnId": "turn-8",
+  "fromRevision": 7,
+  "toRevision": 8,
+  "root": {
+    "type": "sequence",
+    "children": [
+      { "type": "dialogue.show", "lineId": "line-missing", "reveal": "instant" }
+    ]
+  }
+}

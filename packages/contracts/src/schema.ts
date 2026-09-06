@@ -1,0 +1,16 @@
+export const CONTRACT_SCHEMA_VERSION = "1.0" as const;
+
+export type ContractSchemaVersion = typeof CONTRACT_SCHEMA_VERSION;
+
+/**
+ * Stable identifiers for the canonical first-layer JSON Schemas.
+ * The JSON files in packages/contracts/schemas/v1 are authoritative; contract
+ * tests assert that these convenience constants stay identical to their $id.
+ */
+export const CONTRACT_SCHEMA_IDS = {
+  effect: "urn:living-history:schema:effect:1.0",
+  actionResult: "urn:living-history:schema:action-result:1.0",
+  worldState: "urn:living-history:schema:world-state:1.0",
+  sceneFrame: "urn:living-history:schema:scene-frame:1.0",
+  presentationPlan: "urn:living-history:schema:presentation-plan:1.0"
+} as const;

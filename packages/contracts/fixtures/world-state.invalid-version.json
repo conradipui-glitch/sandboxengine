@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "2.0",
+  "revision": 7,
+  "clock": { "elapsedSeconds": 0 },
+  "locations": [{ "id": "workshop" }],
+  "entities": [],
+  "resources": [],
+  "items": [],
+  "terminal": null
+}

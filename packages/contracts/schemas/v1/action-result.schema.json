@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:action-result:1.0",
+  "title": "ActionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "durationSeconds", "effects"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "status": {
+      "enum": ["executed", "partial", "conditional", "blocked"]
+    },
+    "durationSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "effects": {
+      "type": "array",
+      "items": { "$ref": "urn:living-history:schema:effect:1.0" }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "revision": 7,
+  "clock": { "elapsedSeconds": 0 },
+  "locations": [
+    { "id": "workshop" }
+  ],
+  "entities": [
+    { "id": "painter", "type": "character", "status": "available", "locationId": "workshop" }
+  ],
+  "resources": [
+    { "id": "blue_paint", "unit": "portion", "value": 2, "min": 0, "max": 8 }
+  ],
+  "items": [
+    { "id": "sealed-box", "position": { "kind": "location", "locationId": "workshop" } }
+  ],
+  "terminal": null
+}

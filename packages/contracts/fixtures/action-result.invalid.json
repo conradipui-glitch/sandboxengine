@@ -1,10 +1,6 @@
 {
+  "schemaVersion": "1.0",
   "status": "failed",
-  "durationSeconds": 1.5,
-  "effects": [
-    {
-      "type": "resource.change"
-    }
-  ]
+  "durationSeconds": 0,
+  "effects": []
 }
-

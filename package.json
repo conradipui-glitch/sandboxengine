@@ -22,7 +22,7 @@
     "verify": "npm run typecheck && npm run test:contracts && npm run test:core && npm run check:boundaries && npm run docs:check"
   },
   "devDependencies": {
+    "ajv": "8.17.1",
     "typescript": "5.9.3"
   }
 }
-
