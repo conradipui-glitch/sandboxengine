@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  buildGeneratedDocs,
+  findStaleGeneratedPaths,
+  readCommittedGeneratedDocs
+} from "./generated-docs.mjs";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const required = [
   "README.md",
   "AGENTS.md",
@@ -35,6 +41,14 @@ if (missing.length > 0) {
   if (!agentIndex.includes("docs/SPECIFICATION.md")) {
     throw new Error("Agent entry point must point to the specification");
   }
-  console.log(`docs:check ok — ${required.length} navigation documents present`);
-}
 
+  const expected = await buildGeneratedDocs(root);
+  const actual = await readCommittedGeneratedDocs(root);
+  const stale = findStaleGeneratedPaths(expected, actual);
+  if (stale.length > 0) {
+    console.error("Generated agent contracts are stale. Run npm run docs:generate:\n" + stale.join("\n"));
+    process.exitCode = 1;
+  } else {
+    console.log(`docs:check ok — ${required.length} navigation documents and ${expected.size} generated contracts are current`);
+  }
+}

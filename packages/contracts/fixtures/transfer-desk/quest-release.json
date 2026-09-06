@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "questId": "transfer-desk",
+  "releaseId": "transfer-desk-r1",
+  "title": "Стол находок",
+  "compatibility": {
+    "contractsSchemaVersion": "1.0"
+  },
+  "blockIds": ["desk", "clerk", "claim-tickets"],
+  "entryLocationId": "desk"
+}

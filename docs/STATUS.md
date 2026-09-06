@@ -4,25 +4,22 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | bootstrap, B01-01, B01-02 и B01-03 реализованы | B01-02 merge `270c98bd272dbe43879fb023df6e01f647782d35`; B01-03 code `08878f9db0598acf0db20a0aa48136f584f4ada1`, PR #2, CI `34022346033` |
-| Контракты | B01-03 принят по bounded-приёмке | 8 canonical schemas v1.0, Ajv, semantic refs, minimal quest package; следующий шаг B01-04 |
-| Core | versioned ActionResult без исполнения state | Core остаётся чистым от инфраструктуры; resolver B02 ещё не начат |
-| Compile/registry/generated docs | не реализовано | B01-04 — compile skeleton, readiness registry, deterministic docs generation, второй fixture-пакет |
+| Репозиторий и навигация | bootstrap и общий B01 приняты | B01-02 merge `270c98bd272dbe43879fb023df6e01f647782d35`, B01-03 merge `c9801e51f95498940fc4c03611637804d4db7a0b`, B01-04 code `b2570106e567fb34dfb63479e39e47ce87e21d22`, PR #3, CI `34023654191` |
+| Контракты | B01 принят | 8 canonical JSON Schema v1.0, Ajv/semantic checks, `minimal-quest` + `transfer-desk`, generated agent contracts |
+| Core | B01 compile skeleton принят; B02 ещё не начат | `compileQuest` проверяет version/refs, нормализует artifact и считает SHA-256; action resolver/state mutation отсутствуют |
+| Compile/registry/generated docs | B01-04 принят | readiness registry; `docs:generate`; stale `docs:check`; OpenAPI содержит только `available` operations и сейчас имеет 0 paths |
 | Runtime/API/storage | не начато | B04 после B02–B03 |
 | Studio/Player | не начато | B05/B07 |
 | AI-провайдеры, квоты, авторский помощник | не начато | B06/B10 |
 | Плагины и Builder/GitHub | не начато | B08/B13 |
 | Миграция Florence | не начато | B00/B11; baseline не заменяет миграцию |
-| T01–T37 | не выполнены | B01 fixtures проверяют контракты, но не являются приёмкой сценариев T01–T37 |
+| T01–T37 | не выполнены | B01 проверяет контрактный каркас; поведенческая матрица начинается с B02 |
 
-Принятые B01-03 границы:
+## Что означает приёмка B01
 
-- `Block` пока регистрирует только `core.location`, `core.character`, `core.resource`;
-- минимальный `QuestRelease` ссылается на blocks устойчивыми ID и указывает contracts compatibility;
-- `ResolvedIntent` не имеет права возвращать duration/effects/state mutation;
-- `minimal-quest` является schema/semantic fixture, а не уже исполняемой игрой.
+Принят переносимый первый контрактный слой: схемы, DTO boundary, semantic references, два независимых package fixtures, deterministic compile artifact/hash, readiness registry и воспроизводимый agent kit. Planned HTTP endpoints присутствуют только в исходном registry и не экспортируются как доступные.
 
-B01 в целом ещё не закрыт. Для его общей приёмки остаются compile skeleton, endpoint readiness registry, reproducible generated agent contracts/OpenAPI readiness и второй полный fixture-пакет.
+Приёмка B01 **не** означает, что игра уже исполняется. `ResolvedIntent` не меняет мир; `compileQuest` не исполняет действия; Runtime API, storage, scheduler, AI и Studio отсутствуют. Следующий bounded-шаг — `docs/tasks/B02-01-effects-atomicity.md`.
 
 Известное наблюдение CI остаётся: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Их источник и безопасный upgrade ещё не исследованы; не выполнять `npm audit fix --force` без отдельной проверки совместимости.
 

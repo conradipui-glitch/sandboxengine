@@ -1,0 +1,9 @@
+{
+  "contractsSchemaVersion": "1.0",
+  "blockKinds": [
+    "core.character",
+    "core.location",
+    "core.resource"
+  ],
+  "operations": []
+}
