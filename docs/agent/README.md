@@ -2,108 +2,94 @@
 
 Это короткая человеческая точка входа. Сначала прочитай [README](../../README.md), [STATUS](../STATUS.md), [HANDOFF](../HANDOFF.md) и карточку текущей задачи. Полное ТЗ — [docs/SPECIFICATION.md](../SPECIFICATION.md). Машинно собранный текущий контракт находится в [SKILL.md](SKILL.md).
 
-## Принятая лестница причинности
+## Принятая лестница границ
 
-Не смешивай обязанности:
-
-1. `ResolvedIntent` — что понял ввод; без duration/effects/state mutation.
-2. `Condition` — чистая проверка предпосылок.
-3. Action/social resolver — что реально возможно.
-4. `CalculatedAction` — рассчитанный outcome.
-5. `tryApplyEffectBatch` — atomic typed world mutation на trial state.
-6. `planTimeAdvance` / `processTimeAdvancePlan` — детерминированное игровое время и события.
-7. Task/deadline/terminal/RNG/replay — принятый B03 Core.
-8. `RuntimeStorage` — публикует один уже рассчитанный candidate transition либо ничего; не создаёт новую игровую причинность.
-9. `MemoryRuntimeStorage` задаёт semantic reference B04-01.
-10. `SQLiteRuntimeStorage` воспроизводит те же semantics durable transaction/restart/fault cases B04-02.
-11. B04-03 HTTP только аутентифицирует guest, валидирует transport input, вызывает существующий operation lifecycle и возвращает player-safe projection.
+1. `ResolvedIntent` — что понял ввод.
+2. Conditions/action/social resolvers — что реально возможно.
+3. Gameplay effects + scheduler — deterministic Core causality.
+4. `RuntimeStorage` — gameplay operation lifecycle/idempotency/fencing.
+5. Runtime HTTP — guest ownership + player-safe projection.
+6. `@living-history/control` — authoring draft lifecycle; он не меняет живой `WorldState`.
+7. Studio — клиент Control API; прямого доступа к SQLite/quest files как к второй истине нет.
 
 ## Опубликованная база
 
-- B03: merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`, push-CI `34035223262`.
-- B04-01: merge `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`, push-CI `34036478296`.
-- B04-02: merge `a1ed4312406d4296f6e8742abcda7417437b1df7`, push-CI `34037394667`.
+B01–B04 published. B04 main: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`; push-CI `34039569962` success.
 
-## B04-03 — accepted branch, final publication gate
+## B05-01 — accepted branch, publishing gate
 
-PR #14: `b04-03-runtime-http-guest-player-projection`.
+Карточка: [B05-01](../tasks/B05-01-draft-control-frozen-playtest.md).  
+ADR: [0014](../decisions/0014-authoring-draft-frozen-playtest-control-boundary.md).
 
-Реализовано:
+Принято на PR #15:
 
-- guest credential/verifier отделён от `WorldState`;
-- durable verifier хранится hash-at-rest;
-- owner check выполняется до read/mutation;
-- deny-by-default `PlayerView` вместо raw `WorldState`;
-- `GET /healthz`;
-- `POST /v1/sessions`;
-- `GET /v1/sessions/{sessionId}`;
-- `POST /v1/sessions/{sessionId}/actions`;
-- `GET /v1/sessions/{sessionId}/operations/{operationId}`;
-- server-side SHA-256 request identity;
-- только explicit `core.paint` без B06 LLM;
-- completed retry возвращает persisted response без второго Core execution;
-- operation projection не выдаёт lease/fencing/request hash;
-- real SQLite busy → 503 без Core/partial operation;
-- restart сохраняет ownership и replay;
-- malformed/oversize/cross-owner mutation не достигают Core.
+- separate `@living-history/control`;
+- bounded `core.action/core.paint` authoring block;
+- Memory + durable SQLite ControlStore;
+- monotonic `draftRevision` and atomic `baseRevision` changes;
+- exact revision/contentHash validation;
+- frozen playtest snapshot + compiled artifact;
+- restart/two-instance regressions;
+- loopback-only Control HTTP;
+- 8 Control operations advertised only after HTTP tests;
+- total generated operations: 13; distinct paths: 11;
+- planned `control.capabilities`/`agent-kit` remain hidden;
+- registry hash `86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
 
-Functional/hardening CI `34038239722` — success.
+CI:
 
-Generated API publication gate `34039363270` — success. Machine contract рекламирует ровно пять реализованных Runtime endpoints; `/v1/quests` и Control API остаются planned. Registry hash: `d51b498ca8aa0ea6f19bd09f13dad1b289827ce7506591b25d6ec15e5464d6ff`.
+- semantic `34040472362` success;
+- durable `34046137073` success;
+- HTTP `34046356282` success;
+- generated contract `34046749725` success.
 
-Решение: ADR 0013.
+Current matrix: contracts 37, Core 55, Runtime storage 20, Control 14, server 10 — all green, plus boundaries/docs.
 
-## Canonical B04 acceptance
+B05-01 считается published только после final PR #15 docs gate, merge и green push-to-main.
 
-На одном B04-03 state подтверждены:
+## Критическая authoring boundary
 
-- T10 durable idempotent replay;
-- T11 one active owner / no lost update;
-- T12 crash/restart/fencing;
-- T15 guest ownership / PlayerView / HTTP retry;
-- Core boundaries clean;
-- generated docs current.
+Никогда не смешивай:
 
-Поэтому B04 принят по code/semantic/docs audit, но считается опубликованным только после final current-head PR #14 gate, merge и зелёного push-CI `main`.
+- `draftRevision`;
+- `WorldState.revision`;
+- Runtime fencing/lease.
 
-## Критическая public boundary
+Draft — единственная редактируемая истина. Validation принадлежит точному snapshot/hash. Frozen playtest не читает current draft после создания.
 
-Не выдавай Player:
+Control HTTP до B09 auth доступен только loopback. Не превращай наличие OpenAPI route в разрешение bind на `0.0.0.0`.
 
-- raw `WorldState`;
-- lease expiry/service clock;
-- fencing token/counter;
-- request hash;
-- DB rows/schema errors/stacks;
-- hidden state/future queue/private knowledge;
-- provider secrets.
+## Следующая работа после publication
 
-HTTP retry completed operation должен вернуть сохранённый public response **без второго Core execution**.
+[B05-02 — Minimal Studio forms поверх Control API](../tasks/B05-02-minimal-studio-forms.md).
 
-Guest B не может читать/менять session guest A. Ownership проверяется server-side, не UI.
+Studio должна:
 
-## Следующая работа
+- работать через Control API;
+- создавать project/quest;
+- добавлять resource;
+- создавать/редактировать bounded `core.paint`;
+- сохранять по `baseRevision`;
+- показывать stale conflict;
+- запускать validation;
+- восстанавливать state после reload с сервера;
+- не требовать ручного JSON.
 
-До публикации PR #14 ничего нового не реализовывать.
+B05-03 затем соединит frozen playtest с базовым Player и докажет реальное изменение игрового результата.
 
-После зелёного push-CI `main`:
+## Не делать сейчас
 
-1. создать новый branch от проверенного B04 merge;
-2. перечитать следующий canonical блок `docs/SPECIFICATION.md`;
-3. создать bounded task-card до кода;
-4. будущую automatic animation suggestion идею оформить только в Studio/Presentation change set, не возвращать её в B04 Runtime.
-
-## Не делать
-
-- free-text intent/narrator/provider API до B06;
-- Studio/Control editing API внутри Runtime PR;
-- Florence-specific logic;
-- Redis/queues/WebSocket/background realtime;
-- public account platform;
-- debug raw-state mutation endpoint;
-- изменения B03 scheduler/action/effect semantics;
-- force dependency upgrade без отдельного аудита.
+- Player B05-03;
+- onboarding B05-04;
+- free-text/LLM B06;
+- assets/presentation B07;
+- plugins B08;
+- roles/login/publish/network Control B09;
+- author AI B10;
+- animation suggestions;
+- Florence migration;
+- force dependency upgrade.
 
 ## Минимальный цикл
 
-Один bounded slice → реальные regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не переходить к следующему блоку до зелёного main.
+Один bounded slice → regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не начинать B05-02 до зелёного `main` B05-01.

@@ -30,9 +30,8 @@ export function hasValidWorldStateReferences(state: WorldState): boolean {
 }
 
 /**
- * Validate references in one authoring fixture/release snapshot. B01-03 keeps
- * this intentionally small: block membership, entry location, character start
- * locations and resource numeric bounds.
+ * Validate references in one authoring fixture/release snapshot. B05 extends
+ * the bounded authoring vocabulary with one explicit core.paint action block.
  */
 export function hasValidQuestReleaseReferences(release: QuestRelease, blocks: readonly Block[]): boolean {
   const byId = new Map<string, Block>();
@@ -59,8 +58,18 @@ export function hasValidQuestReleaseReferences(release: QuestRelease, blocks: re
       if (!location || location.kind !== "core.location") return false;
     }
     if (block.kind === "core.resource") {
+      if (!Number.isSafeInteger(block.data.min)
+        || !Number.isSafeInteger(block.data.max)
+        || !Number.isSafeInteger(block.data.initialValue)) return false;
       if (block.data.min > block.data.max) return false;
       if (block.data.initialValue < block.data.min || block.data.initialValue > block.data.max) return false;
+    }
+    if (block.kind === "core.action") {
+      const resource = byId.get(block.data.resourceId);
+      if (!resource || resource.kind !== "core.resource") return false;
+      if (block.data.actionType !== "core.paint") return false;
+      if (!Number.isSafeInteger(block.data.resourceUnitsPerUnit) || block.data.resourceUnitsPerUnit < 1) return false;
+      if (!Number.isSafeInteger(block.data.durationSecondsPerUnit) || block.data.durationSecondsPerUnit < 0) return false;
     }
   }
 

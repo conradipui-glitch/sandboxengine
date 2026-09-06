@@ -59,6 +59,90 @@
           }
         }
       }
+    },
+    "/control/v1/projects": {
+      "get": {
+        "operationId": "control_projects_list",
+        "summary": "Список локальных авторских проектов",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_projects_create",
+        "summary": "Создание локального авторского проекта",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests": {
+      "get": {
+        "operationId": "control_quests_list",
+        "summary": "Список квестов проекта и текущих draft revisions",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_quests_create",
+        "summary": "Создание квеста с начальным draft snapshot",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft": {
+      "get": {
+        "operationId": "control_draft_get",
+        "summary": "Получение текущего авторского draft snapshot",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/changes": {
+      "post": {
+        "operationId": "control_draft_changes",
+        "summary": "Атомарное применение change set к указанной draft revision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/validations": {
+      "post": {
+        "operationId": "control_validations_create",
+        "summary": "Проверка конкретной draft revision и фиксация immutable report",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/playtests": {
+      "post": {
+        "operationId": "control_playtests_create",
+        "summary": "Создание frozen playtest из проверенного draft snapshot",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
     }
   }
 }

@@ -10,6 +10,7 @@ Generated file. Do not edit by hand.
 
 ## Available block kinds
 
+- `core.action`
 - `core.character`
 - `core.location`
 - `core.resource`
@@ -59,5 +60,13 @@ Generated file. Do not edit by hand.
 - `GET /v1/sessions/{sessionId}` — Получение player-safe состояния своей игровой сессии
 - `POST /v1/sessions/{sessionId}/actions` — Отправка одного поддержанного explicit игрового действия
 - `GET /v1/sessions/{sessionId}/operations/{operationId}` — Восстановление публичного статуса или результата операции
+- `GET /control/v1/projects` — Список локальных авторских проектов
+- `POST /control/v1/projects` — Создание локального авторского проекта
+- `GET /control/v1/projects/{projectId}/quests` — Список квестов проекта и текущих draft revisions
+- `POST /control/v1/projects/{projectId}/quests` — Создание квеста с начальным draft snapshot
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot
+- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Атомарное применение change set к указанной draft revision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision и фиксация immutable report
+- `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest из проверенного draft snapshot
 
 Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

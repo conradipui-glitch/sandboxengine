@@ -7,13 +7,15 @@
     "paths": {
       "@living-history/contracts": ["../../packages/contracts/src/index.ts"],
       "@living-history/core": ["../../packages/core/src/index.ts"],
-      "@living-history/runtime": ["../../packages/runtime/src/index.ts"]
+      "@living-history/runtime": ["../../packages/runtime/src/index.ts"],
+      "@living-history/control": ["../../packages/control/src/index.ts"]
     }
   },
   "references": [
     { "path": "../../packages/contracts" },
     { "path": "../../packages/core" },
-    { "path": "../../packages/runtime" }
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/control" }
   ],
   "include": ["src/**/*.ts"]
 }

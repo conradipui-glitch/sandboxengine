@@ -1,6 +1,7 @@
 {
   "contractsSchemaVersion": "1.0",
   "blockKinds": [
+    "core.action",
     "core.character",
     "core.location",
     "core.resource"
@@ -72,6 +73,62 @@
       "path": "/v1/sessions/{sessionId}/operations/{operationId}",
       "summary": "Восстановление публичного статуса или результата операции",
       "successStatus": 200
+    },
+    {
+      "id": "control.projects.list",
+      "method": "GET",
+      "path": "/control/v1/projects",
+      "summary": "Список локальных авторских проектов",
+      "successStatus": 200
+    },
+    {
+      "id": "control.projects.create",
+      "method": "POST",
+      "path": "/control/v1/projects",
+      "summary": "Создание локального авторского проекта",
+      "successStatus": 201
+    },
+    {
+      "id": "control.quests.list",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests",
+      "summary": "Список квестов проекта и текущих draft revisions",
+      "successStatus": 200
+    },
+    {
+      "id": "control.quests.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests",
+      "summary": "Создание квеста с начальным draft snapshot",
+      "successStatus": 201
+    },
+    {
+      "id": "control.draft.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft",
+      "summary": "Получение текущего авторского draft snapshot",
+      "successStatus": 200
+    },
+    {
+      "id": "control.draft.changes",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/changes",
+      "summary": "Атомарное применение change set к указанной draft revision",
+      "successStatus": 200
+    },
+    {
+      "id": "control.validations.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
+      "summary": "Проверка конкретной draft revision и фиксация immutable report",
+      "successStatus": 201
+    },
+    {
+      "id": "control.playtests.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/playtests",
+      "summary": "Создание frozen playtest из проверенного draft snapshot",
+      "successStatus": 201
     }
   ]
 }

@@ -4,125 +4,85 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | B01/B02/B03 приняты; B04-01/B04-02 опубликованы; B04-03 accepted на branch | B03 merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`; B04-01 merge `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`; B04-02 merge `a1ed4312406d4296f6e8742abcda7417437b1df7`; B04-03 PR #14 |
+| Репозиторий и навигация | **B01–B04 опубликованы; B05-01 accepted на PR #15** | B04 main `3ef8633cff0c07339e09107e4f3653f7e7295f0f`; B05-01 финальный docs gate → merge → main CI |
 | Контракты/Core | B01–B03 приняты | typed actions/effects/conditions/social semantics, deterministic scheduler/tasks/terminal/RNG/replay |
-| Runtime storage contract | **B04-01 published** | `RuntimeStorage`, Memory reference semantics, service clock, idempotency + fencing; ADR 0011 |
-| Storage durability | **B04-02 published** | `SQLiteRuntimeStorage`, restart/fault/busy tests, durable T10–12; ADR 0012; push-CI `34037394667` |
-| Runtime HTTP / public projection | **B04-03 accepted на PR #14** | guest ownership, deny-by-default PlayerView, explicit action API, operation recovery, T15; ADR 0013 |
-| Общий B04 | **accepted на branch; publication pending final PR/main gate** | T10–12 + T15 green; registry/generated docs publish 5 implemented Runtime operations only |
-| Studio/Player | не начато | следующий canonical блок определяется отдельной task-card после публикации B04 |
+| Runtime storage/API | **B04 published** | Memory+SQLite idempotency/fencing, guest ownership, PlayerView, Runtime HTTP; T10–12/T15; ADR 0011–0013 |
+| Authoring / Control | **B05-01 accepted на branch** | Memory+SQLite draft, validation, frozen playtest, loopback Control HTTP; ADR 0014 |
+| Studio UI | не начато | B05-02 после публикации B05-01 |
+| Player basic author path | не начато | B05-03 |
+| Onboarding/help | не начато | B05-04 / T29 |
 | AI-провайдеры/свободный ввод | не начато | B06 |
-| Плагины/Builder | не начато | будущие блоки |
+| Presentation/assets | не начато | B07 |
+| Плагины | не начато | B08 |
+| Полный auth/publish author cycle | не начато | B09 |
+| Авторский AI helper | не начато | B10 |
 | Миграция Florence | не начато | B11 |
 
-## Принятая база B03
+## Опубликованная B04 база
 
-Core остаётся чистым от storage/runtime и определяет игровую причинность. Runtime не меняет scheduler/action/effect semantics.
+Main merge: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`.  
+Push-to-main CI: `34039569962` — success.
 
-Приняты:
+B04 гарантирует durable gameplay operation lifecycle, crash/restart/fencing, guest ownership, deny-by-default PlayerView и explicit Runtime HTTP. Authoring не меняет эти semantics.
 
-- integer game clock без `Date`/wall-clock;
-- typed atomic effects и `entity.move`;
-- deterministic static + dynamic scheduler;
-- global event/step budget;
-- terminal interruption;
-- task/deadline projection;
-- explicit deterministic RNG provenance;
-- canonical replay SHA-256 fingerprint;
-- T05/T06/T08.
+## B05 — первый законченный путь автора
 
-## B04-01 — semantic storage foundation
+Canonical итог B05: человек без ручного JSON создаёт квест, добавляет ресурс, меняет стоимость действия, запускает новую тестовую сессию и видит новый результат; старый playtest остаётся на старых правилах.
 
-Main merge: `c6e63be1bf9ac1998270220c6f8820a006b5c3ac`.  
-Push-to-main CI: `34036478296` — success.
+Разбиение:
 
-Принято:
+- B05-01 — draft/control/validation/frozen playtest;
+- B05-02 — минимальные Studio forms;
+- B05-03 — basic Player + frozen playtest E2E;
+- B05-04 — help/onboarding/T29.
 
-- transport-agnostic `RuntimeStorage`;
-- canonical idempotency identity `(session, key, requestHash, expectedRevision)`;
-- one active operation per session;
-- injected `ServiceClock`, отдельно от `WorldState.clock`;
-- expired same request reacquire → greater fencing token;
-- stale fencing token не может commit;
-- state + turn + public response + operation completion публикуются atomically;
-- completed duplicate возвращает persisted response без второго commit;
-- Core boundary запрещает импорт Runtime.
+## B05-01 — accepted на PR #15
 
-Решение — ADR 0011.
-
-## B04-02 — durable SQLite
-
-Main merge: `a1ed4312406d4296f6e8742abcda7417437b1df7`.  
-Push-to-main CI: `34037394667` — success.
+Карточка: [B05-01](tasks/B05-01-draft-control-frozen-playtest.md).  
+Решение: [ADR 0014](decisions/0014-authoring-draft-frozen-playtest-control-boundary.md).
 
 Принято:
 
-- built-in Node 24.19 `node:sqlite`, без нового native driver;
-- versioned sessions/operations/turns/runtime metadata schema;
-- short `BEGIN IMMEDIATE` transactions;
-- persistent fencing + operation counters;
-- lost-response recovery после reopen;
-- two-instance ownership test;
-- fault-before-COMMIT rollback;
-- restart/reacquire + stale fencing rejection;
-- bounded real SQLite busy policy;
-- shared Memory/SQLite semantic suite.
+- отдельный `@living-history/control`;
+- bounded `core.action` для `core.paint`;
+- `draftRevision` отдельно от `WorldState.revision` и Runtime fencing;
+- atomic change set по `baseRevision`;
+- exact revision/contentHash validation;
+- immutable frozen playtest;
+- Memory reference + durable `SQLiteControlStore` на отдельных `control_*` tables;
+- reopen/restart и two-instance stale-writer regressions;
+- loopback-only Control HTTP;
+- 8 реально работающих Control operations;
+- generated registry: всего 13 available operations / 11 distinct paths;
+- `control.capabilities` и `control.agent-kit` остаются planned;
+- registry hash `86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
 
-Решение — ADR 0012.
+CI checkpoints:
 
-## B04-03 — Runtime HTTP / guest / PlayerView
+- `34040472362` — semantic foundation success;
+- `34046137073` — durable SQLite success;
+- `34046356282` — Control HTTP success;
+- `34046749725` — registry/generated contract success.
 
-Карточка: [B04-03 — Runtime HTTP, guest ownership и player-safe projection](tasks/B04-03-runtime-http-guest-player-projection.md).
+Матрица последнего publication-contract gate:
 
-Реализовано:
-
-- отдельный Node server project в `apps/server`;
-- guest credential выдаётся opaque, SHA-256 verifier хранится отдельно от игрового state;
-- ownership проверяется server-side до read/mutation;
-- deny-by-default `PlayerView`, не raw `WorldState`;
-- `GET /healthz`;
-- `POST /v1/sessions`;
-- owner-only `GET /v1/sessions/{sessionId}`;
-- explicit `POST /v1/sessions/{sessionId}/actions` с `Idempotency-Key` + expected revision;
-- public `GET /v1/sessions/{sessionId}/operations/{operationId}` без lease/fencing/hash internals;
-- server-side canonical SHA-256 request identity;
-- completed HTTP retry возвращает persisted response до второго Core execution;
-- real SQLite busy → `503 STORAGE_BUSY` без partial operation/Core execution;
-- malformed/oversize/unsupported input и cross-owner mutation не достигают Core;
-- guest ownership и completed replay переживают restart.
-
-Functional/hardening gate `34038239722` — success.  
-Registry/generated-doc publication gate `34039363270` — success.
-
-Generated contract теперь рекламирует ровно 5 available Runtime operations; `/v1/quests` и Control API остаются `planned`. `POST /v1/sessions` публикуется с success `201`.
-
-Решение — ADR 0013.
-
-## Canonical B04 audit
-
-На одном B04-03 branch-state зелёные:
-
-- T10 durable idempotent replay;
-- T11 single owner / no lost update;
-- T12 crash/restart/fencing;
-- T15 guest ownership / player-safe projection / retry;
-- contracts 35/35;
+- contracts 37/37;
 - Core 55/55;
-- storage 20/20;
-- server regressions;
-- `check:boundaries`;
-- `docs:check`.
+- Runtime storage 20/20;
+- Control 14/14;
+- server 10/10;
+- boundaries/docs green.
 
-Поэтому общий B04 **accepted по code/semantic/docs audit**. Публикацией считать только после финального current-head PR #14 gate, merge и зелёного push-to-main CI.
+До merge PR #15 и зелёного push-to-main B05-01 считать accepted, но ещё не published.
+
+## Следующий блок после publication
+
+[B05-02 — Minimal Studio forms поверх Control API](tasks/B05-02-minimal-studio-forms.md).
+
+Studio обязана быть клиентом Control API: project/quest/resource/paint forms, save by baseRevision, conflict UX, validation; никаких прямых SQLite/JSON writes.
 
 ## Scope boundary
 
-В B04 не добавлены:
-
-- free-text intent/narrator/provider API;
-- Studio/Control editing API;
-- Florence-specific logic;
-- WebSocket/Redis/background realtime;
-- debug raw-state mutation API.
+Пока не реализованы Studio UI, Player E2E, onboarding, LLM/author helper, assets/presentation composer, roles/login/publish, animation suggestions и Florence migration.
 
 Известное наблюдение CI: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельного аудита не выполнялся.

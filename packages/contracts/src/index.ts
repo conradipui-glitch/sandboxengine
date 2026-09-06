@@ -124,6 +124,8 @@ export {
 } from "./scene.js";
 export {
   BLOCK_KINDS,
+  isBlock,
+  type ActionBlock,
   type ActionIntentSource,
   type Block,
   type BlockBase,
@@ -134,6 +136,7 @@ export {
   type JsonPrimitive,
   type JsonValue,
   type LocationBlock,
+  type PaintActionBlockData,
   type QuestRelease,
   type QuestReleaseCompatibility,
   type ResolvedIntent,
