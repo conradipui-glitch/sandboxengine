@@ -5,6 +5,7 @@ import {
   isGameplayEffect,
   type GameplayEffect,
   type GameplayEffectType,
+  type WorldEntity,
   type WorldItem,
   type WorldState
 } from "@living-history/contracts";
@@ -17,6 +18,7 @@ export type EffectBatchFailureCode =
   | "resource_not_found"
   | "resource_out_of_bounds"
   | "item_not_found"
+  | "entity_not_found"
   | "holder_not_found"
   | "location_not_found";
 
@@ -52,6 +54,7 @@ export function tryApplyEffectBatch(
 
   const resources = state.resources.map((resource) => ({ ...resource }));
   const items = state.items.map((item) => ({ ...item, position: { ...item.position } })) as WorldItem[];
+  const entities = state.entities.map((entity) => ({ ...entity })) as WorldEntity[];
   const appliedEffects: GameplayEffect[] = [];
 
   for (let index = 0; index < effects.length; index += 1) {
@@ -95,13 +98,13 @@ export function tryApplyEffectBatch(
       }
 
       resources[resourceIndex] = Object.freeze({ ...resource, value: nextValue });
-    } else {
+    } else if (effect.type === "item.transfer") {
       const itemIndex = items.findIndex((item) => item.id === effect.itemId);
       if (itemIndex < 0) return failure("item_not_found", index, effect);
 
       const destination = effect.destination;
       if (destination.kind === "holder") {
-        if (!state.entities.some((entity) => entity.id === destination.holderId)) {
+        if (!entities.some((entity) => entity.id === destination.holderId)) {
           return failure("holder_not_found", index, effect);
         }
       } else if (!state.locations.some((location) => location.id === destination.locationId)) {
@@ -114,6 +117,16 @@ export function tryApplyEffectBatch(
         ...item,
         position: Object.freeze({ ...destination })
       });
+    } else {
+      const entityIndex = entities.findIndex((entity) => entity.id === effect.entityId);
+      if (entityIndex < 0) return failure("entity_not_found", index, effect);
+      if (!state.locations.some((location) => location.id === effect.locationId)) {
+        return failure("location_not_found", index, effect);
+      }
+
+      const entity = entities[entityIndex];
+      if (!entity) return failure("invalid_state", index, effect);
+      entities[entityIndex] = Object.freeze({ ...entity, locationId: effect.locationId });
     }
 
     appliedEffects.push(Object.freeze({
@@ -127,7 +140,8 @@ export function tryApplyEffectBatch(
   const nextState = Object.freeze({
     ...state,
     resources: Object.freeze(resources),
-    items: Object.freeze(items)
+    items: Object.freeze(items),
+    entities: Object.freeze(entities)
   });
 
   return Object.freeze({
