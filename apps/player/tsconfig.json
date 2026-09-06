@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@living-history/contracts": ["../../packages/contracts/src/index.ts"],
+      "@living-history/core": ["../../packages/core/src/index.ts"],
+      "@living-history/runtime": ["../../packages/runtime/src/index.ts"],
+      "@living-history/control": ["../../packages/control/src/index.ts"],
+      "@living-history/player": ["../../packages/player/src/index.ts"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/control" },
+    { "path": "../../packages/player" },
+    { "path": "../server" }
+  ],
+  "include": ["src/**/*.ts"]
+}

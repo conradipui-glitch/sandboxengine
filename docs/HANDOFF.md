@@ -1,102 +1,144 @@
 # Передача работы
 
-Обновлено: 2026-09-06
+Обновлено: 2026-09-07
 
-Текущий блок: **B05-02 — Minimal Studio forms**  
-База: published B05-01 main `07aacacb68178c119d11b555a8c166ebe65fe791`  
-B05-01 push-CI: `34047090138` — success  
-Ветка: `b05-02-minimal-studio-forms`  
-PR: #16  
-Статус: **B05-02 functional/hardening gates green; осталось final docs gate → merge → push-CI main**
+Текущий блок: **B05-03 — Basic Player + frozen playtest gameplay E2E**  
+База: published B05-02 main `b45a4fa5e930a893df755797c8b6668ec74ae7f6`  
+B05-02 push-CI: `34049166381` — success  
+Ветка: `b05-03-basic-player-frozen-playtest-e2e`  
+PR: #17  
+Статус: **B05-03 final current-head gate `34054174169` success; осталось merge → push-CI main**
 
 ## Опубликованная база
 
-B01–B04 published. B05-01 также published и даёт authoritative authoring foundation:
+B01–B04 published. B05-01/B05-02 published.
+
+Authoring foundation:
 
 - `@living-history/control`;
 - Memory + durable SQLiteControlStore;
 - `draftRevision` + atomic `baseRevision` changes;
-- validation exact revision/hash;
+- exact validation revision/hash;
 - frozen playtest;
-- loopback-only Control HTTP.
+- loopback-only Control HTTP;
+- Studio human forms/conflict UX/validation.
 
 Не смешивать `draftRevision`, `WorldState.revision` и Runtime fencing/lease.
 
-## Что реализовано в B05-02
+## Что реализовано в B05-03
 
-### Studio boundary
+### Player package boundary
 
-`apps/studio` — клиент Control API, не база данных.
+`@living-history/player`:
 
-- не пишет SQLite/quest files;
-- не держит самостоятельный quest JSON как вторую истину;
-- successful save заменяет локальное view server snapshot;
-- reload восстанавливает draft с Control API.
+- deterministic frozen bootstrap;
+- initial WorldState только из frozen snapshot;
+- bounded `core.paint` definitions из frozen action blocks;
+- broken/unsupported snapshot rejected;
+- `RuntimePlayerClient` для create/refresh/action/reset;
+- никаких Core/Control/SQLite/storage imports из Player package.
 
-### UI
+### Author rule действительно доходит до Core
 
-- проекты: list/create;
-- квесты: list/create;
-- initial location при создании quest;
-- human `core.resource` form;
-- bounded `core.paint` form и cost edit;
-- validation revision/hash/status/errors;
-- loading/saving/saved/error/conflict/Control-unavailable messages;
-- labelled forms, focus restoration, responsive collapse до mobile viewport.
+B04 minimal executor имел compatibility hardcode cost=1. Для authored/playtest path теперь используется `createCoreExplicitActionExecutorForDefinition(definition)`.
 
-### Concurrency UX
+Definition захватывается из frozen playtest и передаётся существующему Core resolver. Player не вычисляет последствия.
 
-Save всегда использует текущий `draftRevision` как `baseRevision`.
+Canonical causal result:
 
-При `409 DRAFT_REVISION_CONFLICT`:
+- P1: initial resource=2, cost=1, request2 → executed2 / 600s;
+- reset P1 → снова те же frozen rules;
+- draft edit cost=2;
+- P1 остаётся cost=1;
+- P2: request2 → partial1 / 300s;
+- P1/P2 hashes различаются;
+- idempotent retry не запускает Core второй раз.
 
-1. Studio получает fresh server draft;
-2. stale change не применяется;
-3. пользователь видит old→current revision;
-4. retry или cancel — только явным действием;
-5. silent last-write-wins запрещён.
+### Minimal Player UI
 
-### Development transport
+`apps/player` показывает:
 
-Studio dev server и Control listener — loopback-only. Studio proxy принимает только loopback Control origin и делает same-origin `/control/*` для браузера. B09 network auth не предвосхищается.
+- quest/playtest identity;
+- neutral scene/location text;
+- player-safe resource;
+- elapsed game time;
+- bounded quantity;
+- action result executed/partial/blocked;
+- server-computed requested/completed/duration;
+- Reset.
 
-### Dependency/tooling decision
+Browser не получает `resourceUnitsPerUnit`, raw compiled artifact или content hashes как источник gameplay logic.
 
-B05-02 не добавляет React/Vite/Playwright/Chromium. Используется TypeScript + DOM и встроенный Node HTTP. Acceptance integration идёт через реальный SQLiteControlStore + Control HTTP + Studio proxy; compiled browser entry отдельно проверяется как раздаваемый JS.
+### Real process composition
 
-Это не заявление о финальном visual polish/browser screenshot QA.
+`npm run dev:player` требует `LH_PLAYTEST_ID` и читает exact durable frozen record из той же SQLite, что Studio/Control.
+
+Process test:
+
+1. создаёт реальный cost=2 frozen playtest;
+2. запускает emitted `apps/player/dist/src/main.js`;
+3. проходит RuntimePlayerClient через Player proxy;
+4. получает partial1/300s;
+5. reset возвращает resource=2/time=0.
+
+Development listeners остаются loopback-only.
+
+### Studio → frozen Player bridge
+
+Studio после exact-current valid validation теперь может создать frozen playtest через существующий Control endpoint.
+
+UI показывает:
+
+- frozen playtest id;
+- PowerShell команду запуска;
+- macOS/Linux команду запуска;
+- stale note, если draft изменился после frozen playtest.
+
+Regression проверяет P1 cost=1 → edit cost=2 → persisted P1 остаётся cost=1 → P2 cost=2.
+
+### B05-02 process gap, найденный аудитом
+
+Во время B05-03 выяснилось, что реальный emitted Studio `main.js` имел неверную глубину relative import к server dist. Старые module/integration tests этого не ловили.
+
+Исправлено через runtime URL к `apps/server/dist/control-server.js`. Добавлен permanent process smoke: реальный Studio process должен отдать `/` и proxied `/control/v1/projects`.
+
+Это важная причина сохранять process-level tests в последующих UI slices.
 
 ## CI evidence
 
-- `34048457576` — найден BodyInit TypeScript mismatch, исправлен;
-- `34048515006` — бизнес-сценарии прошли, найден static-root 404, исправлен;
-- `34048587043` — success, Studio 4/4;
-- `34048643611` — success после hardening.
+- `34052353562` — success, first causal frozen path;
+- `34052452602` — PlayerView client validation bug найден;
+- `34052572989` — success после исправления actual public PlayerView shape;
+- `34053446362` — TypeScript narrowing gap найден;
+- `34053500773` — success, Player UI + real process;
+- `34053598431` — success, Studio/Player process smoke;
+- `34053894740` — success, full Studio freeze bridge;
+- `34054126878` — success, full acceptance docs state;
+- `34054174169` — **success на final current head перед merge**.
 
-На green gate также проходят contracts 37, Core 55, Runtime storage 20, Control 14, server 10, boundaries/docs.
+ADR: `docs/decisions/0016-frozen-playtest-player-causal-boundary.md`.  
+Worklog: `docs/worklog/2026-09-07-b05-03.md`.  
+Player runbook: `apps/player/README.md`.
 
-ADR: `docs/decisions/0015-studio-control-client-boundary.md`.  
-Worklog: `docs/worklog/2026-09-06-b05-02.md`.
+## Bounded limitation
+
+Один B05-03 `dev:player` process = один `LH_PLAYTEST_ID`, один Runtime template и один frozen paint definition.
+
+Не расширять это молча до multi-template server. Если понадобится, definition routing проектируется явно по pinned session release.
 
 ## Publication sequence
 
-1. Финальный PR #16 CI на current head с ADR/STATUS/HANDOFF/worklog/B05-03 card.
-2. Если green — merge #16 с expected head SHA.
-3. Проверить push-to-main CI на merge SHA.
-4. Только после green main создать B05-03 branch от merge.
+1. Merge #17 с expected current head SHA после green `34054174169`.
+2. Проверить push-to-main CI именно на merge SHA.
+3. Только после green main объявить B05-03 published.
+4. Создать B05-04 branch **от verified B05-03 merge**.
 
 ## Следующая задача
 
-[B05-03 — Basic Player + frozen playtest gameplay E2E](tasks/B05-03-basic-player-frozen-playtest-e2e.md).
+[B05-04 — Repeatable onboarding + persistent help / T29](tasks/B05-04-repeatable-onboarding-help-t29.md).
 
-Нужно доказать не UI-иллюзию, а causal E2E:
+Ключ: Help всегда доступна; onboarding можно повторить/пропустить; tour не вызывает AI/Control mutation/Runtime и не меняет canonical state. После B05-04 провести полный B05 author→Player audit.
 
-- P1 frozen на cost=1;
-- draft изменён на cost=2;
-- P1/reset P1 остаются cost=1;
-- P2 получает cost=2;
-- одинаковый action request в новой test session даёт другой ожидаемый Core/Runtime result.
+## Не делать в PR #17
 
-## Не делать в PR #16
-
-Player, onboarding, LLM, B07 presentation/assets, plugins, auth/publish, animation suggestions, Florence migration и force dependency upgrade.
+Onboarding implementation, LLM/free text, B07 presentation/assets, plugins, B09 auth/publish, animation suggestions, Florence migration и force dependency upgrade.

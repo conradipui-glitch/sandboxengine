@@ -40,7 +40,7 @@ export interface ExplicitActionExecutor {
   execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution;
 }
 
-const PAINT_DEFINITION: PaintActionDefinition = Object.freeze({
+const B04_COMPATIBILITY_PAINT_DEFINITION: PaintActionDefinition = Object.freeze({
   id: "runtime.paint",
   actionType: "core.paint",
   resourceId: "blue_paint",
@@ -49,7 +49,23 @@ const PAINT_DEFINITION: PaintActionDefinition = Object.freeze({
   allowPartial: true
 });
 
+/**
+ * B04 compatibility factory used by the published minimal Runtime template.
+ * New authored/playtest flows must bind an explicit frozen definition via
+ * createCoreExplicitActionExecutorForDefinition instead.
+ */
 export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
+  return createCoreExplicitActionExecutorForDefinition(B04_COMPATIBILITY_PAINT_DEFINITION);
+}
+
+/**
+ * B05+ executor. The definition is captured from the pinned/frozen playtest,
+ * so Core behavior follows authored rules rather than a client-side default.
+ */
+export function createCoreExplicitActionExecutorForDefinition(
+  definition: PaintActionDefinition
+): ExplicitActionExecutor {
+  const frozenDefinition: PaintActionDefinition = Object.freeze({ ...definition });
   return Object.freeze({
     execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution {
       if (command.type !== "core.paint") throw new TypeError("unsupported explicit action");
@@ -66,7 +82,7 @@ export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
         })
       });
 
-      const resolved = resolvePaintAction(state, PAINT_DEFINITION, intent);
+      const resolved = resolvePaintAction(state, frozenDefinition, intent);
       if (!resolved.ok) throw new Error(`core action resolution failed: ${resolved.code}`);
       const plan = planTimeAdvance(resolved.state, resolved.action.durationSeconds, []);
       if (!plan.ok) throw new Error(`time planning failed: ${plan.code}`);

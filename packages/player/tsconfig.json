@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@living-history/contracts": ["../contracts/src/index.ts"],
+      "@living-history/runtime": ["../runtime/src/index.ts"]
+    }
+  },
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../runtime" }
+  ],
+  "include": ["src/**/*.ts"]
+}

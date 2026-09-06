@@ -4,6 +4,7 @@ import {
   ControlApiClient,
   ControlApiError,
   type DraftView,
+  type PlaytestView,
   type ProjectView,
   type QuestSummaryView,
   type ValidationView
@@ -30,7 +31,8 @@ interface StudioState {
   selectedQuestId: string | null;
   draft: DraftView | null;
   validation: ValidationView | null;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "conflict" | "error";
+  playtest: PlaytestView | null;
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -43,6 +45,7 @@ export class StudioApp {
     selectedQuestId: null,
     draft: null,
     validation: null,
+    playtest: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -87,6 +90,10 @@ export class StudioApp {
     }
     if (action === "validate") {
       await this.validateCurrentDraft();
+      return;
+    }
+    if (action === "create-playtest") {
+      await this.createCurrentPlaytest();
       return;
     }
     if (action === "retry-conflict") {
@@ -134,6 +141,7 @@ export class StudioApp {
         this.state.selectedQuestId = questId;
         this.state.draft = draft;
         this.state.validation = null;
+        this.state.playtest = null;
         this.state.phase = "saved";
         this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
         this.render();
@@ -188,6 +196,7 @@ export class StudioApp {
     this.state.selectedQuestId = null;
     this.state.draft = null;
     this.state.validation = null;
+    this.state.playtest = null;
     this.state.conflict = null;
     this.render();
     try {
@@ -206,6 +215,7 @@ export class StudioApp {
     this.state.message = "Загружаем draft с сервера…";
     this.state.selectedQuestId = questId;
     this.state.validation = null;
+    this.state.playtest = null;
     this.state.conflict = null;
     this.render();
     try {
@@ -270,8 +280,42 @@ export class StudioApp {
       this.state.validation = await this.api.validateDraft(projectId, questId, draft.draftRevision);
       this.state.phase = this.state.validation.status === "valid" ? "saved" : "error";
       this.state.message = this.state.validation.status === "valid"
-        ? `Revision ${draft.draftRevision} валидна.`
+        ? `Revision ${draft.draftRevision} валидна. Можно заморозить playtest.`
         : `Проверка нашла ${this.state.validation.errors.length} ошибок.`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private async createCurrentPlaytest(): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    const validation = this.state.validation;
+    if (!validation
+      || validation.status !== "valid"
+      || validation.draftRevision !== draft.draftRevision
+      || validation.contentHash !== draft.contentHash
+    ) {
+      this.state.phase = "error";
+      this.state.message = "Сначала проверьте текущую revision квеста.";
+      this.render();
+      return;
+    }
+
+    this.state.phase = "freezing";
+    this.state.message = `Замораживаем revision ${draft.draftRevision}…`;
+    this.render();
+    try {
+      this.state.playtest = await this.api.createPlaytest(
+        projectId,
+        questId,
+        draft.draftRevision,
+        validation.validationId
+      );
+      this.state.phase = "saved";
+      this.state.message = `Frozen playtest ${this.state.playtest.playtestId} создан.`;
     } catch (error) {
       this.setError(error);
     }
@@ -364,6 +408,7 @@ export class StudioApp {
               </div>
               <button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>
               ${validationPanel(this.state.validation, draft)}
+              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase)}
             </section>
           ` : project ? `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите существующий квест или создайте новый в левой панели.</p></div>
@@ -457,6 +502,47 @@ function validationPanel(validation: ValidationView | null, draft: DraftView): s
     <span>revision ${validation.draftRevision} · ${escapeHtml(shortHash(validation.contentHash))}</span>
     ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей revision. Проверьте квест снова после изменений.</p>` : ""}
     ${validation.errors.length ? `<ul>${validation.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
+  </div>`;
+}
+
+function playtestPanel(
+  playtest: PlaytestView | null,
+  validation: ValidationView | null,
+  draft: DraftView,
+  phase: StudioState["phase"]
+): string {
+  const validationCurrent = validation !== null
+    && validation.status === "valid"
+    && validation.draftRevision === draft.draftRevision
+    && validation.contentHash === draft.contentHash;
+  const playtestCurrent = playtest !== null
+    && playtest.draftRevision === draft.draftRevision
+    && playtest.contentHash === draft.contentHash;
+
+  if (!validationCurrent && !playtest) return "";
+  if (playtestCurrent && playtest) {
+    const id = escapeHtml(playtest.playtestId);
+    const attrId = escapeAttr(playtest.playtestId);
+    return `<div class="playtest-result">
+      <strong>Frozen playtest готов</strong>
+      <span>revision ${playtest.draftRevision} · ${id}</span>
+      <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится.</p>
+      <div class="launch-commands">
+        <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
+        <code>macOS/Linux: LH_PLAYTEST_ID=${attrId} npm run dev:player</code>
+      </div>
+    </div>`;
+  }
+
+  const oldPlaytest = playtest
+    ? `<p class="stale-note">Последний frozen playtest относится к revision ${playtest.draftRevision}; он остаётся неизменным.</p>`
+    : "";
+  if (!validationCurrent) return `<div class="playtest-result">${oldPlaytest}</div>`;
+  return `<div class="playtest-result">
+    ${oldPlaytest}
+    <strong>Revision можно заморозить для Player</strong>
+    <p>Создание playtest фиксирует текущий content hash и не читает будущий draft.</p>
+    <button class="primary" data-action="create-playtest" ${phase === "freezing" ? "disabled" : ""}>${phase === "freezing" ? "Создаём…" : "Создать frozen playtest"}</button>
   </div>`;
 }
 

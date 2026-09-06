@@ -58,6 +58,7 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .topbar-status.error, .topbar-status.conflict { background: #fff1ef; color: #a23b2c; }
 .topbar-status.saved { background: #edf8f1; color: #246b42; }
+.topbar-status.freezing { background: #eef3ff; color: #2854a4; }
 
 .sidebar {
   grid-area: sidebar;
@@ -176,6 +177,32 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .validation-empty { color: #939baa; font-size: 13px; }
 .stale-note { padding: 9px 10px; border-radius: 8px; background: #fff6dd; color: #775d18 !important; }
 
+.playtest-result {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dfe5ee;
+  border-radius: 9px;
+  background: #f7f9fc;
+}
+.playtest-result strong { color: #244a91; font-size: 14px; }
+.playtest-result span { color: #687386; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.playtest-result p { margin: 0; color: #687386; font-size: 13px; line-height: 1.5; }
+.playtest-result .stale-note { margin-bottom: 2px; }
+.launch-commands { display: grid; gap: 6px; }
+.launch-commands code {
+  display: block;
+  max-width: 100%;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 7px;
+  background: #edf1f7;
+  color: #39465a;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
 .conflict-panel {
   margin-top: 20px;
   padding: 16px;
@@ -212,4 +239,5 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
   .validation-section, .conflict-panel { grid-template-columns: 1fr; }
   .button-row { justify-content: stretch; }
   .button-row button { flex: 1 1 100%; }
+  .launch-commands code { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
