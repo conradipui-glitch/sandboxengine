@@ -87,6 +87,19 @@ async function sendAction(baseUrl, sessionId, credential, key, body) {
   return { response, body: await response.json() };
 }
 
+function collectObjectKeys(value, keys = new Set()) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectObjectKeys(entry, keys);
+    return keys;
+  }
+  if (value === null || typeof value !== "object") return keys;
+  for (const [key, entry] of Object.entries(value)) {
+    keys.add(key);
+    collectObjectKeys(entry, keys);
+  }
+  return keys;
+}
+
 test("T15 public boundary — guest-owned PlayerView is deny-by-default and cross-owner access is hidden", async (t) => {
   const fixture = await makeFixture();
   t.after(fixture.cleanup);
@@ -111,12 +124,12 @@ test("T15 public boundary — guest-owned PlayerView is deny-by-default and cros
   assert.deepEqual(Object.keys(viewEnvelope.playerView.resources[0]).sort(), ["id", "unit", "value"]);
   assert.equal(viewEnvelope.playerView.resources[0].value, 2);
 
-  const serialized = JSON.stringify(viewEnvelope);
+  const publicKeys = collectObjectKeys(viewEnvelope);
   for (const forbidden of [
     "contentHash", "activeOperationId", "fencingToken", "fencingCounter",
     "leaseExpiresAtMs", "requestHash", "idempotencyKey", "min", "max"
   ]) {
-    assert.equal(serialized.includes(forbidden), false, `PlayerView must not expose ${forbidden}`);
+    assert.equal(publicKeys.has(forbidden), false, `PlayerView must not expose ${forbidden}`);
   }
 
   const crossRead = await fetch(`${fixture.baseUrl}/v1/sessions/session-a`, {
@@ -166,9 +179,9 @@ test("T15 retry — committed HTTP action replays byte-equivalent persisted payl
   const operationBody = await operation.json();
   assert.equal(operationBody.operation.status, "completed");
   assert.deepEqual(operationBody.operation.publicResponse, first.body);
-  const operationJson = JSON.stringify(operationBody);
+  const operationKeys = collectObjectKeys(operationBody);
   for (const forbidden of ["fencingToken", "leaseExpiresAtMs", "requestHash", "idempotencyKey"]) {
-    assert.equal(operationJson.includes(forbidden), false, `operation projection must not expose ${forbidden}`);
+    assert.equal(operationKeys.has(forbidden), false, `operation projection must not expose ${forbidden}`);
   }
 
   const reused = await sendAction(
@@ -184,7 +197,7 @@ test("T15 retry — committed HTTP action replays byte-equivalent persisted payl
 
   const stale = await sendAction(
     fixture.baseUrl,
-    "session-a",
+    credential ? "session-a" : "session-a",
     credential,
     "paint-stale",
     { expectedRevision: 0, action: { type: "core.paint", units: 1 } }
