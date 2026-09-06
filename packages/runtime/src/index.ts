@@ -5,6 +5,16 @@ export {
   MemoryRuntimeStorage,
   type MemoryRuntimeStorageOptions
 } from "./memory-storage.js";
+export {
+  DEFAULT_SQLITE_BUSY_TIMEOUT_MS,
+  MAX_SQLITE_BUSY_TIMEOUT_MS,
+  SQLiteRuntimeStorage,
+  SQLiteStorageBusyError,
+  SQLiteStorageCorruptionError,
+  type SQLiteFaultInjector,
+  type SQLiteFaultPoint,
+  type SQLiteRuntimeStorageOptions
+} from "./sqlite-storage.js";
 export type {
   ClaimOperationInput,
   ClaimOperationResult,
