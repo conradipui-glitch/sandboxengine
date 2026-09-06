@@ -84,11 +84,11 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
     return;
   }
 
-  const payload = await upstream.arrayBuffer();
+  const payload = new Uint8Array(await upstream.arrayBuffer());
   response.statusCode = upstream.status;
   response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json; charset=utf-8");
   response.setHeader("cache-control", "no-store");
-  response.end(Buffer.from(payload));
+  response.end(payload);
 }
 
 async function serveStatic(response: any, pathname: string): Promise<void> {
@@ -116,8 +116,19 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
 
 async function readRequestBody(request: any): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
-  for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  return Buffer.concat(chunks);
+  let total = 0;
+  for await (const chunk of request) {
+    const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
+    chunks.push(bytes);
+    total += bytes.byteLength;
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
 }
 
 function mimeType(path: string): string {
