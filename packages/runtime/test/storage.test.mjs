@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ManualServiceClock, MemoryRuntimeStorage } from "../dist/index.js";
 
-const HASH_A = "1".repeat(64);
-const HASH_B = "2".repeat(64);
+const HASH_A = "ab".repeat(32);
+const HASH_B = "cd".repeat(32);
 const STATE_HASH = "3".repeat(64);
 const RELEASE_HASH = "a".repeat(64);
 
@@ -75,6 +75,7 @@ test("T10 Memory — duplicate key commits once, replays persisted response, and
   const first = await storage.claimOperation(claimInput());
   assert.equal(first.kind, "acquired");
   assert.equal(first.reacquired, false);
+  assert.equal(first.operation.requestHash, HASH_A);
 
   const committed = await storage.commitTurn(commitInput(first.operation));
   assert.equal(committed.kind, "committed");
@@ -85,6 +86,10 @@ test("T10 Memory — duplicate key commits once, replays persisted response, and
   assert.equal(replay.kind, "replay", "replay is resolved before current revision conflict");
   assert.deepEqual(replay.publicResponse, publicResponse());
   assert.equal(replay.operation.turnId, "turn-1");
+
+  const uppercaseReplay = await storage.claimOperation(claimInput({ requestHash: HASH_A.toUpperCase() }));
+  assert.equal(uppercaseReplay.kind, "replay", "equivalent SHA-256 hex casing has one canonical idempotency identity");
+  assert.equal(uppercaseReplay.operation.requestHash, HASH_A);
 
   const afterReplay = await storage.loadSession("session-1");
   assert.equal(afterReplay.revision, 1);
