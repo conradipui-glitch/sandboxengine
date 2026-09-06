@@ -4,23 +4,23 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | bootstrap и общий B01 приняты | B01-02 merge `270c98bd272dbe43879fb023df6e01f647782d35`, B01-03 merge `c9801e51f95498940fc4c03611637804d4db7a0b`, B01-04 code `b2570106e567fb34dfb63479e39e47ce87e21d22`, PR #3, CI `34023654191` |
-| Контракты | B01 принят | 8 canonical JSON Schema v1.0, Ajv/semantic checks, `minimal-quest` + `transfer-desk`, generated agent contracts |
-| Core | B01 compile skeleton принят; B02 ещё не начат | `compileQuest` проверяет version/refs, нормализует artifact и считает SHA-256; action resolver/state mutation отсутствуют |
-| Compile/registry/generated docs | B01-04 принят | readiness registry; `docs:generate`; stale `docs:check`; OpenAPI содержит только `available` operations и сейчас имеет 0 paths |
-| Runtime/API/storage | не начато | B04 после B02–B03 |
+| Репозиторий и навигация | B01 принят; B02-01 реализован | B01 merge `dd96e6f98377a358aad7785ffc96d3ece642e7d1`; B02-01 code `574cd80ffa7036f29bd0b5642c4ed6da2f80455b`, PR #4, CI `34024086353` |
+| Контракты | `GameplayEffect` v1.0 добавлен без изменения generic `Effect` v1.0 | первый executable type `resource.change`; ADR 0003; generated capabilities обновлены |
+| Core | B02-01 принят по bounded-приёмке | `tryApplyEffectBatch` применяет resource changes к trial-copy all-or-nothing; исходный state/revision/clock не мутируются |
+| Compile/registry/generated docs | B01-04 принят и актуален | `docs:check` включает новый gameplay-effect schema; HTTP operations по-прежнему 0 available |
+| Action resolver | не реализован | следующий шаг B02-02: explicit action definitions/resolver и рассчитанные `executed/partial/blocked` без scheduler |
+| Scheduler/time/tasks | не начато | B03 после B02 |
+| Runtime/API/storage | не начато | B04 |
 | Studio/Player | не начато | B05/B07 |
-| AI-провайдеры, квоты, авторский помощник | не начато | B06/B10 |
-| Плагины и Builder/GitHub | не начато | B08/B13 |
-| Миграция Florence | не начато | B00/B11; baseline не заменяет миграцию |
-| T01–T37 | не выполнены | B01 проверяет контрактный каркас; поведенческая матрица начинается с B02 |
+| AI-провайдеры/свободный ввод | не начато | B06 |
+| Плагины/Builder | не начато | B08/B13 |
+| Миграция Florence | не начато | B11 |
+| T01–T37 | частично подготовлены, не приняты целиком | B02-01 доказывает atomic effect batch — часть риска T07; полная поведенческая приёмка впереди |
 
-## Что означает приёмка B01
+## Текущая исполняемая граница
 
-Принят переносимый первый контрактный слой: схемы, DTO boundary, semantic references, два независимых package fixtures, deterministic compile artifact/hash, readiness registry и воспроизводимый agent kit. Planned HTTP endpoints присутствуют только в исходном registry и не экспортируются как доступные.
+`resource.change` — первая механика, которая действительно способна вычислить новое значение игрового состояния. Она не является действием игрока сама по себе: Core пока не выбирает effect по `ResolvedIntent`, не считает длительность и не повышает revision. `tryApplyEffectBatch` — пробное чистое вычисление: success возвращает новый state, failure вообще не возвращает state.
 
-Приёмка B01 **не** означает, что игра уже исполняется. `ResolvedIntent` не меняет мир; `compileQuest` не исполняет действия; Runtime API, storage, scheduler, AI и Studio отсутствуют. Следующий bounded-шаг — `docs/tasks/B02-01-effects-atomicity.md`.
+Generic B01 `Effect` v1.0 сознательно не расширен. Исполняемые изменения идут через отдельный строгий `GameplayEffect` v1.0; см. `docs/decisions/0003-gameplay-effect-versioning.md`.
 
 Известное наблюдение CI остаётся: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high). Их источник и безопасный upgrade ещё не исследованы; не выполнять `npm audit fix --force` без отдельной проверки совместимости.
-
-Статус «готово» здесь означает наличие артефакта и проверяемого результата, а не написанный план.

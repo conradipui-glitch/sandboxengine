@@ -2,60 +2,51 @@
 
 Обновлено: 2026-09-06
 
-Текущий блок: B01-04 — compile skeleton, readiness registry и generated contracts  
-Базовый commit: `c9801e51f95498940fc4c03611637804d4db7a0b`  
-Последний кодовый commit: `b2570106e567fb34dfb63479e39e47ce87e21d22`  
-Статус: accepted по bounded-приёмке и общей приёмке B01; публикация выполняется через PR #3
+Текущий блок: B02-01 — typed effects и атомарность  
+Базовый commit: `dd96e6f98377a358aad7785ffc96d3ece642e7d1`  
+Последний кодовый commit: `574cd80ffa7036f29bd0b5642c4ed6da2f80455b`  
+Статус: accepted по bounded-приёмке; публикация выполняется через PR #4
 
 ## Выполнено
 
-- `packages/core/src/compile.ts` добавляет чистый `compileQuest`: версия контрактов и semantic references проверяются до создания результата.
-- Валидный package нормализуется в один immutable artifact; блоки упорядочиваются по `release.blockIds`, canonical JSON сортирует ключи объектов и сохраняет порядок массивов.
-- Content hash — SHA-256 через Web Crypto; одинаковое содержание даёт одинаковый hash, содержательное изменение меняет hash.
-- Добавлен второй независимый fixture `packages/contracts/fixtures/transfer-desk/` («Стол находок»), не связанный с Florence.
-- Добавлен `packages/contracts/registry/endpoints.json`: будущие HTTP-операции имеют readiness `planned`.
-- Добавлены `npm run docs:generate` и generated `SKILL.md`, OpenAPI, capabilities, compatibility и schema index.
-- Generated OpenAPI/capabilities включают только `available` operations. Сейчас Runtime/Control API не реализованы, поэтому OpenAPI `paths` пуст и operations list пуст.
-- `docs:check` сравнивает committed generated files с детерминированной генерацией и падает при stale contract.
-- Общий B01 принят: contract/schema boundary, semantic validation, два package fixtures, compile skeleton/hash, readiness registry и agent docs воспроизводимы.
+- Введён отдельный strict `GameplayEffect` v1.0; B01 generic `Effect` v1.0 не изменён.
+- Первый executable effect: `resource.change` (`resourceId`, integer `delta`, `sourceId`).
+- `tryApplyEffectBatch(state, effects)` выполняет все изменения на trial-copy ресурсов и возвращает либо один полный новый `WorldState`, либо failure без `state`.
+- Последовательные изменения одного ресурса видят результаты предыдущих trial-изменений, но ошибка на любом индексе отменяет весь возвращаемый batch.
+- Проверяются schema/semantic state references, missing resource, min/max, safe integers и unsupported/invalid effect type.
+- Исходный state не мутируется; revision и clock не меняются этим слоем.
+- Provenance `sourceId` сохраняется в success `appliedEffects` и в failure metadata.
+- Generated agent docs/capabilities теперь содержат единственный реальный gameplay effect `resource.change`; HTTP operations по-прежнему отсутствуют.
+- Решение о версионировании зафиксировано ADR 0003.
 
 ## Проверено
 
-GitHub Actions PR run [34023654191](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34023654191), Node `24.19.0`, npm `11.17.0`:
+GitHub Actions PR run [34024086353](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34024086353), Node `24.19.0`, npm `11.17.0`:
 
 - `npm ci` → успешно;
 - `npm run verify` → успешно;
-- contract tests → 18/18 passed;
-- Core tests → 6/6 passed;
+- contract tests → 20/20 passed;
+- Core tests → 10/10 passed;
 - `check:boundaries` → успешно;
-- `docs:check` → успешно; 10 navigation docs + 5 generated contracts current.
+- `docs:check` → успешно; generated contracts current.
 
-Отдельно доказано тестами:
-
-- оба fixture-пакета компилируются и дают стабильный 64-hex SHA-256;
-- порядок входного массива blocks не меняет artifact/hash;
-- изменение значения ресурса меняет hash;
-- broken entry reference и incompatible version не выдают artifact;
-- planned endpoint не появляется в generated OpenAPI/available capabilities;
-- stale generated file обнаруживается тем же detector, который использует `docs:check`.
+Ключевой atomicity test: первый effect уменьшает `blue_paint` с 2 до trial-1, второй пытается уменьшить ещё на 2. Возвращается `resource_out_of_bounds` на index 1, поле `state` отсутствует, исходный `blue_paint` остаётся 2.
 
 ## Не выполнено / ограничения
 
-- Action resolver, preconditions, typed gameplay effects и изменение WorldState ещё не реализованы; это B02.
-- Scheduler/NPC tasks/deadlines — B03.
-- Runtime API, storage, auth — B04; наличие planned endpoint registry не означает работающий HTTP.
-- Studio/Player, AI, plugins, Builder и Florence migration не начинались.
-- T01–T37 не считаются выполненными; B01 — инфраструктура контрактов, а не поведенческая приёмка игры.
-- TypeScript DTO остаются schema-first ручными экспортами с parity tests, а не отдельной generated-code системой; это осознанная текущая граница B01, чтобы не заводить второй сложный генератор до независимого потребителя.
-- `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); не исправлялись force-upgrade без отдельного анализа.
+- `resource.change` пока не связан с action definition/ResolvedIntent: Core не решает, какое действие выполнить.
+- `ActionResult.effects` всё ещё использует B01 generic `Effect`; переход публичного result contract на typed gameplay effects требует отдельного versioning/compatibility change.
+- Не реализованы action preconditions, длительность, `partial`, `blocked`, `conditional` как результат resolver.
+- Revision/clock commit отсутствует здесь намеренно; scheduler — B03.
+- HTTP/storage/LLM/Studio/Player/Florence не затрагивались.
+- Полный T07 не принят: доказана только all-or-nothing часть effect batch.
+- `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade не выполнялся.
 
 ## Следующее действие
 
-После публикации PR #3 начать [B02-01 — typed effects и атомарность](tasks/B02-01-effects-atomicity.md): заменить общий effect envelope первым реальным типизированным gameplay effect и реализовать пробное атомарное применение над копией WorldState. Не добавлять scheduler, HTTP или LLM.
+После публикации PR #4 выполнить [B02-02 — explicit action resolver](tasks/B02-02-action-resolver.md): на одном тестовом действии связать validated intent/action args с preconditions, duration и typed effects; получить рассчитанные `executed`, `partial`, `blocked` без scheduler и без свободного текста/LLM.
 
 ## Решения
 
-- `compileQuest` остаётся чистым Core-кодом и не читает файлы/БД/HTTP; загрузка package — ответственность будущего runtime/authoring adapter.
-- Hash считается по canonical compiled content, а не по draft revision, времени сборки или пути файлов.
-- Planned registry является источником планирования, но readiness gate запрещает выдавать planned operation агенту как доступную.
-- B01 принят только в зафиксированном schema-first объёме; новые block kinds и runtime поля становятся capabilities лишь вместе с точной схемой и тестом.
+- См. [ADR 0003](decisions/0003-gameplay-effect-versioning.md): executable `GameplayEffect` отделён от strict generic `Effect` v1.0.
+- `tryApplyEffectBatch` является чистым trial computation, а не storage commit и не игровой turn сам по себе.
