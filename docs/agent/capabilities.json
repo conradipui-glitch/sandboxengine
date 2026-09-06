@@ -24,7 +24,11 @@
   ],
   "scheduledEventKinds": [
     "core.effects",
-    "core.marker"
+    "core.marker",
+    "core.terminal"
+  ],
+  "scheduledTaskKinds": [
+    "core.task"
   ],
   "actionTypes": [
     "core.paint",
