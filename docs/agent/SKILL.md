@@ -14,6 +14,10 @@ Generated file. Do not edit by hand.
 - `core.location`
 - `core.resource`
 
+## Available gameplay effects
+
+- `resource.change`
+
 ## Available HTTP operations
 
 - Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы.

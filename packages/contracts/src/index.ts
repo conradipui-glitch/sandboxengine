@@ -23,6 +23,13 @@ export {
   type EffectRef
 } from "./result.js";
 export {
+  GAMEPLAY_EFFECT_TYPES,
+  isGameplayEffect,
+  type GameplayEffect,
+  type GameplayEffectType,
+  type ResourceChangeEffect
+} from "./gameplay-effect.js";
+export {
   type WorldClock,
   type WorldEntity,
   type WorldItem,

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "1.0",
+  "type": "resource.change",
+  "sourceId": "action.paint",
+  "resourceId": "blue_paint",
+  "delta": -1
+}

@@ -20,6 +20,7 @@ export async function buildGeneratedDocs(root) {
 
   const schemas = [];
   let blockKinds = [];
+  let gameplayEffectTypes = [];
   let contractsSchemaVersion = null;
   for (const file of schemaFiles) {
     const schema = JSON.parse(await readFile(resolve(schemaDirectory, file), "utf8"));
@@ -29,7 +30,8 @@ export async function buildGeneratedDocs(root) {
       file: `packages/contracts/schemas/v1/${file}`,
       id: schema.$id
     });
-    const version = schema?.properties?.schemaVersion?.const;
+    const version = schema?.properties?.schemaVersion?.const
+      ?? schema?.oneOf?.[0]?.properties?.schemaVersion?.const;
     if (version !== undefined) {
       if (contractsSchemaVersion === null) contractsSchemaVersion = version;
       if (contractsSchemaVersion !== version) {
@@ -37,6 +39,12 @@ export async function buildGeneratedDocs(root) {
       }
     }
     if (name === "block") blockKinds = [...schema.properties.kind.enum].sort();
+    if (name === "gameplay-effect") {
+      gameplayEffectTypes = schema.oneOf
+        .map((variant) => variant?.properties?.type?.const)
+        .filter((value) => typeof value === "string")
+        .sort();
+    }
   }
 
   if (contractsSchemaVersion === null) throw new Error("No contract schema version found");
@@ -52,6 +60,7 @@ export async function buildGeneratedDocs(root) {
   const capabilities = {
     contractsSchemaVersion,
     blockKinds,
+    gameplayEffectTypes,
     operations: availableOperations
   };
   const openapi = {
@@ -66,6 +75,7 @@ export async function buildGeneratedDocs(root) {
     registryVersion: registry.registryVersion,
     operations: registry.operations,
     blockKinds,
+    gameplayEffectTypes,
     schemas
   }));
   const compatibility = {
@@ -79,6 +89,7 @@ export async function buildGeneratedDocs(root) {
     engineVersion: packageJson.version,
     contractsSchemaVersion,
     blockKinds,
+    gameplayEffectTypes,
     availableOperations
   });
 
@@ -137,11 +148,14 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
   const blockLines = blockKinds.map((kind) => `- \`${kind}\``).join("\n");
+  const effectLines = gameplayEffectTypes.length === 0
+    ? "- Нет исполняемых gameplay effects."
+    : gameplayEffectTypes.map((type) => `- \`${type}\``).join("\n");
   return `# Living History Engine — agent contract\n\n` +
     `Generated file. Do not edit by hand.\n\n` +
     `- Engine version: \`${engineVersion}\`\n` +
@@ -150,6 +164,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, availab
     `- Machine capabilities: [capabilities.json](capabilities.json)\n` +
     `- OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)\n\n` +
     `## Available block kinds\n\n${blockLines}\n\n` +
+    `## Available gameplay effects\n\n${effectLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +
     `Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.\n`;

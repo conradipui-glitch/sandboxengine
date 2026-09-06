@@ -5,5 +5,8 @@
     "core.location",
     "core.resource"
   ],
+  "gameplayEffectTypes": [
+    "resource.change"
+  ],
   "operations": []
 }

@@ -20,6 +20,8 @@ test("generated agent contracts expose only available operations", async () => {
   assert.deepEqual(openapi.paths, {});
   assert.deepEqual(capabilities.operations, []);
   assert.deepEqual(capabilities.blockKinds, ["core.character", "core.location", "core.resource"]);
+  assert.deepEqual(capabilities.gameplayEffectTypes, ["resource.change"]);
+  assert.equal(generated.get("docs/agent/SKILL.md").includes("resource.change"), true);
   assert.equal(generated.get("docs/agent/SKILL.md").includes("/v1/sessions"), false);
 });
 
