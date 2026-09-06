@@ -22,6 +22,7 @@ import {
 
 export interface ExplicitPaintCommand {
   readonly type: "core.paint";
+  readonly actionId: string;
   readonly units: number;
 }
 
@@ -30,6 +31,7 @@ export type ExplicitActionCommand = ExplicitPaintCommand;
 export interface ExplicitActionExecution {
   readonly candidateState: WorldState;
   readonly actionStatus: "executed" | "partial" | "blocked";
+  readonly actionId: string;
   readonly requestedUnits: number;
   readonly completedUnits: number;
   readonly durationSeconds: number;
@@ -37,22 +39,27 @@ export interface ExplicitActionExecution {
 }
 
 export interface ExplicitActionExecutor {
-  execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution;
+  execute(
+    state: WorldState,
+    command: ExplicitActionCommand,
+    definition: PaintActionDefinition
+  ): ExplicitActionExecution;
 }
 
-const PAINT_DEFINITION: PaintActionDefinition = Object.freeze({
-  id: "runtime.paint",
-  actionType: "core.paint",
-  resourceId: "blue_paint",
-  resourceUnitsPerUnit: 1,
-  durationSecondsPerUnit: 300,
-  allowPartial: true
-});
-
+/**
+ * Executes a definition that was already pinned to the gameplay session.
+ * There is intentionally no default paint/resource/cost in this layer.
+ */
 export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
   return Object.freeze({
-    execute(state: WorldState, command: ExplicitActionCommand): ExplicitActionExecution {
-      if (command.type !== "core.paint") throw new TypeError("unsupported explicit action");
+    execute(
+      state: WorldState,
+      command: ExplicitActionCommand,
+      definition: PaintActionDefinition
+    ): ExplicitActionExecution {
+      if (command.type !== "core.paint" || command.actionId !== definition.id) {
+        throw new TypeError("unsupported or mismatched explicit action");
+      }
       const intent: ResolvedIntent = Object.freeze({
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         actionType: "core.paint",
@@ -66,7 +73,7 @@ export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
         })
       });
 
-      const resolved = resolvePaintAction(state, PAINT_DEFINITION, intent);
+      const resolved = resolvePaintAction(state, definition, intent);
       if (!resolved.ok) throw new Error(`core action resolution failed: ${resolved.code}`);
       const plan = planTimeAdvance(resolved.state, resolved.action.durationSeconds, []);
       if (!plan.ok) throw new Error(`time planning failed: ${plan.code}`);
@@ -76,6 +83,7 @@ export function createCoreExplicitActionExecutor(): ExplicitActionExecutor {
       return Object.freeze({
         candidateState: advanced.state,
         actionStatus: resolved.action.status,
+        actionId: command.actionId,
         requestedUnits: resolved.action.requestedUnits,
         completedUnits: resolved.action.completedUnits,
         durationSeconds: resolved.action.durationSeconds,
@@ -104,6 +112,7 @@ export function buildCommittedPublicResponse(input: {
     turnId: input.turnId,
     action: {
       type: "core.paint",
+      actionId: input.execution.actionId,
       status: input.execution.actionStatus,
       requestedUnits: input.execution.requestedUnits,
       completedUnits: input.execution.completedUnits,
