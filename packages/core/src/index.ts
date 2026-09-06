@@ -42,6 +42,10 @@ export {
   type SocialResolutionSuccess
 } from "./social.js";
 export {
+  CORE_DEADLINE_PRIORITY,
+  CORE_TASK_START_INTERNAL_ORDER,
+  CORE_TASK_STEP_PRIORITY,
+  CORE_WORLD_EVENT_PRIORITY,
   DEFAULT_MAX_EVENTS_PER_INTERVAL,
   HARD_MAX_EVENTS_PER_INTERVAL,
   applyTimeAdvancePlan,
