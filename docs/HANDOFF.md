@@ -7,7 +7,7 @@
 B05-02 push-CI: `34049166381` — success  
 Ветка: `b05-03-basic-player-frozen-playtest-e2e`  
 PR: #17  
-Статус: **B05-03 functional gates green; осталось final docs/current-head gate → merge → push-CI main**
+Статус: **B05-03 final current-head gate `34054174169` success; осталось merge → push-CI main**
 
 ## Опубликованная база
 
@@ -112,7 +112,9 @@ Regression проверяет P1 cost=1 → edit cost=2 → persisted P1 ост�
 - `34053446362` — TypeScript narrowing gap найден;
 - `34053500773` — success, Player UI + real process;
 - `34053598431` — success, Studio/Player process smoke;
-- `34053894740` — success, full Studio freeze bridge.
+- `34053894740` — success, full Studio freeze bridge;
+- `34054126878` — success, full acceptance docs state;
+- `34054174169` — **success на final current head перед merge**.
 
 ADR: `docs/decisions/0016-frozen-playtest-player-causal-boundary.md`.  
 Worklog: `docs/worklog/2026-09-07-b05-03.md`.  
@@ -126,12 +128,10 @@ Player runbook: `apps/player/README.md`.
 
 ## Publication sequence
 
-1. Финальный PR #17 CI на current head с ADR/STATUS/HANDOFF/worklog/B05-04 card.
-2. Если green — обновить PR body фактическими результатами без изменения head.
-3. Merge #17 с expected current head SHA.
-4. Проверить push-to-main CI именно на merge SHA.
-5. Только после green main объявить B05-03 published.
-6. Создать B05-04 branch **от verified B05-03 merge**.
+1. Merge #17 с expected current head SHA после green `34054174169`.
+2. Проверить push-to-main CI именно на merge SHA.
+3. Только после green main объявить B05-03 published.
+4. Создать B05-04 branch **от verified B05-03 merge**.
 
 ## Следующая задача
 
