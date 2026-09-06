@@ -37,5 +37,41 @@
     "core.social.request",
     "core.social.response"
   ],
-  "operations": []
+  "operations": [
+    {
+      "id": "runtime.healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "summary": "Проверка доступности Runtime API",
+      "successStatus": 200
+    },
+    {
+      "id": "runtime.sessions.create",
+      "method": "POST",
+      "path": "/v1/sessions",
+      "summary": "Создание гостевой игровой сессии",
+      "successStatus": 201
+    },
+    {
+      "id": "runtime.sessions.get",
+      "method": "GET",
+      "path": "/v1/sessions/{sessionId}",
+      "summary": "Получение player-safe состояния своей игровой сессии",
+      "successStatus": 200
+    },
+    {
+      "id": "runtime.sessions.action",
+      "method": "POST",
+      "path": "/v1/sessions/{sessionId}/actions",
+      "summary": "Отправка одного поддержанного explicit игрового действия",
+      "successStatus": 200
+    },
+    {
+      "id": "runtime.operations.get",
+      "method": "GET",
+      "path": "/v1/sessions/{sessionId}/operations/{operationId}",
+      "summary": "Восстановление публичного статуса или результата операции",
+      "successStatus": 200
+    }
+  ]
 }
