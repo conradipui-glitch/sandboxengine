@@ -25,6 +25,7 @@ export {
 export {
   GAMEPLAY_EFFECT_TYPES,
   isGameplayEffect,
+  type EntityMoveEffect,
   type GameplayEffect,
   type GameplayEffectType,
   type ItemTransferEffect,
