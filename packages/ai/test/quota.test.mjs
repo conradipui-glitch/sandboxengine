@@ -20,7 +20,7 @@ function jsonResponse(payload, status = 200) {
 test("B06-01 OpenRouter key quota preserves real zero, null reset instant, and does not call management endpoint without credential", async () => {
   const calls = [];
   const adapter = new OpenRouterQuotaAdapter({
-    inferenceCredential: "inference-key",
+    inferenceCredential: "inference?key&opaque#value",
     fetch: async (input, init) => {
       calls.push({ url: String(input), authorization: init.headers.authorization });
       return jsonResponse({ data: { usage: 0, limit: 0, limit_remaining: 0, limit_reset: "monthly" } });
@@ -30,7 +30,7 @@ test("B06-01 OpenRouter key quota preserves real zero, null reset instant, and d
   const metrics = await adapter.read(request);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://openrouter.ai/api/v1/key");
-  assert.equal(calls[0].authorization, "Bearer inference-key");
+  assert.equal(calls[0].authorization, "Bearer inference?key&opaque#value");
   assert.deepEqual(metrics[0], {
     kind: "key_budget",
     scope: "key",
@@ -49,11 +49,25 @@ test("B06-01 OpenRouter key quota preserves real zero, null reset instant, and d
   assert.equal(metrics[1].remaining, null);
 });
 
+test("B06-01 explicit OpenRouter reset instant is preserved while unknown numeric fields stay null", async () => {
+  const adapter = new OpenRouterQuotaAdapter({
+    inferenceCredential: "inference-key",
+    fetch: async () => jsonResponse({ data: { usage: 4, limit_reset: "2026-09-08T00:00:00Z" } }),
+    now: () => 1_000
+  });
+  const metrics = await adapter.read(request);
+  assert.equal(metrics[0].used, 4);
+  assert.equal(metrics[0].limit, null);
+  assert.equal(metrics[0].remaining, null);
+  assert.equal(metrics[0].window, null);
+  assert.equal(metrics[0].resetsAt, "2026-09-08T00:00:00.000Z");
+});
+
 test("B06-01 management credential is separate and account credits use only provider numbers", async () => {
   const calls = [];
   const adapter = new OpenRouterQuotaAdapter({
     inferenceCredential: "inference-key",
-    managementCredential: "management-key",
+    managementCredential: "management?key&opaque#value",
     fetch: async (input, init) => {
       calls.push({ url: String(input), authorization: init.headers.authorization });
       if (String(input).endsWith("/key")) return jsonResponse({ data: { usage: 3, limit: 10, limit_remaining: 7 } });
@@ -63,7 +77,7 @@ test("B06-01 management credential is separate and account credits use only prov
   });
   const metrics = await adapter.read(request);
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((call) => call.authorization), ["Bearer inference-key", "Bearer management-key"]);
+  assert.deepEqual(calls.map((call) => call.authorization), ["Bearer inference-key", "Bearer management?key&opaque#value"]);
   assert.equal(metrics[0].remaining, 7);
   assert.deepEqual(metrics[1], {
     kind: "account_credit",

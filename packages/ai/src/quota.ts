@@ -3,8 +3,7 @@ import type {
   FetchLike,
   QuotaAdapter,
   QuotaMetric,
-  QuotaReadRequest,
-  QuotaWindow
+  QuotaReadRequest
 } from "./types.js";
 
 export interface ScriptedQuotaStep {
@@ -45,8 +44,8 @@ export class OpenRouterQuotaAdapter implements QuotaAdapter {
     const validation = validateProviderBaseUrl(options.baseUrl ?? "https://openrouter.ai/api/v1");
     if (!validation.ok) throw new Error(validation.message);
     this.#baseUrl = validation.url;
-    this.#inferenceCredential = requireSeparateCredential(options.inferenceCredential, "inference");
-    this.#managementCredential = options.managementCredential ? requireSeparateCredential(options.managementCredential, "management") : null;
+    this.#inferenceCredential = requireHeaderSafeCredential(options.inferenceCredential, "inference");
+    this.#managementCredential = options.managementCredential ? requireHeaderSafeCredential(options.managementCredential, "management") : null;
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.#now = options.now ?? Date.now;
   }
@@ -105,10 +104,13 @@ type JsonReadResult =
 export function mapOpenRouterKeyMetric(result: JsonReadResult, observedAt: string): QuotaMetric {
   if (!result.ok) return errorMetric("key_budget", "key", observedAt);
   const data = isRecord(result.payload.data) ? result.payload.data : result.payload;
-  const period = typeof data.limit_reset === "string" && !parseExplicitInstant(data.limit_reset)
+  const resetFromLimit = parseExplicitInstant(data.limit_reset);
+  const period = typeof data.limit_reset === "string" && resetFromLimit === null
     ? data.limit_reset
     : null;
-  const resetsAt = parseExplicitInstant(data.limit_reset_at) ?? parseExplicitInstant(data.resets_at);
+  const resetsAt = parseExplicitInstant(data.limit_reset_at)
+    ?? parseExplicitInstant(data.resets_at)
+    ?? resetFromLimit;
   return Object.freeze({
     kind: "key_budget",
     scope: "key",
@@ -217,8 +219,8 @@ function encodePart(value: string): string {
   return encodeURIComponent(value);
 }
 
-function requireSeparateCredential(value: string, label: string): string {
-  if (!value || /[?&#]/.test(value)) throw new Error(`${label} credential must be supplied separately from provider URL`);
+function requireHeaderSafeCredential(value: string, label: string): string {
+  if (!value || /[\r\n]/.test(value)) throw new Error(`${label} credential must be a non-empty header-safe value supplied separately from provider URL`);
   return value;
 }
 

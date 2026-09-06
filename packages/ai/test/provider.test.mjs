@@ -5,6 +5,7 @@ import {
   OPENROUTER_PRESET,
   OpenAiCompatibleModelProvider,
   ScriptedModelProvider,
+  createModelProviderForConnection,
   resolveConnectionBaseUrl,
   testModelConnection,
   toSafeConnectionView,
@@ -51,6 +52,9 @@ test("B06-01 presets separate OpenRouter defaults from custom compatible URL", (
     allowLocal: false
   });
   assert.equal(JSON.stringify(toSafeConnectionView(openrouter)).includes("secret://or-key"), false);
+
+  const compatible = { ...openrouter, presetId: "compatible", baseUrl: "https://custom.example/api/v1" };
+  assert.equal(resolveConnectionBaseUrl(compatible), "https://custom.example/api/v1");
 });
 
 test("B06-01 endpoint policy blocks credentials/private/metadata and allows explicit loopback only", () => {
@@ -61,6 +65,44 @@ test("B06-01 endpoint policy blocks credentials/private/metadata and allows expl
   assert.equal(validateProviderBaseUrl("http://127.0.0.1:9000/v1").ok, false);
   assert.equal(validateProviderBaseUrl("http://127.0.0.1:9000/v1", { allowLocal: true }).ok, true);
   assert.equal(validateProviderBaseUrl("http://10.0.0.5/v1", { allowLocal: true }).ok, false);
+});
+
+test("B06-01 OpenRouter connection factory uses preset URL and keeps opaque credentials out of URL", async () => {
+  const calls = [];
+  const connection = {
+    connectionId: "or",
+    presetId: "openrouter",
+    baseUrl: null,
+    credentialRef: "vault://or",
+    credentialMask: "sk…tail",
+    credentialRevision: "r1",
+    allowLocal: false
+  };
+  const opaqueCredential = "opaque?key&with#punctuation";
+  const provider = createModelProviderForConnection(connection, {
+    credential: opaqueCredential,
+    capabilities: { text: true, jsonObject: true },
+    fetch: async (input, init) => {
+      calls.push({ url: String(input), authorization: init.headers.authorization });
+      return jsonResponse({ model: "m", choices: [{ message: { content: "OK" } }] });
+    },
+    now: () => 1_000
+  });
+  const result = await provider.generate({
+    model: "m",
+    messages: [{ role: "user", content: "ping" }],
+    responseFormat: "text",
+    maxOutputTokens: 5,
+    deadlineAtMs: 2_000
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].url, "https://openrouter.ai/api/v1/chat/completions");
+  assert.equal(calls[0].url.includes(opaqueCredential), false);
+  assert.equal(calls[0].authorization, `Bearer ${opaqueCredential}`);
+  assert.throws(() => createModelProviderForConnection(connection, {
+    credential: "bad\r\nheader",
+    capabilities: { text: true, jsonObject: true }
+  }), /header-safe/);
 });
 
 test("B06-01 compatible adapter sends bounded Chat Completions request and preserves provider usage", async () => {
@@ -159,7 +201,7 @@ test("B06-01 capability mismatch and expired deadline fail before network", asyn
 test("B06-01 scripted fake is deterministic and connection test reports real shape", async () => {
   const provider = new ScriptedModelProvider([
     { kind: "success", output: { format: "json_object", value: { ok: true } }, providerRequestId: "fake-1" },
-    { kind: "failure", code: "network", message: "offline", retryable: true }
+    { kind: "failure", code: "capability_mismatch", message: "json mode unsupported", retryable: false }
   ], () => 100);
   const connected = await testModelConnection(provider, jsonProfile, { deadlineAtMs: 1_000 });
   assert.equal(connected.ok, true);
@@ -167,6 +209,6 @@ test("B06-01 scripted fake is deterministic and connection test reports real sha
   assert.equal(connected.providerRequestId, "fake-1");
   const failed = await testModelConnection(provider, jsonProfile, { deadlineAtMs: 1_000 });
   assert.equal(failed.ok, false);
-  assert.equal(failed.status, "error");
+  assert.equal(failed.status, "capability_mismatch");
   assert.equal(provider.callCount, 2);
 });

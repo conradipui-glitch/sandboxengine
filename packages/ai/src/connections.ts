@@ -1,8 +1,11 @@
+import { OpenAiCompatibleModelProvider } from "./provider.js";
 import type {
   ConnectionConfig,
   ConnectionTestResult,
+  FetchLike,
   ModelProfile,
   ModelProvider,
+  ProviderCapabilities,
   ProviderPreset,
   SafeConnectionView
 } from "./types.js";
@@ -43,6 +46,29 @@ export function toSafeConnectionView(connection: ConnectionConfig): SafeConnecti
     credentialMask: connection.credentialMask,
     credentialRevision: connection.credentialRevision,
     allowLocal: connection.allowLocal
+  });
+}
+
+export interface ConnectionProviderOptions {
+  readonly credential: string;
+  readonly capabilities: ProviderCapabilities;
+  readonly fetch?: FetchLike;
+  readonly now?: () => number;
+}
+
+export function createModelProviderForConnection(
+  connection: ConnectionConfig,
+  options: ConnectionProviderOptions
+): OpenAiCompatibleModelProvider {
+  const baseUrl = resolveConnectionBaseUrl(connection);
+  if (!baseUrl) throw new Error(`Connection preset ${connection.presetId} has no usable base URL`);
+  return new OpenAiCompatibleModelProvider({
+    baseUrl,
+    credential: options.credential,
+    capabilities: options.capabilities,
+    allowLocal: connection.allowLocal,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.now ? { now: options.now } : {})
   });
 }
 
