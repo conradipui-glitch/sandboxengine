@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:gameplay-effect:1.0",
+  "title": "GameplayEffect",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "type", "sourceId", "resourceId", "delta"],
+      "properties": {
+        "schemaVersion": { "const": "1.0" },
+        "type": { "const": "resource.change" },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "resourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "delta": { "type": "integer" }
+      }
+    }
+  ]
+}

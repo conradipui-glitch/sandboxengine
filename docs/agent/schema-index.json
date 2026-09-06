@@ -17,6 +17,11 @@
       "id": "urn:living-history:schema:effect:1.0"
     },
     {
+      "name": "gameplay-effect",
+      "file": "packages/contracts/schemas/v1/gameplay-effect.schema.json",
+      "id": "urn:living-history:schema:gameplay-effect:1.0"
+    },
+    {
       "name": "presentation-plan",
       "file": "packages/contracts/schemas/v1/presentation-plan.schema.json",
       "id": "urn:living-history:schema:presentation-plan:1.0"
