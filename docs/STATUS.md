@@ -4,7 +4,7 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B05-02 published; B05-03 accepted на branch** | B05-02 main `b45a4fa5e930a893df755797c8b6668ec74ae7f6`, push-CI `34049166381`; B05-03 PR #17 final docs gate → merge → main CI |
+| Репозиторий | **B01–B05-02 published; B05-03 accepted на branch** | B05-02 main `b45a4fa5e930a893df755797c8b6668ec74ae7f6`, push-CI `34049166381`; B05-03 PR #17 final current-head CI `34054126878` success → merge → main CI |
 | Контракты/Core | B01–B03 приняты | deterministic actions/effects/conditions/social/scheduler/RNG/replay |
 | Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP; T10–12/T15 |
 | Authoring / Control | **B05-01 published** | authoritative draft, validation, frozen playtest, loopback Control; ADR 0014 |
@@ -77,9 +77,10 @@ Worklog: [2026-09-07 B05-03](worklog/2026-09-07-b05-03.md).
 - `34053446362` — пойман strict TS narrowing в Player entrypoint, исправлен;
 - `34053500773` — success: Player UI + real `dev:player` process;
 - `34053598431` — success: real Studio + Player process smoke;
-- `34053894740` — success: полный Studio validation → frozen P1/P2 bridge.
+- `34053894740` — success: полный Studio validation → frozen P1/P2 bridge;
+- `34054126878` — **success: final current-head gate с ADR/STATUS/HANDOFF/worklog/B05-04 card**.
 
-Финальный current-head docs gate, merge #17 и push-to-main CI ещё обязательны перед словом **published**.
+Merge #17 и push-to-main CI ещё обязательны перед словом **published**.
 
 ## Bounded limitation B05-03
 
