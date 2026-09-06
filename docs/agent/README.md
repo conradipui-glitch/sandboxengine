@@ -4,72 +4,78 @@
 
 ## Принятая лестница причинности
 
-Не смешивай разные обязанности:
+Не смешивай обязанности:
 
 1. `ResolvedIntent` — что понял ввод; без duration/effects/state mutation.
-2. `Condition` — чистая проверка предпосылки по authoritative `WorldState`.
-3. Action/social resolver — что реально возможно и какой смысл имеет explicit действие.
-4. `CalculatedAction` — строгий рассчитанный outcome.
-5. `tryApplyEffectBatch` — all-or-nothing typed world mutation на trial state.
-6. `planTimeAdvance` — static integer interval и deterministic event order.
-7. `processTimeAdvancePlan` — deterministic processing initial + generated events на trial state с bounded budget.
-8. `projectTaskEvents` / `projectDeadlineEvent` — authored task/deadline → strict scheduler events.
-9. Terminal semantics — previous effects учитываются, terminal останавливает interval в своём timestamp, later due events остаются unprocessed.
-10. Functional `lcg32-v1` RNG + `buildSchedulerReplayFingerprint` — explicit provenance и deterministic replay/hash.
-11. **Runtime/Storage B04** — сохраняет один уже рассчитанный candidate transition либо ничего; не создаёт новую игровую причинность.
+2. `Condition` — чистая проверка предпосылок.
+3. Action/social resolver — что реально возможно.
+4. `CalculatedAction` — рассчитанный outcome.
+5. `tryApplyEffectBatch` — atomic typed world mutation на trial state.
+6. `planTimeAdvance` / `processTimeAdvancePlan` — детерминированное игровое время и события.
+7. Task/deadline/terminal/RNG/replay — принятый B03 Core.
+8. `RuntimeStorage` — публикует один уже рассчитанный candidate transition либо ничего; не создаёт новую игровую причинность.
+9. Durable adapter B04-02 обязан воспроизвести B04-01 semantics транзакционно.
+10. HTTP B04-03 только отображает domain outcomes и безопасную player projection; transport не меняет storage/Core semantics.
 
-## B03 принят и опубликован
+## Принято до текущей точки
 
-Main merge: `acb61b75b7b1fbcf782d6451a52230402e1d158d`.  
-Main push-CI: `34035223262` — success.
+B03 опубликован в `main`: merge `acb61b75b7b1fbcf782d6451a52230402e1d158d`, push-CI `34035223262` success.
 
-Принятые gameplay effects: `entity.move`, `item.transfer`, `resource.change`.
+B04-01 accepted bounded после functional CI `34036284044`:
 
-Принятые scheduler priorities первого выпуска:
-
-- world event `10`;
-- task/step completion `20`;
-- deadline `100`;
-- synthetic task-start internal order `19`.
-
-B03 acceptance доказана T05/T06/T08 + replay hash. Не менять эти semantics в B04.
-
-## Текущая задача — B04-01
-
-Карточка: [B04-01 — operation/storage contract и Memory reference semantics](../tasks/B04-01-operation-storage-contracts.md).
-
-Цель первого B04 slice — доказать семантику operation ownership до SQLite/HTTP:
-
-- `RuntimeStorage` как единый semantic contract;
-- `claimOperation(sessionId, idempotencyKey, requestHash, expectedRevision, lease)`;
-- same key + same hash → existing processing/completed operation, без второго execution;
-- same key + different hash → explicit reuse conflict;
+- package `@living-history/runtime` существует;
+- `RuntimeStorage` domain contract существует;
+- `MemoryRuntimeStorage` является reference semantics;
+- same completed idempotency key/hash → persisted replay;
+- canonical request SHA-256 сравнивается независимо от hex casing;
+- same key/different hash or base revision → reuse conflict;
 - одна active operation на session;
-- monotonic fencing token;
-- injected service clock для lease, который не связан с `WorldState.clock`;
-- commit проверяет revision + active owner + current unexpired token;
-- state + turn record + public response + operation completion атомарны;
-- Memory adapter служит reference semantics для будущего SQLite;
-- реальные storage regressions: T10 Memory, T11 Memory, stale-worker fencing foundation T12.
+- lease использует injected `ServiceClock`, отдельно от game clock;
+- reacquire expired same request → greater fencing token;
+- stale token не может commit;
+- commit атомарно публикует state + turn + response + operation completion;
+- failed commit не оставляет partial публикацию;
+- `finishWithoutTurn` replayable без изменения game revision;
+- `test:storage` — реальный обязательный gate;
+- Core не импортирует Runtime.
 
-## Что не входит в B04-01
+Решение: ADR 0011.
+
+## Текущая следующая задача — B04-02
+
+Карточка: [B04-02 — SQLite transaction, restart и fault recovery](../tasks/B04-02-sqlite-restart-fault-recovery.md).
+
+Цель: доказать те же outcomes не в памяти процесса, а через один durable SQLite adapter.
+
+Обязательные риски:
+
+- same key/hash после commit + restart возвращает сохранённый response и не удваивает revision/turn;
+- две независимые SQLite adapter instance не получают ownership одновременно;
+- crash after claim but before commit не меняет WorldState;
+- после lease expiry/restart reacquire получает больший fencing token;
+- старый token после reacquire не может commit;
+- state + turn + response + operation completion сохраняются одной transaction;
+- transaction/fault failure не оставляет partial rows/state;
+- `SQLITE_BUSY` имеет bounded storage retry и не запускает Core повторно.
+
+Shared semantic tests должны гоняться на Memory и SQLite, чтобы adapter не создавал вторую семантику.
+
+## Что не делать сейчас
 
 Не добавляй:
 
-- SQLite/restart durability;
 - Fastify/HTTP endpoints;
-- guest auth;
-- PlayerView projection;
-- LLM;
+- guest token/cookie/auth;
+- PlayerView/T15;
 - Studio/Control API;
-- queues/background workers;
-- Redis/WebSocket;
-- изменения Core scheduler/effect/terminal semantics.
+- LLM;
+- Redis/queues/websocket;
+- несколько storage adapters «на будущее»;
+- изменения Core scheduler/action/effect semantics;
+- полный project/draft/publication database раньше соответствующих блоков.
 
-B04-01 не принимает общий B04. После него ожидаются B04-02 SQLite/restart/fault injection и B04-03 Runtime API/T15.
+Общий B04 остаётся open до B04-03 и canonical T10–12/T15 audit.
 
-## Следующий точный шаг
+## Минимальный цикл
 
-Открой фактический `packages/runtime`, затем сначала зафиксируй минимальные storage domain result unions и interface. Сразу рядом напиши Memory/fake-clock regressions, чтобы API контракта формировался из T10/T11/fencing риска, а не из удобства будущего SQLite или HTTP.
-
-Если `npm run test:storage` отсутствует/заглушка, преврати его в реальную проверку только вместе с первыми настоящими storage tests. Planned HTTP registry entries пока не рекламировать как available.
+Один bounded slice → реальные fault/restart regressions → `npm run verify` → ADR/STATUS/HANDOFF/worklog → PR gate → merge → push-CI. Не переходить к HTTP до принятого B04-02.
