@@ -34,6 +34,10 @@ Generated file. Do not edit by hand.
 - `request`
 - `response`
 
+## Available scheduled events
+
+- `core.marker`
+
 ## Available calculated actions
 
 - `core.paint`
