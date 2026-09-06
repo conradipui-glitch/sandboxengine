@@ -1,0 +1,28 @@
+{
+  "name": "sandboxengine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Переносимый движок причинных интерактивных историй",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "packageManager": "npm@11.9.0",
+  "scripts": {
+    "build": "npm run typecheck",
+    "typecheck": "tsc -b",
+    "test": "npm run test:contracts && npm run test:core",
+    "test:contracts": "npm run typecheck && node --test packages/contracts/test/*.test.mjs",
+    "test:core": "npm run typecheck && node --test packages/core/test/*.test.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "docs:check": "node scripts/docs-check.mjs",
+    "verify": "npm run typecheck && npm run test:contracts && npm run test:core && npm run check:boundaries && npm run docs:check"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
+
