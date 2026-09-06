@@ -9,6 +9,13 @@ import { tryApplyEffectBatch, type EffectBatchFailure } from "./effects.js";
 export const DEFAULT_MAX_EVENTS_PER_INTERVAL = 100;
 export const HARD_MAX_EVENTS_PER_INTERVAL = 1000;
 
+/** Canonical first-release priority policy from SPECIFICATION §7.4. */
+export const CORE_WORLD_EVENT_PRIORITY = 10;
+export const CORE_TASK_STEP_PRIORITY = 20;
+export const CORE_DEADLINE_PRIORITY = 100;
+/** Synthetic task-start event must precede a zero-duration completion at priority 20. */
+export const CORE_TASK_START_INTERNAL_ORDER = CORE_TASK_STEP_PRIORITY - 1;
+
 export interface TimeAdvanceOptions {
   readonly maxEvents?: number;
 }
@@ -72,9 +79,8 @@ export type TimeAdvanceApplyResult = TimeAdvanceApplySuccess | TimeAdvanceApplyF
 
 /**
  * Creates a deterministic plan for the inclusive game-time interval [start, end].
- * This function never mutates WorldState, never applies event effects, and never
- * commits elapsed time. Events exactly at start or end are due; events before
- * start are invalid queue state; events after end remain pending.
+ * This low-level planner consumes already-compiled event orders; authoring policy
+ * must map first-release classes to the fixed Core priorities above.
  */
 export function planTimeAdvance(
   state: WorldState,
@@ -132,12 +138,6 @@ export function planTimeAdvance(
   });
 }
 
-/**
- * Applies one already-built time plan as a single Core transition. Due events
- * observe state changes from earlier due events. A terminal event is an explicit
- * successful interruption: it commits state at its own game-time and leaves all
- * later due events unprocessed. Any effect failure still exposes no partial state.
- */
 export function applyTimeAdvancePlan(
   state: WorldState,
   plan: TimeAdvancePlanSuccess
@@ -224,7 +224,6 @@ export function compareSchedulerEvents(left: SchedulerEvent, right: SchedulerEve
   return 0;
 }
 
-/** Backward-compatible B03-01 export name. */
 export const compareScheduledEvents = compareSchedulerEvents;
 
 function isValidPlanShape(plan: TimeAdvancePlanSuccess): boolean {
