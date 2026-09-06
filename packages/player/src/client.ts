@@ -60,6 +60,7 @@ export class RuntimePlayerClient {
       || typeof body.sessionId !== "string"
       || typeof body.credential !== "string"
       || !isPlayerView(body.playerView)
+      || body.playerView.sessionId !== body.sessionId
     ) {
       throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
     }
@@ -76,7 +77,7 @@ export class RuntimePlayerClient {
     });
     const body = await readJson(response);
     if (!response.ok) throw errorFrom(response.status, body);
-    if (!isRecord(body) || !isPlayerView(body.playerView)) {
+    if (!isRecord(body) || !isPlayerView(body.playerView) || body.playerView.sessionId !== session.sessionId) {
       throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
     }
     return freezeSession({ ...session, playerView: body.playerView });
@@ -108,7 +109,9 @@ export class RuntimePlayerClient {
     });
     const body = await readJson(response);
     if (!response.ok) throw errorFrom(response.status, body);
-    if (!isActionResult(body)) throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
+    if (!isActionResult(body) || body.playerView.sessionId !== session.sessionId) {
+      throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
+    }
 
     return Object.freeze({
       operationId: body.operationId,
@@ -161,15 +164,46 @@ function isActionResult(value: unknown): value is {
 function isPlayerView(value: unknown): value is PlayerView {
   return isRecord(value)
     && typeof value.sessionId === "string"
-    && typeof value.questId === "string"
-    && typeof value.releaseId === "string"
+    && isRecord(value.release)
+    && typeof value.release.questId === "string"
+    && typeof value.release.releaseId === "string"
     && Number.isSafeInteger(value.revision)
+    && Number(value.revision) >= 0
     && isRecord(value.clock)
     && Number.isSafeInteger(value.clock.elapsedSeconds)
-    && Array.isArray(value.locations)
+    && Number(value.clock.elapsedSeconds) >= 0
     && Array.isArray(value.entities)
+    && value.entities.every(isPlayerEntity)
     && Array.isArray(value.resources)
-    && Array.isArray(value.items);
+    && value.resources.every(isPlayerResource)
+    && Array.isArray(value.items)
+    && value.items.every(isPlayerItem)
+    && (value.terminal === null || isPlayerTerminal(value.terminal));
+}
+
+function isPlayerEntity(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.status === "string"
+    && (value.locationId === null || typeof value.locationId === "string");
+}
+
+function isPlayerResource(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.unit === "string"
+    && Number.isSafeInteger(value.value);
+}
+
+function isPlayerItem(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.position)) return false;
+  return value.position.kind === "location"
+    ? typeof value.position.locationId === "string"
+    : value.position.kind === "holder" && typeof value.position.holderId === "string";
+}
+
+function isPlayerTerminal(value: unknown): boolean {
+  return isRecord(value) && typeof value.reason === "string" && typeof value.outcome === "string";
 }
 
 function freezeSession(session: PlayerSessionHandle): PlayerSessionHandle {
