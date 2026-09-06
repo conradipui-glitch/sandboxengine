@@ -15,7 +15,7 @@
 - `node scripts/check-boundaries.mjs`: прошёл.
 - `node scripts/docs-check.mjs`: прошёл.
 - `git diff --check`: прошёл.
-- Чистый `npm ci` не запускался из-за лимита среды этой сессии; это остаётся отдельной проверкой CI.
+- GitHub Actions run [34019976966](https://github.com/conradipui-glitch/sandboxengine/actions/runs/34019976966): `npm ci` и `npm run verify` на чистом runner прошли успешно.
 
 ## Не сделано
 

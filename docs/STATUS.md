@@ -4,7 +4,7 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | bootstrap опубликован в `main` | commit `57765966e3e04638b38df989fb43f170104800c2`; README, AGENTS, CONTRIBUTING, handoff |
+| Репозиторий и навигация | bootstrap опубликован в `main` | commits `57765966e3e04638b38df989fb43f170104800c2` + CI `f174603b20d8ef7f792b09b5e8a4b115ddda07a8`; README, AGENTS, CONTRIBUTING, handoff |
 | Контракты | минимальный срез | `packages/contracts`, B01-01 |
 | Core | минимальный guard/result без изменения state | `packages/core`, B01-01 |
 | Runtime/API/storage | не начато | B04 после B02–B03 |
