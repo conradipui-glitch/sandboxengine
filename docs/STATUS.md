@@ -1,88 +1,78 @@
 # Статус движка
 
-Последнее обновление: 2026-09-06. Источник краткого статуса — этот файл; подробности и решения находятся по ссылкам.
+Последнее обновление: 2026-09-06.
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий и навигация | **B01–B04 опубликованы; B05-01 accepted на PR #15** | B04 main `3ef8633cff0c07339e09107e4f3653f7e7295f0f`; B05-01 финальный docs gate → merge → main CI |
-| Контракты/Core | B01–B03 приняты | typed actions/effects/conditions/social semantics, deterministic scheduler/tasks/terminal/RNG/replay |
-| Runtime storage/API | **B04 published** | Memory+SQLite idempotency/fencing, guest ownership, PlayerView, Runtime HTTP; T10–12/T15; ADR 0011–0013 |
-| Authoring / Control | **B05-01 accepted на branch** | Memory+SQLite draft, validation, frozen playtest, loopback Control HTTP; ADR 0014 |
-| Studio UI | не начато | B05-02 после публикации B05-01 |
+| Репозиторий | **B01–B05-01 published; B05-02 accepted на branch** | B05-01 main `07aacacb68178c119d11b555a8c166ebe65fe791`, push-CI `34047090138`; B05-02 PR #16 final docs gate → merge → main CI |
+| Контракты/Core | B01–B03 приняты | deterministic actions/effects/conditions/social/scheduler/RNG/replay |
+| Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP; T10–12/T15 |
+| Authoring / Control | **B05-01 published** | authoritative draft, validation, frozen playtest, loopback Control; ADR 0014 |
+| Studio UI | **B05-02 accepted на branch** | human forms + baseRevision conflict UX + validation; ADR 0015 |
 | Player basic author path | не начато | B05-03 |
 | Onboarding/help | не начато | B05-04 / T29 |
-| AI-провайдеры/свободный ввод | не начато | B06 |
+| AI/free text | не начато | B06 |
 | Presentation/assets | не начато | B07 |
-| Плагины | не начато | B08 |
-| Полный auth/publish author cycle | не начато | B09 |
-| Авторский AI helper | не начато | B10 |
-| Миграция Florence | не начато | B11 |
+| Plugins | не начато | B08 |
+| Auth/publish | не начато | B09 |
+| Author AI helper | не начато | B10 |
+| Florence migration | не начато | B11 |
 
-## Опубликованная B04 база
+## Published B05-01
 
-Main merge: `3ef8633cff0c07339e09107e4f3653f7e7295f0f`.  
-Push-to-main CI: `34039569962` — success.
+Main merge: `07aacacb68178c119d11b555a8c166ebe65fe791`.  
+Push-CI: `34047090138` — success.
 
-B04 гарантирует durable gameplay operation lifecycle, crash/restart/fencing, guest ownership, deny-by-default PlayerView и explicit Runtime HTTP. Authoring не меняет эти semantics.
-
-## B05 — первый законченный путь автора
-
-Canonical итог B05: человек без ручного JSON создаёт квест, добавляет ресурс, меняет стоимость действия, запускает новую тестовую сессию и видит новый результат; старый playtest остаётся на старых правилах.
-
-Разбиение:
-
-- B05-01 — draft/control/validation/frozen playtest;
-- B05-02 — минимальные Studio forms;
-- B05-03 — basic Player + frozen playtest E2E;
-- B05-04 — help/onboarding/T29.
-
-## B05-01 — accepted на PR #15
-
-Карточка: [B05-01](tasks/B05-01-draft-control-frozen-playtest.md).  
-Решение: [ADR 0014](decisions/0014-authoring-draft-frozen-playtest-control-boundary.md).
-
-Принято:
+B05-01 гарантирует:
 
 - отдельный `@living-history/control`;
-- bounded `core.action` для `core.paint`;
-- `draftRevision` отдельно от `WorldState.revision` и Runtime fencing;
-- atomic change set по `baseRevision`;
-- exact revision/contentHash validation;
+- monotonic `draftRevision` и atomic change set по `baseRevision`;
+- validation exact revision/contentHash;
 - immutable frozen playtest;
-- Memory reference + durable `SQLiteControlStore` на отдельных `control_*` tables;
-- reopen/restart и two-instance stale-writer regressions;
+- Memory + durable SQLiteControlStore;
 - loopback-only Control HTTP;
-- 8 реально работающих Control operations;
-- generated registry: всего 13 available operations / 11 distinct paths;
-- `control.capabilities` и `control.agent-kit` остаются planned;
-- registry hash `86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889`.
+- 13 available operations total / 11 HTTP paths;
+- authoring lifecycle не смешан с `WorldState.revision` или Runtime fencing.
 
-CI checkpoints:
+## B05-02 — accepted bounded slice на PR #16
 
-- `34040472362` — semantic foundation success;
-- `34046137073` — durable SQLite success;
-- `34046356282` — Control HTTP success;
-- `34046749725` — registry/generated contract success.
+Ветка: `b05-02-minimal-studio-forms`.  
+Карточка: [B05-02](tasks/B05-02-minimal-studio-forms.md).  
+Решение: [ADR 0015](decisions/0015-studio-control-client-boundary.md).
 
-Матрица последнего publication-contract gate:
+Реализовано:
 
-- contracts 37/37;
-- Core 55/55;
-- Runtime storage 20/20;
-- Control 14/14;
-- server 10/10;
-- boundaries/docs green.
+- dependency-free TypeScript + DOM `apps/studio`;
+- project/quest navigation/create;
+- human forms `core.resource` и bounded `core.action/core.paint`;
+- cost edit через `block.replace`;
+- save всегда по authoritative `baseRevision`;
+- 409 stale conflict загружает fresh draft и требует explicit retry/cancel;
+- validation показывает revision/hash/status/errors и stale-report state;
+- Studio и Control development listeners остаются loopback-only;
+- same-origin Studio proxy не расширяет сетевую доступность Control;
+- responsive mobile collapse и labelled forms;
+- `test:studio` входит в root verify.
 
-До merge PR #15 и зелёного push-to-main B05-01 считать accepted, но ещё не published.
+CI:
 
-## Следующий блок после publication
+- `34048457576` — первый strict TypeScript failure, исправлен;
+- `34048515006` — author semantics 3/4, найден static-root bug;
+- `34048587043` — success, Studio 4/4;
+- `34048643611` — success после compiled browser-entry smoke.
 
-[B05-02 — Minimal Studio forms поверх Control API](tasks/B05-02-minimal-studio-forms.md).
+На последнем функциональном gate все прежние suites, boundaries и docs также green. Public API/registry не менялись.
 
-Studio обязана быть клиентом Control API: project/quest/resource/paint forms, save by baseRevision, conflict UX, validation; никаких прямых SQLite/JSON writes.
+Browser screenshot/fidelity automation этим slice не заявляется: новый Playwright/Chromium tooling намеренно не добавлялся ради bounded B05-02.
+
+## Следующая задача после publication B05-02
+
+[B05-03 — Basic Player + frozen playtest gameplay E2E](tasks/B05-03-basic-player-frozen-playtest-e2e.md).
+
+Главное доказательство: P1 с cost=1 остаётся cost=1 после edit; новый P2 получает cost=2; одинаковый action request даёт другой deterministic gameplay result в новой test session; reset P1 не подхватывает current draft.
 
 ## Scope boundary
 
-Пока не реализованы Studio UI, Player E2E, onboarding, LLM/author helper, assets/presentation composer, roles/login/publish, animation suggestions и Florence migration.
+Не делать в текущем PR Player, onboarding, LLM, assets/presentation, plugins, auth/publish, animation suggestions или Florence migration.
 
-Известное наблюдение CI: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельного аудита не выполнялся.
+Известно: `npm ci` сообщает 2 dependency vulnerabilities (1 moderate, 1 high); force-upgrade без отдельного аудита не выполнялся.
