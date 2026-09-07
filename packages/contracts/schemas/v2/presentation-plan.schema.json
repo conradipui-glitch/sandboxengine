@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:presentation-plan:2.0",
+  "title": "PresentationPlanV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "turnId", "targetFrameId", "fromRevision", "toRevision", "root"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "turnId": { "$ref": "#/$defs/id" },
+    "targetFrameId": { "$ref": "#/$defs/id" },
+    "fromRevision": { "type": "integer", "minimum": 0 },
+    "toRevision": { "type": "integer", "minimum": 1 },
+    "root": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "assetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "hash"],
+      "properties": {
+        "assetId": { "$ref": "#/$defs/id" },
+        "hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "transition": {
+      "enum": ["fade", "slide", "crossfade"]
+    },
+    "duration": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000
+    },
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/sequence" },
+        { "$ref": "#/$defs/parallel" },
+        { "$ref": "#/$defs/backgroundSet" },
+        { "$ref": "#/$defs/actorShow" },
+        { "$ref": "#/$defs/actorHide" },
+        { "$ref": "#/$defs/actorMove" },
+        { "$ref": "#/$defs/actorExpression" },
+        { "$ref": "#/$defs/itemShow" },
+        { "$ref": "#/$defs/dialogueShow" },
+        { "$ref": "#/$defs/overlayOpen" },
+        { "$ref": "#/$defs/overlayClose" },
+        { "$ref": "#/$defs/audioPlay" },
+        { "$ref": "#/$defs/audioStop" },
+        { "$ref": "#/$defs/wait" }
+      ]
+    },
+    "sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "children"],
+      "properties": {
+        "type": { "const": "sequence" },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/node" }
+        }
+      }
+    },
+    "parallel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "children"],
+      "properties": {
+        "type": { "const": "parallel" },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/node" }
+        }
+      }
+    },
+    "backgroundSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "background.set" },
+        "asset": {
+          "anyOf": [
+            { "$ref": "#/$defs/assetRef" },
+            { "type": "null" }
+          ]
+        },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "actorShow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actorId", "slot", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "actor.show" },
+        "actorId": { "$ref": "#/$defs/id" },
+        "slot": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "actorHide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actorId", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "actor.hide" },
+        "actorId": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "actorMove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actorId", "slot", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "actor.move" },
+        "actorId": { "$ref": "#/$defs/id" },
+        "slot": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "actorExpression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actorId", "expression", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "actor.expression" },
+        "actorId": { "$ref": "#/$defs/id" },
+        "expression": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "itemShow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset", "slot", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "item.show" },
+        "asset": { "$ref": "#/$defs/assetRef" },
+        "slot": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "dialogueShow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "lineId", "reveal"],
+      "properties": {
+        "type": { "const": "dialogue.show" },
+        "lineId": { "$ref": "#/$defs/id" },
+        "reveal": { "enum": ["instant", "typewriter"] }
+      }
+    },
+    "overlayOpen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "overlayId", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "overlay.open" },
+        "overlayId": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "overlayClose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "overlayId", "transition", "durationMs"],
+      "properties": {
+        "type": { "const": "overlay.close" },
+        "overlayId": { "$ref": "#/$defs/id" },
+        "transition": { "$ref": "#/$defs/transition" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "audioPlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "asset", "channel", "loop"],
+      "properties": {
+        "type": { "const": "audio.play" },
+        "asset": { "$ref": "#/$defs/assetRef" },
+        "channel": { "enum": ["music", "effect"] },
+        "loop": { "type": "boolean" }
+      }
+    },
+    "audioStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "channel"],
+      "properties": {
+        "type": { "const": "audio.stop" },
+        "channel": { "enum": ["music", "effect"] }
+      }
+    },
+    "wait": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "durationMs"],
+      "properties": {
+        "type": { "const": "wait" },
+        "durationMs": { "$ref": "#/$defs/duration" }
+      }
+    }
+  }
+}
