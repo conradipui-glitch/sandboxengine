@@ -364,7 +364,7 @@ export function checkPluginRequirements(
   }
 
   return issues.length === 0
-    ? Object.freeze({ compatible: true, issues: Object.freeze([]) })
+    ? Object.freeze({ compatible: true, issues: Object.freeze([]) as readonly [] })
     : Object.freeze({ compatible: false, issues: Object.freeze(issues) });
 }
 
