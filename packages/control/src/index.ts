@@ -14,9 +14,12 @@ export {
   type DraftReferenceAnalysis
 } from "./draft-history.js";
 export {
+  DEFAULT_DRAFT_HISTORY_LIMIT,
+  MAX_DRAFT_HISTORY_LIMIT,
   listDraftHistory,
   compareDraftRevisions,
   analyzeDraftReferences,
+  type DraftHistoryPageOptions,
   type ListDraftHistoryResult,
   type CompareDraftRevisionsResult,
   type AnalyzeDraftReferencesResult
