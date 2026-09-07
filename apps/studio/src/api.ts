@@ -35,6 +35,18 @@ export interface DraftHistoryPageView {
   readonly nextBeforeRevision: number | null;
 }
 
+export interface DraftComparisonView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly baseRevision: number;
+  readonly targetRevision: number;
+  readonly titleChanged: boolean;
+  readonly entryLocationChanged: boolean;
+  readonly addedBlockIds: readonly string[];
+  readonly removedBlockIds: readonly string[];
+  readonly replacedBlockIds: readonly string[];
+}
+
 export interface ReleaseSummaryView {
   readonly releaseId: string;
   readonly projectId: string;
@@ -152,6 +164,23 @@ export class ControlApiClient {
       "GET",
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/history${query}`
     );
+  }
+
+  async compareDraftRevisions(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    targetRevision: number
+  ): Promise<DraftComparisonView> {
+    const params = new URLSearchParams({
+      baseRevision: String(baseRevision),
+      targetRevision: String(targetRevision)
+    });
+    const body = await this.request<{ readonly comparison: DraftComparisonView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/compare?${params.toString()}`
+    );
+    return body.comparison;
   }
 
   async listReleases(projectId: string, questId: string): Promise<ReleaseListView> {
