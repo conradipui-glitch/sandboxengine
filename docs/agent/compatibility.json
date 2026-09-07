@@ -2,7 +2,12 @@
   "engineVersion": "0.1.0",
   "contractsSchemaVersion": "1.0",
   "presentationSchemaVersion": "2.0",
+  "pluginManifestSchemaVersion": "1.0",
+  "enginePluginApiVersion": "1.0.0",
   "registryVersion": "1.0",
   "registryHash": "0b1fa6e4e23374cc00fd5cca61ecbbc0aec2a5df3ab83c1da2ce82fb8cf6e36c",
+  "pluginRegistryVersion": "1.0",
+  "pluginRegistryHash": "ffd8ddbda9e6cc73c39808f9d4eb8dd80725b1282b112df52e44515420eacc38",
+  "installedPluginCount": 0,
   "availableOperationCount": 13
 }
