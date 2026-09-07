@@ -1,9 +1,10 @@
 import type { Block } from "@living-history/contracts";
-import type { DraftChangeSet } from "@living-history/control";
+import type { ControlProjectRole, DraftChangeSet } from "@living-history/control";
 
 export interface ProjectView {
   readonly projectId: string;
   readonly title: string;
+  readonly role: ControlProjectRole;
 }
 
 export interface ControlUserView {
