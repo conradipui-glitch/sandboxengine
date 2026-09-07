@@ -4,133 +4,119 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B06 published; B07-01 functional gate green на PR #24** | B06 final merge `7a5efba36b508f674483dd9cce3762277917c5e1`, main CI `34081697268`; B07-01 functional head `068890e3…`, CI `34083432560` success → docs/current-head gate → merge/main CI |
-| Контракты/Core | **B01–B03 published** | deterministic gameplay authority; core contract schema remains `1.0` |
+| Репозиторий | **B01–B07-01 published; B07-02 functional gate green на PR #25** | B07-01 merge `b52b3ee8fe8d890c22b62f1b6ebd27cda7fda2c4`, main CI `34083673425`; B07-02 final functional head `f378c6e4…`, CI `34092033369` success → docs/current-head gate → pinned merge/main CI |
+| Контракты/Core | **B01–B03 published** | deterministic gameplay authority; core schema `1.0` |
 | Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP |
-| Authoring / Control | **B05 published** | authoritative draft → validation → frozen playtest → Player; T29 help/onboarding |
-| AI foundation | **B06 published / canonical audit closed** | provider/intent/narrator/AgentBackend boundary; final merge `7a5efba36…`, main CI `34081697268`; audit unresolved BLOCKER=0 |
-| Presentation contracts | **B07-01 accepted functionally** | separate presentation schema `2.0`, complete SceneFrameV2, bounded PresentationPlanV2, immutable asset refs, convergence/stale/replay; ADR 0022 |
-| Asset ingestion/storage | не начато | B07-02 после publication B07-01 |
-| Player presentation renderer | не начато | следующий B07 slice после asset boundary |
+| Authoring / Control | **B05 published** | draft → validation → frozen playtest → Player |
+| AI foundation | **B06 published** | provider/intent/narrator/AgentBackend boundary; final merge `7a5efba36…`, main CI `34081697268` |
+| Presentation contracts | **B07-01 published** | presentation schema `2.0`, SceneFrameV2, bounded PresentationPlanV2, immutable refs/convergence; merge `b52b3ee8…`, main CI `34083673425` |
+| Asset ingestion/storage | **B07-02 accepted functionally** | `@living-history/assets`; trusted bytes→metadata/hash→immutable object/registry→exact read; final functional CI `34092033369`; ADR 0023 |
+| Player presentation executor | не начато | B07-03 after B07-02 publication |
 | Plugins | не начато | B08 |
 | Auth/publish | не начато | B09 |
 | Author AI helper | не начато | B10 |
 | Florence migration | не начато | B11 |
 
-## Published B06
+## Published through B07-01
 
-Canonical B06 закрыт полностью.
+Canonical B06 final merge: `7a5efba36b508f674483dd9cce3762277917c5e1`; main CI `34081697268` — success.
 
-- B06-01 merge `a08f3434060abe699be5d431464597645557b8f9`, main CI `34056977026`;
-- B06-02 merge `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`, main CI `34057996331`;
-- B06-03 merge `a21e7cb9c19b873049bb941d34e0482d6c45568d`, main CI `34081046917`;
-- B06-04/final merge `7a5efba36b508f674483dd9cce3762277917c5e1`, main CI `34081697268`.
+B07-01 publication:
 
-Published calculated turn:
+- PR #24;
+- final PR head `3081cd7419f89b78b9232a8a26152bcad8b1a682`, CI `34083621254` — success;
+- merge `b52b3ee8fe8d890c22b62f1b6ebd27cda7fda2c4`;
+- exact main push CI `34083673425` — success.
 
-`Player input → Runtime claim/idempotency → optional strict intent → ResolvedIntent → Core → FactPacket → narrator/validator or deterministic fallback → structured public response → one commitTurn`.
+B07-01 keeps legacy presentation v1 frozen and publishes canonical presentation schema `2.0`: full reload-safe `SceneFrameV2`, bounded/non-executable `PresentationPlanV2`, immutable `assetId + SHA-256`, stale/replay decisions and target-frame convergence.
 
-Canonical B06 audit unresolved `BLOCKER = 0`. Current Codex verdict remains `limited / BUILTIN_TOOLS_CANNOT_BE_PROVEN_ABSENT`; production Codex Runtime adapter was intentionally not added.
+## B07-02 — immutable asset ingestion/storage
 
-## B07-01 — SceneFrameV2 + bounded PresentationPlanV2
+Ветка: `b07-02-immutable-asset-ingestion-storage`.  
+PR: #25.  
+Карточка: [B07-02](tasks/B07-02-immutable-asset-ingestion-storage.md).  
+Решение: [ADR 0023](decisions/0023-immutable-asset-ingestion-boundary.md).  
+Worklog: [2026-09-07 B07-02](worklog/2026-09-07-b07-02.md).
 
-Ветка: `b07-01-scene-frame-presentation-contracts`.  
-PR: #24.  
-Карточка: [B07-01](tasks/B07-01-scene-frame-presentation-contracts.md).  
-Решение: [ADR 0022](decisions/0022-presentation-v2-final-frame-boundary.md).  
-Worklog: [2026-09-07 B07-01](worklog/2026-09-07-b07-01.md).
+### Authority boundary
 
-### Почему presentation v2, а не widening v1
+Новый `@living-history/assets` — infrastructure-only package, зависящий только от contracts.
 
-B01 уже опубликовал узкие `SceneFrame`/`PresentationPlan` schemas `1.0` и правило: breaking schema changes требуют нового `$id`.
+Он не имеет gameplay authority и не импортирует Core/Runtime/Control/Player/AI. Boundary checker также запрещает ему network, child process и process-env authority.
 
-Поэтому:
+### Trusted ingestion path
 
-- core contracts остаются `1.0`;
-- legacy presentation v1 остаётся frozen/readable;
-- canonical B07 presentation получает отдельный `schemaVersion: 2.0`.
+`untrusted bytes + optional MIME/filename hints → bounded byte inspection → trusted MIME/dimensions/duration → SHA-256(full bytes) → canonical AssetManifestV2 → immutable content object + exact assetId/hash registry record`.
 
-Generated agent contracts теперь явно показывают обе версии отдельно.
+Client MIME, extension и filename не определяют тип; hash вычисляется только server-side.
 
-### SceneFrameV2
+### Supported bounded profiles
 
-Полный player-safe конечный presentation frame:
+- PNG;
+- static WebP;
+- JPEG;
+- integer PCM WAV;
+- Ogg Vorbis;
+- MP3 Layer III.
 
-- session/quest/release/revision/turn identity;
-- immutable background ref;
-- ordered actors/items/overlays;
-- actor slots/expressions;
-- dialogue history/current line;
-- current music.
+SVG/XML/HTML/script/unknown content и unsupported codec/profile fail closed. Animated WebP rejected.
 
-Reload обязан восстанавливать frame напрямую и не переигрывать старые эффекты.
+Limits cover input bytes, width/height/pixels, audio duration and metadata lengths. Config can tighten canonical metadata limits but cannot widen them beyond `AssetManifestV2`.
 
-### PresentationPlanV2
+### Immutable storage/registry
 
-Bounded non-executable transition:
+- object path derives only from trusted SHA-256;
+- logical registry path hashes validated assetId and includes exact content hash;
+- original filename never addresses filesystem objects;
+- exclusive temp write + create-if-absent hard link;
+- existing object/record never overwritten;
+- same content deduplicates only after integrity verification;
+- same assetId + different bytes creates a new immutable version;
+- old exact `assetId + hash` remains readable;
+- read checks record identity, byte length and SHA-256;
+- missing/corrupt object fails explicitly with no version substitution.
 
-- one persisted `turnId`;
-- `fromRevision → toRevision`;
-- `targetFrameId`;
-- `sequence` / `parallel`;
-- only registered commands: background, actor show/hide/move/expression, item, dialogue, overlay, audio, wait;
-- preset transitions/reveal/channel;
-- bounded durations/tree depth/node count.
+### Hardening findings closed
 
-Arbitrary JS/HTML/CSS/DOM selectors/callbacks отсутствуют.
+After first green CI, audit found and closed:
 
-Animation/audio/typewriter completion не является gameplay commit или game-clock advancement.
+- incomplete PNG termination validation;
+- forged WebP chunk length;
+- JPEG trailing bytes;
+- hardcoded metadata limits;
+- platform-specific registry dirname calculation;
+- WAV duration trusting inconsistent byteRate/blockAlign;
+- animated WebP timeline ambiguity;
+- monolithic package responsibility split.
 
-### Asset reference boundary
+Final internal architecture: `types → inspection → storage → ingest → public facade`.
 
-B07-01 вводит immutable presentation identity `assetId + SHA-256 hash` и manifest DTO с MIME/dimensions/duration/alt/source/rights.
+### Functional evidence
 
-File upload, hash calculation, storage, MIME sniffing и deletion policy ещё **не реализованы** — это B07-02.
+- initial integrated head `bc77b026821821b7dfeca63fcdabc760774b8b46` → CI `34091256043` success;
+- hardened head `20d2f33e5b9dc3d4855f1927b3c93cda137b6849` → CI `34091540387` success;
+- final functional/refactor head `f378c6e40f340f1ffb8c4f8172c09020fa39658c` → CI `34092033369` **success**, full root `npm run verify`.
 
-### Validation
+Unresolved functional BLOCKER: **0**.
 
-Проверка разделена:
+### Honest limitation
 
-1. JSON Schema exact shape;
-2. semantic membership: allowed scene/entity/speaker/overlay/assets, hash/kind, layer order, one-turn identity, tree bounds;
-3. pure target-frame convergence.
+B07-02 proves bounded container/header structure, presentation metadata and exact bytes/hash. It is not a full codec decode/checksum validation pipeline for every compressed payload.
 
-После первого code-green audit найден и закрыт реальный gap: план с разрешённым, но другим background/actor slot мог пройти reference validation. Full gate теперь требует, чтобы детерминируемые presentation properties в конце совпадали с target SceneFrame.
+Therefore B07-03 must treat browser image/audio decode/load failure as normal presentation fallback. Such a failure must not trigger gameplay callbacks, replay Core, silently substitute another version or change the stored identity.
 
-Parallel conflicting writes fail closed; порядок children не используется как скрытый приоритет.
+## Publication Gate B07-02
 
-### Replay/stale helpers
+Осталось:
 
-- lower revision → stale;
-- same frame/revision → duplicate;
-- same revision + другой frame → conflict;
-- already applied `turnId` не запускает plan снова;
-- gap требует восстановить latest frame.
-
-Skip/reduced-motion renderer в следующем B07 slice должен прийти к тому же target frame без gameplay callbacks.
-
-### Evidence
-
-Первый полный run `34082918924` подтвердил typecheck и весь B01–B06 code suite; единственным failure были ожидаемо stale generated agent docs.
-
-Generated docs синхронизированы, registry hash: `0b1fa6e4e23374cc00fd5cca61ecbbc0aec2a5df3ab83c1da2ce82fb8cf6e36c`.
-
-Final functional hardening head `068890e3bce15d0686b753df4d2f4ed1bcbda9f4` прошёл PR CI `34083432560` — **success**, полный `npm run verify`.
-
-## Publication Gate B07-01
-
-До слова **published** остаётся:
-
-1. final current-head CI после ADR/STATUS/HANDOFF/worklog sync;
-2. PR #24 mark ready;
-3. merge с pinned expected head SHA;
+1. final current-head CI after ADR/STATUS/HANDOFF/worklog sync;
+2. PR #25 mark ready;
+3. merge pinned to exact expected head;
 4. exact merge-SHA push-to-main CI;
-5. только после green main объявить B07-01 published.
+5. only after green main say B07-02 published.
 
-После этого следующий bounded slice — **B07-02: immutable asset registry + validated ingestion/storage boundary**.
+Then start **B07-03 — Player presentation executor** exactly from verified B07-02 merge SHA.
 
 ## Scope boundary
 
-B07-01 не содержит file ingestion/storage, browser animation/audio executor, final Player visual redesign, Studio timeline editor, B08 UI plugins, B09 auth/public publish, B10 author AI или B11 Florence migration.
-
-Known dependency vulnerabilities и production DNS-aware egress остаются отдельными deployment/dependency задачами; force upgrade без отдельного аудита не выполняется.
+B07-02 does not add public upload HTTP/auth, remote URL import, ffmpeg/ImageMagick, destructive GC, browser animation/audio playback, final Player redesign, Studio asset manager, B08 plugins, B09 auth/public publish, B10 author AI or B11 Florence migration.

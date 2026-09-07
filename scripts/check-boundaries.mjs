@@ -34,6 +34,18 @@ const checks = [
       /from\s+["']node:fs/,
       /process\.env/
     ]
+  },
+  {
+    label: "Assets",
+    root: new URL("../packages/assets/src/", import.meta.url),
+    forbidden: [
+      /from\s+["']@living-history\/(?:core|runtime|control|player|ai)(?:["'/])/,
+      /from\s+["'][^"']*apps\//,
+      /from\s+["']node:child_process/,
+      /from\s+["']node:https?/,
+      /\bfetch\s*\(/,
+      /process\.env/
+    ]
   }
 ];
 
@@ -54,5 +66,5 @@ if (violations.length > 0) {
   console.error("Boundary violations:\n" + violations.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("check:boundaries ok — Core чист от infrastructure/runtime/control; Player чист от Core/Control/storage; Runtime AI provider чист от gameplay/UI/storage boundaries");
+  console.log("check:boundaries ok — Core чист от infrastructure/runtime/control; Player чист от Core/Control/storage; Runtime AI provider чист от gameplay/UI/storage; Assets чист от gameplay/network/process authority");
 }
