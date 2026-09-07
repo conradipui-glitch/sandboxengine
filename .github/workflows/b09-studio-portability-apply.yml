@@ -1,0 +1,31 @@
+name: B09 Studio Portability Apply
+
+on:
+  push:
+    branches:
+      - b09-03-version-history-studio-access
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+          fetch-depth: 0
+      - name: Apply staged Studio portability patch
+        run: |
+          python scripts/b09-studio-portability-sync.py
+          rm scripts/b09-studio-portability-sync.py
+          rm .github/workflows/b09-studio-portability-apply.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(B09-03): add Studio portability UX"
+          git push origin HEAD:b09-03-version-history-studio-access
