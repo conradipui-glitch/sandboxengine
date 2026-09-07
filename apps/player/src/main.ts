@@ -2,7 +2,7 @@
 import { mkdir } from "node:fs/promises";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { dirname, resolve } from "node:path";
-import type { ActionBlock, LocationBlock, ResourceBlock } from "@living-history/contracts";
+import type { ActionBlock, JsonValue, LocationBlock, ResourceBlock } from "@living-history/contracts";
 import { SQLiteControlStore } from "@living-history/control";
 import { bootstrapFrozenPlaytest } from "@living-history/player";
 import { SQLiteGuestSessionAccess, SQLiteRuntimeStorage, type ServiceClock } from "@living-history/runtime";
@@ -10,6 +10,7 @@ import { createPlayerDevServer, type PlayerSurfaceMetadata } from "./dev-server.
 
 type RuntimeServerModule = typeof import("../../server/src/server.js");
 type ActionServiceModule = typeof import("../../server/src/action-service.js");
+type PresentationStorageModule = typeof import("../../server/src/presentation-storage.js");
 
 declare const process: any;
 
@@ -59,9 +60,17 @@ if (!actionBlock || !resourceBlock || !locationBlock) {
 
 const runtimeServerModule = await import(new URL("../../../server/dist/server.js", import.meta.url).href) as RuntimeServerModule;
 const actionServiceModule = await import(new URL("../../../server/dist/action-service.js", import.meta.url).href) as ActionServiceModule;
+const presentationStorageModule = await import(new URL("../../../server/dist/presentation-storage.js", import.meta.url).href) as PresentationStorageModule;
 const serviceClock: ServiceClock = Object.freeze({ nowMs: () => Date.now() });
-const storage = new SQLiteRuntimeStorage({ path: databasePath, clock: serviceClock });
+const rawStorage = new SQLiteRuntimeStorage({ path: databasePath, clock: serviceClock });
 const guestAccess = new SQLiteGuestSessionAccess({ path: databasePath });
+const presentationTemplate = presentationStorageModule.createReferencePresentationTemplate({
+  sceneId: locationBlock.id,
+  state: template.initialState
+});
+const storage = new presentationStorageModule.PresentationRuntimeStorage(rawStorage, [
+  Object.freeze({ release: template.release, presentation: presentationTemplate })
+]);
 const runtime = runtimeServerModule.createRuntimeHttpServer({
   storage,
   guestAccess,
@@ -89,7 +98,18 @@ const metadata: PlayerSurfaceMetadata = Object.freeze({
 });
 const player = createPlayerDevServer({
   runtimeOrigin: `http://${runtimeAddress.host}:${runtimeAddress.port}`,
-  metadata
+  metadata,
+  presentation: {
+    assets: presentationTemplate.catalog.assets,
+    initialForSession(sessionId): JsonValue | null {
+      const initial = presentationStorageModule.buildInitialReferencePresentation({
+        template: presentationTemplate,
+        sessionId,
+        release: template.release
+      });
+      return initial === null ? null : JSON.parse(JSON.stringify(initial)) as JsonValue;
+    }
+  }
 });
 const playerAddress = await player.listen(Number(process.env.LH_PLAYER_PORT ?? 4180), "127.0.0.1");
 
@@ -101,7 +121,7 @@ const shutdown = async () => {
   await player.close();
   await runtime.close();
   guestAccess.close();
-  storage.close();
+  rawStorage.close();
   controlStore.close();
   process.exit(0);
 };
