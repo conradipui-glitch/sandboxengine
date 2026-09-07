@@ -29,6 +29,10 @@ function packet(status = "executed") {
   });
 }
 
+function liveDeadline() {
+  return Date.now() + 10_000;
+}
+
 const validNarrative = Object.freeze({
   summary: "Вы закончили работу с краской.",
   dialogue: Object.freeze([{ speakerId: "painter", text: "Готово." }]),
@@ -67,17 +71,18 @@ test("B06-03 valid strict and expressive narration share the same authority allo
     { kind: "success", output: { format: "json_object", value: validNarrative }, providerRequestId: "expressive-1" }
   ], () => 1_000);
   const narrator = new ModelNarrator({ provider, model: "fake-narrator" });
+  const deadlineAtMs = liveDeadline();
 
-  const strict = await narrator.narrate({ packet: packet(), profile: "strict", deadlineAtMs: 10_000 });
-  const expressive = await narrator.narrate({ packet: packet(), profile: "expressive", deadlineAtMs: 10_000 });
+  const strict = await narrator.narrate({ packet: packet(), profile: "strict", deadlineAtMs });
+  const expressive = await narrator.narrate({ packet: packet(), profile: "expressive", deadlineAtMs });
 
   assert.equal(strict.source, "model");
   assert.equal(expressive.source, "model");
   assert.deepEqual(strict.content, expressive.content);
   assert.equal(strict.evidence.attempts[0].providerRequestId, "strict-1");
   assert.equal(expressive.evidence.attempts[0].providerRequestId, "expressive-1");
-  assert.equal(provider.capturedRequests[0].deadlineAtMs, 10_000);
-  assert.equal(provider.capturedRequests[1].deadlineAtMs, 10_000);
+  assert.equal(provider.capturedRequests[0].deadlineAtMs, deadlineAtMs);
+  assert.equal(provider.capturedRequests[1].deadlineAtMs, deadlineAtMs);
   assert.equal(provider.capturedRequests[0].taskData.profile, "strict");
   assert.equal(provider.capturedRequests[1].taskData.profile, "expressive");
 });
@@ -94,7 +99,7 @@ test("T13 malformed/unknown-speaker narrator output consumes at most two attempt
     }
   ], () => 1_000);
   const narrator = new ModelNarrator({ provider, model: "fake-narrator" });
-  const result = await narrator.narrate({ packet: packet("partial"), profile: "strict", deadlineAtMs: 10_000 });
+  const result = await narrator.narrate({ packet: packet("partial"), profile: "strict", deadlineAtMs: liveDeadline() });
 
   assert.equal(result.source, "template");
   assert.equal(result.evidence.attempts.length, 2);
@@ -108,7 +113,7 @@ test("T13 retryable narrator failure may retry once; exhausted/expired narration
     { kind: "failure", code: "timeout", message: "timeout", retryable: true }
   ], () => 1_000);
   const narrator = new ModelNarrator({ provider, model: "fake-narrator" });
-  const result = await narrator.narrate({ packet: packet(), profile: "expressive", deadlineAtMs: 10_000 });
+  const result = await narrator.narrate({ packet: packet(), profile: "expressive", deadlineAtMs: liveDeadline() });
   assert.equal(result.source, "template");
   assert.equal(provider.callCount, 2);
   assert.equal(result.evidence.attempts.length, 2);
