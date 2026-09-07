@@ -2,6 +2,7 @@ import {
   DIALOGUE_REVEALS,
   PRESENTATION_AUDIO_CHANNELS,
   PRESENTATION_COMMAND_TYPES,
+  PRESENTATION_MAX_DURATION_MS,
   PRESENTATION_TRANSITIONS,
   classifyPresentationDelivery,
   classifySceneFrameUpdate,
@@ -86,13 +87,24 @@ export class PresentationExecutor {
 
   async restore(frame: SceneFrameV2): Promise<PresentationResult> {
     this.cancelActive();
+    const generation = ++this.#generation;
     const controller = new AbortController();
+    this.#activeController = controller;
     this.#status = "recovered";
-    await this.#renderer.applyFrame(frame, controller.signal);
-    this.#currentFrame = frame;
-    this.#lastConsumedTurnId = frame.turnId;
-    this.#status = "idle";
-    return this.#result("recovered", null);
+    try {
+      await this.#renderer.applyFrame(frame, controller.signal);
+      if (generation !== this.#generation) return this.#result("recovered", "superseded");
+      this.#currentFrame = frame;
+      this.#lastConsumedTurnId = frame.turnId;
+      this.#status = "idle";
+      if (this.#activeController === controller) this.#activeController = null;
+      return this.#result("recovered", null);
+    } catch (error) {
+      if (generation !== this.#generation) return this.#result("recovered", "superseded");
+      this.#status = "failed";
+      if (this.#activeController === controller) this.#activeController = null;
+      return this.#result("failed", error instanceof Error ? error.message : "frame_restore_failed");
+    }
   }
 
   skipActive(): void {
@@ -108,6 +120,7 @@ export class PresentationExecutor {
       this.#activeController.abort("presentation-cancel");
     }
     this.#activeController = null;
+    this.#status = "idle";
   }
 
   async present(input: PresentInput): Promise<PresentationResult> {
@@ -300,7 +313,9 @@ function hasSafeNodeShape(node: PresentationNodeV2): boolean {
   if ("transition" in candidate && (typeof candidate.transition !== "string" || !TRANSITIONS.has(candidate.transition))) return false;
   if ("reveal" in candidate && (typeof candidate.reveal !== "string" || !REVEALS.has(candidate.reveal))) return false;
   if ("channel" in candidate && (typeof candidate.channel !== "string" || !AUDIO_CHANNELS.has(candidate.channel))) return false;
-  if ("durationMs" in candidate && (!Number.isSafeInteger(candidate.durationMs) || Number(candidate.durationMs) < 0)) return false;
+  if ("durationMs" in candidate && (!Number.isSafeInteger(candidate.durationMs)
+    || Number(candidate.durationMs) < 0
+    || Number(candidate.durationMs) > PRESENTATION_MAX_DURATION_MS)) return false;
   return true;
 }
 
