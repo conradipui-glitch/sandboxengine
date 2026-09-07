@@ -2,101 +2,98 @@
 
 Обновлено: 2026-09-07
 
-Текущий блок: **B08-02 — trusted backend plugin execution contracts**  
-База: published B08-01 merge `375233479ab787a6215be7a1d6aab52ec9c47a74`  
-B08-01 main CI: `34105710910` — success  
-Ветка: `b08-02-backend-plugin-execution-contracts`  
-PR: #29  
-Статус: **functional accepted; hardening CI `34108349316` success на `a8cec6c6fc7e1721d5d9b965cb9e57c88040163a`; semantic audit BLOCKER=0; docs/current-head Publication Gate next**
+Текущий блок: **B08-03 — `dice-check` extensibility proof plugin**  
+База: published B08-02 merge `a3eef28d106d89bdc4e05cf5c9fd7c1eb61e97e1`  
+B08-02 main CI: `34108753710` — success  
+Ветка: `b08-03-dice-check-proof-plugin`  
+PR: #30  
+Статус: **functional accepted; artifact-binding hardening head `339b01b99ea70d8e2b9db958384d95be66598f8b` → CI `34112797727` success; B08-03 semantic BLOCKER=0; canonical B08 BLOCKER=0; docs/current-head Publication Gate next**
 
 ## Published foundation
 
 B01–B07 published.  
-B08-01 published: trusted manifest schema/API versioning, deterministic dependency registry, release compatibility and generated installed-plugin metadata.
+B08-01 published: merge `375233479ab787a6215be7a1d6aab52ec9c47a74`, exact main CI `34105710910` success.  
+B08-02 published: merge `a3eef28d106d89bdc4e05cf5c9fd7c1eb61e97e1`, exact main CI `34108753710` success.
 
-B08-01 publication evidence: merge `375233479ab787a6215be7a1d6aab52ec9c47a74`, exact `main` push CI `34105710910` success.
+## Canonical B08 architecture
 
-## B08-02 implementation
+`trusted data manifest -> deterministic installed registry -> trusted build registration -> frozen resolver input + deterministic RNG -> bounded plugin plan -> existing Core effect/time/scheduler gates`
 
-Authority rule:
+Core never learns plugin-specific IDs or mechanics.
 
-`trusted build registration -> detached/frozen resolver input -> bounded data plan/events -> existing Core effect/time/scheduler gates -> candidate state`
+## B08-03 proof plugin
 
-Plugin code never returns authoritative `WorldState` and never receives commit/storage/HTTP/Core mutation callbacks through the plugin API.
+Current build contains one real trusted plugin:
 
-### Resolver / action host
+- `dice-check@1.0.0`;
+- capability `dice-check.capability.skill-check`;
+- action `dice-check.action.skill-check`;
+- schema `dice-check.schema.skill-check@1.0.0`;
+- block metadata `dice-check.block.skill-check`;
+- recipe `dice-check.recipe.skill-check`;
+- schema-driven Studio form metadata.
 
-- action resolver registration is separate from serializable manifest;
-- action ID must be manifest-declared for the installed plugin;
-- args are JSON-validated/frozen before resolver invocation;
-- resolver receives detached deeply frozen state, simulation clock and bounded deterministic RNG;
-- resolver throws/RNG failures become explicit plugin failures;
-- exact plan shape rejects candidate state/state patches/callbacks/unknown authority fields;
-- blocked action cannot hide time/effects/events;
-- canonical effects are applied only through Core `tryApplyEffectBatch`;
-- duration is applied only through Core time planning/application;
-- advanced RNG state is returned only on success.
+### Author authority
 
-### Scheduler handler
+A `DiceCheckDefinition` owns difficulty, modifier, duration, success/failure canonical-effect templates and bounded narrative templates.
 
-- handler identity is registry/manifest driven;
-- handler receives canonical event + detached state + deterministic scheduler context + bounded RNG;
-- handler returns canonical child events only;
-- child source identity is constrained to the registered plugin event type;
-- server adapter routes handler children into Core `processTimeAdvancePlan`;
-- Core, not plugin code, owns generated child duplicate/past/effective-order/event-limit/step-limit checks and final state transition;
-- failed Core scheduler transition returns no advanced RNG state.
+Player/runtime args are exact and may contain only `definitionId`. The player cannot inject difficulty/modifier/effects/narrative.
 
-### Custom state effects
+### Determinism / Core path
 
-Manifest custom effect IDs remain metadata only. `WorldState` v1 has no `extensions[pluginId]`, so B08-02 intentionally rejects non-canonical effects rather than inventing state patches.
+Resolver draws exactly one value with host `drawInt(20) + 1`, computes total/outcome and selects one authored effect branch. Effects remain canonical Core effects. Duration uses existing Core time processing. Same state/definition/args/seed is reproducible.
 
-### Static architecture guard
+### Frozen authored data
 
-- Core cannot import `@living-history/plugins`;
-- plugin package cannot import Core/Runtime/Control/Player/AI/Assets or app modules;
-- plugin package guard rejects DB/network/process/dynamic-code surfaces covered by the checker;
-- obvious `Math.random` / `Date.now` / `performance.now` shortcuts are rejected.
+Post-green audit found and fixed one real blocker: definitions were initially independent from the frozen artifact hash.
 
-This is trusted in-process build code with static architecture guards, **not** a sandbox for arbitrary third-party JavaScript.
+Now:
 
-## Evidence
+- `PluginArtifactRequirementsSidecar` binds plugin compatibility requirements to an exact artifact hash;
+- `DiceCheckAuthoredSidecar` binds the validated authored definitions to that same exact artifact hash;
+- `bindDiceCheckRegistrationToArtifact` refuses mismatch before a registration/Core execution exists;
+- sidecar definitions are detached/deep-frozen and cloned/validated again into the executable registration.
 
-- generic host `234ac18ffd160de6d147579df774c230775ab549` → CI `34106576923` success;
-- adversarial regressions exposed one false adjacent-seed assumption in the test at CI `34106751806`;
-- facade hardening then exposed one missing TypeScript re-export at CI `34107152241`;
-- fixed head `7154dfb5512b186728e2c8d6a25fea3ad9252f38` → CI `34107248938` success;
-- post-green audit found scheduler child path not yet proven through Core;
-- scheduler-through-Core head `1b10aa7aaf25ae877f81575c192482a806b5a135` → CI `34108213347` success;
-- final boundary hardening `a8cec6c6fc7e1721d5d9b965cb9e57c88040163a` → CI `34108349316` success;
-- semantic audit: `docs/audits/2026-09-07-b08-02-semantic-audit.md` → unresolved BLOCKER **0**.
+This preserves old `QuestRelease`/`FrozenPlaytestRecord` v1 while making the proof mechanic frozen at code/contract level.
 
-ADR: `docs/decisions/0027-trusted-backend-plugin-execution.md`.  
-Worklog: `docs/worklog/2026-09-07-b08-02.md`.
+### Missing plugin
+
+A registry without `dice-check` returns explicit `MISSING_PLUGIN`; incompatible version/capability/schema also blocks generic preflight. There is no silent built-in fallback.
+
+## Generated agent contract
+
+`docs:generate` now truthfully exposes one installed plugin, its capability/schema/block/action/recipe metadata and changed plugin registry hash. No public generic plugin endpoint is advertised because none exists.
+
+Generated-doc sync head `8c23a3358e5783ee2b4d998d6ae525d478b0f7d2` → CI `34112482535` success.
+
+## Evidence / audits
+
+- B08-03 hardening head `339b01b99ea70d8e2b9db958384d95be66598f8b` → CI `34112797727` success;
+- ADR: `docs/decisions/0028-dice-check-proof-and-frozen-authored-sidecar.md`;
+- B08-03 audit: `docs/audits/2026-09-07-b08-03-semantic-audit.md` → BLOCKER **0**;
+- canonical B08 audit: `docs/audits/2026-09-07-b08-canonical-audit.md` → BLOCKER **0**;
+- worklog: `docs/worklog/2026-09-07-b08-03.md`.
 
 ## Honest scope boundary
 
-Not implemented in B08-02:
+Not implemented in B08:
 
-- concrete installed `dice-check` plugin;
-- custom WorldState extension/reducer contract;
-- public Runtime plugin endpoint;
-- Studio plugin editor/forms;
-- UI component plugin renderer;
 - untrusted code sandbox/marketplace;
-- publish/start enforcement of release plugin requirements.
+- remote/dynamic plugin loading;
+- custom WorldState plugin reducers;
+- public generic Runtime plugin action endpoint;
+- complete Studio plugin editor/custom result widget;
+- production auth/publish persistence/enforcement of plugin sidecars.
+
+B09 owns the last item and should wire the already-published B08 compatibility/authored-sidecar preflights into real publish/start authority.
 
 ## Publication Gate
 
-1. final full CI on exact docs/current head;
-2. update PR #29 body with final evidence/audit;
-3. mark PR #29 ready;
-4. merge pinned to exact expected head;
-5. verify exact merge-SHA push-to-main CI;
-6. only then call B08-02 published.
-
-## Next
-
-After verified B08-02 publication: **B08-03 — `dice-check` proof plugin + authored schema/recipe + compatibility proof**, exactly from the verified B08-02 merge SHA.
-
-Do not start B08-03 before that publication check.
+1. commit docs/audits/status/handoff on the current B08-03 branch;
+2. final full CI on that exact head;
+3. update PR #30 with final evidence;
+4. mark PR #30 ready;
+5. merge pinned to that exact expected head;
+6. verify exact merge-SHA `event=push`, `head_branch=main` CI;
+7. only then call B08 published;
+8. create B09 exactly from the verified B08 merge SHA.
