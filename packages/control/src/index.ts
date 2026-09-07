@@ -7,6 +7,12 @@ export {
   type LhquestDraftManifest
 } from "./quest-export.js";
 export {
+  buildReleaseQuestExport,
+  type BuildReleaseQuestExportResult,
+  type LhquestReleaseManifest,
+  type ReleaseQuestExport
+} from "./release-export.js";
+export {
   parseLhquestDraftPackage,
   type LhquestPackageFailureCode,
   type ParsedLhquestDraftPackage,
