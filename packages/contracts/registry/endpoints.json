@@ -145,6 +145,38 @@
       "summary": "Owner/editor атомарное применение change set к указанной draft revision"
     },
     {
+      "id": "control.draft.history",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Постраничная история immutable draft revisions доступного проекта"
+    },
+    {
+      "id": "control.draft.compare",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/compare",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Серверное сравнение двух конкретных draft revisions без автоматического merge"
+    },
+    {
+      "id": "control.draft.references",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/references",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Typed preflight зависимостей блока и объяснение безопасности удаления"
+    },
+    {
+      "id": "control.draft.restore",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/restore",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS"
+    },
+    {
       "id": "control.validations.create",
       "method": "POST",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
