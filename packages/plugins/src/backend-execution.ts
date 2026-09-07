@@ -16,7 +16,7 @@ import {
   type PluginSchedulerHandlingResult,
   type TrustedPluginBackendRegistration
 } from "./execution.js";
-import type { JsonValue, SchedulerEvent, WorldState } from "@living-history/contracts";
+import type { SchedulerEvent, WorldState } from "@living-history/contracts";
 
 export {
   PLUGIN_EXECUTION_SCHEMA_VERSION,
@@ -28,6 +28,7 @@ export {
 };
 export type {
   PluginActionPlan,
+  PluginActionResolutionResult,
   PluginActionResolver,
   PluginActionResolverRegistration,
   PluginArgsValidator,
