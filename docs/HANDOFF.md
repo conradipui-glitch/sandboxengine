@@ -2,152 +2,177 @@
 
 Обновлено: 2026-09-07
 
-Текущий блок: **B06-03 — Narrator + FactPacket + deterministic fallback / T13 T14**  
-База: published B06-02 merge `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`  
-B06-02 push-CI main: `34057996331` — success  
-Ветка: `b06-03-narrator-factpacket-fallback`  
-PR: #22  
-Статус: **functional hardening gate `34080825132` success на `12894d63bf64e290a854249438ec9f7c555177e1`; docs sync → final current-head CI → merge/main publication gate**
+Текущий блок: **B06-04 — AgentBackend + live eval + canonical B06 audit**  
+База: published B06-03 merge `a21e7cb9c19b873049bb941d34e0482d6c45568d`  
+B06-03 push-CI main: `34081046917` — success  
+Ветка: `b06-04-agent-backend-live-eval-b06-audit`  
+PR: #23  
+Статус: **functional implementation CI `34081452303` success; canonical audit unresolved BLOCKER=0; docs/current-head CI → merge/main publication gate**
 
 ## Что уже published
 
-B01–B05, B06-01 и B06-02 published.
+B01–B05 и B06-01…03 published.
 
-Published B06-01 merge: `a08f3434060abe699be5d431464597645557b8f9`; main CI `34056977026` — success.  
-Published B06-02 merge: `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`; main CI `34057996331` — success.
+B06 published path на входе B06-04:
 
-B06-02 даёт safe free-text boundary: claim-before-AI → bounded intent understanding → validated `ResolvedIntent` → тот же Core resolver, что explicit action. Processing outcomes clarification/unsupported/failed не создают turn.
+`claim → optional free-text intent → validated ResolvedIntent → Core → bounded FactPacket → narrator/fallback → one persisted commitTurn`.
 
-## Что реализовано в B06-03
+Published evidence:
 
-### Narrator authority boundary
+- B06-01 merge `a08f3434060abe699be5d431464597645557b8f9`, main CI `34056977026`;
+- B06-02 merge `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`, main CI `34057996331`;
+- B06-03 merge `a21e7cb9c19b873049bb941d34e0482d6c45568d`, main CI `34081046917`.
 
-Narrator работает только после Core calculation.
+## Что реализовано в B06-04
 
-Canonical calculated turn:
+### AgentBackend boundary
 
-`claim → optional intent → Core → FactPacket → narrator/validator or fallback → public response → one commitTurn`.
+`@living-history/ai` теперь имеет отдельный session-oriented `AgentBackend`:
 
-Narrator никогда не определяет action status, resource cost, duration, effects или candidate state и не запускает Core повторно.
+- safe identity/capabilities;
+- openSession / runTurn / closeSession;
+- normalized auth/rate-limit/session-expired/timeout/abort/backend errors;
+- absolute deadline + AbortSignal;
+- observed usage/request IDs;
+- opaque non-auth session reference.
 
-### FactPacket
+Он не является `ModelProvider`, не подключён напрямую к Runtime gameplay path и не имеет методов WorldState/effects/Core/commit.
 
-`buildFactPacket` создаёт bounded serializable presentation input из trusted before-state + Core execution.
+Runtime-safe profile жёстко требует:
 
-В packet входят:
+- toolPolicy = none;
+- shell = false;
+- filesystem = false;
+- codeExecution = false;
+- repositoryMutation = false;
+- externalToolCalls = false.
 
-- action type/status/requested/completed/duration/reason;
-- public before/after clock;
-- изменившиеся public resource values + units;
-- bounded visible speaker IDs;
-- bounded observation allowlist.
+`assertRuntimeSafeAgentBackend` fail-closed отклоняет widening.
 
-Не входят full `WorldState`, resource min/max, items, contentHash, fencing/idempotency/storage metadata, effects/statePatch или executable data.
+### Codex compatibility spike
 
-### Strict / expressive profiles
+Current `openai/codex` upstream snapshot проверен на session/auth/sandbox/tool semantics.
 
-Оба profile используют один FactPacket и один exact validator. `expressive` отличается только style/output budget и не получает дополнительных прав.
+Совместимо по форме:
 
-Narrative proposal принимает только:
+- API-key / ChatGPT browser/device auth;
+- thread/session start/resume/turn lifecycle;
+- cancellation/interrupt style primitives;
+- sandbox selection.
 
-- summary;
-- dialogue с speaker ID из allowlist;
-- observation refs из allowlist.
+Не доказано для Runtime:
 
-Unknown speaker/ref, hidden asset, effects/statePatch/action mutation или extra authority key → invalid → fallback.
+- stable global zero-built-in-tools mode;
+- read-only всё равно допускает filesystem reads и не равен `toolPolicy:none`.
 
-### Deterministic fallback
+Verdict:
 
-Для executed/partial/blocked есть локальный deterministic renderer.
+`limited / BUILTIN_TOOLS_CANNOT_BE_PROVEN_ABSENT`
 
-Narrator timeout/network/invalid/empty/exhausted attempts после Core не отменяет действие: Runtime выбирает fallback и делает ровно один commit.
+Поэтому production Codex Runtime adapter не добавлен. Нельзя заменять наш no-tools invariant более слабым read-only sandbox.
 
-Narrator имеет максимум две attempts, repair входит в этот лимит.
+Spike: `docs/spikes/2026-09-07-codex-agent-backend-compatibility.md`.
 
-### Один AI deadline
+### Live eval
 
-После successful claim Runtime создаёт один absolute deadline. Для free-text тот же timestamp передаётся intent interpreter, затем narrator использует остаток времени.
+Команда:
 
-Explicit action bypasses intent, но narrator работает под той же operation deadline policy.
+`npm run eval:ai`
 
-### Persisted replay
+Конфигурация:
 
-Narrative входит в тот же committed public response, что structured action/playerView.
+- `LHE_EVAL_API_KEY`;
+- `LHE_EVAL_MODEL`;
+- optional `LHE_EVAL_BASE_URL`;
+- optional `LHE_EVAL_OUTPUT`.
 
-Повтор idempotency key возвращает persisted payload без новых intent/narrator/Core calls.
+Harness не входит в deterministic `verify`.
 
-### Player surface
+Без key/model:
 
-Narrative optional и backward-compatible.
+- status = `not_configured`;
+- exit 0;
+- no credential guessing;
+- root CI remains deterministic.
 
-Без narrator старый Runtime payload остаётся валиден. С narrator Player получает только:
+Corpus:
 
-- profile;
-- source;
-- summary;
-- dialogue;
-- observationRefs.
+- positive `core.paint`;
+- T02/T04/T09/T16;
+- unsupported action;
+- executed/partial/blocked narration;
+- strict + expressive.
 
-Usage/model/provider request IDs и attempt evidence не публикуются. UI отображает narrative с escaping; numeric resource/time/action данные продолжает брать из structured fields.
+Каждый case разделяет `contractPass` и `semanticPass`, пишет latency/attempts и только observed usage/model/request IDs.
 
-ADR: `docs/decisions/0020-narrator-factpacket-single-commit-boundary.md`.
+### Canonical B06 audit
 
-## CI evidence
+Audit: `docs/audits/2026-09-07-b06-canonical-audit.md`.
 
-- ранний AI-layer CI `34058185395` выявил только test-harness deadline bug: absolute `10_000` был уже в прошлом относительно real `Date.now()`;
-- `495386af68ddc0fbe036806f4af148a57fb0011a`: corrected future deadline harness;
-- `f20c2984af06ccf918dae558e9a835b7d6997c0c`: Core execution → bounded FactPacket + optional public narrative;
-- `31ff34edc886cc167ae17e1b401ba4060083e2d5`: Runtime narrator stage, shared deadline, fallback before single commit;
-- `92899bd6a80b32e22e61d983bb9826e5f77320cc`: Runtime T13/shared-deadline tests;
-- `55d66b96b5043c7c8e45e100b4e4e7f693bd64a3` + `7cc0422ad806c952ba893c705aafff578d7a76cb`: Player optional narrative contract/tests;
-- `131ea960063ea2a0af7a9dd1a79abfa552af79ab`: Player narrative render; CI `34080761099` success;
-- `12894d63bf64e290a854249438ec9f7c555177e1`: final acceptance hardening; CI `34080825132` — **success**.
+Проверено:
+
+- authority;
+- secrets/egress;
+- retry/deadline;
+- idempotency/single commit;
+- quota/usage;
+- public boundary;
+- live-eval evidence boundary;
+- B07 scope leakage.
+
+Результат:
+
+- unresolved BLOCKER = **0**;
+- FOLLOW_UP: future AgentBackend adapter must return through strict validators; DNS-aware production egress; operator live eval; agent quota after concrete backend acceptance;
+- LIMITATION: Codex current no-tools gap, external SLA, deterministic tests do not prove absolute language correctness.
+
+### CI evidence
+
+- `a9338a9556513a9e116714111f4323c4334603be` — AgentBackend contract/tests; CI `34081275103` success;
+- `bc94fb98bddb36adc98abca929959da53b4355a9` — AgentBackend + `eval:ai` implementation; CI `34081452303` **success**.
+
+ADR: `docs/decisions/0021-agent-backend-live-eval-and-b06-closure.md`.  
+Worklog: `docs/worklog/2026-09-07-b06-04.md`.
 
 ## Functional acceptance state
 
 Закрыто функционально:
 
-- Core-derived FactPacket without known secret/internal fields;
-- strict/expressive same-authority boundary;
-- max 2 narrator attempts;
-- T13 narrator failure → fallback + exactly one commit;
-- T14 unknown speaker/authority mutation → reject/fallback;
-- valid narrator cannot change structured action/playerView;
-- one shared intent+narrator absolute deadline;
-- replay performs no new AI/Core work;
-- provider diagnostics absent from public narrative;
-- legacy Runtime/Player compatibility green;
-- root `npm run verify` green;
-- AgentBackend/Codex scope не входил в PR.
+- AgentBackend separate from ModelProvider;
+- deny-by-default no-tools capability contract;
+- deterministic lifecycle/deadline/error/usage tests;
+- current Codex verdict with pinned upstream evidence;
+- no unsafe production Codex adapter;
+- explicit bounded live eval harness;
+- no-credential clean skip + secret non-echo regression;
+- canonical audit with zero unresolved BLOCKER;
+- old B01–B06-03 root verify green;
+- B07 scope not included.
 
 ## Честная граница
 
-Fake-provider tests доказывают structural/causal safety и deterministic fallback. Они не являются доказательством качества real Russian narration, semantic faithfulness любого expressive output или выбора production model.
+No live-provider run заявлять нельзя без explicit operator credential/model. Repository secrets не читаются и не угадываются.
 
-Это нужно проверять bounded live eval/manual playtest в следующем slice.
+`eval:ai` готов для explicit run; отсутствие credential = `not_configured`, не synthetic success.
 
-## Publication Gate B06-03
+## Publication Gate
 
 Осталось:
 
-1. final current-head PR CI после docs sync;
-2. mark PR #22 ready;
-3. merge с pinned expected head SHA;
-4. verify push-to-main CI на exact merge SHA;
-5. только после green main объявить B06-03 published.
+1. final current-head PR CI после полного docs sync;
+2. mark PR #23 ready;
+3. pinned merge;
+4. exact merge-SHA push-to-main CI;
+5. после green main объявить B06-04 published и canonical B06 closed.
 
-## Следующее после публикации B06-03
+## Следующее после canonical B06 closure
 
-**B06-04 — AgentBackend/Codex compatibility spike + bounded live eval + canonical B06 audit**:
+**B07 — Presentation/assets**.
 
-- зафиксировать отдельный session-oriented AgentBackend contract, не маскируя его под stateless Chat Completions;
-- проверить Codex/login/session/rate-limit compatibility bounded spike без превращения spike в production dependency;
-- провести bounded live intent/narrator eval на выбранных provider/model profiles и честно отделить language quality от contract correctness;
-- свести B06-01…03 в canonical audit: authority, deadline/retry, secrets, quotas, idempotency, fallback, public diagnostics;
-- только после B06 audit решать следующий engine stage.
+Стартовать отдельной bounded task-card/веткой только от verified B06-04 merge SHA.
 
-Создать B06-04 отдельной веткой **только от verified B06-03 merge SHA**.
+B07 должен строить presentation layer поверх уже опубликованного structured action/playerView/narrative path, не возвращая AI presentation слою gameplay authority.
 
 ## Не делать сейчас
 
-AgentBackend/Codex implementation внутри PR #22, final Studio connection UI, B07 PresentationPlan/assets/animations/audio, B08 plugins, B09 auth/public publish, B10 author AI, B11 Florence migration, long-term dialogue/RAG memory или force dependency upgrade.
+Production Codex adapter через read-only workaround, final Studio connection UI, long-term dialogue/RAG memory, B07 implementation внутри PR #23, B08 plugins, B09 auth/public publish, B10 author AI, B11 Florence migration или force dependency upgrade.
