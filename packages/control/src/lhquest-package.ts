@@ -156,7 +156,7 @@ async function validateQuest(
   const release: QuestRelease = Object.freeze({
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     questId: value.sourceQuestId,
-    releaseId: "lhquest-import-validation",
+    releaseId: "draft-content",
     title: value.title,
     compatibility: Object.freeze({ contractsSchemaVersion: CONTRACT_SCHEMA_VERSION }),
     blockIds: Object.freeze(blocks.map((block) => block.id)),
