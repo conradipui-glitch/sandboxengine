@@ -19,6 +19,40 @@ export interface DraftView extends QuestSummaryView {
   readonly blocks: readonly Block[];
 }
 
+export interface DraftHistoryEntryView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly contentHash: string;
+  readonly title: string;
+  readonly entryLocationId: string;
+  readonly blockCount: number;
+}
+
+export interface DraftHistoryPageView {
+  readonly currentRevision: number;
+  readonly history: readonly DraftHistoryEntryView[];
+  readonly nextBeforeRevision: number | null;
+}
+
+export interface ReleaseSummaryView {
+  readonly releaseId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly draftContentHash: string;
+  readonly validationId: string;
+  readonly compiledContentHash: string;
+  readonly contentHashAlgorithm: "sha256";
+  readonly isCurrent: boolean;
+  readonly wasPublished: boolean;
+}
+
+export interface ReleaseListView {
+  readonly currentReleaseId: string | null;
+  readonly releases: readonly ReleaseSummaryView[];
+}
+
 export interface ValidationView {
   readonly validationId: string;
   readonly projectId: string;
@@ -103,6 +137,28 @@ export class ControlApiClient {
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft`
     );
     return body.draft;
+  }
+
+  async listDraftHistory(
+    projectId: string,
+    questId: string,
+    options: { readonly beforeRevision?: number; readonly limit?: number } = {}
+  ): Promise<DraftHistoryPageView> {
+    const params = new URLSearchParams();
+    if (options.beforeRevision !== undefined) params.set("beforeRevision", String(options.beforeRevision));
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    const query = params.size === 0 ? "" : `?${params.toString()}`;
+    return this.request<DraftHistoryPageView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/history${query}`
+    );
+  }
+
+  async listReleases(projectId: string, questId: string): Promise<ReleaseListView> {
+    return this.request<ReleaseListView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/releases`
+    );
   }
 
   async applyDraftChanges(projectId: string, questId: string, changeSet: DraftChangeSet): Promise<DraftView> {
