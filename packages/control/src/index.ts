@@ -19,6 +19,12 @@ export {
   type ParseLhquestPackageResult
 } from "./lhquest-package.js";
 export {
+  MAX_LHQUEST_ARCHIVE_BYTES,
+  MAX_LHQUEST_ENTRY_BYTES,
+  MAX_LHQUEST_UNPACKED_BYTES,
+  MAX_LHQUEST_FILE_COUNT
+} from "./zip-read.js";
+export {
   MemoryControlStore,
   SQLiteControlStore,
   importQuestPackageFromStore,
