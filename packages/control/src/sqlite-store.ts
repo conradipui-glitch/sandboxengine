@@ -22,6 +22,8 @@ import type {
   DraftValidationRecord,
   FrozenPlaytestRecord,
   ProjectRecord,
+  RestoreDraftInput,
+  RestoreDraftResult,
   ValidateDraftResult
 } from "./types.js";
 
@@ -168,6 +170,73 @@ export class SQLiteControlStore implements ControlStore {
         UPDATE control_quests SET current_revision = ? WHERE project_id = ? AND quest_id = ?
       `).run(candidate.snapshot.draftRevision, projectId, questId);
       return frozen({ kind: "updated", draft: cloneAndFreeze(candidate.snapshot) });
+    });
+  }
+
+  async restoreDraft(projectId: string, questId: string, input: RestoreDraftInput): Promise<RestoreDraftResult> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId) || !isRestoreDraftInput(input)) return frozen({ kind: "invalid_request" });
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+
+    const replay = this.#db.prepare(`
+      SELECT request_hash, result_revision FROM control_draft_restore_idempotency
+      WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+    `).get(projectId, questId, input.idempotencyKey);
+    if (replay) {
+      if (String(replay.request_hash) !== input.requestHash) return frozen({ kind: "idempotency_key_reused" });
+      const draft = await this.getDraftSnapshot(projectId, questId, Number(replay.result_revision));
+      if (!draft) throw new Error("corrupt draft restore idempotency reference");
+      return frozen({ kind: "replay", draft });
+    }
+
+    const source = await this.getDraftSnapshot(projectId, questId, input.sourceRevision);
+    if (!source) return frozen({ kind: "source_revision_not_found" });
+    if (input.baseRevision === Number.MAX_SAFE_INTEGER) return frozen({ kind: "invalid_request" });
+    const candidate = await buildSnapshot({
+      projectId,
+      questId,
+      draftRevision: input.baseRevision + 1,
+      title: source.title,
+      entryLocationId: source.entryLocationId,
+      blocks: source.blocks
+    });
+    if (!candidate.ok) return frozen({ kind: "invalid_request" });
+
+    return this.#transaction(() => {
+      const existing = this.#db.prepare(`
+        SELECT request_hash, result_revision FROM control_draft_restore_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, input.idempotencyKey);
+      if (existing) {
+        if (String(existing.request_hash) !== input.requestHash) return frozen({ kind: "idempotency_key_reused" });
+        const row = this.#db.prepare(`
+          SELECT snapshot_json FROM control_draft_snapshots
+          WHERE project_id = ? AND quest_id = ? AND draft_revision = ?
+        `).get(projectId, questId, Number(existing.result_revision));
+        if (!row) throw new Error("corrupt draft restore idempotency reference");
+        return frozen({ kind: "replay", draft: parseSnapshot(row.snapshot_json) });
+      }
+
+      const currentRow = this.#db.prepare(`
+        SELECT current_revision FROM control_quests WHERE project_id = ? AND quest_id = ?
+      `).get(projectId, questId);
+      if (!currentRow) return frozen({ kind: "quest_not_found" });
+      const currentRevision = Number(currentRow.current_revision);
+      if (currentRevision !== input.baseRevision) {
+        return frozen({ kind: "revision_conflict", currentRevision });
+      }
+
+      this.#insertSnapshot(candidate.snapshot);
+      this.#db.prepare(`
+        UPDATE control_quests SET current_revision = ? WHERE project_id = ? AND quest_id = ?
+      `).run(candidate.snapshot.draftRevision, projectId, questId);
+      this.#db.prepare(`
+        INSERT INTO control_draft_restore_idempotency
+          (project_id, quest_id, idempotency_key, request_hash, result_revision)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(projectId, questId, input.idempotencyKey, input.requestHash, candidate.snapshot.draftRevision);
+      return frozen({ kind: "restored", draft: cloneAndFreeze(candidate.snapshot) });
     });
   }
 
@@ -333,6 +402,16 @@ export class SQLiteControlStore implements ControlStore {
         snapshot_json TEXT NOT NULL,
         PRIMARY KEY (project_id, quest_id, draft_revision),
         FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_draft_restore_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_revision INTEGER NOT NULL CHECK (result_revision >= 0),
+        PRIMARY KEY (project_id, quest_id, idempotency_key),
+        FOREIGN KEY (project_id, quest_id, result_revision)
+          REFERENCES control_draft_snapshots(project_id, quest_id, draft_revision)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_validations (
         validation_id TEXT PRIMARY KEY,
@@ -535,6 +614,17 @@ function isDraftChangeSet(value: unknown): value is DraftChangeSet {
     && Array.isArray(value.changes)
     && value.changes.length >= 1
     && value.changes.length <= 100;
+}
+
+function isRestoreDraftInput(value: unknown): value is RestoreDraftInput {
+  return isRecord(value)
+    && hasExactKeys(value, ["sourceRevision", "baseRevision", "idempotencyKey", "requestHash"])
+    && isNonNegativeSafeInteger(value.sourceRevision)
+    && isNonNegativeSafeInteger(value.baseRevision)
+    && typeof value.idempotencyKey === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value.idempotencyKey)
+    && typeof value.requestHash === "string"
+    && /^[a-f0-9]{64}$/.test(value.requestHash);
 }
 
 function validationFromRow(row: any): DraftValidationRecord {
