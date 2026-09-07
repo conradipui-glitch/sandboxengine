@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SQLiteControlStore } from "../../../packages/control/dist/index.js";
+import {
+  SQLiteControlReleaseStore,
+  SQLiteControlStore
+} from "../../../packages/control/dist/index.js";
+import { buildPluginRegistry } from "../../../packages/plugins/dist/index.js";
+import { DICE_CHECK_MANIFEST } from "../../../packages/plugins/dist/dice-check.js";
 import { createControlHttpServer } from "../../server/dist/control-server.js";
 import { ControlApiClient, ControlApiError } from "../dist/src/api.js";
 import { createStudioDevServer } from "../dist/src/dev-server.js";
@@ -16,8 +21,15 @@ import {
 
 async function withStudio(run) {
   const dir = await mkdtemp(join(tmpdir(), "living-history-studio-"));
-  const store = new SQLiteControlStore({ path: join(dir, "control.sqlite") });
-  const control = createControlHttpServer({ store });
+  const path = join(dir, "control.sqlite");
+  const store = new SQLiteControlStore({ path });
+  const releaseStore = new SQLiteControlReleaseStore({ path });
+  const registry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
+  assert.equal(registry.ok, true);
+  const control = createControlHttpServer({
+    store,
+    releases: { store: releaseStore, pluginRegistry: registry.registry, nowMs: () => 1_000 }
+  });
   const controlAddress = await control.listen(0, "127.0.0.1");
   const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}` });
   const studioAddress = await studio.listen(0, "127.0.0.1");
@@ -30,6 +42,7 @@ async function withStudio(run) {
   } finally {
     await studio.close();
     await control.close();
+    releaseStore.close();
     store.close();
     await rm(dir, { recursive: true, force: true });
   }
@@ -97,6 +110,15 @@ test("B05-02 author path persists project -> quest -> resource -> paint cost=1 -
       changes: [{ kind: "block.replace", blockId: "paint", block: action2 }]
     });
     assert.equal(draft2.draftRevision, 2);
+
+    const history = await api.listDraftHistory("studio-project", "studio-quest");
+    assert.equal(history.currentRevision, 2);
+    assert.deepEqual(history.history.map((entry) => entry.draftRevision), [0, 1, 2]);
+    assert.equal(history.history.at(-1)?.contentHash, draft2.contentHash);
+
+    const releases = await api.listReleases("studio-project", "studio-quest");
+    assert.equal(releases.currentReleaseId, null);
+    assert.deepEqual(releases.releases, []);
 
     const reloadedApi = new ControlApiClient((input, init) => fetch(new URL(String(input), origin), init));
     const reloaded = await reloadedApi.getDraft("studio-project", "studio-quest");
