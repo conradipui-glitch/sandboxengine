@@ -27,6 +27,23 @@ export interface DraftChangeSet {
   readonly changes: readonly DraftChange[];
 }
 
+export interface RestoreDraftInput {
+  readonly sourceRevision: number;
+  readonly baseRevision: number;
+  readonly idempotencyKey: string;
+  readonly requestHash: string;
+}
+
+export type RestoreDraftResult =
+  | { readonly kind: "restored"; readonly draft: DraftSnapshot }
+  | { readonly kind: "replay"; readonly draft: DraftSnapshot }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "source_revision_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request" };
+
 export interface CreateProjectInput {
   readonly projectId: string;
   readonly title: string;
@@ -117,6 +134,7 @@ export interface ControlStore {
   getDraft(projectId: string, questId: string): Promise<DraftSnapshot | null>;
   getDraftSnapshot(projectId: string, questId: string, draftRevision: number): Promise<DraftSnapshot | null>;
   applyDraftChanges(projectId: string, questId: string, changeSet: DraftChangeSet): Promise<ApplyDraftChangesResult>;
+  restoreDraft(projectId: string, questId: string, input: RestoreDraftInput): Promise<RestoreDraftResult>;
   validateDraft(projectId: string, questId: string, draftRevision: number): Promise<ValidateDraftResult>;
   getValidation(validationId: string): Promise<DraftValidationRecord | null>;
   createPlaytest(input: {
