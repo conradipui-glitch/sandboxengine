@@ -60,10 +60,43 @@
         }
       }
     },
+    "/control/v1/auth/login": {
+      "post": {
+        "operationId": "control_auth_login",
+        "summary": "Вход закрытого Control-пользователя и выдача серверной сессии с CSRF proof",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/auth/session": {
+      "get": {
+        "operationId": "control_auth_session",
+        "summary": "Получение безопасных метаданных текущей Control-сессии",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/auth/logout": {
+      "post": {
+        "operationId": "control_auth_logout",
+        "summary": "CSRF-защищённый отзыв текущей Control-сессии",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects": {
       "get": {
         "operationId": "control_projects_list",
-        "summary": "Список локальных авторских проектов",
+        "summary": "Список доступных текущему автору проектов",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -72,9 +105,40 @@
       },
       "post": {
         "operationId": "control_projects_create",
-        "summary": "Создание локального авторского проекта",
+        "summary": "Создание авторского проекта; в authenticated mode создатель атомарно становится owner",
         "responses": {
           "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/members": {
+      "get": {
+        "operationId": "control_members_list",
+        "summary": "Owner-only список участников проекта и ролей",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/members/{userId}": {
+      "put": {
+        "operationId": "control_members_update",
+        "summary": "Owner-only назначение роли owner/editor/tester существующему закрытому пользователю",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "control_members_delete",
+        "summary": "Owner-only удаление участника с защитой последнего owner",
+        "responses": {
+          "200": {
             "description": "Successful response"
           }
         }
@@ -83,7 +147,7 @@
     "/control/v1/projects/{projectId}/quests": {
       "get": {
         "operationId": "control_quests_list",
-        "summary": "Список квестов проекта и текущих draft revisions",
+        "summary": "Список квестов доступного проекта и текущих draft revisions",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -92,7 +156,7 @@
       },
       "post": {
         "operationId": "control_quests_create",
-        "summary": "Создание квеста с начальным draft snapshot",
+        "summary": "Owner/editor создание квеста с начальным draft snapshot",
         "responses": {
           "201": {
             "description": "Successful response"
@@ -103,7 +167,7 @@
     "/control/v1/projects/{projectId}/quests/{questId}/draft": {
       "get": {
         "operationId": "control_draft_get",
-        "summary": "Получение текущего авторского draft snapshot",
+        "summary": "Получение текущего авторского draft snapshot доступного проекта",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -114,7 +178,7 @@
     "/control/v1/projects/{projectId}/quests/{questId}/draft/changes": {
       "post": {
         "operationId": "control_draft_changes",
-        "summary": "Атомарное применение change set к указанной draft revision",
+        "summary": "Owner/editor атомарное применение change set к указанной draft revision",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -125,7 +189,7 @@
     "/control/v1/projects/{projectId}/quests/{questId}/validations": {
       "post": {
         "operationId": "control_validations_create",
-        "summary": "Проверка конкретной draft revision и фиксация immutable report",
+        "summary": "Проверка конкретной draft revision участником проекта и фиксация immutable report",
         "responses": {
           "201": {
             "description": "Successful response"
@@ -136,9 +200,20 @@
     "/control/v1/projects/{projectId}/quests/{questId}/playtests": {
       "post": {
         "operationId": "control_playtests_create",
-        "summary": "Создание frozen playtest из проверенного draft snapshot",
+        "summary": "Создание frozen playtest участником проекта из проверенного draft snapshot",
         "responses": {
           "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}": {
+      "get": {
+        "operationId": "control_playtests_get",
+        "summary": "Чтение безопасных метаданных frozen playtest доступного проекта",
+        "responses": {
+          "200": {
             "description": "Successful response"
           }
         }
