@@ -4,103 +4,133 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B06-03 published; B06-04 functional gate green на PR #23** | B06-03 merge `a21e7cb9…`, main CI `34081046917`; B06-04 implementation CI `34081452303` success; canonical audit unresolved BLOCKER=0 → docs/current-head gate → merge/main CI |
-| Контракты/Core | **B01–B03 published** | deterministic actions/effects/conditions/social/scheduler/RNG/replay |
-| Runtime storage/API | **B04 published; full B06 Runtime AI path published through B06-03** | claim-before-AI, idempotency/fencing, no-turn processing, one commit, persisted narrative replay |
+| Репозиторий | **B01–B06 published; B07-01 functional gate green на PR #24** | B06 final merge `7a5efba36b508f674483dd9cce3762277917c5e1`, main CI `34081697268`; B07-01 functional head `068890e3…`, CI `34083432560` success → docs/current-head gate → merge/main CI |
+| Контракты/Core | **B01–B03 published** | deterministic gameplay authority; core contract schema remains `1.0` |
+| Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP |
 | Authoring / Control | **B05 published** | authoritative draft → validation → frozen playtest → Player; T29 help/onboarding |
-| Runtime AI provider | **B06-01 published** | provider/connection/quota, OpenRouter/compatible foundation |
-| Free-text intent | **B06-02 published** | strict intent boundary → existing Core resolver |
-| Narration/fallback | **B06-03 published** | merge `a21e7cb9c19b873049bb941d34e0482d6c45568d`, main CI `34081046917`; FactPacket, shared deadline, deterministic fallback, one commit |
-| Agent backend / B06 audit | **B06-04 accepted functionally на PR #23** | generic no-tools AgentBackend; Codex verdict `limited`; explicit `eval:ai`; canonical audit unresolved BLOCKER=0; ADR 0021 |
-| Presentation/assets | не начато | B07 после публикации B06-04/canonical B06 closure |
+| AI foundation | **B06 published / canonical audit closed** | provider/intent/narrator/AgentBackend boundary; final merge `7a5efba36…`, main CI `34081697268`; audit unresolved BLOCKER=0 |
+| Presentation contracts | **B07-01 accepted functionally** | separate presentation schema `2.0`, complete SceneFrameV2, bounded PresentationPlanV2, immutable asset refs, convergence/stale/replay; ADR 0022 |
+| Asset ingestion/storage | не начато | B07-02 после publication B07-01 |
+| Player presentation renderer | не начато | следующий B07 slice после asset boundary |
 | Plugins | не начато | B08 |
 | Auth/publish | не начато | B09 |
 | Author AI helper | не начато | B10 |
 | Florence migration | не начато | B11 |
 
-## Published through B06-03
+## Published B06
 
-B05 merge: `002c2cd7c802f06d23f62ac8cde726afef845c24`; main CI `34055962204` — success.  
-B06-01 merge: `a08f3434060abe699be5d431464597645557b8f9`; main CI `34056977026` — success.  
-B06-02 merge: `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`; main CI `34057996331` — success.  
-B06-03 merge: `a21e7cb9c19b873049bb941d34e0482d6c45568d`; main CI `34081046917` — success.
+Canonical B06 закрыт полностью.
 
-Canonical calculated turn:
+- B06-01 merge `a08f3434060abe699be5d431464597645557b8f9`, main CI `34056977026`;
+- B06-02 merge `90e6bcb4de1da2d0b37b5bc128406dcb0078b3a1`, main CI `34057996331`;
+- B06-03 merge `a21e7cb9c19b873049bb941d34e0482d6c45568d`, main CI `34081046917`;
+- B06-04/final merge `7a5efba36b508f674483dd9cce3762277917c5e1`, main CI `34081697268`.
+
+Published calculated turn:
 
 `Player input → Runtime claim/idempotency → optional strict intent → ResolvedIntent → Core → FactPacket → narrator/validator or deterministic fallback → structured public response → one commitTurn`.
 
-Processing outcomes (`needs_clarification` / `unsupported` / intent failure) завершаются без turn/world mutation. Narrator failure после Core не откатывает ход.
+Canonical B06 audit unresolved `BLOCKER = 0`. Current Codex verdict remains `limited / BUILTIN_TOOLS_CANNOT_BE_PROVEN_ABSENT`; production Codex Runtime adapter was intentionally not added.
 
-## B06-04 — AgentBackend + live eval + canonical B06 audit
+## B07-01 — SceneFrameV2 + bounded PresentationPlanV2
 
-Ветка: `b06-04-agent-backend-live-eval-b06-audit`.  
-PR: #23.  
-Карточка: [B06-04](tasks/B06-04-agent-backend-live-eval-b06-audit.md).  
-Решение: [ADR 0021](decisions/0021-agent-backend-live-eval-and-b06-closure.md).  
-Codex spike: [2026-09-07 Codex compatibility](spikes/2026-09-07-codex-agent-backend-compatibility.md).  
-Canonical audit: [2026-09-07 B06 audit](audits/2026-09-07-b06-canonical-audit.md).  
-Worklog: [2026-09-07 B06-04](worklog/2026-09-07-b06-04.md).
+Ветка: `b07-01-scene-frame-presentation-contracts`.  
+PR: #24.  
+Карточка: [B07-01](tasks/B07-01-scene-frame-presentation-contracts.md).  
+Решение: [ADR 0022](decisions/0022-presentation-v2-final-frame-boundary.md).  
+Worklog: [2026-09-07 B07-01](worklog/2026-09-07-b07-01.md).
 
-### Реализовано
+### Почему presentation v2, а не widening v1
 
-- отдельный session-oriented `AgentBackend`, не `ModelProvider` alias;
-- explicit open/runTurn/close lifecycle;
-- normalized auth/rate-limit/session-expired/timeout/abort/backend errors;
-- mandatory Runtime-safe `toolPolicy:none`;
-- shell/filesystem/code execution/repository mutation/external tool calls = false;
-- no gameplay mutation/Core/commit methods;
-- safe view без raw credential/session token;
-- deterministic `ScriptedAgentBackend` + lifecycle/deadline/no-tools regressions;
-- current Codex compatibility spike;
-- explicit `npm run eval:ai`, не включённый в deterministic root `verify`;
-- live eval corpus для T02/T04/T09/T16/positive/unsupported intent и strict/expressive narration;
-- separate `contractPass` vs `semanticPass`, latency/attempts/observed usage/model/request IDs;
-- no credential/model → `not_configured`, exit 0;
-- eval output schema не содержит credential; secret non-echo regression;
-- canonical B06 audit по authority/secrets/deadlines/idempotency/quota/public boundaries.
+B01 уже опубликовал узкие `SceneFrame`/`PresentationPlan` schemas `1.0` и правило: breaking schema changes требуют нового `$id`.
 
-### Codex verdict
+Поэтому:
 
-Current upstream Codex session/auth lifecycle совместим по форме, но documented `read_only` sandbox всё равно допускает filesystem reads и не доказывает отсутствие built-in tools.
+- core contracts остаются `1.0`;
+- legacy presentation v1 остаётся frozen/readable;
+- canonical B07 presentation получает отдельный `schemaVersion: 2.0`.
 
-Verdict:
+Generated agent contracts теперь явно показывают обе версии отдельно.
 
-`limited / BUILTIN_TOOLS_CANNOT_BE_PROVEN_ABSENT`
+### SceneFrameV2
 
-Production Codex Runtime adapter в B06-04 **не добавлен**. Это deliberate safety decision, не незаконченная заглушка.
+Полный player-safe конечный presentation frame:
 
-### Functional evidence
+- session/quest/release/revision/turn identity;
+- immutable background ref;
+- ordered actors/items/overlays;
+- actor slots/expressions;
+- dialogue history/current line;
+- current music.
 
-AgentBackend contract head `a9338a9556513a9e116714111f4323c4334603be` → CI `34081275103` — success.
+Reload обязан восстанавливать frame напрямую и не переигрывать старые эффекты.
 
-AgentBackend + live-eval implementation head `bc94fb98bddb36adc98abca929959da53b4355a9` → CI `34081452303` — **success**, полный root `npm run verify`.
+### PresentationPlanV2
 
-Canonical audit после green implementation gate:
+Bounded non-executable transition:
 
-- unresolved `BLOCKER`: **0**;
-- FOLLOW_UP: future AgentBackend adapter must re-enter strict intent/narrator validators; production DNS-aware egress; explicit operator live eval; backend-specific quota only after backend acceptance;
-- LIMITATION: current Codex no-tools guarantee, external provider SLA, deterministic tests != absolute language quality.
+- one persisted `turnId`;
+- `fromRevision → toRevision`;
+- `targetFrameId`;
+- `sequence` / `parallel`;
+- only registered commands: background, actor show/hide/move/expression, item, dialogue, overlay, audio, wait;
+- preset transitions/reveal/channel;
+- bounded durations/tree depth/node count.
 
-### Live model evidence boundary
+Arbitrary JS/HTML/CSS/DOM selectors/callbacks отсутствуют.
 
-Текущий GitHub/assistant tool boundary не раскрывает repository secrets, и B06-04 не пытается их читать/угадывать. Поэтому deterministic acceptance не содержит фиктивного claims о live provider run.
+Animation/audio/typewriter completion не является gameplay commit или game-clock advancement.
 
-При explicit `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL` оператор может запустить `npm run eval:ai`. Без них результат clean `not_configured`.
+### Asset reference boundary
 
-## Publication Gate B06-04 / canonical B06
+B07-01 вводит immutable presentation identity `assetId + SHA-256 hash` и manifest DTO с MIME/dimensions/duration/alt/source/rights.
 
-До слова **B06 closed/published** остаётся:
+File upload, hash calculation, storage, MIME sniffing и deletion policy ещё **не реализованы** — это B07-02.
 
-1. final current-head PR CI после ADR/STATUS/HANDOFF/worklog/audit sync;
-2. PR #23 mark ready;
+### Validation
+
+Проверка разделена:
+
+1. JSON Schema exact shape;
+2. semantic membership: allowed scene/entity/speaker/overlay/assets, hash/kind, layer order, one-turn identity, tree bounds;
+3. pure target-frame convergence.
+
+После первого code-green audit найден и закрыт реальный gap: план с разрешённым, но другим background/actor slot мог пройти reference validation. Full gate теперь требует, чтобы детерминируемые presentation properties в конце совпадали с target SceneFrame.
+
+Parallel conflicting writes fail closed; порядок children не используется как скрытый приоритет.
+
+### Replay/stale helpers
+
+- lower revision → stale;
+- same frame/revision → duplicate;
+- same revision + другой frame → conflict;
+- already applied `turnId` не запускает plan снова;
+- gap требует восстановить latest frame.
+
+Skip/reduced-motion renderer в следующем B07 slice должен прийти к тому же target frame без gameplay callbacks.
+
+### Evidence
+
+Первый полный run `34082918924` подтвердил typecheck и весь B01–B06 code suite; единственным failure были ожидаемо stale generated agent docs.
+
+Generated docs синхронизированы, registry hash: `0b1fa6e4e23374cc00fd5cca61ecbbc0aec2a5df3ab83c1da2ce82fb8cf6e36c`.
+
+Final functional hardening head `068890e3bce15d0686b753df4d2f4ed1bcbda9f4` прошёл PR CI `34083432560` — **success**, полный `npm run verify`.
+
+## Publication Gate B07-01
+
+До слова **published** остаётся:
+
+1. final current-head CI после ADR/STATUS/HANDOFF/worklog sync;
+2. PR #24 mark ready;
 3. merge с pinned expected head SHA;
-4. push-to-main CI именно на merge SHA;
-5. только после green main объявить B06-04 published и canonical B06 closed.
+4. exact merge-SHA push-to-main CI;
+5. только после green main объявить B07-01 published.
 
-После этого следующий bounded roadmap block — **B07 Presentation/assets**.
+После этого следующий bounded slice — **B07-02: immutable asset registry + validated ingestion/storage boundary**.
 
 ## Scope boundary
 
-B06-04 не содержит production Codex adapter, final Studio connection UI, long-term dialogue/RAG memory, B07 PresentationPlan/assets/animations/audio, B08 plugins, B09 auth/public publish, B10 author AI или B11 Florence migration.
+B07-01 не содержит file ingestion/storage, browser animation/audio executor, final Player visual redesign, Studio timeline editor, B08 UI plugins, B09 auth/public publish, B10 author AI или B11 Florence migration.
 
-DNS-aware egress isolation и known dependency vulnerabilities остаются отдельными deployment/dependency задачами; force upgrade без отдельного аудита не выполняется.
+Known dependency vulnerabilities и production DNS-aware egress остаются отдельными deployment/dependency задачами; force upgrade без отдельного аудита не выполняется.
