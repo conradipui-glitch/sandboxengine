@@ -31,6 +31,10 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = history[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "tester"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
+      return true;
+    }
     const result = await listDraftHistory(context.store, projectId, questId);
     if (result.kind === "quest_not_found") context.sendNotFound();
     else context.sendJson(200, { currentRevision: result.currentRevision, history: result.history });
@@ -44,6 +48,10 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = compare[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "tester"))) return true;
+    if (!hasExactQuery(context.url.searchParams, ["baseRevision", "targetRevision"])) {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_COMPARE_REQUEST" } });
+      return true;
+    }
     const baseRevision = parseRevisionQuery(context.url.searchParams.get("baseRevision"));
     const targetRevision = parseRevisionQuery(context.url.searchParams.get("targetRevision"));
     if (baseRevision === null || targetRevision === null) {
@@ -65,6 +73,10 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = references[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "tester"))) return true;
+    if (!hasExactQuery(context.url.searchParams, ["revision", "targetBlockId"])) {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_REFERENCE_REQUEST" } });
+      return true;
+    }
     const revision = parseRevisionQuery(context.url.searchParams.get("revision"));
     const targetBlockId = context.url.searchParams.get("targetBlockId");
     if (revision === null || !isId(targetBlockId)) {
@@ -86,6 +98,10 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = restore[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_RESTORE_REQUEST" } });
+      return true;
+    }
     if (!(await context.requireMutation())) return true;
     const idempotencyKey = context.requireIdempotencyKey();
     if (idempotencyKey === null) return true;
@@ -123,6 +139,13 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
   }
 
   return false;
+}
+
+function hasExactQuery(params: URLSearchParams, keys: readonly string[]): boolean {
+  const actual = [...params.keys()].sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || !actual.every((key, index) => key === expected[index])) return false;
+  return expected.every((key) => params.getAll(key).length === 1);
 }
 
 function parseRevisionQuery(value: string | null): number | null {
