@@ -8,6 +8,13 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js"
     }
+  },
+  "dependencies": {
+    "@living-history/contracts": "0.1.0"
   }
 }
