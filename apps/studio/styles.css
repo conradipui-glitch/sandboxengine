@@ -438,6 +438,17 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .evidence-operation pre { max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #111827; color: #e5e7eb; padding: 10px; border-radius: 6px; font-size: 11px; }
 @media (max-width: 700px) { .evidence-identity { grid-template-columns: 1fr 1fr; } }
 
+.portability-section { margin: 18px 0; padding: 18px; border: 1px solid #d8dee9; border-radius: 10px; background: #fff; }
+.portability-current { display: flex; gap: 8px; align-items: center; }
+.portability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.portability-card { border: 1px solid #e1e6ee; border-radius: 8px; padding: 14px; min-width: 0; }
+.portability-card h3 { margin: 0 0 6px; }
+.portability-card > p { color: #566176; font-size: 12px; min-height: 48px; }
+.portability-form { margin-top: 10px; }
+.portability-release-list { display: grid; gap: 6px; margin-top: 8px; }
+.portability-release-list button { text-align: left; overflow-wrap: anywhere; }
+@media (max-width: 1050px) { .portability-grid { grid-template-columns: 1fr; } .portability-card > p { min-height: 0; } }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }

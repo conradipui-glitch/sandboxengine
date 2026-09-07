@@ -44,6 +44,12 @@ import {
   type StudioAccessState
 } from "./access.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
+import {
+  downloadQuestExport,
+  fileToBase64,
+  portabilityErrorMessage,
+  renderPortabilityPanel
+} from "./portability.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -124,6 +130,16 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "export-draft") {
+      const revision = Number(target.dataset.revision);
+      await this.exportDraftRevision(revision);
+      return;
+    }
+    if (action === "export-release") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) await this.exportRelease(releaseId);
+      return;
+    }
     if (action === "refresh-playtest-evidence") {
       await this.refreshPlaytestEvidence();
       return;
@@ -232,6 +248,18 @@ export class StudioApp {
           ? `Вход подтверждён. Текущая роль: ${selected.role}.`
           : "Вход выполнен. Выберите проект.";
         this.render();
+        return;
+      }
+
+      if (kind === "clone-quest") {
+        await this.cloneSelectedQuest(text(data, "newQuestId"), text(data, "title"));
+        return;
+      }
+
+      if (kind === "import-quest") {
+        const selected = data.get("archive");
+        if (!(selected instanceof File) || selected.size < 1) throw new Error("Выберите непустой .lhquest.zip файл.");
+        await this.importQuestFile(text(data, "newQuestId"), selected);
         return;
       }
 
@@ -757,6 +785,75 @@ export class StudioApp {
     this.render();
   }
 
+  private async cloneSelectedQuest(newQuestId: string, title: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const sourceQuestId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    this.state.phase = "saving";
+    this.state.message = `Clone ${sourceQuestId} → ${newQuestId}…`;
+    this.render();
+    try {
+      const result = await this.api.cloneQuest(projectId, sourceQuestId, { newQuestId, title }, mutationKey("clone"));
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.selectQuest(result.draft.questId);
+      this.state.phase = "saved";
+      this.state.message = `Clone создан из ${sourceQuestId} r${result.sourceRevision} как ${result.draft.questId} r${result.draft.draftRevision}. Source не менялся.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async exportDraftRevision(revision: number): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid draft revision for export.");
+    try {
+      const exported = await this.api.exportDraftQuest(projectId, questId, revision);
+      downloadQuestExport(exported);
+      this.state.phase = "saved";
+      this.state.message = `Exact draft export r${revision}: ${exported.filename}. Ничего не опубликовано.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async exportRelease(releaseId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    try {
+      const exported = await this.api.exportReleaseQuest(projectId, questId, releaseId);
+      downloadQuestExport(exported);
+      this.state.phase = "saved";
+      this.state.message = `Exact immutable release export ${releaseId}: ${exported.filename}. Current pointer не менялся.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async importQuestFile(newQuestId: string, file: File): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    this.state.phase = "saving";
+    this.state.message = `Передаём ${file.name} серверному bounded import parser…`;
+    this.render();
+    try {
+      const archiveBase64 = await fileToBase64(file);
+      const result = await this.api.importQuest(projectId, newQuestId, archiveBase64, mutationKey("import"));
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.selectQuest(result.draft.questId);
+      this.state.phase = "saved";
+      this.state.message = `Import ${result.sourceQuestId} r${result.sourceRevision} создан как новый draft ${result.draft.questId} r${result.draft.draftRevision}. Не опубликован.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
   private async refreshPlaytestEvidence(renderAfter = true): Promise<void> {
     const playtest = this.state.playtest;
     if (!playtest) return;
@@ -873,6 +970,8 @@ export class StudioApp {
               this.state.publishReport,
               this.state.publicationReceipt
             )}
+
+            ${renderPortabilityPanel(draft, this.state.versions, allowEdit)}
 
             <div class="editor-grid">
               <section class="editor-section">

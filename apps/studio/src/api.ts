@@ -173,6 +173,27 @@ export interface PlaytestTraceView {
   readonly hasMoreSessions: boolean;
 }
 
+export interface QuestExportView {
+  readonly filename: string;
+  readonly mediaType: string;
+  readonly encoding: "base64";
+  readonly archiveBase64: string;
+  readonly manifest: unknown;
+}
+
+export interface QuestCloneResultView {
+  readonly sourceRevision: number;
+  readonly draft: DraftView;
+  readonly replay?: true;
+}
+
+export interface QuestImportResultView {
+  readonly sourceQuestId: string;
+  readonly sourceRevision: number;
+  readonly draft: DraftView;
+  readonly replay?: true;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -432,6 +453,50 @@ export class ControlApiClient {
       { draftRevision, validationId }
     );
     return body.playtest;
+  }
+
+  async cloneQuest(
+    projectId: string,
+    sourceQuestId: string,
+    input: { readonly newQuestId: string; readonly title: string },
+    idempotencyKey: string
+  ): Promise<QuestCloneResultView> {
+    return this.request<QuestCloneResultView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(sourceQuestId)}/clone`,
+      input,
+      { idempotencyKey }
+    );
+  }
+
+  async exportDraftQuest(projectId: string, questId: string, draftRevision: number): Promise<QuestExportView> {
+    const params = new URLSearchParams({ draftRevision: String(draftRevision) });
+    return this.request<QuestExportView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/export?${params.toString()}`
+    );
+  }
+
+  async exportReleaseQuest(projectId: string, questId: string, releaseId: string): Promise<QuestExportView> {
+    const params = new URLSearchParams({ releaseId });
+    return this.request<QuestExportView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/export?${params.toString()}`
+    );
+  }
+
+  async importQuest(
+    projectId: string,
+    newQuestId: string,
+    archiveBase64: string,
+    idempotencyKey: string
+  ): Promise<QuestImportResultView> {
+    return this.request<QuestImportResultView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/imports`,
+      { newQuestId, archiveBase64 },
+      { idempotencyKey }
+    );
   }
 
   async getPlaytestTrace(projectId: string, questId: string, playtestId: string): Promise<PlaytestTraceView> {
