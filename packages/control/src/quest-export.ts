@@ -112,11 +112,11 @@ export async function buildDraftQuestExport(
 
   return frozen({
     kind: "exported" as const,
-    value: deepFreeze({
+    value: Object.freeze({
       filename: `${questId}.r${draftRevision}.lhquest.zip`,
       mediaType: LHQUEST_MEDIA_TYPE,
       manifest,
-      archive
+      archive: new Uint8Array(archive)
     })
   });
 }
@@ -142,6 +142,7 @@ function isRevision(value: unknown): value is number {
 function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    if (ArrayBuffer.isView(value)) return value;
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
     Object.freeze(value);
   }
