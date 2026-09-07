@@ -216,6 +216,19 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 }
 .conflict-panel strong { color: #8d382e; }
 .conflict-panel p { margin: 5px 0 0; color: #805a54; font-size: 13px; line-height: 1.5; }
+.conflict-diff {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid #eccfc9;
+  border-radius: 8px;
+  background: #fffaf9;
+  color: #6f504b;
+  font-size: 12px;
+}
+.conflict-diff.error { color: #8d382e; }
+.conflict-diff-title { font-weight: 700; color: #75433b; }
+.conflict-diff ul { margin: 7px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.conflict-diff-empty { margin-top: 6px; color: #806861; }
 .button-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 

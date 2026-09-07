@@ -1,4 +1,9 @@
 import type { DraftChange } from "@living-history/control";
+import {
+  loadConflictState,
+  renderConflictPanel,
+  type ConflictState
+} from "./conflict.js";
 import type { ActionBlock } from "@living-history/contracts";
 import {
   ControlApiClient,
@@ -22,12 +27,6 @@ import {
   renderVersionsPanel,
   type VersionsReadModel
 } from "./versions.js";
-
-interface ConflictState {
-  readonly changes: readonly DraftChange[];
-  readonly previousRevision: number;
-  readonly currentRevision: number;
-}
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -271,11 +270,14 @@ export class StudioApp {
         await this.refreshVersions(projectId, questId);
         this.state.phase = "conflict";
         this.state.message = `Draft изменился на сервере: ${draft.draftRevision} → ${fresh.draftRevision}. Ничего не перезаписано.`;
-        this.state.conflict = Object.freeze({
+        this.state.conflict = await loadConflictState(
+          this.api,
+          projectId,
+          questId,
           changes,
-          previousRevision: draft.draftRevision,
-          currentRevision: fresh.draftRevision
-        });
+          draft.draftRevision,
+          fresh.draftRevision
+        );
       } else {
         this.setError(error);
       }
@@ -416,7 +418,7 @@ export class StudioApp {
               <div class="draft-meta"><span>revision <strong>${draft.draftRevision}</strong></span><code title="content hash">${escapeHtml(shortHash(draft.contentHash))}</code></div>
             </section>
 
-            ${this.state.conflict ? conflictPanel(this.state.conflict) : ""}
+            ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
 
             ${renderVersionsPanel(
               this.state.versions,
@@ -535,13 +537,6 @@ function paintActionRow(action: ActionBlock): string {
       <button type="submit">Сохранить</button>
     </form>
   </article>`;
-}
-
-function conflictPanel(conflict: ConflictState): string {
-  return `<section class="conflict-panel" role="alert">
-    <div><strong>Обнаружена новая server revision</strong><p>Локальная правка была подготовлена для r${conflict.previousRevision}, но сервер уже на r${conflict.currentRevision}. Автоматического overwrite не было.</p></div>
-    <div class="button-row"><button class="primary" data-action="retry-conflict">Повторить правку на r${conflict.currentRevision}</button><button data-action="cancel-conflict">Отменить локальную правку</button></div>
-  </section>`;
 }
 
 function validationPanel(validation: ValidationView | null, draft: DraftView): string {
