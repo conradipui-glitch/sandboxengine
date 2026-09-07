@@ -23,6 +23,13 @@ export interface ControlAuthView {
   readonly session: ControlSessionView;
 }
 
+export interface ControlProjectMemberView {
+  readonly projectId: string;
+  readonly userId: string;
+  readonly username: string;
+  readonly role: ControlProjectRole;
+}
+
 interface ControlLoginResponse extends ControlAuthView {
   readonly csrfToken: string;
 }
@@ -163,6 +170,14 @@ export class ControlApiClient {
   async listProjects(): Promise<readonly ProjectView[]> {
     const body = await this.request<{ readonly projects: readonly ProjectView[] }>("GET", "/projects");
     return body.projects;
+  }
+
+  async listProjectMembers(projectId: string): Promise<readonly ControlProjectMemberView[]> {
+    const body = await this.request<{ readonly members: readonly ControlProjectMemberView[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/members`
+    );
+    return body.members;
   }
 
   async createProject(input: { readonly projectId: string; readonly title: string }): Promise<ProjectView> {
