@@ -1,4 +1,12 @@
 export {
+  LHQUEST_FORMAT_VERSION,
+  LHQUEST_MEDIA_TYPE,
+  buildDraftQuestExport,
+  type BuildDraftQuestExportResult,
+  type DraftQuestExport,
+  type LhquestDraftManifest
+} from "./quest-export.js";
+export {
   MemoryControlStore,
   SQLiteControlStore,
   cloneQuestFromStore,
