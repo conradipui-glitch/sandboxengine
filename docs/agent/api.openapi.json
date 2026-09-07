@@ -186,6 +186,50 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
+      "get": {
+        "operationId": "control_draft_history",
+        "summary": "Постраничная история immutable draft revisions доступного проекта",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/compare": {
+      "get": {
+        "operationId": "control_draft_compare",
+        "summary": "Серверное сравнение двух конкретных draft revisions без автоматического merge",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/references": {
+      "get": {
+        "operationId": "control_draft_references",
+        "summary": "Typed preflight зависимостей блока и объяснение безопасности удаления",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/restore": {
+      "post": {
+        "operationId": "control_draft_restore",
+        "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/validations": {
       "post": {
         "operationId": "control_validations_create",
