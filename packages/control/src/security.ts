@@ -1,6 +1,7 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { CreateProjectInput, CreateProjectResult, ProjectRecord } from "./types.js";
+declare const Buffer: any;
 
 export const CONTROL_ROLES = ["owner", "editor", "tester"] as const;
 export type ControlProjectRole = (typeof CONTROL_ROLES)[number];
