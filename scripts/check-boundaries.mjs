@@ -46,6 +46,20 @@ const checks = [
       /\bfetch\s*\(/,
       /process\.env/
     ]
+  },
+  {
+    label: "Plugins registry",
+    root: new URL("../packages/plugins/src/", import.meta.url),
+    forbidden: [
+      /from\s+["']@living-history\/(?:core|runtime|control|player|ai|assets)(?:["'/])/,
+      /from\s+["'][^"']*apps\//,
+      /from\s+["']node:(?:fs|child_process|https?|net|tls|vm)/,
+      /\bfetch\s*\(/,
+      /process\.env/,
+      /\beval\s*\(/,
+      /\bnew\s+Function\b/,
+      /\bimport\s*\(/
+    ]
   }
 ];
 
@@ -66,5 +80,5 @@ if (violations.length > 0) {
   console.error("Boundary violations:\n" + violations.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("check:boundaries ok — Core чист от infrastructure/runtime/control; Player чист от Core/Control/storage; Runtime AI provider чист от gameplay/UI/storage; Assets чист от gameplay/network/process authority");
+  console.log("check:boundaries ok — Core чист от infrastructure/runtime/control; Player чист от Core/Control/storage; Runtime AI provider чист от gameplay/UI/storage; Assets чист от gameplay/network/process authority; Plugins registry чист от gameplay/network/process/dynamic-code authority");
 }

@@ -13,6 +13,10 @@ export const GENERATED_DOC_PATHS = [
 export async function buildGeneratedDocs(root) {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const registry = JSON.parse(await readFile(resolve(root, "packages/contracts/registry/endpoints.json"), "utf8"));
+  const pluginRegistry = JSON.parse(await readFile(resolve(root, "packages/plugins/registry/installed.json"), "utf8"));
+  const pluginManifestSchema = JSON.parse(await readFile(resolve(root, "packages/plugins/schemas/v1/plugin-manifest.schema.json"), "utf8"));
+  validatePluginRegistryMetadata(pluginRegistry, pluginManifestSchema);
+
   const schemaDirectories = ["v1", "v2"];
   const schemaEntries = [];
   for (const directory of schemaDirectories) {
@@ -110,14 +114,32 @@ export async function buildGeneratedDocs(root) {
       successStatus
     }));
 
+  const installedPlugins = [...pluginRegistry.plugins]
+    .map((plugin) => normalizeInstalledPluginMetadata(plugin))
+    .sort((a, b) => a.pluginId.localeCompare(b.pluginId));
+  const installedPluginCapabilityIds = [...new Set(installedPlugins.flatMap((plugin) => plugin.capabilityIds))].sort();
+  const pluginSchemas = [{
+    name: "plugin-manifest",
+    version: pluginRegistry.pluginManifestSchemaVersion,
+    file: "packages/plugins/schemas/v1/plugin-manifest.schema.json",
+    id: pluginManifestSchema.$id
+  }];
+
   const schemaIndex = {
     contractsSchemaVersion,
     presentationSchemaVersion,
-    schemas
+    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
+    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
+    schemas,
+    pluginSchemas
   };
   const capabilities = {
     contractsSchemaVersion,
     presentationSchemaVersion,
+    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
+    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
+    installedPlugins,
+    installedPluginCapabilityIds,
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
@@ -149,18 +171,27 @@ export async function buildGeneratedDocs(root) {
     presentationCommandTypes,
     schemas
   }));
+  const pluginRegistryHash = sha256(canonicalStringify(pluginRegistry));
   const compatibility = {
     engineVersion: packageJson.version,
     contractsSchemaVersion,
     presentationSchemaVersion,
+    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
+    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
     registryVersion: registry.registryVersion,
     registryHash,
+    pluginRegistryVersion: pluginRegistry.registryVersion,
+    pluginRegistryHash,
+    installedPluginCount: installedPlugins.length,
     availableOperationCount: availableOperations.length
   };
   const skill = buildSkill({
     engineVersion: packageJson.version,
     contractsSchemaVersion,
     presentationSchemaVersion,
+    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
+    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
+    installedPlugins,
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
@@ -227,7 +258,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, scheduledEventKinds, scheduledTaskKinds, actionTypes, presentationCommandTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaVersion, pluginManifestSchemaVersion, enginePluginApiVersion, installedPlugins, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, scheduledEventKinds, scheduledTaskKinds, actionTypes, presentationCommandTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -253,14 +284,20 @@ function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaV
   const presentationLines = presentationCommandTypes.length === 0
     ? "- Нет presentation commands."
     : presentationCommandTypes.map((type) => `- \`${type}\``).join("\n");
+  const pluginLines = installedPlugins.length === 0
+    ? "- Нет установленных trusted plugins в этой сборке."
+    : installedPlugins.map((plugin) => `- \`${plugin.pluginId}@${plugin.version}\` — ${plugin.capabilityIds.join(", ") || "без capability IDs"}`).join("\n");
   return `# Living History Engine — agent contract\n\n` +
     `Generated file. Do not edit by hand.\n\n` +
     `- Engine version: \`${engineVersion}\`\n` +
     `- Core contracts schema version: \`${contractsSchemaVersion}\`\n` +
     `- Presentation schema version: \`${presentationSchemaVersion}\`\n` +
+    `- Plugin manifest schema version: \`${pluginManifestSchemaVersion}\`\n` +
+    `- Engine plugin API version: \`${enginePluginApiVersion}\`\n` +
     `- Canonical schemas: [schema-index.json](schema-index.json)\n` +
     `- Machine capabilities: [capabilities.json](capabilities.json)\n` +
     `- OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)\n\n` +
+    `## Installed trusted plugins\n\n${pluginLines}\n\n` +
     `## Available block kinds\n\n${blockLines}\n\n` +
     `## Available gameplay effects\n\n${effectLines}\n\n` +
     `## Available conditions\n\n${conditionLines}\n\n` +
@@ -270,6 +307,7 @@ function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaV
     `## Available calculated actions\n\n${actionLines}\n\n` +
     `## Available presentation commands\n\n${presentationLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
+    `Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. ` +
     `Planned registry entries are intentionally excluded from the available list. ` +
     `Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.\n`;
 }
@@ -288,6 +326,39 @@ function presentationCommandsOf(schema) {
     .map((name) => name ? schema?.$defs?.[name]?.properties?.type?.const : null)
     .filter((value) => typeof value === "string" && value !== "sequence" && value !== "parallel");
   return [...new Set(values)].sort();
+}
+
+function validatePluginRegistryMetadata(registry, manifestSchema) {
+  if (!registry || typeof registry !== "object" || Array.isArray(registry)) throw new Error("Invalid installed plugin registry");
+  const keys = Object.keys(registry).sort();
+  const expected = ["enginePluginApiVersion", "pluginManifestSchemaVersion", "plugins", "registryVersion"].sort();
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) throw new Error("Installed plugin registry shape mismatch");
+  if (registry.registryVersion !== "1.0") throw new Error("Unsupported installed plugin registry version");
+  if (typeof registry.pluginManifestSchemaVersion !== "string" || typeof registry.enginePluginApiVersion !== "string" || !Array.isArray(registry.plugins)) {
+    throw new Error("Installed plugin registry metadata invalid");
+  }
+  if (manifestSchema?.properties?.schemaVersion?.const !== registry.pluginManifestSchemaVersion) {
+    throw new Error("Plugin manifest schema version mismatch");
+  }
+  if (typeof manifestSchema?.$id !== "string") throw new Error("Plugin manifest schema id missing");
+}
+
+function normalizeInstalledPluginMetadata(plugin) {
+  if (!plugin || typeof plugin !== "object" || Array.isArray(plugin)
+    || typeof plugin.pluginId !== "string"
+    || typeof plugin.version !== "string"
+    || !Array.isArray(plugin.capabilityIds)
+    || !Array.isArray(plugin.schemaVersions)) {
+    throw new Error("Invalid installed plugin metadata entry");
+  }
+  return {
+    pluginId: plugin.pluginId,
+    version: plugin.version,
+    capabilityIds: [...plugin.capabilityIds].sort(),
+    schemaVersions: [...plugin.schemaVersions]
+      .map((entry) => ({ schemaId: entry.schemaId, version: entry.version }))
+      .sort((a, b) => a.schemaId.localeCompare(b.schemaId))
+  };
 }
 
 function formatJson(value) {
