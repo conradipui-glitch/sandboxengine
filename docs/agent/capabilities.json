@@ -1,6 +1,10 @@
 {
   "contractsSchemaVersion": "1.0",
   "presentationSchemaVersion": "2.0",
+  "pluginManifestSchemaVersion": "1.0",
+  "enginePluginApiVersion": "1.0.0",
+  "installedPlugins": [],
+  "installedPluginCapabilityIds": [],
   "blockKinds": [
     "core.action",
     "core.character",
