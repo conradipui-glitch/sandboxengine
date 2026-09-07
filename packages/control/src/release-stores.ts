@@ -417,4 +417,4 @@ function parseJson(value: unknown): any {
 }
 function scopeKey(projectId: string, questId: string): string { return `${projectId}\u0000${questId}`; }
 function idemKey(operation: OperationKind, projectId: string, questId: string, key: string): string { return `${operation}\u0000${projectId}\u0000${questId}\u0000${key}`; }
-function frozen<T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
+function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
