@@ -183,6 +183,8 @@ export {
   measurePresentationTree,
   type PresentationTreeStats
 } from "./presentation-validation.js";
+export { presentationPlanConvergesToTargetFrameV2 } from "./presentation-convergence.js";
+export { hasValidPresentationTransitionV2 } from "./presentation-contract.js";
 
 export {
   BLOCK_KINDS,
