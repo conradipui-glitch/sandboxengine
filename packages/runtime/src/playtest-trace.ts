@@ -66,7 +66,7 @@ export class SQLitePlaytestTraceReader implements PlaytestTraceReader {
       throw new TypeError("SQLite path is required");
     }
     this.#db = new DatabaseSync(options.path, {
-      readonly: false,
+      readOnly: false,
       defensive: true,
       enableForeignKeyConstraints: true,
       allowExtension: false
