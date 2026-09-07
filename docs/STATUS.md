@@ -4,74 +4,63 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B07-03 published; B07-04 functional accepted; canonical B07 BLOCKER=0** | B07-03 merge `467dc6af40ac6e943e7bd4d7b1af9940e9d46841`, main CI `34096118130`; B07-04 hardening head `3be87890…`, CI `34099609631` success → docs/current-head gate → pinned merge/main CI |
+| Репозиторий | **B01–B07 published; B08-01 functional accepted, BLOCKER=0** | canonical B07 merge `1889145e1784e9186d0914207168448c111b8114`, main CI `34102992250`; B08-01 hardening/docs head `adee3d4b…`, CI `34105282304` success → Publication Gate |
 | Контракты/Core | **B01–B03 published** | deterministic gameplay authority |
 | Runtime storage/API | **B04 published** | idempotency/fencing/SQLite/guest HTTP |
 | Authoring / Control | **B05 published** | draft → validation → frozen playtest → Player |
 | AI foundation | **B06 published** | provider/intent/narrator/AgentBackend boundary; canonical audit BLOCKER=0 |
-| Presentation contracts | **B07-01 published** | `SceneFrameV2`, bounded `PresentationPlanV2`, immutable refs/convergence |
-| Asset ingestion/storage | **B07-02 published** | trusted bytes → metadata/hash → immutable object/registry → exact read |
-| Player presentation executor | **B07-03 published** | merge `467dc6af40ac6e943e7bd4d7b1af9940e9d46841`, main CI `34096118130` |
-| Runtime/browser presentation wiring | **B07-04 functional accepted** | persisted presentation + strict Player parser + browser executor/renderer + exact asset proxy; hardening CI `34099609631`; canonical B07 audit BLOCKER=0 |
-| Plugins | не начато | B08 after verified B07 publication |
-| Auth/publish | не начато | B09 |
+| Presentation/assets/Player | **B07 published** | contracts + immutable assets + executor + Runtime/browser integration; merge `1889145e…`, main CI `34102992250` |
+| Plugins | **B08-01 functional accepted** | trusted manifest/schema, deterministic dependency registry, release compatibility, generated plugin metadata; CI `34105282304`; semantic audit BLOCKER=0 |
+| Auth/publish | не начато | B09 after B08 |
 | Author AI helper | не начато | B10 |
 | Florence migration | не начато | B11 |
 
-## Published B07 foundation
+## Canonical B07 publication
 
-- B07-01: merge `b52b3ee8fe8d890c22b62f1b6ebd27cda7fda2c4`, main CI `34083673425`.
-- B07-02: merge `b6b9c1c61580f184114e7e49b3a16b02bb0e02a8`, main CI `34092343539`.
-- B07-03: merge `467dc6af40ac6e943e7bd4d7b1af9940e9d46841`, main CI `34096118130`.
+PR #27 merged as `1889145e1784e9186d0914207168448c111b8114`; exact `main` push CI `34102992250` succeeded. B07-01…04 and canonical B07 audit are closed.
 
-The foundation provides final reload-safe SceneFrame state, bounded non-executable one-turn plans, immutable asset identity/storage, and replay-safe Player execution.
+## B08-01 — trusted plugin manifest / registry
 
-## B07-04 — Runtime / browser integration
+Branch: `b08-01-plugin-manifest-registry`.  
+PR: #28.  
+Task: [B08-01](tasks/B08-01-plugin-manifest-registry.md).  
+Decision: [ADR 0026](decisions/0026-trusted-plugin-manifest-registry.md).  
+Audit: [B08-01 semantic audit](audits/2026-09-07-b08-01-semantic-audit.md).  
+Worklog: [2026-09-07 B08-01](worklog/2026-09-07-b08-01.md).
 
-Branch: `b07-04-runtime-player-presentation-integration`.  
-PR: #27.  
-Task: [B07-04](tasks/B07-04-runtime-player-presentation-integration.md).  
-Decision: [ADR 0025](decisions/0025-runtime-player-presentation-integration.md).  
-Worklog: [2026-09-07 B07-04](worklog/2026-09-07-b07-04.md).  
-Canonical audit: [2026-09-07 B07](audits/2026-09-07-b07-canonical-audit.md).
+### Accepted behavior
 
-### Functional behavior
-
-- presentation is attached to the same persisted committed public response;
-- candidate WorldState / Core result / TurnRecord are untouched by presentation;
-- idempotent replay returns the same frame/plan identity;
-- malformed optional presentation is discarded without invalidating structured gameplay;
-- browser uses the published `PresentationExecutor`;
-- skip/reduced-motion/media failure converge to trusted target frame;
-- exact-hash asset reads require the session credential and same frozen quest/release;
-- browser presentation text is inserted via safe DOM/text APIs;
-- image decode/audio startup failure remains presentation-only.
+- canonical data-only manifest schema `1.0`;
+- engine plugin API `1.0.0` with explicit deterministic version ranges;
+- all plugin-owned IDs namespaced and bounded;
+- duplicate IDs, missing/mismatched dependencies, cycles and global collisions fail closed;
+- registry order deterministic and snapshot deeply frozen;
+- release requirements explicitly report missing/incompatible plugin/capability/schema;
+- no dynamic import, `eval`, `new Function`, network/process/filesystem/gameplay authority in registry package;
+- generated agent docs expose only actually implemented registry metadata;
+- current build advertises **zero installed plugins** and no resolver execution.
 
 ### Evidence
 
-- transport/backend head `7dd8b34ede8e49a704ae9f83503581658850219c` → CI `34098637108` success;
-- wired browser head `4390f6346648bc71a7112ba89e328f65ef8ede89` → CI `34099233523` success;
-- hardening head `3be87890c3a4c6656a1ecb3627cf4b42068be6b3` → CI `34099609631` success;
-- canonical B07 unresolved BLOCKER: **0**.
+- initial implementation `f4ea4bca1f5fb170db81b456cf9c29de7abf00dd` → CI `34103718389` found only TS empty-tuple typing defect;
+- fix `3bd15d318de0c94e5038a1af3f44148de794bfe0` → CI `34104110358` success;
+- schema/generated-doc hardening head `adee3d4b2328d5fad5f56df9a347450d875fb496` → CI `34105282304` success;
+- unresolved semantic `BLOCKER = 0`.
 
-## Known limitations / follow-up
-
-- CI does not yet launch Chromium/WebKit; real-browser automation is deferred until the product surface stabilizes.
-- B07-04 reference producer is intentionally minimal and is not the Florence authored scene director.
-- reference browser session persistence uses `sessionStorage`; production auth/publish belongs to B09.
-- authored/narrative scene projection, richer dialogue/history and real content proof belong to B11.
-
-## Publication Gate B07-04 / canonical B07
+## B08-01 Publication Gate
 
 Remaining:
 
-1. final current-head CI after docs sync;
-2. mark PR #27 ready;
+1. final full CI on exact docs/current head;
+2. mark PR #28 ready;
 3. pinned merge at exact expected head;
 4. exact merge-SHA push-to-main CI;
-5. only then call B07-04 and canonical B07 published;
-6. create B08 exactly from the verified B07 merge SHA.
+5. only then call B08-01 published;
+6. create B08-02 exactly from verified B08-01 merge SHA.
 
-## Overall roadmap orientation
+## Next B08 slices
 
-Weighted implementation estimate: roughly **77% complete** at B07-04 functional acceptance. After verified canonical B07 publication, next block is **B08 — plugin/extension boundary**.
+- **B08-02** — typed trusted backend plugin execution: read-only state + validated args + deterministic clock/RNG → typed action plan/effects; scheduler/effect namespace rules.
+- **B08-03** — `dice-check` proof plugin + Studio schema/recipe + optional result UI; prove no plugin-specific conditional in Core and missing plugin blocks compatibility.
+
+Weighted implementation estimate after canonical B07 publication: roughly **79–80%**. B08-01 is not counted as published until its exact main CI passes.
