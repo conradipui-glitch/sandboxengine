@@ -1,0 +1,39 @@
+name: B09 Playtest Trace Registry Apply
+
+on:
+  push:
+    branches:
+      - b09-03-version-history-studio-access
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Sync registry and generated docs
+        run: |
+          npm ci
+          python scripts/b09-playtest-trace-registry-sync.py
+          npm run docs:generate
+          npm run docs:check
+          rm scripts/b09-playtest-trace-registry-sync.py
+          rm .github/workflows/b09-playtest-trace-registry-apply.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "docs(B09-03): expose playtest trace capability"
+          git push origin HEAD:b09-03-version-history-studio-access
