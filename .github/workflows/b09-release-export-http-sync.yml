@@ -1,0 +1,121 @@
+name: B09 Release Export HTTP Sync
+
+on:
+  push:
+    branches: [b09-03-version-history-studio-access]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+      - name: Patch release export HTTP selector
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          draft = Path('apps/server/src/draft-version-http.ts')
+          text = draft.read_text()
+          old = '  buildDraftQuestExport,\n  cloneQuestFromStore,'
+          new = '  buildDraftQuestExport,\n  buildReleaseQuestExport,\n  cloneQuestFromStore,'
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '  type ControlProjectRole,\n  type ControlStore,'
+          new = '  type ControlProjectRole,\n  type ControlReleaseStore,\n  type ControlStore,'
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '  readonly store: ControlStore;\n  readonly requireRole:'
+          new = '  readonly store: ControlStore;\n  readonly releaseStore: Pick<ControlReleaseStore, "getRelease"> | null;\n  readonly requireRole:'
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          start = text.index('  const exportMatch = /^\\/control\\/v1\\/projects')
+          end = text.index('  const clone = /^\\/control\\/v1\\/projects', start)
+          block = r'''  const exportMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/export$/.exec(context.url.pathname);
+  if (exportMatch) {
+    if (context.method !== "GET") { context.sendNotFound(); return true; }
+    const projectId = exportMatch[1];
+    const questId = exportMatch[2];
+    if (!projectId || !questId) { context.sendNotFound(); return true; }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+
+    const draftSelected = hasExactQuery(context.url.searchParams, ["draftRevision"]);
+    const releaseSelected = hasExactQuery(context.url.searchParams, ["releaseId"]);
+    if (draftSelected === releaseSelected) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      return true;
+    }
+
+    if (draftSelected) {
+      const draftRevision = parseRevisionQuery(context.url.searchParams.get("draftRevision"));
+      if (draftRevision === null) {
+        context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+        return true;
+      }
+      const result = await buildDraftQuestExport(context.store, projectId, questId, draftRevision);
+      if (result.kind === "quest_not_found") context.sendNotFound();
+      else if (result.kind === "revision_not_found") {
+        context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+      } else if (result.kind === "invalid_request") {
+        context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      } else {
+        context.sendJson(200, exportEnvelope(result.value));
+      }
+      return true;
+    }
+
+    const releaseId = context.url.searchParams.get("releaseId");
+    if (!isId(releaseId)) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      return true;
+    }
+    if (context.releaseStore === null) {
+      context.sendNotFound();
+      return true;
+    }
+    const result = await buildReleaseQuestExport(context.releaseStore, projectId, questId, releaseId);
+    if (result.kind === "release_not_found") context.sendNotFound();
+    else if (result.kind === "release_integrity_failed") {
+      context.sendJson(422, { error: { code: "RELEASE_EXPORT_INTEGRITY_FAILED" } });
+    } else if (result.kind === "unsupported_dependencies") {
+      context.sendJson(422, { error: { code: "QUEST_EXPORT_UNSUPPORTED_DEPENDENCIES" } });
+    } else if (result.kind === "invalid_request") {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+    } else {
+      context.sendJson(200, exportEnvelope(result.value));
+    }
+    return true;
+  }
+
+'''
+          text = text[:start] + block + text[end:]
+          marker = 'function base64(bytes: Uint8Array): string {'
+          helper = '''function exportEnvelope(value: { readonly filename: string; readonly mediaType: string; readonly archive: Uint8Array; readonly manifest: unknown }): object {\n  return Object.freeze({\n    filename: value.filename,\n    mediaType: value.mediaType,\n    encoding: "base64",\n    archiveBase64: base64(value.archive),\n    manifest: value.manifest\n  });\n}\n\n'''
+          assert marker in text
+          text = text.replace(marker, helper + marker, 1)
+          draft.write_text(text)
+
+          control = Path('apps/server/src/control-server.ts')
+          text = control.read_text()
+          old = '''  if (await routeDraftVersionHttp({\n    method,\n    url,\n    store,\n    requireRole:'''
+          new = '''  if (await routeDraftVersionHttp({\n    method,\n    url,\n    store,\n    releaseStore: releases?.store ?? null,\n    requireRole:'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          control.write_text(text)
+          PY
+      - name: Commit release export HTTP wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/draft-version-http.ts apps/server/src/control-server.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(B09-03): export exact immutable release over Control HTTP"
+          git push origin HEAD:b09-03-version-history-studio-access
