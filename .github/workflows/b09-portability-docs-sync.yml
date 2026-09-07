@@ -1,0 +1,31 @@
+name: B09 Portability Docs Sync
+
+on:
+  push:
+    branches:
+      - b09-03-version-history-studio-access
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+      - run: python scripts/b09-portability-docs-sync.py
+      - run: node scripts/docs-generate.mjs
+      - shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/contracts/registry/endpoints.json docs/agent
+          git diff --cached --quiet && exit 0
+          git commit -m "docs(B09-03): sync portability export contract"
+          git push origin HEAD:b09-03-version-history-studio-access
