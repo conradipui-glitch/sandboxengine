@@ -93,6 +93,29 @@ export interface ReleaseListView {
   readonly releases: readonly ReleaseSummaryView[];
 }
 
+export interface PublicationEventView {
+  readonly eventSequence: number;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly kind: "publish" | "rollback";
+  readonly fromReleaseId: string | null;
+  readonly toReleaseId: string;
+  readonly actorUserId: string;
+  readonly createdAtMs: number;
+}
+
+export type PublishResultView =
+  | { readonly kind: "published"; readonly currentReleaseId: string; readonly event: PublicationEventView }
+  | { readonly kind: "unchanged"; readonly currentReleaseId: string }
+  | { readonly kind: "replay"; readonly outcome: "published" | "unchanged"; readonly currentReleaseId: string; readonly event: PublicationEventView | null };
+
+export type RollbackResultView =
+  | { readonly kind: "rolled_back"; readonly currentReleaseId: string; readonly event: PublicationEventView }
+  | { readonly kind: "unchanged"; readonly currentReleaseId: string }
+  | { readonly kind: "replay"; readonly outcome: "rolled_back" | "unchanged"; readonly currentReleaseId: string; readonly event: PublicationEventView | null };
+
+export type PublicationResultView = PublishResultView | RollbackResultView;
+
 export interface ValidationView {
   readonly validationId: string;
   readonly projectId: string;
@@ -278,6 +301,38 @@ export class ControlApiClient {
       "GET",
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/releases`
     );
+  }
+
+  async publishRelease(
+    projectId: string,
+    questId: string,
+    releaseId: string,
+    expectedCurrentReleaseId: string | null,
+    idempotencyKey: string
+  ): Promise<PublishResultView> {
+    const body = await this.request<{ readonly publication: PublishResultView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/publish`,
+      { releaseId, expectedCurrentReleaseId },
+      { idempotencyKey }
+    );
+    return body.publication;
+  }
+
+  async rollbackRelease(
+    projectId: string,
+    questId: string,
+    targetReleaseId: string,
+    expectedCurrentReleaseId: string,
+    idempotencyKey: string
+  ): Promise<RollbackResultView> {
+    const body = await this.request<{ readonly publication: RollbackResultView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/rollback`,
+      { targetReleaseId, expectedCurrentReleaseId },
+      { idempotencyKey }
+    );
+    return body.publication;
   }
 
   async buildRelease(

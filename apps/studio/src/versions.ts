@@ -1,6 +1,7 @@
 import {
   ControlApiClient,
   type DraftHistoryEntryView,
+  type PublicationResultView,
   type ReleaseSummaryView
 } from "./api.js";
 
@@ -19,11 +20,19 @@ export interface ReleaseBuildIntent {
 }
 
 export interface PublishReportIntent {
+  readonly action: "publish" | "rollback";
   readonly releaseId: string;
   readonly draftRevision: number;
   readonly draftContentHash: string;
   readonly compiledContentHash: string;
   readonly expectedCurrentReleaseId: string | null;
+  readonly idempotencyKey: string;
+}
+
+export interface PublicationReceipt {
+  readonly action: "publish" | "rollback";
+  readonly releaseId: string;
+  readonly result: PublicationResultView;
 }
 
 export interface VersionsReadModel {
@@ -64,7 +73,8 @@ export function renderVersionsPanel(
   validation: { readonly validationId: string; readonly draftRevision: number; readonly contentHash: string; readonly status: "valid" | "invalid" } | null = null,
   releaseBuildIntent: ReleaseBuildIntent | null = null,
   canPreparePublish = false,
-  publishReport: PublishReportIntent | null = null
+  publishReport: PublishReportIntent | null = null,
+  publicationReceipt: PublicationReceipt | null = null
 ): string {
   if (!currentDraft) return "";
   if (!model) {
@@ -92,6 +102,7 @@ export function renderVersionsPanel(
     ${restoreIntent ? renderRestoreIntent(restoreIntent, currentDraft.draftRevision) : ""}
     ${releaseBuildIntent ? renderReleaseBuildIntent(releaseBuildIntent, currentDraft, validation) : ""}
     ${publishReport ? renderPublishReport(publishReport) : ""}
+    ${publicationReceipt ? renderPublicationReceipt(publicationReceipt) : ""}
 
     <div class="versions-grid">
       <div class="versions-card">
@@ -123,9 +134,7 @@ export function renderVersionsPanel(
             </div>
             <div class="version-row-actions">
               <code title="compiled release hash">${escapeHtml(shortHash(release.compiledContentHash))}</code>
-              ${canPreparePublish && !release.isCurrent
-                ? `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Publish report</button>`
-                : ""}
+              ${publicationAction(release, model, canPreparePublish)}
             </div>
           </article>`).join("") || `<div class="empty-panel">Immutable releases ещё не создавались.</div>`}
         </div>
@@ -179,16 +188,46 @@ function renderReleaseBuildIntent(
   </div>`;
 }
 
+function publicationAction(release: ReleaseSummaryView, model: VersionsReadModel, allowed: boolean): string {
+  if (!allowed || release.isCurrent) return "";
+  if (release.wasPublished && model.currentReleaseId !== null) {
+    return `<button data-action="prepare-rollback" data-release-id="${escapeAttr(release.releaseId)}">Rollback report</button>`;
+  }
+  if (!release.wasPublished) {
+    return `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Publish report</button>`;
+  }
+  return "";
+}
+
 function renderPublishReport(report: PublishReportIntent): string {
+  const rollback = report.action === "rollback";
   return `<div class="restore-confirm publish-report" role="status">
     <div>
-      <strong>Owner publish report: ${escapeHtml(report.releaseId)}</strong>
-      <p>Если owner подтвердит публикацию, current pointer перейдёт на этот exact immutable release.</p>
+      <strong>Owner ${rollback ? "rollback" : "publish"} report: ${escapeHtml(report.releaseId)}</strong>
+      <p>При подтверждении сервер выполнит CAS current pointer на этот exact immutable release.</p>
       <p>Draft r${report.draftRevision} · draft hash ${escapeHtml(shortHash(report.draftContentHash))} · compiled hash ${escapeHtml(shortHash(report.compiledContentHash))}.</p>
       <p>Expected current pointer: ${report.expectedCurrentReleaseId === null ? "none" : `<code>${escapeHtml(report.expectedCurrentReleaseId)}</code>`}.</p>
-      <p><strong>Сейчас ничего не опубликовано этим report.</strong> Публикация требует отдельного server receipt.</p>
+      <p><strong>Этот report ничего не меняет.</strong> Изменение pointer требует отдельного server receipt.</p>
     </div>
-    <div class="button-row"><button data-action="cancel-publish-report">Закрыть report</button></div>
+    <div class="button-row">
+      <button class="primary" data-action="confirm-publication">${rollback ? "Подтвердить rollback" : "Опубликовать exact release"}</button>
+      <button data-action="cancel-publish-report">Отмена</button>
+    </div>
+  </div>`;
+}
+
+function renderPublicationReceipt(receipt: PublicationReceipt): string {
+  const result = receipt.result;
+  const moved = result.kind === "published" || result.kind === "rolled_back"
+    || (result.kind === "replay" && (result.outcome === "published" || result.outcome === "rolled_back"));
+  const label = receipt.action === "rollback"
+    ? (moved ? "Rollback подтверждён сервером" : "Rollback receipt: pointer уже был на target")
+    : (moved ? "Опубликовано — подтверждено server receipt" : "Publish receipt: pointer уже был на release");
+  const event = "event" in result ? result.event : null;
+  return `<div class="publication-receipt" role="status">
+    <strong>${escapeHtml(label)}</strong>
+    <span>${escapeHtml(receipt.releaseId)} · current pointer <code>${escapeHtml(result.currentReleaseId)}</code></span>
+    ${event ? `<small>event #${event.eventSequence} · ${escapeHtml(event.kind)} · actor ${escapeHtml(event.actorUserId)}</small>` : ""}
   </div>`;
 }
 

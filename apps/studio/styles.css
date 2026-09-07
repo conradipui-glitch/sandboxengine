@@ -408,6 +408,19 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .publish-report { border-color: #bfd3c4; background: #f3faf5; }
 .publish-report strong { color: #285c38; }
 
+
+.publication-receipt {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #b9d4bf;
+  border-radius: 9px;
+  background: #eff9f1;
+  display: grid;
+  gap: 4px;
+}
+.publication-receipt strong { color: #245a34; }
+.publication-receipt span, .publication-receipt small { color: #597063; }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }

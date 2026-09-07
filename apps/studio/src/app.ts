@@ -25,6 +25,7 @@ import {
 import {
   loadVersionsReadModel,
   renderVersionsPanel,
+  type PublicationReceipt,
   type PublishReportIntent,
   type ReleaseBuildIntent,
   type RestoreIntent,
@@ -56,7 +57,8 @@ interface StudioState {
   restoreIntent: RestoreIntent | null;
   releaseBuildIntent: ReleaseBuildIntent | null;
   publishReport: PublishReportIntent | null;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "conflict" | "error";
+  publicationReceipt: PublicationReceipt | null;
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -76,6 +78,7 @@ export class StudioApp {
     restoreIntent: null,
     releaseBuildIntent: null,
     publishReport: null,
+    publicationReceipt: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -126,7 +129,16 @@ export class StudioApp {
     }
     if (action === "prepare-publish") {
       const releaseId = target.dataset.releaseId;
-      if (releaseId) this.preparePublishReport(releaseId);
+      if (releaseId) this.preparePublicationReport("publish", releaseId);
+      return;
+    }
+    if (action === "prepare-rollback") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) this.preparePublicationReport("rollback", releaseId);
+      return;
+    }
+    if (action === "confirm-publication") {
+      await this.confirmPublication();
       return;
     }
     if (action === "cancel-publish-report") {
@@ -367,19 +379,88 @@ export class StudioApp {
     this.render();
   }
 
-  private preparePublishReport(releaseId: string): void {
+  private preparePublicationReport(action: "publish" | "rollback", releaseId: string): void {
     const versions = this.state.versions;
     const release = versions?.releases.find((item) => item.releaseId === releaseId) ?? null;
     if (!versions || !release || release.isCurrent) return;
+    if (action === "rollback" && (!release.wasPublished || versions.currentReleaseId === null)) return;
+    if (action === "publish" && release.wasPublished) return;
     this.state.publishReport = Object.freeze({
+      action,
       releaseId: release.releaseId,
       draftRevision: release.draftRevision,
       draftContentHash: release.draftContentHash,
       compiledContentHash: release.compiledContentHash,
-      expectedCurrentReleaseId: versions.currentReleaseId
+      expectedCurrentReleaseId: versions.currentReleaseId,
+      idempotencyKey: mutationKey(action)
     });
     this.state.releaseBuildIntent = null;
-    this.state.message = `Publish report для ${release.releaseId} подготовлен. Current pointer ещё не менялся.`;
+    this.state.publicationReceipt = null;
+    this.state.message = `${action === "rollback" ? "Rollback" : "Publish"} report для ${release.releaseId} подготовлен. Current pointer ещё не менялся.`;
+    this.render();
+  }
+
+  private async confirmPublication(): Promise<void> {
+    const report = this.state.publishReport;
+    const versions = this.state.versions;
+    if (!report || !versions) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const release = versions.releases.find((item) => item.releaseId === report.releaseId) ?? null;
+    const stale = versions.currentReleaseId !== report.expectedCurrentReleaseId
+      || release === null
+      || release.isCurrent
+      || release.draftRevision !== report.draftRevision
+      || release.draftContentHash !== report.draftContentHash
+      || release.compiledContentHash !== report.compiledContentHash
+      || (report.action === "rollback" && (!release.wasPublished || report.expectedCurrentReleaseId === null))
+      || (report.action === "publish" && release.wasPublished);
+    if (stale) {
+      this.state.publishReport = null;
+      this.state.publicationReceipt = null;
+      this.state.phase = "conflict";
+      this.state.message = "Publication report устарел; current release truth изменился. Сформируйте report заново.";
+      this.render();
+      return;
+    }
+
+    this.state.phase = "publishing";
+    this.state.message = `${report.action === "rollback" ? "Rollback" : "Publish"} ${report.releaseId}: ждём server receipt…`;
+    this.render();
+    try {
+      const result = report.action === "rollback"
+        ? await this.api.rollbackRelease(
+            projectId,
+            questId,
+            report.releaseId,
+            report.expectedCurrentReleaseId!,
+            report.idempotencyKey
+          )
+        : await this.api.publishRelease(
+            projectId,
+            questId,
+            report.releaseId,
+            report.expectedCurrentReleaseId,
+            report.idempotencyKey
+          );
+      this.state.publishReport = null;
+      this.state.publicationReceipt = Object.freeze({ action: report.action, releaseId: report.releaseId, result });
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = report.action === "rollback"
+        ? `Rollback ${report.releaseId} подтверждён server receipt; current pointer перечитан.`
+        : `Опубликовано ${report.releaseId}: server receipt получен, current pointer перечитан.`;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 409 && error.code === "CURRENT_RELEASE_CONFLICT") {
+        this.state.publishReport = null;
+        this.state.publicationReceipt = null;
+        await this.refreshVersions(projectId, questId);
+        this.state.phase = "conflict";
+        this.state.message = "Publication CAS conflict: current pointer изменился на сервере. Ничего не переприцелено автоматически.";
+      } else {
+        this.setError(error);
+      }
+    }
     this.render();
   }
 
@@ -477,6 +558,7 @@ export class StudioApp {
       this.state.restoreIntent = null;
       this.state.releaseBuildIntent = null;
       this.state.publishReport = null;
+      this.state.publicationReceipt = null;
       this.state.phase = "idle";
       this.state.message = "Сессия завершена.";
     } catch (error) {
@@ -499,6 +581,7 @@ export class StudioApp {
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
     this.state.publishReport = null;
+    this.state.publicationReceipt = null;
     this.render();
     try {
       this.state.quests = await this.api.listQuests(projectId);
@@ -525,6 +608,7 @@ export class StudioApp {
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
     this.state.publishReport = null;
+    this.state.publicationReceipt = null;
     this.render();
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
@@ -733,7 +817,8 @@ export class StudioApp {
               this.state.validation,
               this.state.releaseBuildIntent,
               allowPublish,
-              this.state.publishReport
+              this.state.publishReport,
+              this.state.publicationReceipt
             )}
 
             <div class="editor-grid">
@@ -788,6 +873,7 @@ function saveStateLabel(phase: StudioState["phase"]): string {
   if (phase === "saved") return "server saved";
   if (phase === "restoring") return "restoring…";
   if (phase === "building-release") return "building immutable release…";
+  if (phase === "publishing") return "awaiting publication receipt…";
   if (phase === "conflict") return "conflict — server draft preserved";
   if (phase === "error") return "check status message";
   return "server state";
