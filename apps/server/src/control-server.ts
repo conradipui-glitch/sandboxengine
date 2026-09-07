@@ -1,6 +1,7 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
 import {
+  MAX_LHQUEST_ARCHIVE_BYTES,
   createControlOpaqueSecret,
   createControlSessionId,
   hashControlOpaqueSecret,
@@ -23,6 +24,7 @@ import { publishControlRelease, rollbackControlRelease } from "./release-publica
 import { routeDraftVersionHttp } from "./draft-version-http.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
+const MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;
 const CONTROL_SESSION_COOKIE = "lh_control_session";
 const CONTROL_CSRF_HEADER = "x-csrf-token";
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -902,7 +904,7 @@ function requireIdempotencyKey(request: any, response: any): string | null {
 }
 
 async function requireJsonObject(request: any, response: any): Promise<Record<string, any> | null> {
-  const body = await readJsonBody(request);
+  const body = await readJsonBody(request, controlBodyLimit(request));
   if (!body.ok) {
     sendJson(response, body.status, { error: { code: body.code } });
     return null;
@@ -914,7 +916,15 @@ async function requireJsonObject(request: any, response: any): Promise<Record<st
   return body.value;
 }
 
-async function readJsonBody(request: any): Promise<
+function controlBodyLimit(request: any): number {
+  const rawUrl = typeof request?.url === "string" ? request.url : "";
+  const pathname = rawUrl.split("?", 1)[0] ?? "";
+  return /^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/.test(pathname)
+    ? MAX_CONTROL_IMPORT_BODY_CHARS
+    : MAX_CONTROL_BODY_CHARS;
+}
+
+async function readJsonBody(request: any, maxChars = MAX_CONTROL_BODY_CHARS): Promise<
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly status: number; readonly code: string }
 > {
@@ -926,7 +936,7 @@ async function readJsonBody(request: any): Promise<
   let body = "";
   for await (const chunk of request) {
     body += String(chunk);
-    if (body.length > MAX_CONTROL_BODY_CHARS) {
+    if (body.length > maxChars) {
       return Object.freeze({ ok: false, status: 413, code: "BODY_TOO_LARGE" });
     }
   }

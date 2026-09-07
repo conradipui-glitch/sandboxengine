@@ -1,5 +1,6 @@
 import {
   MAX_DRAFT_HISTORY_LIMIT,
+  MAX_LHQUEST_ARCHIVE_BYTES,
   analyzeDraftReferences,
   buildDraftQuestExport,
   cloneQuestFromStore,
@@ -12,7 +13,7 @@ import {
 } from "@living-history/control";
 import { restoreControlDraft } from "./draft-version-authority.js";
 
-const MAX_IMPORT_BASE64_CHARS = 240_000;
+const MAX_IMPORT_BASE64_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4;
 
 export interface DraftVersionHttpContext {
   readonly method: string;
