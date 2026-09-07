@@ -84,5 +84,7 @@ export type {
   DraftValidationRecord,
   FrozenPlaytestRecord,
   ProjectRecord,
+  RestoreDraftInput,
+  RestoreDraftResult,
   ValidateDraftResult
 } from "./types.js";
