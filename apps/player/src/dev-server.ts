@@ -33,7 +33,13 @@ export interface PlayerAssetReader {
   }>;
 }
 
+export interface PlayerPresentationReleaseIdentity {
+  readonly questId: string;
+  readonly releaseId: string;
+}
+
 export interface PlayerPresentationProxyOptions {
+  readonly release: PlayerPresentationReleaseIdentity;
   readonly assets: readonly AssetManifestV2[];
   readonly initialForSession: (sessionId: string) => JsonValue | null;
   readonly assetReader?: PlayerAssetReader;
@@ -139,11 +145,13 @@ async function proxyRuntime(
   if (isCreateSession && presentation !== null) {
     try {
       const parsed = JSON.parse(new TextDecoder().decode(payload)) as unknown;
-      if (isRecord(parsed) && typeof parsed.sessionId === "string" && ID_PATTERN.test(parsed.sessionId)) {
+      if (isRecord(parsed)
+        && typeof parsed.sessionId === "string"
+        && ID_PATTERN.test(parsed.sessionId)
+        && isRecord(parsed.playerView)
+        && releaseMatches(parsed.playerView.release, presentation.release)) {
         const initial = presentation.initialForSession(parsed.sessionId);
-        if (initial !== null) {
-          payload = new TextEncoder().encode(JSON.stringify({ ...parsed, presentation: initial }));
-        }
+        if (initial !== null) payload = new TextEncoder().encode(JSON.stringify({ ...parsed, presentation: initial }));
       }
     } catch {
       // Upstream response remains authoritative; optional presentation enrichment fails closed.
@@ -193,6 +201,18 @@ async function servePresentationAsset(
     sendJson(response, 404, { error: { code: "ASSET_NOT_FOUND" } });
     return;
   }
+  try {
+    const sessionBody = await sessionCheck.json();
+    if (!isRecord(sessionBody)
+      || !isRecord(sessionBody.playerView)
+      || !releaseMatches(sessionBody.playerView.release, presentation.release)) {
+      sendJson(response, 404, { error: { code: "ASSET_NOT_FOUND" } });
+      return;
+    }
+  } catch {
+    sendJson(response, 404, { error: { code: "ASSET_NOT_FOUND" } });
+    return;
+  }
 
   try {
     const stored = await presentation.assetReader.read(assetId, hash);
@@ -207,7 +227,7 @@ async function servePresentationAsset(
     response.setHeader("content-length", String(stored.bytes.byteLength));
     response.end(stored.bytes);
   } catch (error) {
-    const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+    const code = errorCode(error);
     if (code === "corrupt_object" || code === "storage_integrity") {
       sendJson(response, 500, { error: { code: "ASSET_INTEGRITY_FAILED" } });
       return;
@@ -298,7 +318,10 @@ function validateMetadata(value: PlayerSurfaceMetadata): PlayerSurfaceMetadata {
 }
 
 function validatePresentationProxy(value: PlayerPresentationProxyOptions): Readonly<PlayerPresentationProxyOptions> {
-  if (typeof value.initialForSession !== "function" || !Array.isArray(value.assets)) {
+  if (typeof value.initialForSession !== "function"
+    || !Array.isArray(value.assets)
+    || !isId(value.release?.questId)
+    || !isId(value.release?.releaseId)) {
     throw new TypeError("invalid Player presentation proxy options");
   }
   const ids = new Set<string>();
@@ -309,10 +332,15 @@ function validatePresentationProxy(value: PlayerPresentationProxyOptions): Reado
     ids.add(asset.id);
   }
   return Object.freeze({
+    release: Object.freeze({ ...value.release }),
     assets: Object.freeze([...value.assets]),
     initialForSession: value.initialForSession,
     ...(value.assetReader ? { assetReader: value.assetReader } : {})
   });
+}
+
+function releaseMatches(value: unknown, expected: PlayerPresentationReleaseIdentity): boolean {
+  return isRecord(value) && value.questId === expected.questId && value.releaseId === expected.releaseId;
 }
 
 function safeModulePath(value: string): string | null {
@@ -333,6 +361,18 @@ function mimeType(path: string): string {
 
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
+function isId(value: unknown): value is string {
+  return typeof value === "string" && ID_PATTERN.test(value);
+}
+
+function errorCode(error: unknown): string {
+  if (error !== null && typeof error === "object" && "code" in error) {
+    const code = (error as { readonly code?: unknown }).code;
+    return typeof code === "string" ? code : "";
+  }
+  return "";
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
