@@ -99,7 +99,7 @@ Generated file. Do not edit by hand.
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/restore` — Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS
 - `POST /control/v1/projects/{projectId}/quests/{sourceQuestId}/clone` — Owner/editor idempotent clone текущего source draft в независимый quest с remap внутренних block IDs
-- `GET /control/v1/projects/{projectId}/quests/{questId}/export` — Owner/editor экспорт точной immutable draft revision как deterministic inert .lhquest.zip package
+- `GET /control/v1/projects/{projectId}/quests/{questId}/export` — Owner/editor экспорт точной immutable draft revision или exact immutable release как deterministic inert .lhquest.zip package
 - `POST /control/v1/projects/{projectId}/imports` — Owner/editor bounded fail-closed import .lhquest.zip в новый unpublished quest draft
 - `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision участником проекта и фиксация immutable report
 - `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest участником проекта из проверенного draft snapshot

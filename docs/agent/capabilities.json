@@ -250,7 +250,7 @@
       "id": "control.quest.export",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/export",
-      "summary": "Owner/editor экспорт точной immutable draft revision как deterministic inert .lhquest.zip package",
+      "summary": "Owner/editor экспорт точной immutable draft revision или exact immutable release как deterministic inert .lhquest.zip package",
       "successStatus": 200
     },
     {
