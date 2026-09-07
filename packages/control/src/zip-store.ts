@@ -1,3 +1,9 @@
+import {
+  MAX_LHQUEST_ARCHIVE_BYTES,
+  MAX_LHQUEST_ENTRY_BYTES,
+  MAX_LHQUEST_FILE_COUNT
+} from "./zip-read.js";
+
 export interface StoredZipEntry {
   readonly path: string;
   readonly bytes: Uint8Array;
@@ -9,23 +15,22 @@ const DOS_TIME = 0;
 const DOS_DATE = 0x0021; // 1980-01-01
 const VERSION_NEEDED = 20;
 const VERSION_MADE_BY = 20;
-const MAX_ENTRIES = 64;
-const MAX_ENTRY_BYTES = 16 * 1024 * 1024;
-const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
 
 /**
  * Minimal deterministic ZIP encoder for inert lhquest packages.
  * It intentionally supports only STORE (no compression), no extras/comments,
- * UTF-8 names, no Zip64 and bounded total sizes.
+ * UTF-8 names, no Zip64 and exactly the same size/count envelope accepted by
+ * the canonical lhquest parser. Therefore bytes emitted here are never too
+ * large solely because writer and reader limits drifted apart.
  */
 export function writeStoredZip(entries: readonly StoredZipEntry[]): Uint8Array {
-  if (!Array.isArray(entries) || entries.length < 1 || entries.length > MAX_ENTRIES) {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > MAX_LHQUEST_FILE_COUNT) {
     throw new RangeError("ZIP entry count outside bounds");
   }
 
   const normalized = entries.map((entry) => {
     if (!isSafeZipPath(entry.path)) throw new TypeError(`unsafe ZIP path: ${entry.path}`);
-    if (!(entry.bytes instanceof Uint8Array) || entry.bytes.byteLength > MAX_ENTRY_BYTES) {
+    if (!(entry.bytes instanceof Uint8Array) || entry.bytes.byteLength > MAX_LHQUEST_ENTRY_BYTES) {
       throw new RangeError(`ZIP entry outside bounds: ${entry.path}`);
     }
     return Object.freeze({ path: entry.path, bytes: new Uint8Array(entry.bytes) });
@@ -84,7 +89,7 @@ export function writeStoredZip(entries: readonly StoredZipEntry[]): Uint8Array {
     centrals.push(central);
 
     offset += local.byteLength;
-    if (offset > MAX_ARCHIVE_BYTES) throw new RangeError("ZIP archive outside bounds");
+    if (offset > MAX_LHQUEST_ARCHIVE_BYTES) throw new RangeError("ZIP archive outside bounds");
   }
 
   const centralOffset = offset;
@@ -101,7 +106,7 @@ export function writeStoredZip(entries: readonly StoredZipEntry[]): Uint8Array {
   endView.setUint16(20, 0, true);
 
   const total = centralOffset + centralSize + end.byteLength;
-  if (total > MAX_ARCHIVE_BYTES || total > 0xffffffff) throw new RangeError("ZIP archive outside bounds");
+  if (total > MAX_LHQUEST_ARCHIVE_BYTES || total > 0xffffffff) throw new RangeError("ZIP archive outside bounds");
   const archive = new Uint8Array(total);
   let cursor = 0;
   for (const local of locals) { archive.set(local, cursor); cursor += local.byteLength; }
@@ -118,6 +123,7 @@ function isSafeZipPath(path: unknown): path is string {
     && !path.includes("\\")
     && !path.startsWith("/")
     && !/^[A-Za-z]:/.test(path)
+    && path.normalize("NFC") === path
     && path.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
