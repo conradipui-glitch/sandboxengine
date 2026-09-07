@@ -24,6 +24,7 @@
     "test:studio": "npm run typecheck && node --test apps/studio/test/*.test.mjs",
     "test:player": "npm run typecheck && node --test packages/player/test/*.test.mjs apps/player/test/*.test.mjs",
     "test:e2e": "npm run test:player",
+    "eval:ai": "npm run typecheck && node scripts/eval-ai.mjs",
     "dev:studio": "npm run typecheck && node apps/studio/dist/src/main.js",
     "dev:player": "npm run typecheck && node apps/player/dist/src/main.js",
     "check:boundaries": "node scripts/check-boundaries.mjs",
