@@ -17,6 +17,11 @@ import {
   replacePaintActionCost,
   resourceBlocks
 } from "./forms.js";
+import {
+  loadVersionsReadModel,
+  renderVersionsPanel,
+  type VersionsReadModel
+} from "./versions.js";
 
 interface ConflictState {
   readonly changes: readonly DraftChange[];
@@ -32,6 +37,8 @@ interface StudioState {
   draft: DraftView | null;
   validation: ValidationView | null;
   playtest: PlaytestView | null;
+  versions: VersionsReadModel | null;
+  versionsError: string | null;
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
@@ -46,6 +53,8 @@ export class StudioApp {
     draft: null,
     validation: null,
     playtest: null,
+    versions: null,
+    versionsError: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -142,6 +151,9 @@ export class StudioApp {
         this.state.draft = draft;
         this.state.validation = null;
         this.state.playtest = null;
+        this.state.versions = null;
+        this.state.versionsError = null;
+        await this.refreshVersions(projectId, questId);
         this.state.phase = "saved";
         this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
         this.render();
@@ -197,6 +209,8 @@ export class StudioApp {
     this.state.draft = null;
     this.state.validation = null;
     this.state.playtest = null;
+    this.state.versions = null;
+    this.state.versionsError = null;
     this.state.conflict = null;
     this.render();
     try {
@@ -216,12 +230,17 @@ export class StudioApp {
     this.state.selectedQuestId = questId;
     this.state.validation = null;
     this.state.playtest = null;
+    this.state.versions = null;
+    this.state.versionsError = null;
     this.state.conflict = null;
     this.render();
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
+      await this.refreshVersions(projectId, questId);
       this.state.phase = "idle";
-      this.state.message = "Draft загружен с Control API.";
+      this.state.message = this.state.versionsError === null
+        ? "Draft и Versions загружены с Control API."
+        : "Draft загружен; Versions временно недоступны.";
     } catch (error) {
       this.setError(error);
     }
@@ -244,10 +263,12 @@ export class StudioApp {
       this.state.phase = "saved";
       this.state.message = `Сохранено. Текущая revision: ${this.state.draft.draftRevision}.`;
       this.state.conflict = null;
+      await this.refreshVersions(projectId, questId);
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
+        await this.refreshVersions(projectId, questId);
         this.state.phase = "conflict";
         this.state.message = `Draft изменился на сервере: ${draft.draftRevision} → ${fresh.draftRevision}. Ничего не перезаписано.`;
         this.state.conflict = Object.freeze({
@@ -267,6 +288,20 @@ export class StudioApp {
     if (!conflict) return;
     this.state.conflict = null;
     await this.saveChanges(conflict.changes);
+  }
+
+  private async refreshVersions(projectId: string, questId: string): Promise<void> {
+    this.state.versions = null;
+    this.state.versionsError = null;
+    try {
+      this.state.versions = await loadVersionsReadModel(this.api, projectId, questId);
+    } catch (error) {
+      this.state.versionsError = error instanceof ControlApiError
+        ? `Versions API: ${error.code}.`
+        : error instanceof Error
+          ? `Versions: ${error.message}`
+          : "Versions: неизвестная ошибка.";
+    }
   }
 
   private async validateCurrentDraft(): Promise<void> {
@@ -383,6 +418,13 @@ export class StudioApp {
 
             ${this.state.conflict ? conflictPanel(this.state.conflict) : ""}
 
+            ${renderVersionsPanel(
+              this.state.versions,
+              draft,
+              saveStateLabel(this.state.phase),
+              this.state.versionsError
+            )}
+
             <div class="editor-grid">
               <section class="editor-section">
                 <div class="section-title"><div><h2>Ресурсы</h2><p>Целочисленные величины игрового мира.</p></div></div>
@@ -424,6 +466,14 @@ export class StudioApp {
       element?.focus();
     }
   }
+}
+
+function saveStateLabel(phase: StudioState["phase"]): string {
+  if (phase === "saving") return "saving…";
+  if (phase === "saved") return "server saved";
+  if (phase === "conflict") return "conflict — server draft preserved";
+  if (phase === "error") return "check status message";
+  return "server state";
 }
 
 function projectForm(): string {
