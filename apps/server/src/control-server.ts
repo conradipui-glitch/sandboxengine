@@ -6,6 +6,8 @@ import {
   hashControlOpaqueSecret,
   isControlProjectRole,
   type ControlProjectRole,
+  type ControlReleaseRecord,
+  type ControlReleaseStore,
   type ControlSecurityStore,
   type ControlSessionRecord,
   type ControlStore,
@@ -14,6 +16,10 @@ import {
   type DraftValidationRecord,
   type FrozenPlaytestRecord
 } from "@living-history/control";
+import type { PluginRegistrySnapshot } from "@living-history/plugins";
+import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
+import { buildControlRelease } from "./release-authority.js";
+import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
 const CONTROL_SESSION_COOKIE = "lh_control_session";
@@ -34,8 +40,15 @@ export interface ControlAuthenticatedModeOptions {
   readonly nowMs?: () => number;
 }
 
+export interface ControlReleaseModeOptions {
+  readonly store: ControlReleaseStore;
+  readonly pluginRegistry: PluginRegistrySnapshot;
+  readonly nowMs?: () => number;
+}
+
 export interface ControlServerDependencies {
   readonly store: ControlStore;
+  readonly releases?: ControlReleaseModeOptions;
   readonly auth?: ControlAuthenticatedModeOptions;
 }
 
@@ -70,10 +83,11 @@ interface LoginFailureState {
 
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
+  const releases = dependencies.releases ?? null;
   const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
-      await routeControlRequest(request, response, dependencies.store, auth, failures);
+      await routeControlRequest(request, response, dependencies.store, releases, auth, failures);
     } catch (error) {
       if (isSqliteBusy(error)) {
         sendJson(response, 503, { error: { code: "CONTROL_STORAGE_BUSY" } });
@@ -124,6 +138,7 @@ async function routeControlRequest(
   request: any,
   response: any,
   store: ControlStore,
+  releases: ControlReleaseModeOptions | null,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
@@ -335,6 +350,174 @@ async function routeControlRequest(
     const result = await store.validateDraft(projectId, questId, body.draftRevision);
     if (result.kind === "validated") sendJson(response, 201, { validation: validationView(result.validation) });
     else sendNotFound(response);
+    return;
+  }
+
+  const releaseCollectionMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/releases$/.exec(url.pathname);
+  if (releaseCollectionMatch) {
+    if (!releases) { sendNotFound(response); return; }
+    const projectId = releaseCollectionMatch[1];
+    const questId = releaseCollectionMatch[2];
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      if (!(await store.getDraft(projectId, questId))) { sendNotFound(response); return; }
+      const [records, currentReleaseId, events] = await Promise.all([
+        releases.store.listReleases(projectId, questId),
+        releases.store.getCurrentReleaseId(projectId, questId),
+        releases.store.listPublicationEvents(projectId, questId)
+      ]);
+      const publishedIds = new Set(events.map((event) => event.toReleaseId));
+      sendJson(response, 200, {
+        currentReleaseId,
+        releases: records.map((release) => releaseSummaryView(release, currentReleaseId, publishedIds.has(release.releaseId)))
+      });
+      return;
+    }
+    if (method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      const allowedKeys = body.diceCheckDefinitions === undefined
+        ? ["releaseId", "draftRevision", "validationId"]
+        : ["releaseId", "draftRevision", "validationId", "diceCheckDefinitions"];
+      if (!hasExactKeys(body, allowedKeys)
+        || !isId(body.releaseId) || !isRevision(body.draftRevision) || !isId(body.validationId)
+        || (body.diceCheckDefinitions !== undefined && !Array.isArray(body.diceCheckDefinitions))) {
+        sendJson(response, 400, { error: { code: "INVALID_RELEASE_BUILD_REQUEST" } });
+        return;
+      }
+      const result = await buildControlRelease({
+        controlStore: store,
+        releaseStore: releases.store,
+        pluginRegistry: releases.pluginRegistry
+      }, {
+        projectId,
+        questId,
+        releaseId: body.releaseId,
+        draftRevision: body.draftRevision,
+        validationId: body.validationId,
+        idempotencyKey,
+        ...(body.diceCheckDefinitions === undefined
+          ? {}
+          : { diceCheckDefinitions: body.diceCheckDefinitions as readonly DiceCheckDefinition[] })
+      });
+      if (result.kind === "created") {
+        sendJson(response, 201, { release: releaseSummaryView(result.release, null, false) });
+      } else if (result.kind === "replay") {
+        const currentReleaseId = await releases.store.getCurrentReleaseId(projectId, questId);
+        const events = await releases.store.listPublicationEvents(projectId, questId);
+        sendJson(response, 200, {
+          release: releaseSummaryView(result.release, currentReleaseId, events.some((event) => event.toReleaseId === result.release.releaseId)),
+          replay: true
+        });
+      } else if (result.kind === "snapshot_not_found" || result.kind === "validation_not_found") {
+        sendNotFound(response);
+      } else if (result.kind === "validation_snapshot_mismatch" || result.kind === "release_exists" || result.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: releaseBuildErrorCode(result.kind) } });
+      } else if (result.kind === "invalid_request") {
+        sendJson(response, 400, { error: { code: "INVALID_RELEASE_BUILD_REQUEST" } });
+      } else {
+        sendJson(response, 422, {
+          error: {
+            code: releaseBuildErrorCode(result.kind),
+            ...(result.kind === "release_compile_failed" ? { details: result.errors } : {}),
+            ...(result.kind === "plugin_preflight_failed" ? { detailCode: result.code } : {})
+          }
+        });
+      }
+      return;
+    }
+    sendNotFound(response);
+    return;
+  }
+
+  const publishMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/publish$/.exec(url.pathname);
+  if (publishMatch) {
+    if (!releases || method !== "POST") { sendNotFound(response); return; }
+    const projectId = publishMatch[1];
+    const questId = publishMatch[2];
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "owner"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null) return;
+    if (!hasExactKeys(body, ["releaseId", "expectedCurrentReleaseId"])
+      || !isId(body.releaseId) || !(body.expectedCurrentReleaseId === null || isId(body.expectedCurrentReleaseId))) {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLISH_REQUEST" } });
+      return;
+    }
+    const result = await publishControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
+      projectId,
+      questId,
+      releaseId: body.releaseId,
+      expectedCurrentReleaseId: body.expectedCurrentReleaseId,
+      actorUserId: identity?.user.userId ?? "local-owner",
+      createdAtMs: releaseNowMs(releases, auth),
+      idempotencyKey
+    });
+    if (result.kind === "published" || result.kind === "unchanged" || result.kind === "replay") {
+      sendJson(response, 200, { publication: result });
+    } else if (result.kind === "release_not_found") {
+      sendNotFound(response);
+    } else if (result.kind === "current_release_conflict") {
+      sendJson(response, 409, { error: { code: "CURRENT_RELEASE_CONFLICT", currentReleaseId: result.currentReleaseId } });
+    } else if (result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    } else if (result.kind === "release_preflight_failed") {
+      sendJson(response, 422, { error: { code: "RELEASE_PREFLIGHT_FAILED", detailCode: result.code } });
+    } else {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLISH_REQUEST" } });
+    }
+    return;
+  }
+
+  const rollbackMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/rollback$/.exec(url.pathname);
+  if (rollbackMatch) {
+    if (!releases || method !== "POST") { sendNotFound(response); return; }
+    const projectId = rollbackMatch[1];
+    const questId = rollbackMatch[2];
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "owner"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null) return;
+    if (!hasExactKeys(body, ["targetReleaseId", "expectedCurrentReleaseId"])
+      || !isId(body.targetReleaseId) || !isId(body.expectedCurrentReleaseId)) {
+      sendJson(response, 400, { error: { code: "INVALID_ROLLBACK_REQUEST" } });
+      return;
+    }
+    const result = await rollbackControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
+      projectId,
+      questId,
+      targetReleaseId: body.targetReleaseId,
+      expectedCurrentReleaseId: body.expectedCurrentReleaseId,
+      actorUserId: identity?.user.userId ?? "local-owner",
+      createdAtMs: releaseNowMs(releases, auth),
+      idempotencyKey
+    });
+    if (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay") {
+      sendJson(response, 200, { publication: result });
+    } else if (result.kind === "release_not_found") {
+      sendNotFound(response);
+    } else if (result.kind === "target_not_previously_published") {
+      sendJson(response, 409, { error: { code: "ROLLBACK_TARGET_NOT_PUBLISHED" } });
+    } else if (result.kind === "current_release_conflict") {
+      sendJson(response, 409, { error: { code: "CURRENT_RELEASE_CONFLICT", currentReleaseId: result.currentReleaseId } });
+    } else if (result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    } else if (result.kind === "release_preflight_failed") {
+      sendJson(response, 422, { error: { code: "RELEASE_PREFLIGHT_FAILED", detailCode: result.code } });
+    } else {
+      sendJson(response, 400, { error: { code: "INVALID_ROLLBACK_REQUEST" } });
+    }
     return;
   }
 
@@ -552,7 +735,7 @@ function applyCorsHeaders(response: any, origin: string): void {
 function sendCorsPreflight(response: any): void {
   response.statusCode = 204;
   response.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type, x-csrf-token");
+  response.setHeader("access-control-allow-headers", "content-type, x-csrf-token, idempotency-key");
   response.setHeader("access-control-max-age", "600");
   response.setHeader("cache-control", "no-store");
   response.setHeader("x-content-type-options", "nosniff");
@@ -657,6 +840,52 @@ function playtestView(playtest: FrozenPlaytestRecord): object {
     validationId: playtest.validationId,
     compiledContentHash: playtest.compiledContentHash
   });
+}
+
+function releaseSummaryView(
+  release: ControlReleaseRecord,
+  currentReleaseId: string | null,
+  wasPublished: boolean
+): object {
+  return Object.freeze({
+    releaseId: release.releaseId,
+    projectId: release.projectId,
+    questId: release.questId,
+    draftRevision: release.draftRevision,
+    draftContentHash: release.draftContentHash,
+    validationId: release.validationId,
+    compiledContentHash: release.compiledContentHash,
+    contentHashAlgorithm: release.contentHashAlgorithm,
+    isCurrent: currentReleaseId === release.releaseId,
+    wasPublished
+  });
+}
+
+function releaseBuildErrorCode(kind: string): string {
+  if (kind === "validation_not_valid") return "VALIDATION_NOT_VALID";
+  if (kind === "validation_snapshot_mismatch") return "VALIDATION_SNAPSHOT_MISMATCH";
+  if (kind === "validation_integrity_failed") return "VALIDATION_INTEGRITY_FAILED";
+  if (kind === "release_compile_failed") return "RELEASE_COMPILE_FAILED";
+  if (kind === "plugin_authoring_invalid") return "PLUGIN_AUTHORING_INVALID";
+  if (kind === "plugin_preflight_failed") return "PLUGIN_PREFLIGHT_FAILED";
+  if (kind === "release_exists") return "RELEASE_EXISTS";
+  if (kind === "idempotency_key_reused") return "IDEMPOTENCY_KEY_REUSED";
+  return "INVALID_RELEASE_BUILD_REQUEST";
+}
+
+function releaseNowMs(releases: ControlReleaseModeOptions, auth: AuthRuntime | null): number {
+  const value = releases.nowMs ? releases.nowMs() : auth ? auth.nowMs() : Date.now();
+  if (!Number.isSafeInteger(value) || value < 0) throw new RangeError("Control release clock outside bounds");
+  return value;
+}
+
+function requireIdempotencyKey(request: any, response: any): string | null {
+  const value = readHeader(request, "idempotency-key");
+  if (!isId(value)) {
+    sendJson(response, 400, { error: { code: "INVALID_IDEMPOTENCY_KEY" } });
+    return null;
+  }
+  return value;
 }
 
 async function requireJsonObject(request: any, response: any): Promise<Record<string, any> | null> {
