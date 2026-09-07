@@ -102,7 +102,7 @@ test("B05-01 Control HTTP refuses non-loopback bind before authenticated Control
   assert.equal(control.accessMode, "local-loopback-owner");
 });
 
-test("B09-01 authenticated Control login, throttle, expiry, origin and CSRF fail closed", async () => {
+test("B09-01 authenticated Control login, throttle, expiry, origin, CORS and CSRF fail closed", async () => {
   const store = new MemoryControlStore();
   const security = new MemoryControlSecurityStore(store);
   const users = await provisionUsers(security);
@@ -125,6 +125,28 @@ test("B09-01 authenticated Control login, throttle, expiry, origin and CSRF fail
     const base = `http://${address.host}:${address.port}`;
     assert.equal(control.accessMode, "authenticated");
 
+    const preflight = await fetch(`${base}/control/v1/projects`, {
+      method: "OPTIONS",
+      headers: {
+        origin: ORIGIN,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,x-csrf-token"
+      }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), ORIGIN);
+    assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+    assert.match(preflight.headers.get("access-control-allow-methods"), /POST/);
+    assert.match(preflight.headers.get("access-control-allow-headers"), /x-csrf-token/i);
+    assert.equal(preflight.headers.get("vary"), "Origin");
+
+    const deniedPreflight = await fetch(`${base}/control/v1/projects`, {
+      method: "OPTIONS",
+      headers: { origin: "https://evil.example", "access-control-request-method": "POST" }
+    });
+    assert.equal(deniedPreflight.status, 403);
+    assert.equal(deniedPreflight.headers.get("access-control-allow-origin"), null);
+
     const anonymous = await jsonRequest(base, "/control/v1/projects");
     assert.equal(anonymous.status, 401);
     assert.equal(anonymous.body.error.code, "CONTROL_AUTH_REQUIRED");
@@ -143,6 +165,8 @@ test("B09-01 authenticated Control login, throttle, expiry, origin and CSRF fail
 
     const ownerLogin = await login(base, users[0].username, users[0].password);
     assert.equal(ownerLogin.status, 200);
+    assert.equal(ownerLogin.headers.get("access-control-allow-origin"), ORIGIN);
+    assert.equal(ownerLogin.headers.get("access-control-allow-credentials"), "true");
     assert.equal(ownerLogin.body.user.userId, "owner");
     assert.equal(typeof ownerLogin.body.csrfToken, "string");
     assert.equal(ownerLogin.body.csrfToken.length > 30, true);
