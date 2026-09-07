@@ -14,6 +14,14 @@ export {
   type DraftReferenceAnalysis
 } from "./draft-history.js";
 export {
+  listDraftHistory,
+  compareDraftRevisions,
+  analyzeDraftReferences,
+  type ListDraftHistoryResult,
+  type CompareDraftRevisionsResult,
+  type AnalyzeDraftReferencesResult
+} from "./draft-history-service.js";
+export {
   CONTROL_ROLES,
   createControlOpaqueSecret,
   createControlSessionId,
