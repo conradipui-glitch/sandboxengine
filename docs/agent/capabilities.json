@@ -212,6 +212,34 @@
       "successStatus": 200
     },
     {
+      "id": "control.draft.history",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",
+      "summary": "Постраничная история immutable draft revisions доступного проекта",
+      "successStatus": 200
+    },
+    {
+      "id": "control.draft.compare",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/compare",
+      "summary": "Серверное сравнение двух конкретных draft revisions без автоматического merge",
+      "successStatus": 200
+    },
+    {
+      "id": "control.draft.references",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/references",
+      "summary": "Typed preflight зависимостей блока и объяснение безопасности удаления",
+      "successStatus": 200
+    },
+    {
+      "id": "control.draft.restore",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/restore",
+      "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS",
+      "successStatus": 201
+    },
+    {
       "id": "control.validations.create",
       "method": "POST",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
