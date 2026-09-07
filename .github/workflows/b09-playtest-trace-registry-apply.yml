@@ -31,6 +31,7 @@ jobs:
           npm run docs:check
           rm scripts/b09-playtest-trace-registry-sync.py
           rm .github/workflows/b09-playtest-trace-registry-apply.yml
+          rm -rf node_modules
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
