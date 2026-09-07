@@ -50,10 +50,6 @@ export type RemoveProjectMemberResult =
   | { readonly kind: "last_owner" }
   | { readonly kind: "invalid_request" };
 
-/**
- * Security persistence kept beside Control data so project creation + owner
- * membership can be atomic in both reference stores.
- */
 export interface ControlSecurityStore {
   provisionUser(input: {
     readonly userId: string;
@@ -116,14 +112,7 @@ export function createPasswordVerifier(password: string): string {
   if (!isControlPassword(password)) throw new TypeError("password outside Control bounds");
   const salt = randomBytes(PASSWORD_SALT_BYTES);
   const derived = derivePassword(password, salt);
-  return [
-    PASSWORD_VERSION,
-    String(PASSWORD_N),
-    String(PASSWORD_R),
-    String(PASSWORD_P),
-    salt.toString("base64url"),
-    derived.toString("base64url")
-  ].join("$");
+  return [PASSWORD_VERSION, String(PASSWORD_N), String(PASSWORD_R), String(PASSWORD_P), salt.toString("base64url"), derived.toString("base64url")].join("$");
 }
 
 export function verifyPasswordVerifier(password: string, verifier: string): boolean {
@@ -141,8 +130,7 @@ export function verifyPasswordVerifier(password: string, verifier: string): bool
   }
   if (salt.length !== PASSWORD_SALT_BYTES || expected.length !== PASSWORD_KEY_BYTES) return false;
   try {
-    const actual = derivePassword(password, salt);
-    return timingSafeEqual(actual, expected);
+    return timingSafeEqual(derivePassword(password, salt), expected);
   } catch {
     return false;
   }
@@ -162,11 +150,15 @@ export function hashControlOpaqueSecret(secret: string): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
+export function timingSafeControlHashEqual(left: string, right: string): boolean {
+  if (!isControlSecretHash(left) || !isControlSecretHash(right)) return false;
+  try {
+    return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
+  } catch {
+    return false;
+  }
+}
+
 function derivePassword(password: string, salt: any): any {
-  return scryptSync(password, salt, PASSWORD_KEY_BYTES, {
-    N: PASSWORD_N,
-    r: PASSWORD_R,
-    p: PASSWORD_P,
-    maxmem: PASSWORD_MAXMEM
-  });
+  return scryptSync(password, salt, PASSWORD_KEY_BYTES, { N: PASSWORD_N, r: PASSWORD_R, p: PASSWORD_P, maxmem: PASSWORD_MAXMEM });
 }
