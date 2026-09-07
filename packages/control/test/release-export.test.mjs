@@ -8,6 +8,7 @@ import {
   MemoryControlReleaseStore,
   MemoryControlStore,
   SQLiteControlReleaseStore,
+  SQLiteControlStore,
   buildReleaseQuestExport,
   parseLhquestDraftPackage
 } from "../dist/index.js";
@@ -138,11 +139,22 @@ await exercise("Memory", async () => ({
 
 await exercise("SQLite", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lh-release-export-"));
-  const releaseStore = new SQLiteControlReleaseStore({ path: join(directory, "releases.sqlite") });
+  const path = join(directory, "control.sqlite");
+  const controlStore = new SQLiteControlStore({ path });
+  assert.equal((await controlStore.createProject({ projectId: "project", title: "Project" })).kind, "created");
+  assert.equal((await controlStore.createQuest({
+    projectId: "project",
+    questId: "quest",
+    title: "Parent quest",
+    entryLocationId: "workshop",
+    initialBlocks: [blocks[0]]
+  })).kind, "created");
+  const releaseStore = new SQLiteControlReleaseStore({ path });
   return {
     releaseStore,
     close: async () => {
       releaseStore.close();
+      controlStore.close();
       await rm(directory, { recursive: true, force: true });
     }
   };
