@@ -1,28 +1,79 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
-import type {
-  ControlStore,
-  DraftSnapshot,
-  DraftValidationRecord,
-  FrozenPlaytestRecord
+import {
+  createControlOpaqueSecret,
+  createControlSessionId,
+  hashControlOpaqueSecret,
+  isControlProjectRole,
+  type ControlProjectRole,
+  type ControlSecurityStore,
+  type ControlSessionRecord,
+  type ControlStore,
+  type ControlUserRecord,
+  type DraftSnapshot,
+  type DraftValidationRecord,
+  type FrozenPlaytestRecord
 } from "@living-history/control";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
+const CONTROL_SESSION_COOKIE = "lh_control_session";
+const CONTROL_CSRF_HEADER = "x-csrf-token";
+const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DEFAULT_LOGIN_WINDOW_MS = 60_000;
+const DEFAULT_LOGIN_COOLDOWN_MS = 60_000;
+const DEFAULT_MAX_LOGIN_ATTEMPTS = 5;
+
+export interface ControlAuthenticatedModeOptions {
+  readonly security: ControlSecurityStore;
+  readonly allowedOrigins: readonly string[];
+  readonly secureCookies: boolean;
+  readonly sessionTtlMs?: number;
+  readonly loginWindowMs?: number;
+  readonly loginCooldownMs?: number;
+  readonly maxLoginAttempts?: number;
+  readonly nowMs?: () => number;
+}
 
 export interface ControlServerDependencies {
   readonly store: ControlStore;
+  readonly auth?: ControlAuthenticatedModeOptions;
 }
 
 export interface ControlHttpServer {
   readonly server: any;
+  readonly accessMode: "local-loopback-owner" | "authenticated";
   listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }>;
   close(): Promise<void>;
 }
 
+interface AuthRuntime {
+  readonly security: ControlSecurityStore;
+  readonly allowedOrigins: ReadonlySet<string>;
+  readonly secureCookies: boolean;
+  readonly sessionTtlMs: number;
+  readonly loginWindowMs: number;
+  readonly loginCooldownMs: number;
+  readonly maxLoginAttempts: number;
+  readonly nowMs: () => number;
+}
+
+interface AuthIdentity {
+  readonly user: ControlUserRecord;
+  readonly session: ControlSessionRecord;
+}
+
+interface LoginFailureState {
+  count: number;
+  windowStartedAtMs: number;
+  blockedUntilMs: number;
+}
+
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
+  const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
+  const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
-      await routeControlRequest(request, response, dependencies.store);
+      await routeControlRequest(request, response, dependencies.store, auth, failures);
     } catch (error) {
       if (isSqliteBusy(error)) {
         sendJson(response, 503, { error: { code: "CONTROL_STORAGE_BUSY" } });
@@ -34,8 +85,13 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
 
   return Object.freeze({
     server,
+    accessMode: auth ? "authenticated" as const : "local-loopback-owner" as const,
     listen(port = 0, host = "127.0.0.1"): Promise<{ readonly port: number; readonly host: string }> {
-      if (!isLoopbackHost(host)) return Promise.reject(new Error("Control API may listen on loopback only until authenticated Control access is implemented"));
+      if (!isLoopbackHost(host)) {
+        if (!auth) return Promise.reject(new Error("Control API may listen on non-loopback only in authenticated mode"));
+        if (!auth.secureCookies) return Promise.reject(new Error("authenticated non-loopback Control requires Secure cookies"));
+        if (auth.allowedOrigins.size < 1) return Promise.reject(new Error("authenticated non-loopback Control requires at least one allowed origin"));
+      }
       return new Promise((resolve, reject) => {
         const onError = (error: unknown) => {
           server.off("listening", onListening);
@@ -64,26 +120,126 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   });
 }
 
-async function routeControlRequest(request: any, response: any, store: ControlStore): Promise<void> {
+async function routeControlRequest(
+  request: any,
+  response: any,
+  store: ControlStore,
+  auth: AuthRuntime | null,
+  failures: Map<string, LoginFailureState>
+): Promise<void> {
   const method = String(request.method ?? "GET").toUpperCase();
   const url = new URL(String(request.url ?? "/"), "http://control.local");
 
+  if (auth && !originAllowed(request, auth)) {
+    sendJson(response, 403, { error: { code: "CONTROL_ORIGIN_DENIED" } });
+    return;
+  }
+
+  if (auth && url.pathname === "/control/v1/auth/login" && method === "POST") {
+    await handleLogin(request, response, auth, failures);
+    return;
+  }
+
+  const identity = auth ? await resolveIdentity(request, auth) : null;
+  if (auth && !identity) {
+    sendJson(response, 401, { error: { code: "CONTROL_AUTH_REQUIRED" } });
+    return;
+  }
+
+  if (auth && url.pathname === "/control/v1/auth/session" && method === "GET") {
+    sendJson(response, 200, { user: identity!.user, session: safeSessionView(identity!.session) });
+    return;
+  }
+
+  if (auth && url.pathname === "/control/v1/auth/logout" && method === "POST") {
+    if (!(await requireMutationProof(request, response, auth, identity!))) return;
+    await auth.security.revokeSession(identity!.session.sessionId);
+    response.setHeader("set-cookie", expiredSessionCookie(auth.secureCookies));
+    sendJson(response, 200, { revoked: true });
+    return;
+  }
+
   if (url.pathname === "/control/v1/projects") {
     if (method === "GET") {
-      sendJson(response, 200, { projects: await store.listProjects() });
+      const projects = auth
+        ? await auth.security.listProjectsForUser(identity!.user.userId)
+        : await store.listProjects();
+      sendJson(response, 200, { projects });
       return;
     }
     if (method === "POST") {
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
       const body = await requireJsonObject(request, response);
       if (body === null) return;
       if (!hasExactKeys(body, ["projectId", "title"]) || !isId(body.projectId) || !isTitle(body.title)) {
         sendJson(response, 400, { error: { code: "INVALID_PROJECT" } });
         return;
       }
-      const result = await store.createProject({ projectId: body.projectId, title: body.title });
+      const result = auth
+        ? await auth.security.createProjectAsOwner({ projectId: body.projectId, title: body.title }, identity!.user.userId)
+        : await store.createProject({ projectId: body.projectId, title: body.title });
       if (result.kind === "created") sendJson(response, 201, { project: result.project });
       else if (result.kind === "project_exists") sendJson(response, 409, { error: { code: "PROJECT_EXISTS" } });
       else sendJson(response, 400, { error: { code: "INVALID_PROJECT" } });
+      return;
+    }
+  }
+
+  const memberCollectionMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/members$/.exec(url.pathname);
+  if (memberCollectionMatch) {
+    if (!auth) { sendNotFound(response); return; }
+    const projectId = memberCollectionMatch[1];
+    if (!projectId) { sendNotFound(response); return; }
+    const role = await authorizeProject(response, auth, identity!, projectId, "owner");
+    if (!role) return;
+    if (method === "GET") {
+      const members = await auth.security.listProjectMembers(projectId);
+      if (members === null) sendNotFound(response);
+      else sendJson(response, 200, { members });
+      return;
+    }
+  }
+
+  const memberItemMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/members\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(url.pathname);
+  if (memberItemMatch) {
+    if (!auth) { sendNotFound(response); return; }
+    const projectId = memberItemMatch[1];
+    const userId = memberItemMatch[2];
+    if (!projectId || !userId) { sendNotFound(response); return; }
+    const role = await authorizeProject(response, auth, identity!, projectId, "owner");
+    if (!role) return;
+    if (method === "PUT") {
+      if (!(await requireMutationProof(request, response, auth, identity!))) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      if (!hasExactKeys(body, ["role"]) || !isControlProjectRole(body.role)) {
+        sendJson(response, 400, { error: { code: "INVALID_PROJECT_ROLE" } });
+        return;
+      }
+      if (userId === identity!.user.userId && body.role !== "owner") {
+        sendJson(response, 409, { error: { code: "SELF_MEMBERSHIP_CHANGE_FORBIDDEN" } });
+        return;
+      }
+      const result = await auth.security.setProjectMemberRole(projectId, userId, body.role);
+      if (result.kind === "updated") sendJson(response, 200, { member: result.member });
+      else if (result.kind === "last_owner") sendJson(response, 409, { error: { code: "LAST_PROJECT_OWNER" } });
+      else if (result.kind === "user_not_found") sendJson(response, 404, { error: { code: "USER_NOT_FOUND" } });
+      else if (result.kind === "project_not_found") sendNotFound(response);
+      else sendJson(response, 400, { error: { code: "INVALID_PROJECT_ROLE" } });
+      return;
+    }
+    if (method === "DELETE") {
+      if (!(await requireMutationProof(request, response, auth, identity!))) return;
+      if (userId === identity!.user.userId) {
+        sendJson(response, 409, { error: { code: "SELF_MEMBERSHIP_CHANGE_FORBIDDEN" } });
+        return;
+      }
+      const result = await auth.security.removeProjectMember(projectId, userId);
+      if (result.kind === "removed") sendJson(response, 200, { removed: true });
+      else if (result.kind === "last_owner") sendJson(response, 409, { error: { code: "LAST_PROJECT_OWNER" } });
+      else if (result.kind === "member_not_found") sendJson(response, 404, { error: { code: "MEMBER_NOT_FOUND" } });
+      else if (result.kind === "project_not_found") sendNotFound(response);
+      else sendJson(response, 400, { error: { code: "INVALID_MEMBER_REQUEST" } });
       return;
     }
   }
@@ -92,6 +248,7 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
   if (questsMatch) {
     const projectId = questsMatch[1];
     if (!projectId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, method === "POST" ? "editor" : "tester"))) return;
     if (method === "GET") {
       const quests = await store.listQuests(projectId);
       if (quests === null) sendNotFound(response);
@@ -99,6 +256,7 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
       return;
     }
     if (method === "POST") {
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
       const body = await requireJsonObject(request, response);
       if (body === null) return;
       if (!hasExactKeys(body, ["questId", "title", "entryLocationId", "initialBlocks"])
@@ -126,6 +284,7 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
     const projectId = draftMatch[1];
     const questId = draftMatch[2];
     if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
     const draft = await store.getDraft(projectId, questId);
     if (!draft) sendNotFound(response);
     else sendJson(response, 200, { draft });
@@ -137,6 +296,8 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
     const projectId = changesMatch[1];
     const questId = changesMatch[2];
     if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
     const body = await requireJsonObject(request, response);
     if (body === null) return;
     const result = await store.applyDraftChanges(projectId, questId, body as any);
@@ -155,6 +316,8 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
     const projectId = validationsMatch[1];
     const questId = validationsMatch[2];
     if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
     const body = await requireJsonObject(request, response);
     if (body === null) return;
     if (!hasExactKeys(body, ["draftRevision"]) || !isRevision(body.draftRevision)) {
@@ -172,6 +335,8 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
     const projectId = playtestsMatch[1];
     const questId = playtestsMatch[2];
     if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
     const body = await requireJsonObject(request, response);
     if (body === null) return;
     if (!hasExactKeys(body, ["draftRevision", "validationId"]) || !isRevision(body.draftRevision) || !isId(body.validationId)) {
@@ -195,7 +360,240 @@ async function routeControlRequest(request: any, response: any, store: ControlSt
     return;
   }
 
+  const playtestReadMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/playtests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(url.pathname);
+  if (method === "GET" && playtestReadMatch) {
+    const projectId = playtestReadMatch[1];
+    const questId = playtestReadMatch[2];
+    const playtestId = playtestReadMatch[3];
+    if (!projectId || !questId || !playtestId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+    const playtest = await store.getPlaytest(playtestId);
+    if (!playtest || playtest.projectId !== projectId || playtest.questId !== questId) sendNotFound(response);
+    else sendJson(response, 200, { playtest: playtestView(playtest) });
+    return;
+  }
+
   sendNotFound(response);
+}
+
+async function handleLogin(
+  request: any,
+  response: any,
+  auth: AuthRuntime,
+  failures: Map<string, LoginFailureState>
+): Promise<void> {
+  const body = await requireJsonObject(request, response);
+  if (body === null) return;
+  const username = typeof body.username === "string" ? body.username : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!hasExactKeys(body, ["username", "password"])) {
+    sendJson(response, 401, { error: { code: "INVALID_CREDENTIALS" } });
+    return;
+  }
+  const nowMs = auth.nowMs();
+  const key = `${loginRemoteKey(request)}|${boundedLoginIdentity(username)}`;
+  const retryAfterMs = loginRetryAfter(failures, key, nowMs);
+  if (retryAfterMs > 0) {
+    response.setHeader("retry-after", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+    sendJson(response, 429, { error: { code: "LOGIN_RATE_LIMITED", retryAfterMs } });
+    return;
+  }
+
+  const user = await auth.security.verifyCredentials(username, password);
+  if (!user) {
+    recordLoginFailure(failures, key, nowMs, auth);
+    sendJson(response, 401, { error: { code: "INVALID_CREDENTIALS" } });
+    return;
+  }
+  failures.delete(key);
+
+  const sessionToken = createControlOpaqueSecret();
+  const csrfToken = createControlOpaqueSecret();
+  const sessionId = createControlSessionId();
+  const expiresAtMs = nowMs + auth.sessionTtlMs;
+  if (!Number.isSafeInteger(expiresAtMs)) {
+    sendJson(response, 500, { error: { code: "CONTROL_AUTH_CONFIGURATION_ERROR" } });
+    return;
+  }
+  const created = await auth.security.createSession({
+    sessionId,
+    userId: user.userId,
+    tokenHash: hashControlOpaqueSecret(sessionToken),
+    csrfHash: hashControlOpaqueSecret(csrfToken),
+    createdAtMs: nowMs,
+    expiresAtMs
+  });
+  if (created.kind !== "created") {
+    sendJson(response, 500, { error: { code: "CONTROL_SESSION_CREATE_FAILED" } });
+    return;
+  }
+
+  response.setHeader("set-cookie", sessionCookie(sessionToken, auth));
+  sendJson(response, 200, {
+    user,
+    session: safeSessionView(created.session),
+    csrfToken
+  });
+}
+
+async function resolveIdentity(request: any, auth: AuthRuntime): Promise<AuthIdentity | null> {
+  const token = readCookie(request, CONTROL_SESSION_COOKIE);
+  if (!token) return null;
+  let tokenHash: string;
+  try { tokenHash = hashControlOpaqueSecret(token); } catch { return null; }
+  const session = await auth.security.getSessionByTokenHash(tokenHash, auth.nowMs());
+  if (!session) return null;
+  const user = await auth.security.getUser(session.userId);
+  return user ? Object.freeze({ user, session }) : null;
+}
+
+async function requireMutationProof(
+  request: any,
+  response: any,
+  auth: AuthRuntime,
+  identity: AuthIdentity
+): Promise<boolean> {
+  const token = readHeader(request, CONTROL_CSRF_HEADER);
+  if (!token) {
+    sendJson(response, 403, { error: { code: "CONTROL_CSRF_REQUIRED" } });
+    return false;
+  }
+  let csrfHash: string;
+  try { csrfHash = hashControlOpaqueSecret(token); } catch {
+    sendJson(response, 403, { error: { code: "CONTROL_CSRF_INVALID" } });
+    return false;
+  }
+  if (!(await auth.security.validateSessionCsrf(identity.session.sessionId, csrfHash, auth.nowMs()))) {
+    sendJson(response, 403, { error: { code: "CONTROL_CSRF_INVALID" } });
+    return false;
+  }
+  return true;
+}
+
+async function requireProjectRole(
+  response: any,
+  auth: AuthRuntime | null,
+  identity: AuthIdentity | null,
+  projectId: string,
+  required: ControlProjectRole
+): Promise<boolean> {
+  if (!auth) return true;
+  return Boolean(await authorizeProject(response, auth, identity!, projectId, required));
+}
+
+async function authorizeProject(
+  response: any,
+  auth: AuthRuntime,
+  identity: AuthIdentity,
+  projectId: string,
+  required: ControlProjectRole
+): Promise<ControlProjectRole | null> {
+  const role = await auth.security.getProjectRole(projectId, identity.user.userId);
+  if (role === null) {
+    sendNotFound(response);
+    return null;
+  }
+  if (roleRank(role) < roleRank(required)) {
+    sendJson(response, 403, { error: { code: "CONTROL_FORBIDDEN" } });
+    return null;
+  }
+  return role;
+}
+
+function buildAuthRuntime(options: ControlAuthenticatedModeOptions): AuthRuntime {
+  const sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
+  const loginWindowMs = options.loginWindowMs ?? DEFAULT_LOGIN_WINDOW_MS;
+  const loginCooldownMs = options.loginCooldownMs ?? DEFAULT_LOGIN_COOLDOWN_MS;
+  const maxLoginAttempts = options.maxLoginAttempts ?? DEFAULT_MAX_LOGIN_ATTEMPTS;
+  if (!Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 60_000 || sessionTtlMs > 7 * 24 * 60 * 60 * 1000) throw new RangeError("Control session TTL outside bounds");
+  if (!Number.isSafeInteger(loginWindowMs) || loginWindowMs < 1_000 || loginWindowMs > 60 * 60 * 1000) throw new RangeError("Control login window outside bounds");
+  if (!Number.isSafeInteger(loginCooldownMs) || loginCooldownMs < 1_000 || loginCooldownMs > 60 * 60 * 1000) throw new RangeError("Control login cooldown outside bounds");
+  if (!Number.isSafeInteger(maxLoginAttempts) || maxLoginAttempts < 2 || maxLoginAttempts > 20) throw new RangeError("Control max login attempts outside bounds");
+  if (!Array.isArray(options.allowedOrigins) || options.allowedOrigins.length > 20) throw new TypeError("Control allowed origins outside bounds");
+  const origins = new Set<string>();
+  for (const origin of options.allowedOrigins) {
+    if (typeof origin !== "string" || origin.length < 1 || origin.length > 300 || origin === "*") throw new TypeError("invalid Control allowed origin");
+    let parsed: URL;
+    try { parsed = new URL(origin); } catch { throw new TypeError("invalid Control allowed origin"); }
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.origin !== origin) throw new TypeError("Control origin must be an exact http(s) origin");
+    origins.add(origin);
+  }
+  return Object.freeze({
+    security: options.security,
+    allowedOrigins: origins,
+    secureCookies: options.secureCookies,
+    sessionTtlMs,
+    loginWindowMs,
+    loginCooldownMs,
+    maxLoginAttempts,
+    nowMs: options.nowMs ?? (() => Date.now())
+  });
+}
+
+function originAllowed(request: any, auth: AuthRuntime): boolean {
+  const origin = readHeader(request, "origin");
+  return origin === undefined || auth.allowedOrigins.has(origin);
+}
+
+function loginRetryAfter(failures: Map<string, LoginFailureState>, key: string, nowMs: number): number {
+  const state = failures.get(key);
+  if (!state) return 0;
+  if (state.blockedUntilMs > nowMs) return state.blockedUntilMs - nowMs;
+  if (nowMs - state.windowStartedAtMs >= DEFAULT_LOGIN_WINDOW_MS && state.blockedUntilMs <= nowMs) {
+    failures.delete(key);
+  }
+  return 0;
+}
+
+function recordLoginFailure(failures: Map<string, LoginFailureState>, key: string, nowMs: number, auth: AuthRuntime): void {
+  const current = failures.get(key);
+  const state = !current || nowMs - current.windowStartedAtMs >= auth.loginWindowMs
+    ? { count: 0, windowStartedAtMs: nowMs, blockedUntilMs: 0 }
+    : current;
+  state.count += 1;
+  if (state.count >= auth.maxLoginAttempts) state.blockedUntilMs = nowMs + auth.loginCooldownMs;
+  failures.set(key, state);
+}
+
+function loginRemoteKey(request: any): string {
+  const address = String(request.socket?.remoteAddress ?? "unknown");
+  return address.length <= 100 ? address : address.slice(0, 100);
+}
+
+function boundedLoginIdentity(username: string): string {
+  return username.length <= 100 ? username : username.slice(0, 100);
+}
+
+function sessionCookie(token: string, auth: AuthRuntime): string {
+  const maxAge = Math.max(1, Math.floor(auth.sessionTtlMs / 1000));
+  return `${CONTROL_SESSION_COOKIE}=${token}; Path=/control/v1; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${auth.secureCookies ? "; Secure" : ""}`;
+}
+
+function expiredSessionCookie(secure: boolean): string {
+  return `${CONTROL_SESSION_COOKIE}=; Path=/control/v1; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`;
+}
+
+function readCookie(request: any, name: string): string | null {
+  const header = readHeader(request, "cookie");
+  if (!header) return null;
+  let found: string | null = null;
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index <= 0) continue;
+    if (part.slice(0, index).trim() !== name) continue;
+    const value = part.slice(index + 1).trim();
+    if (!value || found !== null) return null;
+    found = value;
+  }
+  return found;
+}
+
+function safeSessionView(session: ControlSessionRecord): object {
+  return Object.freeze({
+    sessionId: session.sessionId,
+    createdAtMs: session.createdAtMs,
+    expiresAtMs: session.expiresAtMs
+  });
 }
 
 function projectDraftView(draft: DraftSnapshot): object {
@@ -284,7 +682,14 @@ function sendJson(response: any, status: number, body: unknown): void {
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
   response.end(json);
+}
+
+function roleRank(role: ControlProjectRole): number {
+  if (role === "owner") return 3;
+  if (role === "editor") return 2;
+  return 1;
 }
 
 function isPlainObject(value: unknown): value is Record<string, any> {
@@ -318,5 +723,5 @@ function isLoopbackHost(host: string): boolean {
 function isSqliteBusy(error: unknown): boolean {
   if (error === null || typeof error !== "object") return false;
   const value = error as { code?: unknown; message?: unknown };
-  return value.code === "SQLITE_BUSY" || (typeof value.message === "string" && /database is locked|database is busy/i.test(value.message));
+  return value.code === "SQLITE_BUSY" || (typeof value.message === "string" && value.message.includes("SQLITE_BUSY"));
 }
