@@ -2,10 +2,14 @@
 import { createHash, randomBytes } from "node:crypto";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
-import type {
-  IntentActionCatalogEntry,
-  IntentDecision,
-  IntentInterpreter
+import {
+  renderNarrativeFallback,
+  type IntentActionCatalogEntry,
+  type IntentDecision,
+  type IntentInterpreter,
+  type NarrativeProfileId,
+  type NarrativeResult,
+  type Narrator
 } from "@living-history/ai";
 import type { JsonValue, WorldState } from "@living-history/contracts";
 import {
@@ -19,18 +23,20 @@ import {
 } from "@living-history/runtime";
 import {
   buildCommittedPublicResponse,
+  buildFactPacket,
   buildFailedPublicResponse,
   createCoreExplicitActionExecutor,
   createPaintIntentCatalog,
   hashCanonicalJson,
   stateHash,
   type ExplicitActionCommand,
+  type ExplicitActionExecution,
   type ExplicitActionExecutor
 } from "./action-service.js";
 
 const MAX_BODY_CHARS = 16_384;
 const DEFAULT_LEASE_MS = 30_000;
-const DEFAULT_INTENT_DEADLINE_MS = 25_000;
+const DEFAULT_AI_PIPELINE_DEADLINE_MS = 25_000;
 const POLL_AFTER_MS = 500;
 
 export interface RuntimeSessionTemplate {
@@ -46,6 +52,9 @@ export interface RuntimeServerDependencies {
   readonly templates: readonly RuntimeSessionTemplate[];
   readonly executor?: ExplicitActionExecutor;
   readonly intentInterpreter?: IntentInterpreter;
+  readonly narrator?: Narrator;
+  readonly narrativeProfile?: NarrativeProfileId;
+  /** Historical name retained for compatibility; this is the total intent+narrator AI deadline. */
   readonly intentDeadlineMs?: number;
   readonly createSessionId?: () => string;
   readonly createCredential?: () => string;
@@ -73,12 +82,16 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
   const createSessionId = dependencies.createSessionId ?? (() => `session-${randomBytes(16).toString("hex")}`);
   const createCredential = dependencies.createCredential ?? (() => randomBytes(32).toString("base64url"));
   const leaseDurationMs = dependencies.leaseDurationMs ?? DEFAULT_LEASE_MS;
-  const intentDeadlineMs = dependencies.intentDeadlineMs ?? DEFAULT_INTENT_DEADLINE_MS;
+  const intentDeadlineMs = dependencies.intentDeadlineMs ?? DEFAULT_AI_PIPELINE_DEADLINE_MS;
+  const narrativeProfile = dependencies.narrativeProfile ?? "strict";
   if (!Number.isSafeInteger(leaseDurationMs) || leaseDurationMs < 1 || leaseDurationMs > 300_000) {
     throw new RangeError("leaseDurationMs outside runtime bounds");
   }
   if (!Number.isSafeInteger(intentDeadlineMs) || intentDeadlineMs < 1 || intentDeadlineMs > 25_000) {
     throw new RangeError("intentDeadlineMs outside runtime bounds");
+  }
+  if (narrativeProfile !== "strict" && narrativeProfile !== "expressive") {
+    throw new TypeError("narrativeProfile is invalid");
   }
 
   const resolved: ResolvedServerDependencies = {
@@ -88,6 +101,8 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
     templatesByRelease,
     executor,
     intentInterpreter: dependencies.intentInterpreter ?? null,
+    narrator: dependencies.narrator ?? null,
+    narrativeProfile,
     intentDeadlineMs,
     createSessionId,
     createCredential,
@@ -144,6 +159,8 @@ type ResolvedServerDependencies = {
   readonly templatesByRelease: ReadonlyMap<string, RuntimeSessionTemplate>;
   readonly executor: ExplicitActionExecutor;
   readonly intentInterpreter: IntentInterpreter | null;
+  readonly narrator: Narrator | null;
+  readonly narrativeProfile: NarrativeProfileId;
   readonly intentDeadlineMs: number;
   readonly createSessionId: () => string;
   readonly createCredential: () => string;
@@ -373,11 +390,18 @@ async function handleAction(
     sendJson(response, 409, { error: { code: "REVISION_CONFLICT" } });
     return;
   }
+  const aiDeadlineAtMs = Date.now() + deps.intentDeadlineMs;
 
   try {
     const execution = parsed.kind === "explicit"
       ? deps.executor.execute(session.state, parsed.action)
-      : await interpretAndMaybeExecuteText(deps, session, claim.operation.operationId, parsed.input);
+      : await interpretAndMaybeExecuteText(
+          deps,
+          session,
+          claim.operation.operationId,
+          parsed.input,
+          aiDeadlineAtMs
+        );
 
     if ("publicResponse" in execution) {
       await finishWithoutTurnAndSend(
@@ -392,13 +416,15 @@ async function handleAction(
       return;
     }
 
+    const narrative = await narrateExecution(deps, session, execution, aiDeadlineAtMs);
     const turnId = `turn-${claim.operation.operationId}`;
     const publicResponse = buildCommittedPublicResponse({
       operationId: claim.operation.operationId,
       turnId,
       sessionId,
       release: session.release,
-      execution
+      execution,
+      narrative
     });
     const committed = await deps.storage.commitTurn({
       sessionId,
@@ -438,11 +464,36 @@ async function handleAction(
   }
 }
 
+async function narrateExecution(
+  deps: ResolvedServerDependencies,
+  session: SessionRecord,
+  execution: ExplicitActionExecution,
+  deadlineAtMs: number
+): Promise<NarrativeResult | null> {
+  if (!deps.narrator) return null;
+  const packet = buildFactPacket({ beforeState: session.state, execution });
+  try {
+    return await deps.narrator.narrate({
+      packet,
+      profile: deps.narrativeProfile,
+      deadlineAtMs
+    });
+  } catch {
+    return Object.freeze({
+      profile: deps.narrativeProfile,
+      source: "template" as const,
+      content: renderNarrativeFallback(packet),
+      evidence: Object.freeze({ attempts: Object.freeze([]) })
+    });
+  }
+}
+
 async function interpretAndMaybeExecuteText(
   deps: ResolvedServerDependencies,
   session: SessionRecord,
   operationId: string,
-  input: TextActionInput
+  input: TextActionInput,
+  deadlineAtMs: number
 ): Promise<ReturnType<ExplicitActionExecutor["executeIntent"]> | { readonly publicResponse: RuntimePublicResponse }> {
   const template = deps.templatesByRelease.get(releaseKey(session.release));
   const catalog = template?.intentCatalog;
@@ -464,7 +515,7 @@ async function interpretAndMaybeExecuteText(
     allowedEntityIds: publicIds(view),
     publicSituation: toJsonValue(view),
     dialogueContext: input.clarification ? Object.freeze([`clarification:${input.clarification.id}`]) : Object.freeze([]),
-    deadlineAtMs: Date.now() + deps.intentDeadlineMs
+    deadlineAtMs
   });
 
   if (decision.kind === "resolved") {
