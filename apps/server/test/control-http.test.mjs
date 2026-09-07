@@ -137,6 +137,7 @@ test("B09-01 authenticated Control login, throttle, expiry, origin and CSRF fail
     assert.equal(wrong.body.error.code, "INVALID_CREDENTIALS");
 
     assert.equal((await login(base, users[0].username, "wrong password 123")).status, 401);
+    assert.equal((await login(base, users[0].username, "wrong password 123")).status, 401);
     assert.equal((await login(base, users[0].username, "wrong password 123")).status, 429);
     now += 5_001;
 
