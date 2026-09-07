@@ -4,7 +4,8 @@ import {
   compareDraftRevisions,
   listDraftHistory,
   type ControlProjectRole,
-  type ControlStore
+  type ControlStore,
+  type DraftHistoryPageOptions
 } from "@living-history/control";
 import { restoreControlDraft } from "./draft-version-authority.js";
 
@@ -38,16 +39,16 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     }
     const beforeRaw = context.url.searchParams.get("beforeRevision");
     const limitRaw = context.url.searchParams.get("limit");
-    const beforeRevision = beforeRaw === null ? undefined : parseRevisionQuery(beforeRaw);
-    const limit = limitRaw === null ? undefined : parsePositiveBoundedInteger(limitRaw, MAX_DRAFT_HISTORY_LIMIT);
+    const beforeRevision = beforeRaw === null ? null : parseRevisionQuery(beforeRaw);
+    const limit = limitRaw === null ? null : parsePositiveBoundedInteger(limitRaw, MAX_DRAFT_HISTORY_LIMIT);
     if ((beforeRaw !== null && beforeRevision === null) || (limitRaw !== null && limit === null)) {
       context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
       return true;
     }
-    const result = await listDraftHistory(context.store, projectId, questId, {
-      ...(beforeRevision === undefined ? {} : { beforeRevision }),
-      ...(limit === undefined ? {} : { limit })
-    });
+    const pageOptions: DraftHistoryPageOptions = {};
+    if (beforeRaw !== null) pageOptions.beforeRevision = beforeRevision as number;
+    if (limitRaw !== null) pageOptions.limit = limit as number;
+    const result = await listDraftHistory(context.store, projectId, questId, pageOptions);
     if (result.kind === "quest_not_found") context.sendNotFound();
     else if (result.kind === "invalid_request") {
       context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
