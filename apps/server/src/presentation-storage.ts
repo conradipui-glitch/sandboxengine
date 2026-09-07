@@ -1,3 +1,4 @@
+// @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createHash } from "node:crypto";
 import {
   PRESENTATION_SCHEMA_VERSION,
@@ -84,7 +85,6 @@ export function createReferencePresentationTemplate(
     actors
   });
   if (!hasValidPresentationCatalogV2(catalog)) throw new TypeError("invalid presentation reference catalog");
-  // Validate immutable/static references using a harmless synthetic revision-0 frame.
   const probe = buildReferenceSceneFrame({
     template,
     sessionId: "presentation-probe",
@@ -104,7 +104,7 @@ export function buildReferenceSceneFrame(input: {
   readonly turnId: string | null;
 }): SceneFrameV2 {
   const expression = `r${input.revision}`;
-  const frame = deepFreeze({
+  return deepFreeze({
     schemaVersion: PRESENTATION_SCHEMA_VERSION,
     frameId: frameIdFor(input.sessionId, input.release, input.revision, input.turnId),
     sceneId: input.template.sceneId,
@@ -122,7 +122,6 @@ export function buildReferenceSceneFrame(input: {
     activeDialogueLineId: null,
     music: null
   }) satisfies SceneFrameV2;
-  return frame;
 }
 
 export function buildInitialReferencePresentation(input: {
@@ -186,7 +185,6 @@ export function buildCommittedReferencePresentation(input: {
 
   if (!hasValidPresentationPlanV2References(fromFrame, targetFrame, plan, input.template.catalog)
     || !presentationPlanConvergesToTargetFrameV2(fromFrame, targetFrame, plan)) {
-    // Frame is still a valid recovery checkpoint even when the transition is not.
     return Object.freeze({ frame: targetFrame });
   }
   return Object.freeze({ frame: targetFrame, plan });
