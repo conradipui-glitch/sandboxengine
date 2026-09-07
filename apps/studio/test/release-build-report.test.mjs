@@ -133,18 +133,22 @@ test("B09-03 Versions release build/report binds exact server truth and never cl
     null,
     true,
     {
+      action: "publish",
       releaseId: "release-r7",
       draftRevision: 7,
       draftContentHash: draftHash,
       compiledContentHash: compiledHash,
-      expectedCurrentReleaseId: null
+      expectedCurrentReleaseId: null,
+      idempotencyKey: "publish-r7-fixed"
     }
   );
   assert.match(ownerReport, /Owner publish report: release-r7/);
   assert.match(ownerReport, /Expected current pointer: none/);
-  assert.match(ownerReport, /Сейчас ничего не опубликовано этим report/);
-  assert.doesNotMatch(ownerReport, /Опубликовано/);
+  assert.match(ownerReport, /Этот report ничего не меняет/);
+  assert.match(ownerReport, /отдельного server receipt/);
+  assert.doesNotMatch(ownerReport, /Опубликовано — подтверждено server receipt/);
   assert.match(ownerReport, /data-action="prepare-publish"/);
+  assert.match(ownerReport, /data-action="confirm-publication"/);
 
   const tester = renderVersionsPanel(
     model,
