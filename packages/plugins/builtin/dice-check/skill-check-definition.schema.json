@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:plugin:dice-check:schema:skill-check:1.0.0",
+  "title": "dice-check skill check definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "definitionId",
+    "difficulty",
+    "modifier",
+    "durationSeconds",
+    "onSuccessEffects",
+    "onFailureEffects",
+    "narrative"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "definitionId": { "$ref": "#/$defs/id" },
+    "difficulty": { "type": "integer", "minimum": 1, "maximum": 40 },
+    "modifier": { "type": "integer", "minimum": -20, "maximum": 20 },
+    "durationSeconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "onSuccessEffects": { "$ref": "#/$defs/effectTemplates" },
+    "onFailureEffects": { "$ref": "#/$defs/effectTemplates" },
+    "narrative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "failure"],
+      "properties": {
+        "success": { "$ref": "#/$defs/narrativeTemplate" },
+        "failure": { "$ref": "#/$defs/narrativeTemplate" }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "narrativeTemplate": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^<>]*$"
+    },
+    "effectTemplates": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/effectTemplate" }
+    },
+    "effectTemplate": {
+      "oneOf": [
+        { "$ref": "#/$defs/resourceChange" },
+        { "$ref": "#/$defs/entityMove" },
+        { "$ref": "#/$defs/itemTransfer" }
+      ]
+    },
+    "resourceChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "resourceId", "delta"],
+      "properties": {
+        "type": { "const": "resource.change" },
+        "resourceId": { "$ref": "#/$defs/id" },
+        "delta": { "type": "integer", "not": { "const": 0 } }
+      }
+    },
+    "entityMove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "entityId", "locationId"],
+      "properties": {
+        "type": { "const": "entity.move" },
+        "entityId": { "$ref": "#/$defs/id" },
+        "locationId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "itemTransfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "itemId", "destination"],
+      "properties": {
+        "type": { "const": "item.transfer" },
+        "itemId": { "$ref": "#/$defs/id" },
+        "destination": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "locationId"],
+              "properties": {
+                "kind": { "const": "location" },
+                "locationId": { "$ref": "#/$defs/id" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "holderId"],
+              "properties": {
+                "kind": { "const": "holder" },
+                "holderId": { "$ref": "#/$defs/id" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

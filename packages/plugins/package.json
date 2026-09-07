@@ -12,6 +12,14 @@
     "./execution": {
       "types": "./dist/backend-execution.d.ts",
       "import": "./dist/backend-execution.js"
+    },
+    "./dice-check": {
+      "types": "./dist/dice-check.d.ts",
+      "import": "./dist/dice-check.js"
+    },
+    "./artifact-compatibility": {
+      "types": "./dist/artifact-compatibility.d.ts",
+      "import": "./dist/artifact-compatibility.js"
     }
   },
   "dependencies": {

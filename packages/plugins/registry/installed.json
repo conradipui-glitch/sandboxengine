@@ -2,5 +2,40 @@
   "registryVersion": "1.0",
   "pluginManifestSchemaVersion": "1.0",
   "enginePluginApiVersion": "1.0.0",
-  "plugins": []
+  "plugins": [
+    {
+      "schemaVersion": "1.0",
+      "pluginId": "dice-check",
+      "version": "1.0.0",
+      "engineApiRange": {
+        "minInclusive": "1.0.0",
+        "maxExclusive": "2.0.0"
+      },
+      "description": "Deterministic authored d20 skill check using the generic trusted plugin execution host.",
+      "schemaVersions": [
+        {
+          "schemaId": "dice-check.schema.skill-check",
+          "version": "1.0.0"
+        }
+      ],
+      "dependencies": [],
+      "capabilityIds": [
+        "dice-check.capability.skill-check"
+      ],
+      "recipeIds": [
+        "dice-check.recipe.skill-check"
+      ],
+      "backend": {
+        "blockTypeIds": [
+          "dice-check.block.skill-check"
+        ],
+        "actionTypeIds": [
+          "dice-check.action.skill-check"
+        ],
+        "scheduledEventTypeIds": [],
+        "effectTypeIds": []
+      },
+      "ui": null
+    }
+  ]
 }

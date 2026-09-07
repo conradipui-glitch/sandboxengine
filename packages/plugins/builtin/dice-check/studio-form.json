@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0",
+  "formId": "dice-check.form.skill-check",
+  "schemaId": "dice-check.schema.skill-check",
+  "title": "Проверка навыка",
+  "description": "Настройка детерминированной d20-проверки. Игрок выбирает только заранее созданную проверку; сложность, модификатор и эффекты принадлежат авторскому определению.",
+  "fields": [
+    {
+      "path": "definitionId",
+      "control": "text",
+      "label": "ID проверки",
+      "help": "Стабильный ID авторского определения."
+    },
+    {
+      "path": "difficulty",
+      "control": "number",
+      "label": "Сложность",
+      "help": "Успех, если d20 + модификатор не меньше сложности.",
+      "minimum": 1,
+      "maximum": 40,
+      "step": 1
+    },
+    {
+      "path": "modifier",
+      "control": "number",
+      "label": "Модификатор",
+      "help": "Фиксированный авторский бонус или штраф.",
+      "minimum": -20,
+      "maximum": 20,
+      "step": 1
+    },
+    {
+      "path": "durationSeconds",
+      "control": "number",
+      "label": "Игровое время, секунд",
+      "help": "Время применяется обычным Core scheduler pipeline.",
+      "minimum": 0,
+      "maximum": 86400,
+      "step": 1
+    },
+    {
+      "path": "onSuccessEffects",
+      "control": "canonical-effect-list",
+      "label": "Эффекты успеха",
+      "help": "Только шаблоны существующих resource.change, entity.move и item.transfer."
+    },
+    {
+      "path": "onFailureEffects",
+      "control": "canonical-effect-list",
+      "label": "Эффекты неудачи",
+      "help": "Только шаблоны существующих resource.change, entity.move и item.transfer."
+    },
+    {
+      "path": "narrative.success",
+      "control": "textarea",
+      "label": "Текст успеха",
+      "help": "Разрешены {{roll}}, {{modifier}}, {{total}}, {{difficulty}}, {{outcome}}."
+    },
+    {
+      "path": "narrative.failure",
+      "control": "textarea",
+      "label": "Текст неудачи",
+      "help": "Разрешены {{roll}}, {{modifier}}, {{total}}, {{difficulty}}, {{outcome}}."
+    }
+  ]
+}
