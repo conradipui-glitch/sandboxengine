@@ -341,6 +341,7 @@ async function routeControlRequest(
     method,
     url,
     store,
+    releaseStore: releases?.store ?? null,
     requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
     requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),
     requireIdempotencyKey: () => requireIdempotencyKey(request, response),

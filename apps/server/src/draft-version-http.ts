@@ -3,11 +3,13 @@ import {
   MAX_LHQUEST_ARCHIVE_BYTES,
   analyzeDraftReferences,
   buildDraftQuestExport,
+  buildReleaseQuestExport,
   cloneQuestFromStore,
   compareDraftRevisions,
   importQuestPackageFromStore,
   listDraftHistory,
   type ControlProjectRole,
+  type ControlReleaseStore,
   type ControlStore,
   type DraftHistoryPageOptions
 } from "@living-history/control";
@@ -19,6 +21,7 @@ export interface DraftVersionHttpContext {
   readonly method: string;
   readonly url: URL;
   readonly store: ControlStore;
+  readonly releaseStore: Pick<ControlReleaseStore, "getRelease"> | null;
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
   readonly requireIdempotencyKey: () => string | null;
@@ -175,29 +178,51 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = exportMatch[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
-    if (!hasExactQuery(context.url.searchParams, ["draftRevision"])) {
+
+    const draftSelected = hasExactQuery(context.url.searchParams, ["draftRevision"]);
+    const releaseSelected = hasExactQuery(context.url.searchParams, ["releaseId"]);
+    if (draftSelected === releaseSelected) {
       context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
       return true;
     }
-    const draftRevision = parseRevisionQuery(context.url.searchParams.get("draftRevision"));
-    if (draftRevision === null) {
+
+    if (draftSelected) {
+      const draftRevision = parseRevisionQuery(context.url.searchParams.get("draftRevision"));
+      if (draftRevision === null) {
+        context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+        return true;
+      }
+      const result = await buildDraftQuestExport(context.store, projectId, questId, draftRevision);
+      if (result.kind === "quest_not_found") context.sendNotFound();
+      else if (result.kind === "revision_not_found") {
+        context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+      } else if (result.kind === "invalid_request") {
+        context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      } else {
+        context.sendJson(200, exportEnvelope(result.value));
+      }
+      return true;
+    }
+
+    const releaseId = context.url.searchParams.get("releaseId");
+    if (!isId(releaseId)) {
       context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
       return true;
     }
-    const result = await buildDraftQuestExport(context.store, projectId, questId, draftRevision);
-    if (result.kind === "quest_not_found") context.sendNotFound();
-    else if (result.kind === "revision_not_found") {
-      context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+    if (context.releaseStore === null) {
+      context.sendNotFound();
+      return true;
+    }
+    const result = await buildReleaseQuestExport(context.releaseStore, projectId, questId, releaseId);
+    if (result.kind === "release_not_found") context.sendNotFound();
+    else if (result.kind === "release_integrity_failed") {
+      context.sendJson(422, { error: { code: "RELEASE_EXPORT_INTEGRITY_FAILED" } });
+    } else if (result.kind === "unsupported_dependencies") {
+      context.sendJson(422, { error: { code: "QUEST_EXPORT_UNSUPPORTED_DEPENDENCIES" } });
     } else if (result.kind === "invalid_request") {
       context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
     } else {
-      context.sendJson(200, {
-        filename: result.value.filename,
-        mediaType: result.value.mediaType,
-        encoding: "base64",
-        archiveBase64: base64(result.value.archive),
-        manifest: result.value.manifest
-      });
+      context.sendJson(200, exportEnvelope(result.value));
     }
     return true;
   }
@@ -316,6 +341,16 @@ function parsePositiveBoundedInteger(value: string, max: number): number | null 
   if (!/^[1-9][0-9]{0,5}$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= max ? parsed : null;
+}
+
+function exportEnvelope(value: { readonly filename: string; readonly mediaType: string; readonly archive: Uint8Array; readonly manifest: unknown }): object {
+  return Object.freeze({
+    filename: value.filename,
+    mediaType: value.mediaType,
+    encoding: "base64",
+    archiveBase64: base64(value.archive),
+    manifest: value.manifest
+  });
 }
 
 function base64(bytes: Uint8Array): string {
