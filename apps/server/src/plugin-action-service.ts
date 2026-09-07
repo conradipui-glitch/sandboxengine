@@ -3,9 +3,12 @@ import {
   applyTimeAdvancePlan,
   drawDeterministicInt,
   planTimeAdvance,
+  processTimeAdvancePlan,
   tryApplyEffectBatch,
   type DeterministicRngState,
-  type EffectBatchFailure
+  type EffectBatchFailure,
+  type SchedulerProcessingSuccess,
+  type TimeAdvancePlanSuccess
 } from "@living-history/core";
 import {
   handleRegisteredPluginEvent,
@@ -36,6 +39,19 @@ export type PluginCoreExecutionResult =
       readonly pluginFailure?: Exclude<PluginActionResolutionResult, { ok: true }>;
       readonly effectFailure?: EffectBatchFailure;
       readonly coreCode?: string;
+    };
+
+export type PluginSchedulerCoreProcessingResult =
+  | {
+      readonly ok: true;
+      readonly processing: SchedulerProcessingSuccess;
+      readonly rngState: DeterministicRngState;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "scheduler_processing_failed";
+      readonly coreCode: string;
+      readonly eventId?: string;
     };
 
 /**
@@ -137,4 +153,53 @@ export function executeRegisteredPluginSchedulerHandler(input: {
   return handled.ok
     ? Object.freeze({ ...handled, rngState })
     : handled;
+}
+
+/**
+ * Routes trusted plugin scheduler handlers through the existing Core dynamic
+ * scheduler. Core remains authoritative for child-event validity, duplicate/past
+ * checks, effective ordering, event/step budgets and the final state transition.
+ * RNG advancement is published only with a successful Core transition.
+ */
+export function processRegisteredPluginSchedulerThroughCore(input: {
+  readonly registry: PluginExecutionRegistry;
+  readonly state: WorldState;
+  readonly plan: TimeAdvancePlanSuccess;
+  readonly rngState: DeterministicRngState;
+  readonly resolveEventTypeId: (event: SchedulerEvent) => string | null;
+}): PluginSchedulerCoreProcessingResult {
+  let rngState = input.rngState;
+  const processing = processTimeAdvancePlan(input.state, input.plan, {
+    handler(event, state, context) {
+      const eventTypeId = input.resolveEventTypeId(event);
+      if (eventTypeId === null) return Object.freeze([]);
+      if (typeof eventTypeId !== "string" || eventTypeId.length < 1 || eventTypeId.length > 200) {
+        throw new TypeError("invalid plugin scheduler event type id");
+      }
+      const handled = executeRegisteredPluginSchedulerHandler({
+        registry: input.registry,
+        eventTypeId,
+        event,
+        state,
+        context,
+        rngState
+      });
+      if (!handled.ok || handled.rngState === undefined) {
+        throw new Error("plugin scheduler handler failed");
+      }
+      rngState = handled.rngState;
+      return handled.events;
+    }
+  });
+
+  if (!processing.ok) {
+    return Object.freeze({
+      ok: false,
+      code: "scheduler_processing_failed",
+      coreCode: processing.code,
+      ...(processing.eventId === undefined ? {} : { eventId: processing.eventId })
+    });
+  }
+
+  return Object.freeze({ ok: true, processing, rngState });
 }
