@@ -134,6 +134,14 @@ async function routeControlRequest(
     sendJson(response, 403, { error: { code: "CONTROL_ORIGIN_DENIED" } });
     return;
   }
+  if (auth) {
+    const origin = readHeader(request, "origin");
+    if (origin) applyCorsHeaders(response, origin);
+    if (method === "OPTIONS" && url.pathname.startsWith("/control/v1/")) {
+      sendCorsPreflight(response);
+      return;
+    }
+  }
 
   if (auth && url.pathname === "/control/v1/auth/login" && method === "POST") {
     await handleLogin(request, response, auth, failures);
@@ -533,6 +541,22 @@ function buildAuthRuntime(options: ControlAuthenticatedModeOptions): AuthRuntime
 function originAllowed(request: any, auth: AuthRuntime): boolean {
   const origin = readHeader(request, "origin");
   return origin === undefined || auth.allowedOrigins.has(origin);
+}
+
+function applyCorsHeaders(response: any, origin: string): void {
+  response.setHeader("access-control-allow-origin", origin);
+  response.setHeader("access-control-allow-credentials", "true");
+  response.setHeader("vary", "Origin");
+}
+
+function sendCorsPreflight(response: any): void {
+  response.statusCode = 204;
+  response.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+  response.setHeader("access-control-allow-headers", "content-type, x-csrf-token");
+  response.setHeader("access-control-max-age", "600");
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end();
 }
 
 function loginRetryAfter(
