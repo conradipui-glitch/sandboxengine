@@ -13,10 +13,21 @@ export const GENERATED_DOC_PATHS = [
 export async function buildGeneratedDocs(root) {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const registry = JSON.parse(await readFile(resolve(root, "packages/contracts/registry/endpoints.json"), "utf8"));
-  const schemaDirectory = resolve(root, "packages/contracts/schemas/v1");
-  const schemaFiles = (await readdir(schemaDirectory))
-    .filter((name) => name.endsWith(".schema.json"))
-    .sort();
+  const schemaDirectories = ["v1", "v2"];
+  const schemaEntries = [];
+  for (const directory of schemaDirectories) {
+    const absolute = resolve(root, `packages/contracts/schemas/${directory}`);
+    let files;
+    try {
+      files = await readdir(absolute);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    for (const file of files.filter((name) => name.endsWith(".schema.json")).sort()) {
+      schemaEntries.push({ directory, file });
+    }
+  }
 
   const schemas = [];
   let blockKinds = [];
@@ -26,59 +37,68 @@ export async function buildGeneratedDocs(root) {
   const scheduledEventKinds = [];
   const scheduledTaskKinds = [];
   let actionTypes = [];
+  let presentationCommandTypes = [];
   let contractsSchemaVersion = null;
-  for (const file of schemaFiles) {
-    const schema = JSON.parse(await readFile(resolve(schemaDirectory, file), "utf8"));
+  let presentationSchemaVersion = null;
+
+  for (const { directory, file } of schemaEntries) {
+    const schema = JSON.parse(await readFile(resolve(root, `packages/contracts/schemas/${directory}/${file}`), "utf8"));
     const name = file.replace(/\.schema\.json$/, "");
+    const version = schemaVersionOf(schema);
     schemas.push({
       name,
-      file: `packages/contracts/schemas/v1/${file}`,
+      version,
+      file: `packages/contracts/schemas/${directory}/${file}`,
       id: schema.$id
     });
-    const version = schema?.properties?.schemaVersion?.const
-      ?? schema?.oneOf?.[0]?.properties?.schemaVersion?.const
-      ?? schema?.$defs?.request?.properties?.schemaVersion?.const;
-    if (version !== undefined) {
+
+    if (directory === "v1" && version !== null) {
       if (contractsSchemaVersion === null) contractsSchemaVersion = version;
-      if (contractsSchemaVersion !== version) {
-        throw new Error(`Schema version mismatch in ${file}`);
-      }
+      if (contractsSchemaVersion !== version) throw new Error(`Core schema version mismatch in ${file}`);
     }
-    if (name === "block") blockKinds = [...schema.properties.kind.enum].sort();
-    if (name === "gameplay-effect") {
+    if (directory === "v2" && version !== null) {
+      if (presentationSchemaVersion === null) presentationSchemaVersion = version;
+      if (presentationSchemaVersion !== version) throw new Error(`Presentation schema version mismatch in ${file}`);
+    }
+
+    if (directory === "v1" && name === "block") blockKinds = [...schema.properties.kind.enum].sort();
+    if (directory === "v1" && name === "gameplay-effect") {
       gameplayEffectTypes = schema.oneOf
         .map((variant) => variant?.properties?.type?.const)
         .filter((value) => typeof value === "string")
         .sort();
     }
-    if (name === "condition") {
+    if (directory === "v1" && name === "condition") {
       conditionTypes = schema.oneOf
         .map((variant) => variant?.properties?.type?.const)
         .filter((value) => typeof value === "string")
         .sort();
     }
-    if (name === "social-act") {
-      socialActTypes = ["permission", "request", "response"];
-    }
-    if (["scheduled-event", "scheduled-effect-event", "scheduled-terminal-event"].includes(name)) {
+    if (directory === "v1" && name === "social-act") socialActTypes = ["permission", "request", "response"];
+    if (directory === "v1" && ["scheduled-event", "scheduled-effect-event", "scheduled-terminal-event"].includes(name)) {
       const kind = schema?.properties?.kind?.const;
       if (typeof kind === "string") scheduledEventKinds.push(kind);
     }
-    if (name === "scheduled-task") {
+    if (directory === "v1" && name === "scheduled-task") {
       const kind = schema?.properties?.kind?.const;
       if (typeof kind === "string") scheduledTaskKinds.push(kind);
     }
-    if (name === "calculated-action") {
+    if (directory === "v1" && name === "calculated-action") {
       actionTypes = schema.oneOf
         .map((variant) => variant?.properties?.actionType?.const)
         .filter((value) => typeof value === "string")
         .sort();
     }
+    if (directory === "v2" && name === "presentation-plan") {
+      presentationCommandTypes = presentationCommandsOf(schema);
+    }
   }
   scheduledEventKinds.sort();
   scheduledTaskKinds.sort();
+  schemas.sort((a, b) => a.file.localeCompare(b.file));
 
-  if (contractsSchemaVersion === null) throw new Error("No contract schema version found");
+  if (contractsSchemaVersion === null) throw new Error("No core contract schema version found");
+  if (presentationSchemaVersion === null) throw new Error("No presentation schema version found");
 
   const availableOperations = registry.operations
     .filter((operation) => operation.readiness === "available")
@@ -92,10 +112,12 @@ export async function buildGeneratedDocs(root) {
 
   const schemaIndex = {
     contractsSchemaVersion,
+    presentationSchemaVersion,
     schemas
   };
   const capabilities = {
     contractsSchemaVersion,
+    presentationSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
@@ -103,6 +125,7 @@ export async function buildGeneratedDocs(root) {
     scheduledEventKinds,
     scheduledTaskKinds,
     actionTypes,
+    presentationCommandTypes,
     operations: availableOperations
   };
   const openapi = {
@@ -123,11 +146,13 @@ export async function buildGeneratedDocs(root) {
     scheduledEventKinds,
     scheduledTaskKinds,
     actionTypes,
+    presentationCommandTypes,
     schemas
   }));
   const compatibility = {
     engineVersion: packageJson.version,
     contractsSchemaVersion,
+    presentationSchemaVersion,
     registryVersion: registry.registryVersion,
     registryHash,
     availableOperationCount: availableOperations.length
@@ -135,6 +160,7 @@ export async function buildGeneratedDocs(root) {
   const skill = buildSkill({
     engineVersion: packageJson.version,
     contractsSchemaVersion,
+    presentationSchemaVersion,
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
@@ -142,6 +168,7 @@ export async function buildGeneratedDocs(root) {
     scheduledEventKinds,
     scheduledTaskKinds,
     actionTypes,
+    presentationCommandTypes,
     availableOperations
   });
 
@@ -200,7 +227,7 @@ function buildOpenApiPaths(operations) {
   return paths;
 }
 
-function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, scheduledEventKinds, scheduledTaskKinds, actionTypes, availableOperations }) {
+function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaVersion, blockKinds, gameplayEffectTypes, conditionTypes, socialActTypes, scheduledEventKinds, scheduledTaskKinds, actionTypes, presentationCommandTypes, availableOperations }) {
   const operationLines = availableOperations.length === 0
     ? "- Нет доступных HTTP-операций: Runtime/Control API ещё не реализованы."
     : availableOperations.map((operation) => `- \`${operation.method} ${operation.path}\` — ${operation.summary}`).join("\n");
@@ -223,10 +250,14 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
   const actionLines = actionTypes.length === 0
     ? "- Нет рассчитанных action types."
     : actionTypes.map((type) => `- \`${type}\``).join("\n");
+  const presentationLines = presentationCommandTypes.length === 0
+    ? "- Нет presentation commands."
+    : presentationCommandTypes.map((type) => `- \`${type}\``).join("\n");
   return `# Living History Engine — agent contract\n\n` +
     `Generated file. Do not edit by hand.\n\n` +
     `- Engine version: \`${engineVersion}\`\n` +
-    `- Contracts schema version: \`${contractsSchemaVersion}\`\n` +
+    `- Core contracts schema version: \`${contractsSchemaVersion}\`\n` +
+    `- Presentation schema version: \`${presentationSchemaVersion}\`\n` +
     `- Canonical schemas: [schema-index.json](schema-index.json)\n` +
     `- Machine capabilities: [capabilities.json](capabilities.json)\n` +
     `- OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)\n\n` +
@@ -237,9 +268,26 @@ function buildSkill({ engineVersion, contractsSchemaVersion, blockKinds, gamepla
     `## Available scheduled events\n\n${scheduledEventLines}\n\n` +
     `## Available scheduled tasks\n\n${scheduledTaskLines}\n\n` +
     `## Available calculated actions\n\n${actionLines}\n\n` +
+    `## Available presentation commands\n\n${presentationLines}\n\n` +
     `## Available HTTP operations\n\n${operationLines}\n\n` +
     `Planned registry entries are intentionally excluded from the available list. ` +
     `Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.\n`;
+}
+
+function schemaVersionOf(schema) {
+  const version = schema?.properties?.schemaVersion?.const
+    ?? schema?.oneOf?.[0]?.properties?.schemaVersion?.const
+    ?? schema?.$defs?.request?.properties?.schemaVersion?.const;
+  return typeof version === "string" ? version : null;
+}
+
+function presentationCommandsOf(schema) {
+  const refs = schema?.$defs?.node?.oneOf ?? [];
+  const values = refs
+    .map((entry) => typeof entry?.$ref === "string" ? entry.$ref.split("/").at(-1) : null)
+    .map((name) => name ? schema?.$defs?.[name]?.properties?.type?.const : null)
+    .filter((value) => typeof value === "string" && value !== "sequence" && value !== "parallel");
+  return [...new Set(values)].sort();
 }
 
 function formatJson(value) {
