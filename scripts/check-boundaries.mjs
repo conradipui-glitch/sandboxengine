@@ -7,8 +7,7 @@ const checks = [
     root: new URL("../packages/core/src/", import.meta.url),
     forbidden: [
       /from\s+["'](?:react|fastify|sqlite|better-sqlite3)/,
-      /from\s+["']@living-history\/runtime(?:["'/])/,
-      /from\s+["']@living-history\/control(?:["'/])/,
+      /from\s+["']@living-history\/(?:runtime|control|plugins)(?:["'/])/,
       /\bfetch\s*\(/,
       /process\.env/,
       /from\s+["']node:fs/
@@ -48,14 +47,18 @@ const checks = [
     ]
   },
   {
-    label: "Plugins registry",
+    label: "Plugins",
     root: new URL("../packages/plugins/src/", import.meta.url),
     forbidden: [
       /from\s+["']@living-history\/(?:core|runtime|control|player|ai|assets)(?:["'/])/,
       /from\s+["'][^"']*apps\//,
-      /from\s+["']node:(?:fs|child_process|https?|net|tls|vm)/,
+      /from\s+["']node:(?:fs|child_process|https?|net|tls|vm|sqlite)/,
+      /from\s+["'](?:sqlite|better-sqlite3)(?:["'/])/,
       /\bfetch\s*\(/,
-      /process\.env/,
+      /\bprocess\./,
+      /\bMath\.random\s*\(/,
+      /\bDate\.now\s*\(/,
+      /\bperformance\.now\s*\(/,
       /\beval\s*\(/,
       /\bnew\s+Function\b/,
       /\bimport\s*\(/
@@ -80,5 +83,5 @@ if (violations.length > 0) {
   console.error("Boundary violations:\n" + violations.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("check:boundaries ok — Core чист от infrastructure/runtime/control; Player чист от Core/Control/storage; Runtime AI provider чист от gameplay/UI/storage; Assets чист от gameplay/network/process authority; Plugins registry чист от gameplay/network/process/dynamic-code authority");
+  console.log("check:boundaries ok — Core cannot depend on plugin/runtime/control infrastructure; Player is isolated from Core/Control/storage; Runtime AI is isolated from gameplay/UI/storage; Assets are isolated from gameplay/network/process authority; trusted Plugins are isolated from Core/DB/network/process/dynamic-code and obvious wall-clock/entropy shortcuts");
 }
