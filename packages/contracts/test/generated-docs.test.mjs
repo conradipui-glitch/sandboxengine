@@ -18,6 +18,7 @@ test("generated agent contracts expose only implemented capabilities", async () 
   const generated = await buildGeneratedDocs(root);
   const openapi = JSON.parse(generated.get("docs/agent/api.openapi.json"));
   const capabilities = JSON.parse(generated.get("docs/agent/capabilities.json"));
+  const schemaIndex = JSON.parse(generated.get("docs/agent/schema-index.json"));
   const skill = generated.get("docs/agent/SKILL.md");
 
   assert.deepEqual(
@@ -38,6 +39,19 @@ test("generated agent contracts expose only implemented capabilities", async () 
     assert.equal(skill.includes(`${operation.method} ${operation.path}`), false);
   }
 
+  assert.equal(capabilities.contractsSchemaVersion, "1.0");
+  assert.equal(capabilities.presentationSchemaVersion, "2.0");
+  assert.equal(schemaIndex.contractsSchemaVersion, "1.0");
+  assert.equal(schemaIndex.presentationSchemaVersion, "2.0");
+  assert.equal(
+    schemaIndex.schemas.some((schema) => schema.id === "urn:living-history:schema:scene-frame:1.0" && schema.version === "1.0"),
+    true
+  );
+  assert.equal(
+    schemaIndex.schemas.some((schema) => schema.id === "urn:living-history:schema:scene-frame:2.0" && schema.version === "2.0"),
+    true
+  );
+
   assert.deepEqual(capabilities.blockKinds, ["core.action", "core.character", "core.location", "core.resource"]);
   assert.deepEqual(capabilities.gameplayEffectTypes, ["entity.move", "item.transfer", "resource.change"]);
   assert.deepEqual(capabilities.conditionTypes, ["all", "any", "entity.at", "item.heldBy", "not", "resource.atLeast"]);
@@ -50,6 +64,23 @@ test("generated agent contracts expose only implemented capabilities", async () 
     "core.social.request",
     "core.social.response"
   ]);
+  assert.deepEqual(capabilities.presentationCommandTypes, [
+    "actor.expression",
+    "actor.hide",
+    "actor.move",
+    "actor.show",
+    "audio.play",
+    "audio.stop",
+    "background.set",
+    "dialogue.show",
+    "item.show",
+    "overlay.close",
+    "overlay.open",
+    "wait"
+  ]);
+  for (const command of capabilities.presentationCommandTypes) {
+    assert.equal(skill.includes(`\`${command}\``), true, `presentation command missing from generated Skill: ${command}`);
+  }
 });
 
 test("generated docs are deterministic and stale content is detected", async () => {
