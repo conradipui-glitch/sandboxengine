@@ -1,38 +1,56 @@
 import { PlayerClientError, RuntimePlayerClient } from "/player-lib/client.js";
+import { PresentationExecutor } from "/player-lib/presentation-executor.js";
+import { BrowserPresentationRenderer } from "/presentation-renderer.js";
 
 const root = document.querySelector("#app");
 if (!(root instanceof HTMLElement)) throw new Error("Player root is missing");
 
+const SESSION_STORAGE_KEY = "living-history.player.session.v1";
 const client = new RuntimePlayerClient(window.location.origin);
 const state = {
   meta: null,
   session: null,
   result: null,
+  presentationFrame: null,
   phase: "loading",
-  message: "Запускаем frozen playtest…"
+  message: "Запускаем frozen playtest…",
+  presentationMessage: ""
 };
+const renderer = new BrowserPresentationRenderer(() => state.session);
+const executor = new PresentationExecutor(renderer);
 
 root.addEventListener("submit", (event) => void onSubmit(event));
 root.addEventListener("click", (event) => void onClick(event));
+window.addEventListener("pagehide", () => {
+  executor.cancelActive();
+  renderer.dispose();
+}, { once: true });
 void start();
 
 async function start() {
   render();
   try {
     state.meta = await loadMetadata();
-    state.session = await client.createSession(state.meta.templateId);
+    state.session = await resumeOrCreateSession(state.meta.templateId);
+    state.presentationFrame = state.session.presentationFrame;
     state.phase = "ready";
-    state.message = "Тестовая сессия запущена.";
+    state.message = state.session.lastOperationId === null
+      ? "Тестовая сессия запущена."
+      : "Сессия восстановлена без повторного проигрывания прошлого хода.";
+    persistSession(state.session);
+    render();
+    await restoreConfirmedPresentation(state.presentationFrame);
   } catch (error) {
+    clearStoredSession();
     setError(error);
+    render();
   }
-  render();
 }
 
 async function onSubmit(event) {
   if (!(event.target instanceof HTMLFormElement) || event.target.dataset.form !== "paint") return;
   event.preventDefault();
-  if (!state.session || !state.meta || state.phase === "acting" || state.phase === "resetting") return;
+  if (!state.session || !state.meta || isBusy()) return;
 
   const form = new FormData(event.target);
   const units = Number(form.get("units"));
@@ -40,44 +58,148 @@ async function onSubmit(event) {
     state.phase = "error";
     state.message = "Количество должно быть целым числом от 1 до 1000.";
     render();
+    await paintConfirmedFrame();
     return;
   }
 
   state.phase = "acting";
   state.message = "Движок рассчитывает действие…";
+  state.presentationMessage = "";
   state.result = null;
   render();
+  await paintConfirmedFrame();
 
   try {
     const result = await client.paint(state.session, units, makeIdempotencyKey());
     state.session = result.session;
     state.result = result;
-    state.phase = "ready";
-    state.message = "Ход зафиксирован Runtime.";
+    persistSession(state.session);
+
+    if (result.presentation) {
+      await playPresentation(result.presentation);
+    } else {
+      state.phase = "ready";
+      state.message = "Ход зафиксирован Runtime. Presentation payload отсутствует или отклонён; gameplay result сохранён.";
+      state.presentationMessage = "Визуальное состояние не изменено без доверенного SceneFrame.";
+      render();
+      await paintConfirmedFrame();
+    }
   } catch (error) {
     setError(error);
+    render();
+    await paintConfirmedFrame();
   }
+}
+
+async function playPresentation(presentation) {
+  const previousFrame = state.presentationFrame;
+  state.phase = "presenting";
+  state.message = "Ход уже зафиксирован. Проигрываем только presentation-переход…";
+  state.presentationMessage = "Skip не отменяет и не повторяет игровой ход.";
   render();
+  await renderFrameOnly(previousFrame);
+
+  renderer.prepareTargetFrame(presentation.frame);
+  const reducedMotion = prefersReducedMotion();
+  const result = await executor.present({
+    targetFrame: presentation.frame,
+    plan: presentation.plan,
+    preferences: {
+      reducedMotion,
+      revealTextInstantly: reducedMotion
+    }
+  });
+  state.presentationFrame = result.currentFrame ?? presentation.frame;
+  state.phase = "ready";
+  state.message = "Ход зафиксирован Runtime.";
+  state.presentationMessage = presentationStatus(result);
+  render();
+  await paintConfirmedFrame();
 }
 
 async function onClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
-  if (!(target instanceof HTMLElement) || target.dataset.action !== "reset") return;
-  if (!state.session || state.phase === "acting" || state.phase === "resetting") return;
+  if (!(target instanceof HTMLElement)) return;
 
+  if (target.dataset.action === "skip-presentation") {
+    if (state.phase === "presenting") {
+      state.presentationMessage = "Пропускаем эффекты и переходим к подтверждённому SceneFrame…";
+      const status = document.querySelector("[data-presentation-status]");
+      if (status) status.textContent = state.presentationMessage;
+      executor.skipActive();
+    }
+    return;
+  }
+
+  if (target.dataset.action !== "reset") return;
+  if (!state.session || isBusy()) return;
+
+  executor.cancelActive();
+  renderer.dispose();
   state.phase = "resetting";
   state.message = "Создаём новую сессию из того же frozen playtest…";
+  state.presentationMessage = "";
   state.result = null;
   render();
 
   try {
     state.session = await client.reset(state.session);
+    state.presentationFrame = state.session.presentationFrame;
+    persistSession(state.session);
     state.phase = "ready";
     state.message = "Сессия сброшена к начальному состоянию этого playtest.";
+    render();
+    await restoreConfirmedPresentation(state.presentationFrame);
   } catch (error) {
     setError(error);
+    render();
   }
-  render();
+}
+
+async function resumeOrCreateSession(templateId) {
+  const stored = readStoredSession();
+  if (stored && stored.templateId === templateId) {
+    try {
+      return await client.resume(
+        templateId,
+        stored.sessionId,
+        stored.credential,
+        stored.lastOperationId
+      );
+    } catch {
+      clearStoredSession();
+    }
+  }
+  return client.createSession(templateId);
+}
+
+async function restoreConfirmedPresentation(frame) {
+  if (!frame) return;
+  renderer.prepareTargetFrame(frame);
+  try {
+    const result = await executor.restore(frame);
+    state.presentationFrame = result.currentFrame;
+    state.presentationMessage = "Подтверждённый SceneFrame восстановлен напрямую.";
+  } catch {
+    state.presentationMessage = "Presentation frame недоступен; gameplay session остаётся активной.";
+  }
+  await paintConfirmedFrame();
+}
+
+async function paintConfirmedFrame() {
+  await renderFrameOnly(state.presentationFrame);
+}
+
+async function renderFrameOnly(frame) {
+  if (!frame || !document.querySelector("#presentation-stage")) return;
+  renderer.prepareTargetFrame(frame);
+  const controller = new AbortController();
+  try {
+    await renderer.applyFrame(frame, controller.signal);
+  } catch {
+    const stage = document.querySelector("#presentation-stage");
+    if (stage) stage.textContent = "Presentation недоступен; структурированный ход сохранён.";
+  }
 }
 
 async function loadMetadata() {
@@ -96,8 +218,11 @@ function render() {
   const meta = state.meta;
   const view = state.session.playerView;
   const resource = view.resources.find((entry) => entry.id === meta.resourceId);
-  const busy = state.phase === "acting" || state.phase === "resetting";
+  const busy = isBusy();
 
+  // This shell uses only local metadata / structured gameplay fields, all escaped.
+  // SceneFrame/PresentationPlan content is never interpolated here; the dedicated
+  // renderer below uses createElement/textContent/replaceChildren only.
   root.innerHTML = `
     <div class="player-shell">
       <header class="player-topbar">
@@ -119,6 +244,11 @@ function render() {
         </section>
 
         <section class="scene-surface" aria-label="Тестовая сцена">
+          <div id="presentation-stage" class="presentation-stage" aria-live="polite"></div>
+          <div class="presentation-controls">
+            ${state.phase === "presenting" ? `<button class="secondary" type="button" data-action="skip-presentation">Пропустить анимацию</button>` : ""}
+          </div>
+          <p class="presentation-status" data-presentation-status>${escapeHtml(state.presentationMessage)}</p>
           <div class="scene-copy">
             <h2>${escapeHtml(meta.locationTitle)}</h2>
             <p>${escapeHtml(meta.sceneText)}</p>
@@ -154,7 +284,7 @@ function render() {
                   Количество
                   <input name="units" type="number" min="1" max="1000" step="1" value="2" required ${busy ? "disabled" : ""} />
                 </label>
-                <button class="primary" type="submit" ${busy ? "disabled" : ""}>${state.phase === "acting" ? "Выполняем…" : "Рисовать"}</button>
+                <button class="primary" type="submit" ${busy ? "disabled" : ""}>${state.phase === "acting" ? "Выполняем…" : state.phase === "presenting" ? "Ход зафиксирован" : "Рисовать"}</button>
               </div>
               <div class="action-note">Стоимость действия намеренно не показывается и не вычисляется в браузере: она принадлежит frozen playtest definition.</div>
             </form>
@@ -172,9 +302,7 @@ function render() {
 }
 
 function renderResult(result, errorMessage) {
-  if (errorMessage) {
-    return `<div class="result-box error"><strong>Ошибка</strong><p>${escapeHtml(errorMessage)}</p></div>`;
-  }
+  if (errorMessage) return `<div class="result-box error"><strong>Ошибка</strong><p>${escapeHtml(errorMessage)}</p></div>`;
   if (!result) return `<div class="result-box empty">Результат следующего хода появится здесь.</div>`;
 
   const status = result.action.status;
@@ -203,11 +331,56 @@ function renderNarrative(narrative) {
   `;
 }
 
+function persistSession(session) {
+  try {
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      templateId: session.templateId,
+      sessionId: session.sessionId,
+      credential: session.credential,
+      lastOperationId: session.lastOperationId
+    }));
+  } catch { /* ephemeral persistence is optional */ }
+}
+
+function readStoredSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== "object"
+      || typeof value.templateId !== "string"
+      || typeof value.sessionId !== "string"
+      || typeof value.credential !== "string"
+      || !(value.lastOperationId === null || typeof value.lastOperationId === "string")) return null;
+    return value;
+  } catch { return null; }
+}
+
+function clearStoredSession() {
+  try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* no-op */ }
+}
+
 function setError(error) {
   state.phase = "error";
   state.message = error instanceof PlayerClientError
     ? `${error.code} (HTTP ${error.status})`
     : error instanceof Error ? error.message : "Неизвестная ошибка Player.";
+}
+
+function presentationStatus(result) {
+  if (result.outcome === "played") return "Presentation plan выполнен; финальный SceneFrame подтверждён.";
+  if (result.outcome === "skipped") return "Эффекты пропущены; применён тот же подтверждённый SceneFrame.";
+  if (result.outcome === "failed") return "Presentation effect завершился ошибкой; восстановлен подтверждённый SceneFrame.";
+  if (result.outcome === "recovered") return "Переход не проигрывался; восстановлен подтверждённый SceneFrame.";
+  return `Presentation: ${result.outcome}.`;
+}
+
+function prefersReducedMotion() {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function isBusy() {
+  return state.phase === "acting" || state.phase === "presenting" || state.phase === "resetting";
 }
 
 function makeIdempotencyKey() {
