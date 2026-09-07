@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+# Trigger-only edit: the apply workflow already exists on the branch before this push.
 path = Path("packages/contracts/registry/endpoints.json")
 data = json.loads(path.read_text())
 operations = data["operations"]
