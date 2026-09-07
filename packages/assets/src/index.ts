@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 // @ts-ignore — Node 24 built-ins are pinned by the repository; @types/node is intentionally not a dependency yet.
 import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 // @ts-ignore — Node 24 built-ins are pinned by the repository; @types/node is intentionally not a dependency yet.
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   PRESENTATION_SCHEMA_VERSION,
   hasValidAssetManifestV2,
@@ -43,7 +43,15 @@ export interface AssetLimits {
   readonly maxImagePixels: number;
   readonly maxAudioDurationMs: number;
   readonly maxFilenameChars: number;
+  readonly maxAltTextChars: number;
+  readonly maxSourceChars: number;
+  readonly maxRightsChars: number;
 }
+
+const CANONICAL_MAX_ALT_TEXT_CHARS = 1_000;
+const CANONICAL_MAX_SOURCE_CHARS = 2_000;
+const CANONICAL_MAX_RIGHTS_CHARS = 2_000;
+const MAX_STORED_FILENAME_CHARS = 1_024;
 
 export const DEFAULT_ASSET_LIMITS: AssetLimits = Object.freeze({
   maxInputBytes: 20 * 1024 * 1024,
@@ -51,7 +59,10 @@ export const DEFAULT_ASSET_LIMITS: AssetLimits = Object.freeze({
   maxImageHeight: 8_192,
   maxImagePixels: 40_000_000,
   maxAudioDurationMs: 10 * 60_000,
-  maxFilenameChars: 255
+  maxFilenameChars: 255,
+  maxAltTextChars: CANONICAL_MAX_ALT_TEXT_CHARS,
+  maxSourceChars: CANONICAL_MAX_SOURCE_CHARS,
+  maxRightsChars: CANONICAL_MAX_RIGHTS_CHARS
 });
 
 export interface AssetInspection {
@@ -151,9 +162,11 @@ export async function ingestAsset(
     widthPx: inspection.widthPx,
     heightPx: inspection.heightPx,
     durationMs: inspection.durationMs,
-    altText: inspection.kind === "image" ? requiredText(request.altText, 1_000, "altText") : nullableText(request.altText, 1_000, "altText"),
-    source: nullableText(request.source, 2_000, "source"),
-    rights: nullableText(request.rights, 2_000, "rights")
+    altText: inspection.kind === "image"
+      ? requiredText(request.altText, limits.maxAltTextChars, "altText")
+      : nullableText(request.altText, limits.maxAltTextChars, "altText"),
+    source: nullableText(request.source, limits.maxSourceChars, "source"),
+    rights: nullableText(request.rights, limits.maxRightsChars, "rights")
   });
   if (!hasValidAssetManifestV2(manifest)) {
     throw new AssetBoundaryError("invalid_request", "Generated manifest failed the canonical B07 presentation contract.");
@@ -183,15 +196,17 @@ export class LocalAssetStore {
     return this.#root;
   }
 
-  async put(record: AssetRecord, bytes: Uint8Array): Promise<void> {
+  async put(record: AssetRecord, inputBytes: Uint8Array): Promise<void> {
     validateRecord(record);
+    if (!(inputBytes instanceof Uint8Array)) throw new AssetBoundaryError("storage_integrity", "Stored bytes must be Uint8Array.");
+    const bytes = Uint8Array.from(inputBytes);
     const actualHash = sha256AssetBytes(bytes);
     if (actualHash !== record.manifest.hash || bytes.byteLength !== record.byteLength) {
       throw new AssetBoundaryError("storage_integrity", "Record identity does not match supplied bytes.");
     }
 
     const objectPath = this.#objectPath(record.manifest.hash);
-    await mkdir(join(this.#root, "objects", record.manifest.hash.slice(0, 2)), { recursive: true });
+    await mkdir(dirname(objectPath), { recursive: true });
     await publishImmutable(objectPath, bytes, async () => {
       const existing = await readFile(objectPath);
       const existingBytes = new Uint8Array(existing.buffer, existing.byteOffset, existing.byteLength);
@@ -201,12 +216,12 @@ export class LocalAssetStore {
     });
 
     const registryPath = this.#registryPath(record.manifest.id, record.manifest.hash);
-    const registryDirectory = registryPath.slice(0, registryPath.lastIndexOf("/"));
-    await mkdir(registryDirectory, { recursive: true });
-    const payload = new TextEncoder().encode(`${JSON.stringify(record)}\n`);
+    await mkdir(dirname(registryPath), { recursive: true });
+    const serialized = `${JSON.stringify(record)}\n`;
+    const payload = new TextEncoder().encode(serialized);
     await publishImmutable(registryPath, payload, async () => {
       const existing = await readFile(registryPath, "utf8");
-      if (existing !== `${JSON.stringify(record)}\n`) {
+      if (existing !== serialized) {
         throw new AssetBoundaryError("storage_integrity", "Immutable asset registry record already exists with different metadata.");
       }
     });
@@ -250,6 +265,8 @@ export class LocalAssetStore {
     if (bytes.byteLength !== record.byteLength || sha256AssetBytes(bytes) !== hash) {
       throw new AssetBoundaryError("corrupt_object", "Stored object failed size/hash verification.");
     }
+    Object.freeze(record.manifest);
+    Object.freeze(record);
     return Object.freeze({ record, bytes });
   }
 
@@ -294,24 +311,61 @@ async function publishImmutable(targetPath: string, bytes: Uint8Array, verifyExi
 }
 
 function inspectPng(bytes: Uint8Array): AssetInspection {
-  if (bytes.byteLength < 33 || readUint32BE(bytes, 8) !== 13 || !asciiAt(bytes, 12, "IHDR")) malformed("PNG missing canonical IHDR header.");
-  const width = readUint32BE(bytes, 16);
-  const height = readUint32BE(bytes, 20);
-  if (width < 1 || height < 1) malformed("PNG dimensions must be positive.");
+  let offset = 8;
+  let chunkIndex = 0;
+  let width: number | null = null;
+  let height: number | null = null;
+  let sawIend = false;
+
+  while (offset < bytes.byteLength) {
+    if (offset + 12 > bytes.byteLength) malformed("PNG chunk header is truncated.");
+    const length = readUint32BE(bytes, offset);
+    const type = readAscii(bytes, offset + 4, 4);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    const chunkEnd = dataEnd + 4;
+    if (!Number.isSafeInteger(chunkEnd) || chunkEnd > bytes.byteLength) malformed("PNG chunk is truncated.");
+
+    if (chunkIndex === 0) {
+      if (type !== "IHDR" || length !== 13) malformed("PNG must start with canonical IHDR.");
+      width = readUint32BE(bytes, dataStart);
+      height = readUint32BE(bytes, dataStart + 4);
+      if (width < 1 || height < 1) malformed("PNG dimensions must be positive.");
+    } else if (type === "IHDR") {
+      malformed("PNG contains duplicate IHDR.");
+    }
+
+    if (type === "IEND") {
+      if (length !== 0 || chunkEnd !== bytes.byteLength) malformed("PNG IEND must be empty and final.");
+      sawIend = true;
+      offset = chunkEnd;
+      break;
+    }
+
+    offset = chunkEnd;
+    chunkIndex += 1;
+  }
+
+  if (!sawIend || width === null || height === null || offset !== bytes.byteLength) malformed("PNG is missing final IEND.");
   return { kind: "image", mimeType: "image/png", widthPx: width, heightPx: height, durationMs: null };
 }
 
 function inspectWebp(bytes: Uint8Array): AssetInspection {
   if (bytes.byteLength < 20 || readUint32LE(bytes, 4) + 8 !== bytes.byteLength) malformed("WebP RIFF size is truncated or inconsistent.");
   const chunk = readAscii(bytes, 12, 4);
+  const chunkSize = readUint32LE(bytes, 16);
+  const chunkDataEnd = 20 + chunkSize;
+  const paddedChunkEnd = chunkDataEnd + (chunkSize % 2);
+  if (!Number.isSafeInteger(paddedChunkEnd) || paddedChunkEnd > bytes.byteLength) malformed("WebP first chunk length is truncated or inconsistent.");
+
   let width = 0;
   let height = 0;
   if (chunk === "VP8X") {
-    if (bytes.byteLength < 30 || readUint32LE(bytes, 16) < 10) malformed("WebP VP8X header is truncated.");
+    if (chunkSize !== 10 || bytes.byteLength < 30) malformed("WebP VP8X header is malformed.");
     width = 1 + readUint24LE(bytes, 24);
     height = 1 + readUint24LE(bytes, 27);
   } else if (chunk === "VP8L") {
-    if (bytes.byteLength < 25 || bytes[20] !== 0x2f) malformed("WebP VP8L header is malformed.");
+    if (chunkSize < 5 || bytes.byteLength < 25 || bytes[20] !== 0x2f) malformed("WebP VP8L header is malformed.");
     const b1 = bytes[21] ?? 0;
     const b2 = bytes[22] ?? 0;
     const b3 = bytes[23] ?? 0;
@@ -319,7 +373,7 @@ function inspectWebp(bytes: Uint8Array): AssetInspection {
     width = 1 + (((b2 & 0x3f) << 8) | b1);
     height = 1 + (((b4 & 0x0f) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
   } else if (chunk === "VP8 ") {
-    if (bytes.byteLength < 30 || bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) malformed("WebP VP8 frame header is malformed.");
+    if (chunkSize < 10 || bytes.byteLength < 30 || bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) malformed("WebP VP8 frame header is malformed.");
     width = readUint16LE(bytes, 26) & 0x3fff;
     height = readUint16LE(bytes, 28) & 0x3fff;
   } else {
@@ -330,19 +384,21 @@ function inspectWebp(bytes: Uint8Array): AssetInspection {
 }
 
 function inspectJpeg(bytes: Uint8Array): AssetInspection {
+  if (bytes.byteLength < 4 || bytes[bytes.byteLength - 2] !== 0xff || bytes[bytes.byteLength - 1] !== 0xd9) {
+    malformed("JPEG must end with EOI and cannot carry trailing bytes.");
+  }
   let offset = 2;
-  while (offset + 1 < bytes.byteLength) {
+  while (offset + 1 < bytes.byteLength - 2) {
     if (bytes[offset] !== 0xff) malformed("JPEG marker stream is malformed.");
     while (offset < bytes.byteLength && bytes[offset] === 0xff) offset += 1;
     if (offset >= bytes.byteLength) break;
     const marker = bytes[offset] ?? 0;
     offset += 1;
-    if (marker === 0xd9) break;
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
-    if (marker === 0xda) malformed("JPEG reached scan data before a supported SOF marker.");
+    if (marker === 0xda) malformed("JPEG scan-data parsing is outside the bounded metadata profile before a supported SOF marker.");
     if (offset + 2 > bytes.byteLength) malformed("JPEG segment length is truncated.");
     const segmentLength = readUint16BE(bytes, offset);
-    if (segmentLength < 2 || offset + segmentLength > bytes.byteLength) malformed("JPEG segment is truncated.");
+    if (segmentLength < 2 || offset + segmentLength > bytes.byteLength - 2) malformed("JPEG segment is truncated.");
     if (isJpegSof(marker)) {
       if (segmentLength < 8) malformed("JPEG SOF segment is too short.");
       const height = readUint16BE(bytes, offset + 3);
@@ -404,7 +460,7 @@ function inspectOggVorbis(bytes: Uint8Array): AssetInspection {
     if (pageEnd > bytes.byteLength) malformed("Ogg page body is truncated.");
 
     if (pageIndex === 0) {
-      if (bodyLength < 16 || bytes[bodyStart] !== 1 || !asciiAt(bytes, bodyStart + 1, "vorbis")) {
+      if (bodyLength < 30 || bytes[bodyStart] !== 1 || !asciiAt(bytes, bodyStart + 1, "vorbis")) {
         throw new AssetBoundaryError("unsupported_type", "Only Ogg Vorbis identification profile is supported in B07-02.");
       }
       sampleRate = readUint32LE(bytes, bodyStart + 12);
@@ -416,7 +472,7 @@ function inspectOggVorbis(bytes: Uint8Array): AssetInspection {
     offset = pageEnd;
     pageIndex += 1;
   }
-  if (pageIndex < 1 || sampleRate === null || lastGranule === null) malformed("Ogg Vorbis duration metadata is incomplete.");
+  if (pageIndex < 1 || sampleRate === null || lastGranule === null || offset !== bytes.byteLength) malformed("Ogg Vorbis duration metadata is incomplete.");
   if (lastGranule > BigInt(Number.MAX_SAFE_INTEGER)) malformed("Ogg granule position exceeds safe integer bounds.");
   const durationMs = Math.round((Number(lastGranule) * 1_000) / sampleRate);
   return { kind: "audio", mimeType: "audio/ogg", widthPx: null, heightPx: null, durationMs };
@@ -513,9 +569,18 @@ function validateLimits(limits: AssetLimits): void {
     limits.maxImageHeight,
     limits.maxImagePixels,
     limits.maxAudioDurationMs,
-    limits.maxFilenameChars
+    limits.maxFilenameChars,
+    limits.maxAltTextChars,
+    limits.maxSourceChars,
+    limits.maxRightsChars
   ]) {
     if (!Number.isSafeInteger(value) || value < 1) throw new AssetBoundaryError("invalid_request", "Asset limits must be positive safe integers.");
+  }
+  if (limits.maxFilenameChars > MAX_STORED_FILENAME_CHARS
+    || limits.maxAltTextChars > CANONICAL_MAX_ALT_TEXT_CHARS
+    || limits.maxSourceChars > CANONICAL_MAX_SOURCE_CHARS
+    || limits.maxRightsChars > CANONICAL_MAX_RIGHTS_CHARS) {
+    throw new AssetBoundaryError("invalid_request", "Configured metadata limits cannot exceed canonical stored contract bounds.");
   }
 }
 
@@ -525,7 +590,12 @@ function validateRecord(record: AssetRecord): void {
   }
   if (!Number.isSafeInteger(record.byteLength) || record.byteLength < 1) throw new AssetBoundaryError("storage_integrity", "Asset record byteLength is invalid.");
   if (record.storageKey !== `sha256:${record.manifest.hash}`) throw new AssetBoundaryError("storage_integrity", "Asset record storageKey is invalid.");
-  if (record.originalFilename !== null && (typeof record.originalFilename !== "string" || record.originalFilename.length > DEFAULT_ASSET_LIMITS.maxFilenameChars)) {
+  if (record.originalFilename !== null && (
+    typeof record.originalFilename !== "string"
+    || record.originalFilename.length < 1
+    || record.originalFilename.length > MAX_STORED_FILENAME_CHARS
+    || /[\u0000-\u001f\u007f]/.test(record.originalFilename)
+  )) {
     throw new AssetBoundaryError("storage_integrity", "Asset record originalFilename is invalid.");
   }
 }
@@ -576,7 +646,11 @@ function nullableText(value: string | null | undefined, max: number, field: stri
 }
 
 function looksExecutableText(bytes: Uint8Array): boolean {
-  const prefix = new TextDecoder("utf-8", { fatal: false }).decode(bytes.subarray(0, Math.min(bytes.byteLength, 512))).replace(/^\uFEFF/, "").trimStart().toLowerCase();
+  const prefix = new TextDecoder("utf-8", { fatal: false })
+    .decode(bytes.subarray(0, Math.min(bytes.byteLength, 512)))
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
   return prefix.startsWith("<svg")
     || prefix.startsWith("<?xml")
     || prefix.startsWith("<!doctype html")
