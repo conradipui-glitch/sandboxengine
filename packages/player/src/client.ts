@@ -7,6 +7,14 @@ export interface PlayerSessionHandle {
   readonly playerView: PlayerView;
 }
 
+export interface PlayerNarrative {
+  readonly profile: "strict" | "expressive";
+  readonly source: "model" | "template";
+  readonly summary: string;
+  readonly dialogue: readonly Readonly<{ readonly speakerId: string; readonly text: string }>[];
+  readonly observationRefs: readonly string[];
+}
+
 export interface PlayerActionResult {
   readonly session: PlayerSessionHandle;
   readonly action: {
@@ -17,6 +25,7 @@ export interface PlayerActionResult {
     readonly durationSeconds: number;
     readonly reasonCode: string | null;
   };
+  readonly narrative: PlayerNarrative | null;
   readonly operationId: string;
   readonly turnId: string;
 }
@@ -117,6 +126,7 @@ export class RuntimePlayerClient {
       operationId: body.operationId,
       turnId: body.turnId,
       action: Object.freeze({ ...body.action }),
+      narrative: body.narrative ? freezeNarrative(body.narrative) : null,
       session: freezeSession({ ...session, playerView: body.playerView })
     });
   }
@@ -143,6 +153,7 @@ function isActionResult(value: unknown): value is {
   readonly operationId: string;
   readonly turnId: string;
   readonly action: PlayerActionResult["action"];
+  readonly narrative?: PlayerNarrative;
   readonly playerView: PlayerView;
 } {
   if (!isRecord(value)
@@ -156,9 +167,36 @@ function isActionResult(value: unknown): value is {
     || !Number.isSafeInteger(value.action.completedUnits)
     || !Number.isSafeInteger(value.action.durationSeconds)
     || !(value.action.reasonCode === null || typeof value.action.reasonCode === "string")
+    || !(value.narrative === undefined || isPlayerNarrative(value.narrative))
     || !isPlayerView(value.playerView)
   ) return false;
   return true;
+}
+
+function isPlayerNarrative(value: unknown): value is PlayerNarrative {
+  if (!isRecord(value)
+    || !hasExactKeys(value, ["profile", "source", "summary", "dialogue", "observationRefs"])
+    || !["strict", "expressive"].includes(String(value.profile))
+    || !["model", "template"].includes(String(value.source))
+    || typeof value.summary !== "string"
+    || value.summary.length < 1
+    || value.summary.length > 2_000
+    || !Array.isArray(value.dialogue)
+    || value.dialogue.length > 20
+    || !Array.isArray(value.observationRefs)
+    || value.observationRefs.length > 50
+  ) return false;
+  for (const line of value.dialogue) {
+    if (!isRecord(line)
+      || !hasExactKeys(line, ["speakerId", "text"])
+      || typeof line.speakerId !== "string"
+      || line.speakerId.length < 1
+      || line.speakerId.length > 200
+      || typeof line.text !== "string"
+      || line.text.length < 1
+      || line.text.length > 1_000) return false;
+  }
+  return value.observationRefs.every((ref) => typeof ref === "string" && ref.length >= 1 && ref.length <= 200);
 }
 
 function isPlayerView(value: unknown): value is PlayerView {
@@ -210,10 +248,26 @@ function freezeSession(session: PlayerSessionHandle): PlayerSessionHandle {
   return deepFreeze({ ...session });
 }
 
+function freezeNarrative(narrative: PlayerNarrative): PlayerNarrative {
+  return deepFreeze({
+    profile: narrative.profile,
+    source: narrative.source,
+    summary: narrative.summary,
+    dialogue: narrative.dialogue.map((line) => ({ ...line })),
+    observationRefs: [...narrative.observationRefs]
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, any> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
 function deepFreeze<T>(value: T): T {
