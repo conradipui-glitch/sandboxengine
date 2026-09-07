@@ -110,6 +110,11 @@ export class StudioApp {
       await this.logout();
       return;
     }
+    if (action === "remove-member") {
+      const userId = target.dataset.userId;
+      if (userId) await this.removeProjectMember(userId);
+      return;
+    }
     if (action === "select-project") {
       const projectId = target.dataset.projectId;
       if (projectId) await this.selectProject(projectId);
@@ -158,6 +163,18 @@ export class StudioApp {
         this.state.message = selected
           ? `Вход подтверждён. Текущая роль: ${selected.role}.`
           : "Вход выполнен. Выберите проект.";
+        this.render();
+        return;
+      }
+
+      if (kind === "member-role") {
+        const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+        const userId = text(data, "userId");
+        await this.api.setProjectMemberRole(projectId, userId, projectRole(data, "role"));
+        const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+        this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
+        this.state.phase = "saved";
+        this.state.message = `Роль ${userId} обновлена сервером.`;
         this.render();
         return;
       }
@@ -236,6 +253,20 @@ export class StudioApp {
       this.setError(error);
       this.render();
     }
+  }
+
+  private async removeProjectMember(userId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    try {
+      await this.api.removeProjectMember(projectId, userId);
+      const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+      this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
+      this.state.phase = "saved";
+      this.state.message = `Участник ${userId} удалён сервером.`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
   }
 
   private async logout(): Promise<void> {
@@ -667,6 +698,14 @@ function text(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Поле ${name} обязательно.`);
   return value.trim();
+}
+
+function projectRole(data: FormData, name: string): ProjectView["role"] {
+  const value = text(data, name);
+  if (value !== "owner" && value !== "editor" && value !== "tester") {
+    throw new Error(`Поле ${name} содержит неизвестную роль.`);
+  }
+  return value;
 }
 
 function rawText(data: FormData, name: string): string {

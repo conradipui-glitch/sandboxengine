@@ -180,6 +180,26 @@ export class ControlApiClient {
     return body.members;
   }
 
+  async setProjectMemberRole(
+    projectId: string,
+    userId: string,
+    role: ControlProjectRole
+  ): Promise<ControlProjectMemberView> {
+    const body = await this.request<{ readonly member: ControlProjectMemberView }>(
+      "PUT",
+      `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { role }
+    );
+    return body.member;
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<void> {
+    await this.request<unknown>(
+      "DELETE",
+      `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`
+    );
+  }
+
   async createProject(input: { readonly projectId: string; readonly title: string }): Promise<ProjectView> {
     const body = await this.request<{ readonly project: ProjectView }>("POST", "/projects", input);
     return body.project;

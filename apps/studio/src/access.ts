@@ -128,7 +128,7 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
     ? `<span class="access-proof ready">CSRF proof активен только в памяти этой вкладки.</span>`
     : `<span class="access-proof warning">Session читается, но mutation proof после reload отсутствует. Подтвердите вход для изменений.</span>`;
   const members = project?.role === "owner"
-    ? renderMembers(access.members, access.membersError)
+    ? renderMembers(access.members, access.membersError, auth.user.userId, access.mutationProof)
     : project
       ? `<p class="access-note">Список участников доступен только owner. Текущая роль: <strong>${escapeHtml(project.role)}</strong>.</p>`
       : "";
@@ -157,16 +157,41 @@ function roleSummary(role: ProjectView["role"]): string {
   return `<div class="access-role"><span>role</span><strong>${escapeHtml(role)}</strong><small>${escapeHtml(permissions)}</small></div>`;
 }
 
-function renderMembers(members: readonly ControlProjectMemberView[] | null, error: string | null): string {
+function renderMembers(
+  members: readonly ControlProjectMemberView[] | null,
+  error: string | null,
+  currentUserId: string,
+  canMutate: boolean
+): string {
   if (error) return `<div class="access-members error">${escapeHtml(error)}</div>`;
   if (members === null) return `<div class="access-members">Загружаем участников…</div>`;
   return `<div class="access-members">
     <div class="access-members-title"><strong>Участники</strong><span>${members.length}</span></div>
-    ${members.map((member) => `<div class="access-member">
-      <div><strong>${escapeHtml(member.username)}</strong><small>${escapeHtml(member.userId)}</small></div>
-      <span>${escapeHtml(member.role)}</span>
-    </div>`).join("") || `<div class="access-note">Участников нет.</div>`}
+    ${members.map((member) => {
+      const self = member.userId === currentUserId;
+      const controls = !self && canMutate
+        ? `<div class="access-member-controls">
+            <form data-form="member-role" class="access-member-role">
+              <input type="hidden" name="userId" value="${escapeHtml(member.userId)}">
+              <select name="role" aria-label="Роль ${escapeHtml(member.username)}">
+                ${roleOption("owner", member.role)}${roleOption("editor", member.role)}${roleOption("tester", member.role)}
+              </select>
+              <button type="submit">Сохранить</button>
+            </form>
+            <button class="danger" data-action="remove-member" data-user-id="${escapeHtml(member.userId)}">Удалить</button>
+          </div>`
+        : `<span class="access-member-role-static">${escapeHtml(member.role)}${self ? " · вы" : ""}</span>`;
+      return `<div class="access-member">
+        <div><strong>${escapeHtml(member.username)}</strong><small>${escapeHtml(member.userId)}</small></div>
+        ${controls}
+      </div>`;
+    }).join("") || `<div class="access-note">Участников нет.</div>`}
+    ${canMutate ? `<p class="access-note">Last-owner и self-membership ограничения повторно проверяются сервером.</p>` : ""}
   </div>`;
+}
+
+function roleOption(role: ProjectView["role"], current: ProjectView["role"]): string {
+  return `<option value="${role}"${role === current ? " selected" : ""}>${role}</option>`;
 }
 
 function loginForm(label: string): string {
