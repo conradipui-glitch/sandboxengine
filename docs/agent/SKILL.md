@@ -5,9 +5,15 @@ Generated file. Do not edit by hand.
 - Engine version: `0.1.0`
 - Core contracts schema version: `1.0`
 - Presentation schema version: `2.0`
+- Plugin manifest schema version: `1.0`
+- Engine plugin API version: `1.0.0`
 - Canonical schemas: [schema-index.json](schema-index.json)
 - Machine capabilities: [capabilities.json](capabilities.json)
 - OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)
+
+## Installed trusted plugins
+
+- Нет установленных trusted plugins в этой сборке.
 
 ## Available block kinds
 
@@ -85,4 +91,4 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision и фиксация immutable report
 - `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest из проверенного draft snapshot
 
-Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.
+Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.
