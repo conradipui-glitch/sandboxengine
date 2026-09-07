@@ -1,5 +1,7 @@
-export const PRESENTATION_SCHEMA_VERSION = "2.0" as const;
-export type PresentationSchemaVersion = typeof PRESENTATION_SCHEMA_VERSION;
+import {
+  PRESENTATION_SCHEMA_VERSION,
+  type PresentationSchemaVersion
+} from "./schema.js";
 
 export const PRESENTATION_TRANSITIONS = ["fade", "slide", "crossfade"] as const;
 export type PresentationTransitionV2 = (typeof PRESENTATION_TRANSITIONS)[number];
