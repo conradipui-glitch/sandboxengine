@@ -31,11 +31,22 @@ async function fixture(t) {
   const assetRoot = join(directory, "assets");
   const rawStorage = new SQLiteRuntimeStorage({ path: dbPath, clock: new ManualServiceClock(10_000) });
   const guestAccess = new SQLiteGuestSessionAccess({ path: dbPath });
+  const primary = createMinimalPaintTemplate();
+  const other = Object.freeze({
+    ...primary,
+    templateId: "other-template",
+    release: Object.freeze({
+      questId: primary.release.questId,
+      releaseId: "release-2",
+      contentHash: "b".repeat(64)
+    })
+  });
+  let sessionOrdinal = 0;
   const runtime = createRuntimeHttpServer({
     storage: rawStorage,
     guestAccess,
-    templates: [createMinimalPaintTemplate()],
-    createSessionId: () => "asset-session",
+    templates: [primary, other],
+    createSessionId: () => `asset-session-${++sessionOrdinal}`,
     createCredential: () => "A".repeat(32)
   });
   const runtimeAddress = await runtime.listen();
@@ -52,6 +63,7 @@ async function fixture(t) {
     runtimeOrigin: `http://${runtimeAddress.host}:${runtimeAddress.port}`,
     metadata,
     presentation: {
+      release: Object.freeze({ questId: primary.release.questId, releaseId: primary.release.releaseId }),
       assets: [record.manifest],
       initialForSession: () => null,
       assetReader: assetStore
@@ -71,13 +83,17 @@ async function fixture(t) {
   };
 }
 
-test("B07-04 presentation asset route requires guest auth and exact registered assetId+hash", async (t) => {
-  const { baseUrl, record } = await fixture(t);
-  const created = await (await fetch(`${baseUrl}/v1/sessions`, {
+async function createSession(baseUrl, templateId) {
+  return (await fetch(`${baseUrl}/v1/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ templateId: "minimal-paint" })
+    body: JSON.stringify({ templateId })
   })).json();
+}
+
+test("B07-04 presentation asset route requires guest auth and exact registered assetId+hash", async (t) => {
+  const { baseUrl, record } = await fixture(t);
+  const created = await createSession(baseUrl, "minimal-paint");
   const assetUrl = `${baseUrl}/v1/sessions/${created.sessionId}/assets/${record.manifest.id}/${record.manifest.hash}`;
 
   const unauthenticated = await fetch(assetUrl);
@@ -105,18 +121,21 @@ test("B07-04 presentation asset route requires guest auth and exact registered a
   assert.equal(traversal.status, 404);
 });
 
-test("B07-04 wrong session credential cannot read another session asset", async (t) => {
+test("B07-04 wrong credential and other frozen release cannot read this Player release asset", async (t) => {
   const { baseUrl, record } = await fixture(t);
-  const created = await (await fetch(`${baseUrl}/v1/sessions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ templateId: "minimal-paint" })
-  })).json();
-  const response = await fetch(
+  const created = await createSession(baseUrl, "minimal-paint");
+  const wrongCredential = await fetch(
     `${baseUrl}/v1/sessions/${created.sessionId}/assets/${record.manifest.id}/${record.manifest.hash}`,
     { headers: { authorization: `Bearer ${"B".repeat(32)}` } }
   );
-  assert.equal(response.status, 404);
+  assert.equal(wrongCredential.status, 404);
+
+  const other = await createSession(baseUrl, "other-template");
+  const crossRelease = await fetch(
+    `${baseUrl}/v1/sessions/${other.sessionId}/assets/${record.manifest.id}/${record.manifest.hash}`,
+    { headers: { authorization: `Bearer ${other.credential}` } }
+  );
+  assert.equal(crossRelease.status, 404, "authenticated sessions from another frozen release do not inherit this asset catalog");
 });
 
 function png(width, height) {
