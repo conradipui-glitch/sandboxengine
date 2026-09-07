@@ -2,196 +2,156 @@
 
 Обновлено: 2026-09-07
 
-Текущий блок: **B07-01 — SceneFrameV2 + bounded PresentationPlanV2**  
-База: published B06 final merge `7a5efba36b508f674483dd9cce3762277917c5e1`  
-B06 push-CI main: `34081697268` — success  
-Ветка: `b07-01-scene-frame-presentation-contracts`  
-PR: #24  
-Статус: **functional gate `34083432560` success на `068890e3bce15d0686b753df4d2f4ed1bcbda9f4`; docs sync → final current-head CI → merge/main publication gate**
+Текущий блок: **B07-02 — immutable asset ingestion/storage boundary**  
+База: published B07-01 merge `b52b3ee8fe8d890c22b62f1b6ebd27cda7fda2c4`  
+B07-01 main push CI: `34083673425` — success  
+Ветка: `b07-02-immutable-asset-ingestion-storage`  
+PR: #25  
+Статус: **functional/refactor gate `34092033369` success on `f378c6e40f340f1ffb8c4f8172c09020fa39658c`; unresolved BLOCKER=0; docs/current-head CI → pinned merge/main publication gate**
 
-## Что уже published
+## Published state before current block
 
-B01–B06 published полностью.
+B01–B06 and B07-01 published.
 
-Final B06 merge: `7a5efba36b508f674483dd9cce3762277917c5e1`.  
-Main CI: `34081697268` — success.
+B07-01:
 
-Canonical B06 path:
+- merge `b52b3ee8fe8d890c22b62f1b6ebd27cda7fda2c4`;
+- main CI `34083673425` — success;
+- canonical presentation schema `2.0`;
+- reload-safe `SceneFrameV2`;
+- bounded/non-executable `PresentationPlanV2`;
+- immutable presentation ref `assetId + SHA-256`;
+- target-frame convergence + stale/replay decisions.
 
-`claim → optional intent → validated ResolvedIntent → Core → FactPacket → narrator/fallback → one persisted commitTurn`.
+Legacy presentation v1 remains frozen/readable.
 
-Canonical B06 audit unresolved BLOCKER=0. Current Codex no-tools compatibility remains limited; production Runtime adapter was intentionally not added.
+## B07-02 implementation
 
-## Что реализовано в B07-01
+Task: `docs/tasks/B07-02-immutable-asset-ingestion-storage.md`.  
+Decision: `docs/decisions/0023-immutable-asset-ingestion-boundary.md`.  
+Worklog: `docs/worklog/2026-09-07-b07-02.md`.
 
-### Contract versioning
+### Package boundary
 
-B01 presentation v1 is already published and frozen. B07 does not widen its `$id`.
+New package: `@living-history/assets`.
 
-Core contracts remain `1.0`; new complete presentation contracts use `PRESENTATION_SCHEMA_VERSION = 2.0`:
+Dependencies: only `@living-history/contracts`.
 
-- asset manifest `2.0`;
-- SceneFrame `2.0`;
-- PresentationPlan `2.0`.
+Source split:
 
-Legacy TypeScript v1 names remain exported; B07 contracts use explicit `*V2` names.
+- `packages/assets/src/types.ts`;
+- `packages/assets/src/inspection.ts`;
+- `packages/assets/src/storage.ts`;
+- `packages/assets/src/ingest.ts`;
+- `packages/assets/src/index.ts` facade.
 
-### SceneFrameV2
+Root `test:assets` is part of `npm run verify`.
 
-Complete player-safe final frame for one frozen session/release/revision:
+`check:boundaries` rejects Assets imports of Core/Runtime/Control/Player/AI, apps, network, child process and process env. Filesystem/path/crypto are intentionally allowed infrastructure dependencies.
 
-- stable frame/scene/session/quest/release identity;
-- revision + persisted turn identity;
-- immutable background ref;
-- exact ordered actor/item/overlay layers;
-- actor entity/asset/slot/expression;
-- dialogue history + active line;
-- current music.
+### Canonical ingestion path
 
-Frame does not carry WorldState, effects, statePatch, resource bounds, provider/storage/fencing internals or executable callbacks.
+`bytes → bounded inspection → trusted MIME/dimensions/duration → SHA-256(full bytes) → AssetManifestV2 → LocalAssetStore.put`.
 
-Reload restores the latest frame directly; historical presentation effects are not replayed.
+Input may carry claimed MIME and original filename only as consistency/display hints. They are never content authority.
 
-### PresentationPlanV2
+Hash is never accepted as trusted client input.
 
-One bounded visual transition tied to:
+### Bounded media profiles
 
-- `fromRevision`;
-- `toRevision`;
-- `turnId`;
-- `targetFrameId`.
+Accepted only when current parser proves the profile:
 
-Tree combinators: `sequence`, `parallel`.
+- PNG: signature/chunk bounds, first IHDR, final IEND;
+- static WebP: RIFF + bounded VP8X/VP8L/VP8 metadata, animation flag rejected;
+- JPEG: SOI/segments/supported SOF/final EOI, no trailing bytes;
+- integer PCM WAV: channels/sampleRate/bits/blockAlign/byteRate consistency, aligned data, deterministic duration;
+- Ogg Vorbis: Ogg page bounds/BOS/Vorbis identification/final granule duration;
+- MP3 Layer III: complete bounded frame stream, supported MPEG profile, deterministic duration.
 
-Leaves:
+Explicit failures:
 
-- `background.set`;
-- `actor.show`;
-- `actor.hide`;
-- `actor.move`;
-- `actor.expression`;
-- `item.show`;
-- `dialogue.show`;
-- `overlay.open`;
-- `overlay.close`;
-- `audio.play`;
-- `audio.stop`;
-- `wait`.
+- SVG/XML/HTML/script;
+- unknown binary;
+- unsupported codec/profile;
+- claimed MIME mismatch;
+- known filename extension mismatch;
+- malformed/truncated headers;
+- oversized bytes/dimensions/pixels/duration/metadata.
 
-Only preset transitions/reveal/channels are accepted. No arbitrary JS/HTML/CSS, selectors, loops or callbacks.
+### Immutable content storage
 
-Tree depth/node/children and durations are bounded.
+Object path:
 
-### Asset references
+`<storageRoot>/objects/<sha-prefix>/<sha256>`.
 
-Presentation uses immutable `assetId + SHA-256 hash`.
+Only trusted hash participates in object addressing.
 
-`AssetManifestV2` stores bounded presentation metadata and accepted first MIME set. B07-01 only defines/validates this DTO.
+Logical registry path hashes the validated assetId and includes exact content hash. Raw assetId and original filename cannot traverse storage paths.
 
-Not yet implemented: file upload, content hashing pipeline, MIME sniffing, storage, deduplication/deletion. Those are B07-02.
+Publish semantics:
 
-### Validation layers
+- exclusive temp file;
+- hard-link create-if-absent;
+- target never overwritten;
+- existing target verified before dedupe acceptance;
+- unsupported atomic filesystem primitive fails closed.
 
-1. JSON Schema exact shape and no extra authority fields.
-2. Semantic reference validation: scene/entity/speaker/overlay allowlists, asset hash/kind, unique/layer references, `N→N+1`, target turn/frame, tree limits.
-3. Full target-frame convergence.
+### Registry/version semantics
 
-The convergence gate was added after audit found a real gap: reference-valid commands could still end on a different allowed visual state.
+- same assetId + same bytes/metadata → idempotent;
+- same bytes + other assetId → shared object possible, separate logical record;
+- same assetId + different bytes → new hash/version record;
+- previous exact record remains addressable;
+- read requires exact assetId + hash;
+- read revalidates registry shape, byte length and SHA-256;
+- missing/corrupt exact object fails instead of selecting “latest”.
 
-Pure visual convergence checks only:
+No destructive GC in B07-02.
 
-- background;
-- actor visibility/slot/expression;
-- item visuals;
-- overlay visibility;
-- active dialogue;
-- music.
+## Hardening history / CI
 
-It does not read or mutate Core/WorldState and has no Runtime commit callbacks.
+Initial integrated head `bc77b026821821b7dfeca63fcdabc760774b8b46` → CI `34091256043` success.
 
-Parallel branches start from the same visual state. Different writes to the same property conflict; identical writes are allowed. There is no accidental array-order conflict resolution.
+Post-green parser/storage hardening head `20d2f33e5b9dc3d4855f1927b3c93cda137b6849` → CI `34091540387` success.
 
-### Replay/stale decisions
+Final responsibility split + WAV consistency/animated-WebP/BOS hardening head `f378c6e40f340f1ffb8c4f8172c09020fa39658c` → CI `34092033369` **success**, full root verify.
 
-Pure helpers define:
+Unresolved BLOCKER after audit: **0**.
 
-- lower incoming revision → stale;
-- same frame/revision → duplicate;
-- same revision, other frame → conflict;
-- applied/current turn ID → duplicate, no second plan playback;
-- revision gap → recover latest frame instead of guessing.
+## Important limitation for B07-03
 
-Renderer skip/reduced-motion must jump to the same target frame without gameplay callbacks; browser implementation is later B07 scope.
+B07-02 does not fully decode every compressed raster/audio payload and does not prove browser decoder acceptance. It proves bounded container/header metadata and exact bytes/hash identity.
 
-### Generated agent contracts
+Therefore B07-03 Player must:
 
-Generator now supports separate schema namespaces:
-
-- core `1.0`;
-- presentation `2.0`.
-
-`schema-index.json` contains both legacy presentation v1 and canonical v2 entries with explicit versions.
-
-`capabilities.json`/SKILL publish the complete v2 presentation command set.
-
-Registry hash: `0b1fa6e4e23374cc00fd5cca61ecbbc0aec2a5df3ab83c1da2ce82fb8cf6e36c`.
-
-## CI evidence
-
-Initial run `34082918924`:
-
-- all type/code tests and boundaries green;
-- only stale generated docs failed.
-
-Generated docs sync commit: `0cdb1503affb40e098b25673e7a63c7989dbe7c8`.
-
-Semantic convergence hardening head: `068890e3bce15d0686b753df4d2f4ed1bcbda9f4`.
-
-Full PR CI `34083432560` — **success**, including root `npm run verify`.
-
-ADR: `docs/decisions/0022-presentation-v2-final-frame-boundary.md`.  
-Worklog: `docs/worklog/2026-09-07-b07-01.md`.
-
-## Functional acceptance state
-
-Закрыто функционально:
-
-- legacy presentation v1 preserved;
-- presentation v2 separate schema namespace;
-- complete final SceneFrame;
-- bounded non-executable transition tree;
-- full first command set;
-- immutable asset ID/hash references;
-- allowlist/hash/layer/revision validation;
-- target-frame convergence and parallel-conflict safety;
-- stale/replay helpers;
-- multi-version generated docs;
-- B01–B06 regressions green.
+- use verified `assetId + hash` outputs only;
+- treat image/audio load/decode errors as presentation fallback;
+- never retry/replay gameplay because an asset failed;
+- never substitute another asset version silently;
+- keep latest confirmed SceneFrame visible when media fails.
 
 ## Publication Gate
 
-Осталось:
+Remaining for B07-02:
 
-1. final current-head PR CI после docs sync;
-2. mark PR #24 ready;
-3. merge with pinned expected head SHA;
-4. verify exact merge-SHA push-to-main CI;
-5. only then B07-01 published.
+1. final current-head PR CI after this docs sync;
+2. update PR #25 evidence/body;
+3. mark ready;
+4. merge with `expected_head_sha` pinned to exact final head;
+5. verify `event=push`, `head_branch=main`, `head_sha=<merge sha>` CI success;
+6. only then call B07-02 published.
 
-## Следующее после B07-01 publication
+## Next bounded slice
 
-**B07-02 — immutable asset registry + validated ingestion/storage boundary**:
+After verified publication only:
 
-- trusted server-side content hashing;
-- size/MIME/type validation;
-- immutable storage identity;
-- dedup/reference semantics;
-- image/audio metadata validation;
-- safe missing/corrupt asset behavior;
-- no arbitrary SVG/HTML/executable asset path.
+**B07-03 — Player presentation executor**:
 
-Create B07-02 only from verified B07-01 merge SHA.
+- restore latest SceneFrame without historical replay;
+- play validated PresentationPlan sequence/parallel commands;
+- skip/reduced-motion reaches exact target frame;
+- same turn never plays twice;
+- stale/gap recovery uses frame, not guessed transitions;
+- media failure uses neutral fallback and leaves gameplay untouched.
 
-## Не делать сейчас
-
-Browser animation/audio executor, final visual Player redesign, Studio scene/timeline editor, UI plugin registry/B08, B09 auth/public publish, B10 author AI, B11 Florence migration or force dependency upgrade.
+Do not enter Studio timeline/editor, public upload/auth, B08 UI plugins, B09 publish/auth, B10 author AI or B11 Florence migration inside B07-02.
