@@ -13,7 +13,7 @@ Generated file. Do not edit by hand.
 
 ## Installed trusted plugins
 
-- Нет установленных trusted plugins в этой сборке.
+- `dice-check@1.0.0` — capabilities: dice-check.capability.skill-check; actions: dice-check.action.skill-check; recipes: dice-check.recipe.skill-check
 
 ## Available block kinds
 

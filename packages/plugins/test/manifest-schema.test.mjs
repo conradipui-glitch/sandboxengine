@@ -7,6 +7,7 @@ import {
   PLUGIN_MANIFEST_SCHEMA_VERSION,
   validatePluginManifest
 } from "../dist/index.js";
+import { DICE_CHECK_MANIFEST } from "../dist/dice-check.js";
 
 const schema = JSON.parse(await readFile(new URL("../schemas/v1/plugin-manifest.schema.json", import.meta.url), "utf8"));
 const installed = JSON.parse(await readFile(new URL("../registry/installed.json", import.meta.url), "utf8"));
@@ -54,7 +55,7 @@ test("B08-01 schema rejects executable or raw UI widening", () => {
   assert.equal(validatePluginManifest(withRawHtml).ok, false);
 });
 
-test("B08-01 build-installed registry metadata matches code versions and starts empty", () => {
+test("B08-03 build-installed registry metadata matches code versions and the actual dice-check manifest", () => {
   assert.deepEqual(Object.keys(installed).sort(), [
     "enginePluginApiVersion",
     "pluginManifestSchemaVersion",
@@ -64,5 +65,8 @@ test("B08-01 build-installed registry metadata matches code versions and starts 
   assert.equal(installed.pluginManifestSchemaVersion, PLUGIN_MANIFEST_SCHEMA_VERSION);
   assert.equal(installed.enginePluginApiVersion, ENGINE_PLUGIN_API_VERSION);
   assert.equal(installed.registryVersion, "1.0");
-  assert.deepEqual(installed.plugins, []);
+  assert.equal(installed.plugins.length, 1);
+  assert.equal(validateSchema(installed.plugins[0]), true, JSON.stringify(validateSchema.errors));
+  assert.equal(validatePluginManifest(installed.plugins[0]).ok, true);
+  assert.deepEqual(installed.plugins[0], JSON.parse(JSON.stringify(DICE_CHECK_MANIFEST)));
 });

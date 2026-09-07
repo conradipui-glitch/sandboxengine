@@ -3,8 +3,42 @@
   "presentationSchemaVersion": "2.0",
   "pluginManifestSchemaVersion": "1.0",
   "enginePluginApiVersion": "1.0.0",
-  "installedPlugins": [],
-  "installedPluginCapabilityIds": [],
+  "installedPlugins": [
+    {
+      "pluginId": "dice-check",
+      "version": "1.0.0",
+      "capabilityIds": [
+        "dice-check.capability.skill-check"
+      ],
+      "schemaVersions": [
+        {
+          "schemaId": "dice-check.schema.skill-check",
+          "version": "1.0.0"
+        }
+      ],
+      "blockTypeIds": [
+        "dice-check.block.skill-check"
+      ],
+      "actionTypeIds": [
+        "dice-check.action.skill-check"
+      ],
+      "recipeIds": [
+        "dice-check.recipe.skill-check"
+      ]
+    }
+  ],
+  "installedPluginCapabilityIds": [
+    "dice-check.capability.skill-check"
+  ],
+  "installedPluginBlockTypeIds": [
+    "dice-check.block.skill-check"
+  ],
+  "installedPluginActionTypeIds": [
+    "dice-check.action.skill-check"
+  ],
+  "installedPluginRecipeIds": [
+    "dice-check.recipe.skill-check"
+  ],
   "blockKinds": [
     "core.action",
     "core.character",
