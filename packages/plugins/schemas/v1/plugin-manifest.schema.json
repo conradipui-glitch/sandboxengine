@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:plugin-manifest:1.0",
+  "title": "Living History trusted plugin manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pluginId",
+    "version",
+    "engineApiRange",
+    "description",
+    "schemaVersions",
+    "dependencies",
+    "capabilityIds",
+    "recipeIds",
+    "backend",
+    "ui"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "pluginId": { "$ref": "#/$defs/pluginId" },
+    "version": { "$ref": "#/$defs/version" },
+    "engineApiRange": { "$ref": "#/$defs/versionRange" },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "schemaVersions": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/schemaVersion" }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "capabilityIds": { "$ref": "#/$defs/idArray256" },
+    "recipeIds": { "$ref": "#/$defs/idArray128" },
+    "backend": { "$ref": "#/$defs/backend" },
+    "ui": {
+      "anyOf": [
+        { "$ref": "#/$defs/ui" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "publicId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "versionRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minInclusive", "maxExclusive"],
+      "properties": {
+        "minInclusive": { "$ref": "#/$defs/version" },
+        "maxExclusive": { "$ref": "#/$defs/version" }
+      }
+    },
+    "schemaVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaId", "version"],
+      "properties": {
+        "schemaId": { "$ref": "#/$defs/publicId" },
+        "version": { "$ref": "#/$defs/version" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pluginId", "versionRange"],
+      "properties": {
+        "pluginId": { "$ref": "#/$defs/pluginId" },
+        "versionRange": { "$ref": "#/$defs/versionRange" }
+      }
+    },
+    "idArray256": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/publicId" }
+    },
+    "idArray128": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/publicId" }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blockTypeIds", "actionTypeIds", "scheduledEventTypeIds", "effectTypeIds"],
+      "properties": {
+        "blockTypeIds": { "$ref": "#/$defs/idArray256" },
+        "actionTypeIds": { "$ref": "#/$defs/idArray256" },
+        "scheduledEventTypeIds": { "$ref": "#/$defs/idArray256" },
+        "effectTypeIds": { "$ref": "#/$defs/idArray256" }
+      }
+    },
+    "uiComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["componentId", "propsSchemaId"],
+      "properties": {
+        "componentId": { "$ref": "#/$defs/publicId" },
+        "propsSchemaId": { "$ref": "#/$defs/publicId" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["components"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/uiComponent" }
+        }
+      }
+    }
+  }
+}
