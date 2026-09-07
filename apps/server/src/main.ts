@@ -11,6 +11,7 @@ import { buildPluginRegistry } from "@living-history/plugins";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import {
   SQLiteGuestSessionAccess,
+  SQLitePlaytestTraceReader,
   SQLiteRuntimeStorage
 } from "@living-history/runtime";
 import { createControlHttpServer } from "./control-server.js";
@@ -39,6 +40,7 @@ mkdirSync(dirname(databasePath), { recursive: true });
 const clock = Object.freeze({ nowMs: () => Date.now() });
 const storage = new SQLiteRuntimeStorage({ path: databasePath, clock });
 const guestAccess = new SQLiteGuestSessionAccess({ path: databasePath });
+const playtestTrace = new SQLitePlaytestTraceReader({ path: databasePath });
 const controlStore = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
 const publishedBindings = new SQLitePublishedSessionBindingStore({ path: databasePath });
@@ -87,6 +89,7 @@ const control = createControlHttpServer({
     pluginRegistry,
     nowMs: clock.nowMs
   },
+  playtestTrace,
   auth: controlSecurity ? {
     security: controlSecurity,
     allowedOrigins: controlAllowedOrigins,
@@ -108,6 +111,7 @@ async function shutdown(): Promise<void> {
   releaseStore.close();
   controlStore.close();
   guestAccess.close();
+  playtestTrace.close();
   storage.close();
 }
 

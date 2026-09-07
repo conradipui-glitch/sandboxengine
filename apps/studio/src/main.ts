@@ -8,6 +8,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
+import { SQLitePlaytestTraceReader } from "@living-history/runtime";
 import { createStudioDevServer } from "./dev-server.js";
 
 type ControlServerModule = typeof import("../../server/src/control-server.js");
@@ -19,6 +20,7 @@ await mkdir(dirname(databasePath), { recursive: true });
 
 const store = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
+const playtestTrace = new SQLitePlaytestTraceReader({ path: databasePath });
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
 if (!builtPluginRegistry.ok) throw new Error(`Studio plugin registry failed: ${builtPluginRegistry.code}`);
 
@@ -29,7 +31,8 @@ const control = controlServerModule.createControlHttpServer({
     store: releaseStore,
     pluginRegistry: builtPluginRegistry.registry,
     nowMs: () => Date.now()
-  }
+  },
+  playtestTrace
 });
 const controlAddress = await control.listen(Number(process.env.LH_CONTROL_PORT ?? 0), "127.0.0.1");
 const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}` });
@@ -41,6 +44,7 @@ console.log(`Control API (loopback only): http://${controlAddress.host}:${contro
 const shutdown = async () => {
   await studio.close();
   await control.close();
+  playtestTrace.close();
   releaseStore.close();
   store.close();
   process.exit(0);

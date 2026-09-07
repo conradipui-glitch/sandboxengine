@@ -19,6 +19,7 @@ import {
 } from "@living-history/control";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
+import type { PlaytestTraceReader } from "@living-history/runtime";
 import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 import { routeDraftVersionHttp } from "./draft-version-http.js";
@@ -52,6 +53,7 @@ export interface ControlReleaseModeOptions {
 export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly releases?: ControlReleaseModeOptions;
+  readonly playtestTrace?: PlaytestTraceReader;
   readonly auth?: ControlAuthenticatedModeOptions;
 }
 
@@ -90,7 +92,15 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
-      await routeControlRequest(request, response, dependencies.store, releases, auth, failures);
+      await routeControlRequest(
+        request,
+        response,
+        dependencies.store,
+        releases,
+        dependencies.playtestTrace ?? null,
+        auth,
+        failures
+      );
     } catch (error) {
       if (isSqliteBusy(error)) {
         sendJson(response, 503, { error: { code: "CONTROL_STORAGE_BUSY" } });
@@ -142,6 +152,7 @@ async function routeControlRequest(
   response: any,
   store: ControlStore,
   releases: ControlReleaseModeOptions | null,
+  playtestTrace: PlaytestTraceReader | null,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
@@ -589,6 +600,37 @@ async function routeControlRequest(
     const playtest = await store.getPlaytest(playtestId);
     if (!playtest || playtest.projectId !== projectId || playtest.questId !== questId) sendNotFound(response);
     else sendJson(response, 200, { playtest: playtestView(playtest) });
+    return;
+  }
+
+  const playtestTraceMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/playtests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/trace$/.exec(url.pathname);
+  if (method === "GET" && playtestTraceMatch) {
+    const projectId = playtestTraceMatch[1];
+    const questId = playtestTraceMatch[2];
+    const playtestId = playtestTraceMatch[3];
+    if (!projectId || !questId || !playtestId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+    if (!playtestTrace) { sendNotFound(response); return; }
+    const playtest = await store.getPlaytest(playtestId);
+    if (!playtest || playtest.projectId !== projectId || playtest.questId !== questId) {
+      sendNotFound(response);
+      return;
+    }
+    const evidence = await playtestTrace.readPlaytestTrace({
+      questId: playtest.questId,
+      releaseId: `playtest-${playtest.playtestId}`,
+      contentHash: playtest.contentHash
+    });
+    sendJson(response, 200, {
+      trace: Object.freeze({
+        identityKind: "frozen_playtest",
+        publishedRelease: false,
+        playtest: playtestView(playtest),
+        runtimePinnedRelease: evidence.runtimePinnedRelease,
+        sessions: evidence.sessions,
+        hasMoreSessions: evidence.hasMoreSessions
+      })
+    });
     return;
   }
 
