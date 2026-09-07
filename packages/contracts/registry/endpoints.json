@@ -177,6 +177,30 @@
       "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS"
     },
     {
+      "id": "control.quest.clone",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{sourceQuestId}/clone",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor idempotent clone текущего source draft в независимый quest с remap внутренних block IDs"
+    },
+    {
+      "id": "control.quest.export",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/export",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor экспорт точной immutable draft revision как deterministic inert .lhquest.zip package"
+    },
+    {
+      "id": "control.imports.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/imports",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor bounded fail-closed import .lhquest.zip в новый unpublished quest draft"
+    },
+    {
       "id": "control.validations.create",
       "method": "POST",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
