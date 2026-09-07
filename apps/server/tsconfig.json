@@ -9,7 +9,9 @@
       "@living-history/core": ["../../packages/core/src/index.ts"],
       "@living-history/runtime": ["../../packages/runtime/src/index.ts"],
       "@living-history/control": ["../../packages/control/src/index.ts"],
-      "@living-history/ai": ["../../packages/ai/src/index.ts"]
+      "@living-history/ai": ["../../packages/ai/src/index.ts"],
+      "@living-history/plugins": ["../../packages/plugins/src/index.ts"],
+      "@living-history/plugins/execution": ["../../packages/plugins/src/backend-execution.ts"]
     }
   },
   "references": [
@@ -17,7 +19,8 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/control" },
-    { "path": "../../packages/ai" }
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/plugins" }
   ],
   "include": ["src/**/*.ts"]
 }
