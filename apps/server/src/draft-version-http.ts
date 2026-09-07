@@ -45,9 +45,10 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
       context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
       return true;
     }
-    const pageOptions: DraftHistoryPageOptions = {};
-    if (beforeRaw !== null) pageOptions.beforeRevision = beforeRevision as number;
-    if (limitRaw !== null) pageOptions.limit = limit as number;
+    const pageOptions: DraftHistoryPageOptions = Object.freeze({
+      ...(beforeRaw === null ? {} : { beforeRevision: beforeRevision! }),
+      ...(limitRaw === null ? {} : { limit: limit! })
+    });
     const result = await listDraftHistory(context.store, projectId, questId, pageOptions);
     if (result.kind === "quest_not_found") context.sendNotFound();
     else if (result.kind === "invalid_request") {
