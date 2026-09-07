@@ -10,6 +10,8 @@ export {
   PlayerClientError,
   RuntimePlayerClient,
   type PlayerActionResult,
+  type PlayerNarrative,
+  type PlayerPresentation,
   type PlayerSessionHandle
 } from "./client.js";
 export {
