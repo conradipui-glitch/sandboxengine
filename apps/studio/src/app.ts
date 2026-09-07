@@ -44,6 +44,7 @@ import {
   type StudioAccessState
 } from "./access.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
+import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
 import {
   downloadQuestExport,
   fileToBase64,
@@ -68,6 +69,7 @@ interface StudioState {
   releaseBuildIntent: ReleaseBuildIntent | null;
   publishReport: PublishReportIntent | null;
   publicationReceipt: PublicationReceipt | null;
+  deletionIntent: DeletionIntent | null;
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
@@ -91,6 +93,7 @@ export class StudioApp {
     releaseBuildIntent: null,
     publishReport: null,
     publicationReceipt: null,
+    deletionIntent: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -130,6 +133,21 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "prepare-delete-block") {
+      const blockId = target.dataset.blockId;
+      if (blockId) await this.prepareDeleteBlock(blockId);
+      return;
+    }
+    if (action === "confirm-delete-block") {
+      await this.confirmDeleteBlock();
+      return;
+    }
+    if (action === "cancel-delete-block") {
+      this.state.deletionIntent = null;
+      this.state.message = "Deletion preflight закрыт; draft не изменён.";
+      this.render();
+      return;
+    }
     if (action === "export-draft") {
       const revision = Number(target.dataset.revision);
       await this.exportDraftRevision(revision);
@@ -310,6 +328,7 @@ export class StudioApp {
         this.state.playtestTraceError = null;
         this.state.versions = null;
         this.state.versionsError = null;
+        this.state.deletionIntent = null;
         await this.refreshVersions(projectId, questId);
         this.state.phase = "saved";
         this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
@@ -458,6 +477,7 @@ export class StudioApp {
     if (stale) {
       this.state.publishReport = null;
       this.state.publicationReceipt = null;
+      this.state.deletionIntent = null;
       this.state.phase = "conflict";
       this.state.message = "Publication report устарел; current release truth изменился. Сформируйте report заново.";
       this.render();
@@ -601,6 +621,7 @@ export class StudioApp {
       this.state.releaseBuildIntent = null;
       this.state.publishReport = null;
       this.state.publicationReceipt = null;
+      this.state.deletionIntent = null;
       this.state.phase = "idle";
       this.state.message = "Сессия завершена.";
     } catch (error) {
@@ -783,6 +804,42 @@ export class StudioApp {
       this.setError(error);
     }
     this.render();
+  }
+
+  private async prepareDeleteBlock(blockId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    try {
+      const analysis = await this.api.analyzeDraftReferences(projectId, questId, draft.draftRevision, blockId);
+      this.state.deletionIntent = Object.freeze({
+        targetBlockId: blockId,
+        baseRevision: draft.draftRevision,
+        analysis
+      });
+      this.state.phase = "idle";
+      this.state.message = analysis.safeToDelete
+        ? `Deletion preflight green для ${blockId} на r${draft.draftRevision}; требуется отдельное подтверждение.`
+        : `Deletion blocked для ${blockId}: ${analysis.references.length} reference(s).`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private async confirmDeleteBlock(): Promise<void> {
+    const intent = this.state.deletionIntent;
+    const draft = requireDraft(this.state.draft);
+    if (!intent || !intent.analysis.safeToDelete || !intent.analysis.targetExists) return;
+    if (draft.draftRevision !== intent.baseRevision || intent.analysis.draftRevision !== intent.baseRevision) {
+      this.state.phase = "conflict";
+      this.state.message = `Deletion preflight устарел: r${intent.baseRevision} → r${draft.draftRevision}. Ничего не удалено.`;
+      this.render();
+      return;
+    }
+    const targetBlockId = intent.targetBlockId;
+    this.state.deletionIntent = null;
+    await this.saveChanges([{ kind: "block.remove", blockId: targetBlockId }]);
   }
 
   private async cloneSelectedQuest(newQuestId: string, title: string): Promise<void> {
@@ -972,6 +1029,7 @@ export class StudioApp {
             )}
 
             ${renderPortabilityPanel(draft, this.state.versions, allowEdit)}
+            ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
             <div class="editor-grid">
               <section class="editor-section">
@@ -980,6 +1038,7 @@ export class StudioApp {
                   <article class="entity-row">
                     <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.id)} · ${escapeHtml(resource.data.unit)}</small></div>
                     <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
+                    ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Delete…</button>` : ""}
                   </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
                 ${allowEdit ? resourceForm() : `<p class="form-hint">Read-only: изменения draft недоступны для текущей роли/session.</p>`}
               </section>
@@ -1085,11 +1144,11 @@ function paintActionForm(resources: ReturnType<typeof resourceBlocks>): string {
 function paintActionRow(action: ActionBlock, editable: boolean): string {
   return `<article class="entity-row action-row">
     <div><strong>${escapeHtml(action.title)}</strong><small>${escapeHtml(action.id)} · ${escapeHtml(action.data.resourceId)} · ${action.data.durationSecondsPerUnit}s</small></div>
-    ${editable ? `<form data-form="paint-cost" class="cost-form">
+    ${editable ? `<div class="action-edit-controls"><form data-form="paint-cost" class="cost-form">
       <input type="hidden" name="blockId" value="${escapeAttr(action.id)}">
       <label>Стоимость<input data-focus-key="cost-${escapeAttr(action.id)}" name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="${action.data.resourceUnitsPerUnit}"></label>
       <button type="submit">Сохранить</button>
-    </form>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
+    </form><button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(action.id)}">Delete…</button></div>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
   </article>`;
 }
 

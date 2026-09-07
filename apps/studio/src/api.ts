@@ -75,6 +75,23 @@ export interface DraftComparisonView {
   readonly replacedBlockIds: readonly string[];
 }
 
+export interface DraftReferenceView {
+  readonly sourceKind: "quest" | "block";
+  readonly sourceId: string;
+  readonly path: string;
+  readonly targetBlockId: string;
+}
+
+export interface DraftReferenceAnalysisView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly targetBlockId: string;
+  readonly targetExists: boolean;
+  readonly safeToDelete: boolean;
+  readonly references: readonly DraftReferenceView[];
+}
+
 export interface ReleaseSummaryView {
   readonly releaseId: string;
   readonly projectId: string;
@@ -351,6 +368,20 @@ export class ControlApiClient {
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/compare?${params.toString()}`
     );
     return body.comparison;
+  }
+
+  async analyzeDraftReferences(
+    projectId: string,
+    questId: string,
+    revision: number,
+    targetBlockId: string
+  ): Promise<DraftReferenceAnalysisView> {
+    const params = new URLSearchParams({ revision: String(revision), targetBlockId });
+    const body = await this.request<{ readonly analysis: DraftReferenceAnalysisView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/references?${params.toString()}`
+    );
+    return body.analysis;
   }
 
   async listReleases(projectId: string, questId: string): Promise<ReleaseListView> {

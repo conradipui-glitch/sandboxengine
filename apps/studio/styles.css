@@ -449,6 +449,14 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .portability-release-list button { text-align: left; overflow-wrap: anywhere; }
 @media (max-width: 1050px) { .portability-grid { grid-template-columns: 1fr; } .portability-card > p { min-height: 0; } }
 
+.deletion-preflight { margin: 18px 0; padding: 16px; border: 1px solid #e0c7c7; border-radius: 10px; background: #fffafa; }
+.deletion-safe { padding: 10px; border-radius: 6px; background: #eef8f1; }
+.deletion-blocked { padding: 10px; border-radius: 6px; background: #fff0f0; }
+.deletion-reference-list { display: grid; gap: 6px; padding-left: 18px; }
+.deletion-reference-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.deletion-actions, .action-edit-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.deletion-actions { margin-top: 12px; }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }
