@@ -25,6 +25,7 @@ import {
 import {
   loadVersionsReadModel,
   renderVersionsPanel,
+  type RestoreIntent,
   type VersionsReadModel
 } from "./versions.js";
 import {
@@ -50,7 +51,8 @@ interface StudioState {
   versions: VersionsReadModel | null;
   versionsError: string | null;
   access: StudioAccessState;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "conflict" | "error";
+  restoreIntent: RestoreIntent | null;
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -67,6 +69,7 @@ export class StudioApp {
     versions: null,
     versionsError: null,
     access: initialAccessState(),
+    restoreIntent: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -113,6 +116,22 @@ export class StudioApp {
     if (action === "remove-member") {
       const userId = target.dataset.userId;
       if (userId) await this.removeProjectMember(userId);
+      return;
+    }
+    if (action === "prepare-restore") {
+      const sourceRevision = Number(target.dataset.revision);
+      this.prepareRestore(sourceRevision);
+      return;
+    }
+    if (action === "confirm-restore") {
+      await this.confirmRestore();
+      return;
+    }
+    if (action === "cancel-restore") {
+      this.state.restoreIntent = null;
+      this.state.phase = "idle";
+      this.state.message = "Restore отменён; draft не изменён.";
+      this.render();
       return;
     }
     if (action === "select-project") {
@@ -255,6 +274,65 @@ export class StudioApp {
     }
   }
 
+  private prepareRestore(sourceRevision: number): void {
+    const draft = requireDraft(this.state.draft);
+    if (!Number.isSafeInteger(sourceRevision) || sourceRevision < 0 || sourceRevision === draft.draftRevision) return;
+    this.state.restoreIntent = Object.freeze({
+      sourceRevision,
+      baseRevision: draft.draftRevision,
+      idempotencyKey: mutationKey("restore")
+    });
+    this.state.phase = "idle";
+    this.state.message = `Подготовлен restore r${sourceRevision}. Нужна отдельная подтверждающая операция.`;
+    this.render();
+  }
+
+  private async confirmRestore(): Promise<void> {
+    const intent = this.state.restoreIntent;
+    if (!intent) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    if (draft.draftRevision !== intent.baseRevision) {
+      this.state.restoreIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = `Restore не отправлен: base r${intent.baseRevision}, current r${draft.draftRevision}.`;
+      this.render();
+      return;
+    }
+    this.state.phase = "restoring";
+    this.state.message = `Восстанавливаем r${intent.sourceRevision} поверх base r${intent.baseRevision}…`;
+    this.render();
+    try {
+      const restored = await this.api.restoreDraft(
+        projectId,
+        questId,
+        intent.sourceRevision,
+        intent.baseRevision,
+        intent.idempotencyKey
+      );
+      this.state.draft = restored;
+      this.state.restoreIntent = null;
+      this.state.conflict = null;
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = `r${intent.sourceRevision} восстановлена как новая r${restored.draftRevision}. Immutable releases не менялись.`;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
+        const fresh = await this.api.getDraft(projectId, questId);
+        this.state.draft = fresh;
+        this.state.restoreIntent = null;
+        await this.refreshVersions(projectId, questId);
+        this.state.phase = "conflict";
+        this.state.message = `Restore не выполнен: сервер уже на r${fresh.draftRevision}. Ничего не перезаписано.`;
+      } else {
+        this.setError(error);
+      }
+    }
+    this.render();
+  }
+
   private async removeProjectMember(userId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
     try {
@@ -283,6 +361,7 @@ export class StudioApp {
       this.state.versions = null;
       this.state.versionsError = null;
       this.state.conflict = null;
+      this.state.restoreIntent = null;
       this.state.phase = "idle";
       this.state.message = "Сессия завершена.";
     } catch (error) {
@@ -302,6 +381,7 @@ export class StudioApp {
     this.state.versions = null;
     this.state.versionsError = null;
     this.state.conflict = null;
+    this.state.restoreIntent = null;
     this.render();
     try {
       this.state.quests = await this.api.listQuests(projectId);
@@ -325,6 +405,7 @@ export class StudioApp {
     this.state.versions = null;
     this.state.versionsError = null;
     this.state.conflict = null;
+    this.state.restoreIntent = null;
     this.render();
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
@@ -355,12 +436,14 @@ export class StudioApp {
       this.state.phase = "saved";
       this.state.message = `Сохранено. Текущая revision: ${this.state.draft.draftRevision}.`;
       this.state.conflict = null;
+      this.state.restoreIntent = null;
       await this.refreshVersions(projectId, questId);
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
         await this.refreshVersions(projectId, questId);
+        this.state.restoreIntent = null;
         this.state.phase = "conflict";
         this.state.message = `Draft изменился на сервере: ${draft.draftRevision} → ${fresh.draftRevision}. Ничего не перезаписано.`;
         this.state.conflict = await loadConflictState(
@@ -521,7 +604,9 @@ export class StudioApp {
               this.state.versions,
               draft,
               saveStateLabel(this.state.phase),
-              this.state.versionsError
+              this.state.versionsError,
+              allowEdit,
+              this.state.restoreIntent
             )}
 
             <div class="editor-grid">
@@ -574,6 +659,7 @@ export class StudioApp {
 function saveStateLabel(phase: StudioState["phase"]): string {
   if (phase === "saving") return "saving…";
   if (phase === "saved") return "server saved";
+  if (phase === "restoring") return "restoring…";
   if (phase === "conflict") return "conflict — server draft preserved";
   if (phase === "error") return "check status message";
   return "server state";
@@ -698,6 +784,13 @@ function text(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Поле ${name} обязательно.`);
   return value.trim();
+}
+
+function mutationKey(prefix: string): string {
+  if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
+    throw new Error("Secure browser UUID unavailable for idempotency key.");
+  }
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function projectRole(data: FormData, name: string): ProjectView["role"] {

@@ -280,6 +280,22 @@ export class ControlApiClient {
     );
   }
 
+  async restoreDraft(
+    projectId: string,
+    questId: string,
+    sourceRevision: number,
+    baseRevision: number,
+    idempotencyKey: string
+  ): Promise<DraftView> {
+    const body = await this.request<{ readonly draft: DraftView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/restore`,
+      { sourceRevision, baseRevision },
+      { idempotencyKey }
+    );
+    return body.draft;
+  }
+
   async applyDraftChanges(projectId: string, questId: string, changeSet: DraftChangeSet): Promise<DraftView> {
     const body = await this.request<{ readonly draft: DraftView }>(
       "POST",

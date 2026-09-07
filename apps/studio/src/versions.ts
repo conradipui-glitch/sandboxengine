@@ -4,6 +4,12 @@ import {
   type ReleaseSummaryView
 } from "./api.js";
 
+export interface RestoreIntent {
+  readonly sourceRevision: number;
+  readonly baseRevision: number;
+  readonly idempotencyKey: string;
+}
+
 export interface VersionsReadModel {
   readonly currentRevision: number;
   readonly history: readonly DraftHistoryEntryView[];
@@ -35,7 +41,9 @@ export function renderVersionsPanel(
   model: VersionsReadModel | null,
   currentDraft: { readonly draftRevision: number; readonly contentHash: string } | null,
   saveState: string,
-  errorMessage: string | null = null
+  errorMessage: string | null = null,
+  canRestore = false,
+  restoreIntent: RestoreIntent | null = null
 ): string {
   if (!currentDraft) return "";
   if (!model) {
@@ -60,6 +68,8 @@ export function renderVersionsPanel(
       </div>
     </div>
 
+    ${restoreIntent ? renderRestoreIntent(restoreIntent, currentDraft.draftRevision) : ""}
+
     <div class="versions-grid">
       <div class="versions-card">
         <div class="versions-card-title"><h3>Draft history</h3><span>${model.history.length}${model.historyHasMore ? "+" : ""}</span></div>
@@ -69,7 +79,12 @@ export function renderVersionsPanel(
               <strong>r${entry.draftRevision}${entry.draftRevision === model.currentRevision ? " · current" : ""}</strong>
               <small>${escapeHtml(entry.title)} · ${entry.blockCount} blocks</small>
             </div>
-            <code title="draft content hash">${escapeHtml(shortHash(entry.contentHash))}</code>
+            <div class="version-row-actions">
+              <code title="draft content hash">${escapeHtml(shortHash(entry.contentHash))}</code>
+              ${canRestore && entry.draftRevision !== model.currentRevision
+                ? `<button data-action="prepare-restore" data-revision="${entry.draftRevision}">Восстановить</button>`
+                : ""}
+            </div>
           </article>`).join("") || `<div class="empty-panel">История пока пуста.</div>`}
         </div>
         ${model.historyHasMore ? `<p class="form-hint">Показаны последние revisions; более старые доступны через server cursor.</p>` : ""}
@@ -90,6 +105,21 @@ export function renderVersionsPanel(
       </div>
     </div>
   </section>`;
+}
+
+function renderRestoreIntent(intent: RestoreIntent, currentRevision: number): string {
+  const stale = intent.baseRevision !== currentRevision;
+  return `<div class="restore-confirm ${stale ? "stale" : ""}" role="status">
+    <div>
+      <strong>Restore r${intent.sourceRevision} → новая revision</strong>
+      <p>Источник останется immutable. Текущий base: r${intent.baseRevision}. Release/playtest pointers не меняются.</p>
+      ${stale ? `<p class="stale-note">Current draft уже r${currentRevision}; выберите revision заново. Restore не будет отправлен.</p>` : ""}
+    </div>
+    <div class="button-row">
+      ${stale ? "" : `<button class="primary" data-action="confirm-restore">Подтвердить restore</button>`}
+      <button data-action="cancel-restore">Отмена</button>
+    </div>
+  </div>`;
 }
 
 function shortHash(value: string): string {
