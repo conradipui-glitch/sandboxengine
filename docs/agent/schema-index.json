@@ -1,6 +1,8 @@
 {
   "contractsSchemaVersion": "1.0",
   "presentationSchemaVersion": "2.0",
+  "pluginManifestSchemaVersion": "1.0",
+  "enginePluginApiVersion": "1.0.0",
   "schemas": [
     {
       "name": "action-result",
@@ -115,6 +117,14 @@
       "version": "2.0",
       "file": "packages/contracts/schemas/v2/scene-frame.schema.json",
       "id": "urn:living-history:schema:scene-frame:2.0"
+    }
+  ],
+  "pluginSchemas": [
+    {
+      "name": "plugin-manifest",
+      "version": "1.0",
+      "file": "packages/plugins/schemas/v1/plugin-manifest.schema.json",
+      "id": "urn:living-history:plugin-manifest:1.0"
     }
   ]
 }
