@@ -10,6 +10,22 @@ export interface RestoreIntent {
   readonly idempotencyKey: string;
 }
 
+export interface ReleaseBuildIntent {
+  readonly releaseId: string;
+  readonly draftRevision: number;
+  readonly draftContentHash: string;
+  readonly validationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface PublishReportIntent {
+  readonly releaseId: string;
+  readonly draftRevision: number;
+  readonly draftContentHash: string;
+  readonly compiledContentHash: string;
+  readonly expectedCurrentReleaseId: string | null;
+}
+
 export interface VersionsReadModel {
   readonly currentRevision: number;
   readonly history: readonly DraftHistoryEntryView[];
@@ -43,7 +59,12 @@ export function renderVersionsPanel(
   saveState: string,
   errorMessage: string | null = null,
   canRestore = false,
-  restoreIntent: RestoreIntent | null = null
+  restoreIntent: RestoreIntent | null = null,
+  canBuildRelease = false,
+  validation: { readonly validationId: string; readonly draftRevision: number; readonly contentHash: string; readonly status: "valid" | "invalid" } | null = null,
+  releaseBuildIntent: ReleaseBuildIntent | null = null,
+  canPreparePublish = false,
+  publishReport: PublishReportIntent | null = null
 ): string {
   if (!currentDraft) return "";
   if (!model) {
@@ -69,6 +90,8 @@ export function renderVersionsPanel(
     </div>
 
     ${restoreIntent ? renderRestoreIntent(restoreIntent, currentDraft.draftRevision) : ""}
+    ${releaseBuildIntent ? renderReleaseBuildIntent(releaseBuildIntent, currentDraft, validation) : ""}
+    ${publishReport ? renderPublishReport(publishReport) : ""}
 
     <div class="versions-grid">
       <div class="versions-card">
@@ -98,13 +121,75 @@ export function renderVersionsPanel(
               <strong>${escapeHtml(release.releaseId)}</strong>
               <small>draft r${release.draftRevision}${release.isCurrent ? " · current release" : release.wasPublished ? " · published before" : " · never published"}</small>
             </div>
-            <code title="compiled release hash">${escapeHtml(shortHash(release.compiledContentHash))}</code>
+            <div class="version-row-actions">
+              <code title="compiled release hash">${escapeHtml(shortHash(release.compiledContentHash))}</code>
+              ${canPreparePublish && !release.isCurrent
+                ? `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Publish report</button>`
+                : ""}
+            </div>
           </article>`).join("") || `<div class="empty-panel">Immutable releases ещё не создавались.</div>`}
         </div>
         <p class="form-hint">Current pointer: ${model.currentReleaseId === null ? "не установлен" : `<code>${escapeHtml(model.currentReleaseId)}</code>`}.</p>
+        ${renderReleaseBuildForm(canBuildRelease, currentDraft, validation)}
       </div>
     </div>
   </section>`;
+}
+
+function renderReleaseBuildForm(
+  canBuildRelease: boolean,
+  currentDraft: { readonly draftRevision: number; readonly contentHash: string },
+  validation: { readonly validationId: string; readonly draftRevision: number; readonly contentHash: string; readonly status: "valid" | "invalid" } | null
+): string {
+  if (!canBuildRelease) return `<p class="form-hint">Release build доступен owner/editor с активным mutation proof.</p>`;
+  const validCurrent = validation !== null
+    && validation.status === "valid"
+    && validation.draftRevision === currentDraft.draftRevision
+    && validation.contentHash === currentDraft.contentHash;
+  if (!validCurrent) return `<p class="form-hint">Для immutable release сначала нужна valid validation текущей revision/hash.</p>`;
+  return `<form class="release-build-form" data-form="release-build">
+    <label>Release ID<input name="releaseId" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" placeholder="release-r${currentDraft.draftRevision}"></label>
+    <button type="submit">Подготовить release build</button>
+  </form>`;
+}
+
+function renderReleaseBuildIntent(
+  intent: ReleaseBuildIntent,
+  currentDraft: { readonly draftRevision: number; readonly contentHash: string },
+  validation: { readonly validationId: string; readonly draftRevision: number; readonly contentHash: string; readonly status: "valid" | "invalid" } | null
+): string {
+  const stale = intent.draftRevision !== currentDraft.draftRevision
+    || intent.draftContentHash !== currentDraft.contentHash
+    || validation === null
+    || validation.status !== "valid"
+    || validation.validationId !== intent.validationId
+    || validation.draftRevision !== intent.draftRevision
+    || validation.contentHash !== intent.draftContentHash;
+  return `<div class="restore-confirm release-build-confirm ${stale ? "stale" : ""}" role="status">
+    <div>
+      <strong>Build immutable release ${escapeHtml(intent.releaseId)}</strong>
+      <p>Exact source: draft r${intent.draftRevision} · ${escapeHtml(shortHash(intent.draftContentHash))} · validation ${escapeHtml(intent.validationId)}.</p>
+      <p>Build создаст immutable release, но НЕ сдвинет current pointer и НЕ публикует квест.</p>
+      ${stale ? `<p class="stale-note">Draft/validation изменились; build не будет отправлен. Подготовьте report заново.</p>` : ""}
+    </div>
+    <div class="button-row">
+      ${stale ? "" : `<button class="primary" data-action="confirm-release-build">Создать immutable release</button>`}
+      <button data-action="cancel-release-build">Отмена</button>
+    </div>
+  </div>`;
+}
+
+function renderPublishReport(report: PublishReportIntent): string {
+  return `<div class="restore-confirm publish-report" role="status">
+    <div>
+      <strong>Owner publish report: ${escapeHtml(report.releaseId)}</strong>
+      <p>Если owner подтвердит публикацию, current pointer перейдёт на этот exact immutable release.</p>
+      <p>Draft r${report.draftRevision} · draft hash ${escapeHtml(shortHash(report.draftContentHash))} · compiled hash ${escapeHtml(shortHash(report.compiledContentHash))}.</p>
+      <p>Expected current pointer: ${report.expectedCurrentReleaseId === null ? "none" : `<code>${escapeHtml(report.expectedCurrentReleaseId)}</code>`}.</p>
+      <p><strong>Сейчас ничего не опубликовано этим report.</strong> Публикация требует отдельного server receipt.</p>
+    </div>
+    <div class="button-row"><button data-action="cancel-publish-report">Закрыть report</button></div>
+  </div>`;
 }
 
 function renderRestoreIntent(intent: RestoreIntent, currentRevision: number): string {
@@ -124,6 +209,10 @@ function renderRestoreIntent(intent: RestoreIntent, currentRevision: number): st
 
 function shortHash(value: string): string {
   return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+function escapeAttr(value: string): string {
+  return escapeHtml(value);
 }
 
 function escapeHtml(value: string): string {

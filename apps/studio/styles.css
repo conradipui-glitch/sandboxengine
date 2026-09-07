@@ -401,6 +401,13 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .restore-confirm strong { color: #334d85; }
 .restore-confirm p { margin: 4px 0 0; color: #66738a; font-size: 12px; line-height: 1.45; }
 
+
+.release-build-form { margin-top: 12px; display: flex; gap: 8px; align-items: end; }
+.release-build-form label { flex: 1; display: grid; gap: 5px; font-size: 11px; color: #66738a; }
+.release-build-form input { width: 100%; box-sizing: border-box; }
+.publish-report { border-color: #bfd3c4; background: #f3faf5; }
+.publish-report strong { color: #285c38; }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }

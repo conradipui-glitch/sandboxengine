@@ -280,6 +280,21 @@ export class ControlApiClient {
     );
   }
 
+  async buildRelease(
+    projectId: string,
+    questId: string,
+    input: { readonly releaseId: string; readonly draftRevision: number; readonly validationId: string },
+    idempotencyKey: string
+  ): Promise<ReleaseSummaryView> {
+    const body = await this.request<{ readonly release: ReleaseSummaryView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/releases`,
+      input,
+      { idempotencyKey }
+    );
+    return body.release;
+  }
+
   async restoreDraft(
     projectId: string,
     questId: string,

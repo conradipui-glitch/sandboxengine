@@ -25,6 +25,8 @@ import {
 import {
   loadVersionsReadModel,
   renderVersionsPanel,
+  type PublishReportIntent,
+  type ReleaseBuildIntent,
   type RestoreIntent,
   type VersionsReadModel
 } from "./versions.js";
@@ -52,7 +54,9 @@ interface StudioState {
   versionsError: string | null;
   access: StudioAccessState;
   restoreIntent: RestoreIntent | null;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "conflict" | "error";
+  releaseBuildIntent: ReleaseBuildIntent | null;
+  publishReport: PublishReportIntent | null;
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -70,6 +74,8 @@ export class StudioApp {
     versionsError: null,
     access: initialAccessState(),
     restoreIntent: null,
+    releaseBuildIntent: null,
+    publishReport: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -116,6 +122,27 @@ export class StudioApp {
     if (action === "remove-member") {
       const userId = target.dataset.userId;
       if (userId) await this.removeProjectMember(userId);
+      return;
+    }
+    if (action === "prepare-publish") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) this.preparePublishReport(releaseId);
+      return;
+    }
+    if (action === "cancel-publish-report") {
+      this.state.publishReport = null;
+      this.state.message = "Publish report закрыт; current pointer не менялся.";
+      this.render();
+      return;
+    }
+    if (action === "confirm-release-build") {
+      await this.confirmReleaseBuild();
+      return;
+    }
+    if (action === "cancel-release-build") {
+      this.state.releaseBuildIntent = null;
+      this.state.message = "Release build отменён; immutable release не создавался.";
+      this.render();
       return;
     }
     if (action === "prepare-restore") {
@@ -183,6 +210,11 @@ export class StudioApp {
           ? `Вход подтверждён. Текущая роль: ${selected.role}.`
           : "Вход выполнен. Выберите проект.";
         this.render();
+        return;
+      }
+
+      if (kind === "release-build") {
+        this.prepareReleaseBuild(text(data, "releaseId"));
         return;
       }
 
@@ -274,6 +306,83 @@ export class StudioApp {
     }
   }
 
+  private prepareReleaseBuild(releaseId: string): void {
+    const draft = requireDraft(this.state.draft);
+    const validation = this.state.validation;
+    if (!validation
+      || validation.status !== "valid"
+      || validation.draftRevision !== draft.draftRevision
+      || validation.contentHash !== draft.contentHash) {
+      throw new Error("Для release build нужна valid validation текущей revision/hash.");
+    }
+    this.state.releaseBuildIntent = Object.freeze({
+      releaseId,
+      draftRevision: draft.draftRevision,
+      draftContentHash: draft.contentHash,
+      validationId: validation.validationId,
+      idempotencyKey: mutationKey("release-build")
+    });
+    this.state.publishReport = null;
+    this.state.message = `Подготовлен immutable release ${releaseId}; build требует отдельного подтверждения.`;
+    this.render();
+  }
+
+  private async confirmReleaseBuild(): Promise<void> {
+    const intent = this.state.releaseBuildIntent;
+    if (!intent) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    const validation = this.state.validation;
+    const stale = draft.draftRevision !== intent.draftRevision
+      || draft.contentHash !== intent.draftContentHash
+      || validation === null
+      || validation.status !== "valid"
+      || validation.validationId !== intent.validationId
+      || validation.draftRevision !== intent.draftRevision
+      || validation.contentHash !== intent.draftContentHash;
+    if (stale) {
+      this.state.releaseBuildIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = "Release build не отправлен: draft/validation уже изменились.";
+      this.render();
+      return;
+    }
+    this.state.phase = "building-release";
+    this.state.message = `Создаём immutable release ${intent.releaseId} из r${intent.draftRevision}…`;
+    this.render();
+    try {
+      const release = await this.api.buildRelease(projectId, questId, {
+        releaseId: intent.releaseId,
+        draftRevision: intent.draftRevision,
+        validationId: intent.validationId
+      }, intent.idempotencyKey);
+      this.state.releaseBuildIntent = null;
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = `Immutable release ${release.releaseId} создан. Он ещё НЕ опубликован.`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private preparePublishReport(releaseId: string): void {
+    const versions = this.state.versions;
+    const release = versions?.releases.find((item) => item.releaseId === releaseId) ?? null;
+    if (!versions || !release || release.isCurrent) return;
+    this.state.publishReport = Object.freeze({
+      releaseId: release.releaseId,
+      draftRevision: release.draftRevision,
+      draftContentHash: release.draftContentHash,
+      compiledContentHash: release.compiledContentHash,
+      expectedCurrentReleaseId: versions.currentReleaseId
+    });
+    this.state.releaseBuildIntent = null;
+    this.state.message = `Publish report для ${release.releaseId} подготовлен. Current pointer ещё не менялся.`;
+    this.render();
+  }
+
   private prepareRestore(sourceRevision: number): void {
     const draft = requireDraft(this.state.draft);
     if (!Number.isSafeInteger(sourceRevision) || sourceRevision < 0 || sourceRevision === draft.draftRevision) return;
@@ -313,6 +422,8 @@ export class StudioApp {
       );
       this.state.draft = restored;
       this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
       this.state.conflict = null;
       this.state.quests = await this.api.listQuests(projectId);
       await this.refreshVersions(projectId, questId);
@@ -323,6 +434,8 @@ export class StudioApp {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
         this.state.restoreIntent = null;
+        this.state.releaseBuildIntent = null;
+        this.state.publishReport = null;
         await this.refreshVersions(projectId, questId);
         this.state.phase = "conflict";
         this.state.message = `Restore не выполнен: сервер уже на r${fresh.draftRevision}. Ничего не перезаписано.`;
@@ -362,6 +475,8 @@ export class StudioApp {
       this.state.versionsError = null;
       this.state.conflict = null;
       this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
       this.state.phase = "idle";
       this.state.message = "Сессия завершена.";
     } catch (error) {
@@ -382,6 +497,8 @@ export class StudioApp {
     this.state.versionsError = null;
     this.state.conflict = null;
     this.state.restoreIntent = null;
+    this.state.releaseBuildIntent = null;
+    this.state.publishReport = null;
     this.render();
     try {
       this.state.quests = await this.api.listQuests(projectId);
@@ -406,6 +523,8 @@ export class StudioApp {
     this.state.versionsError = null;
     this.state.conflict = null;
     this.state.restoreIntent = null;
+    this.state.releaseBuildIntent = null;
+    this.state.publishReport = null;
     this.render();
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
@@ -437,6 +556,8 @@ export class StudioApp {
       this.state.message = `Сохранено. Текущая revision: ${this.state.draft.draftRevision}.`;
       this.state.conflict = null;
       this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
       await this.refreshVersions(projectId, questId);
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
@@ -555,6 +676,7 @@ export class StudioApp {
     const allowProjectCreate = canCreateProject(this.state.access);
     const allowEdit = canEditProject(this.state.access, project);
     const allowTest = canTestProject(this.state.access, project);
+    const allowPublish = allowEdit && project?.role === "owner";
 
     this.root.innerHTML = `
       <div class="studio-shell">
@@ -606,7 +728,12 @@ export class StudioApp {
               saveStateLabel(this.state.phase),
               this.state.versionsError,
               allowEdit,
-              this.state.restoreIntent
+              this.state.restoreIntent,
+              allowEdit,
+              this.state.validation,
+              this.state.releaseBuildIntent,
+              allowPublish,
+              this.state.publishReport
             )}
 
             <div class="editor-grid">
@@ -660,6 +787,7 @@ function saveStateLabel(phase: StudioState["phase"]): string {
   if (phase === "saving") return "saving…";
   if (phase === "saved") return "server saved";
   if (phase === "restoring") return "restoring…";
+  if (phase === "building-release") return "building immutable release…";
   if (phase === "conflict") return "conflict — server draft preserved";
   if (phase === "error") return "check status message";
   return "server state";
