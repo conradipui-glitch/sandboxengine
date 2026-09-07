@@ -140,8 +140,15 @@ export class BrowserPresentationRenderer {
     const url = await this.#assetObjectUrl(asset, signal);
     const audio = new Audio(url);
     audio.loop = loop;
-    this.#audio.set(channel, { audio, url, key: assetKey(asset) });
-    await audio.play();
+    this.#audio.set(channel, { audio, url });
+    try {
+      await audio.play();
+    } catch (error) {
+      this.#audio.delete(channel);
+      audio.removeAttribute("src");
+      this.#revoke(url);
+      throw error;
+    }
   }
 
   async stopAudio(channel, _signal) {
@@ -254,8 +261,14 @@ export class BrowserPresentationRenderer {
     const image = document.createElement("img");
     image.alt = alt;
     image.src = url;
-    image.addEventListener("error", () => this.#revoke(url), { once: true });
-    return image;
+    try {
+      await decodeImage(image, signal);
+      return image;
+    } catch (error) {
+      image.removeAttribute("src");
+      this.#revoke(url);
+      throw error;
+    }
   }
 
   async #assetObjectUrl(ref, signal) {
@@ -277,6 +290,45 @@ export class BrowserPresentationRenderer {
   }
 }
 
+async function decodeImage(image, signal) {
+  throwIfAborted(signal);
+  if (typeof image.decode === "function") {
+    await raceAbort(image.decode(), signal);
+    throwIfAborted(signal);
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const load = () => finish();
+    const error = () => finish(new Error("presentation_image_decode_failed"));
+    const abort = () => finish(new Error("presentation_aborted"));
+    image.addEventListener("load", load, { once: true });
+    image.addEventListener("error", error, { once: true });
+    signal.addEventListener("abort", abort, { once: true });
+    function finish(reason) {
+      image.removeEventListener("load", load);
+      image.removeEventListener("error", error);
+      signal.removeEventListener("abort", abort);
+      if (reason) reject(reason); else resolve();
+    }
+  });
+}
+
+function raceAbort(promise, signal) {
+  if (signal.aborted) return Promise.reject(new Error("presentation_aborted"));
+  return new Promise((resolve, reject) => {
+    const abort = () => finish(new Error("presentation_aborted"));
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve(promise).then(
+      (value) => finish(null, value),
+      (error) => finish(error instanceof Error ? error : new Error("presentation_image_decode_failed"))
+    );
+    function finish(error, value) {
+      signal.removeEventListener("abort", abort);
+      if (error) reject(error); else resolve(value);
+    }
+  });
+}
+
 function delay(durationMs, signal) {
   if (durationMs <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -293,10 +345,6 @@ function delay(durationMs, signal) {
 
 function throwIfAborted(signal) {
   if (signal.aborted) throw new Error("presentation_aborted");
-}
-
-function assetKey(ref) {
-  return `${ref.assetId}@${ref.hash}`;
 }
 
 function cssEscape(value) {
