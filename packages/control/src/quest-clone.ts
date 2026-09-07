@@ -76,18 +76,19 @@ export class MemoryControlStore extends BaseMemoryControlStore implements CloneC
   async cloneQuest(projectId: string, sourceQuestId: string, input: CloneQuestInput): Promise<CloneQuestResult> {
     const key = cloneReservationKey(projectId, sourceQuestId, input?.idempotencyKey);
     const access: CloneReservationAccess = Object.freeze({
-      get: () => this.#cloneReservations.get(key) ?? null,
-      reserve: (reservation) => {
+      get: (): CloneReservation | null => this.#cloneReservations.get(key) ?? null,
+      reserve: (reservation: CloneReservation): CloneReservation => {
         const existing = this.#cloneReservations.get(key);
         if (existing) return existing;
-        const stored = frozen({ ...reservation });
+        const stored: CloneReservation = Object.freeze({ ...reservation });
         this.#cloneReservations.set(key, stored);
         return stored;
       },
-      complete: () => {
+      complete: (): void => {
         const current = this.#cloneReservations.get(key);
         if (!current) throw new Error("missing clone idempotency reservation");
-        this.#cloneReservations.set(key, frozen({ ...current, status: "completed" as const }));
+        const completed: CloneReservation = Object.freeze({ ...current, status: "completed" as const });
+        this.#cloneReservations.set(key, completed);
       }
     });
     return executeClone(this, projectId, sourceQuestId, input, access);
@@ -135,8 +136,8 @@ export class SQLiteControlStore extends BaseSQLiteControlStore implements CloneC
   async cloneQuest(projectId: string, sourceQuestId: string, input: CloneQuestInput): Promise<CloneQuestResult> {
     const idempotencyKey = input?.idempotencyKey;
     const access: CloneReservationAccess = Object.freeze({
-      get: () => this.#readCloneReservation(projectId, sourceQuestId, idempotencyKey),
-      reserve: (reservation) => {
+      get: (): CloneReservation | null => this.#readCloneReservation(projectId, sourceQuestId, idempotencyKey),
+      reserve: (reservation: CloneReservation): CloneReservation => {
         this.#cloneDb.prepare(`
           INSERT OR IGNORE INTO control_quest_clone_idempotency
             (project_id, source_quest_id, idempotency_key, request_hash, source_revision, destination_quest_id, status)
@@ -154,7 +155,7 @@ export class SQLiteControlStore extends BaseSQLiteControlStore implements CloneC
         if (!stored) throw new Error("failed to reserve clone idempotency key");
         return stored;
       },
-      complete: () => {
+      complete: (): void => {
         const changed = this.#cloneDb.prepare(`
           UPDATE control_quest_clone_idempotency SET status = 'completed'
           WHERE project_id = ? AND source_quest_id = ? AND idempotency_key = ?
@@ -208,7 +209,7 @@ async function executeClone(
     if (!source) return frozen({ kind: "source_quest_not_found" });
     if (await store.getDraft(projectId, input.newQuestId)) return frozen({ kind: "destination_quest_exists" });
 
-    reservation = reservations.reserve(frozen({
+    reservation = reservations.reserve(Object.freeze({
       requestHash,
       sourceRevision: source.draftRevision,
       destinationQuestId: input.newQuestId,
@@ -333,10 +334,7 @@ function buildCloneSpec(source: DraftSnapshot, destinationQuestId: string, title
     throw new TypeError(`unsupported canonical block kind: ${(unreachable as any).kind}`);
   }
 
-  return frozen({
-    ok: true,
-    spec: deepFreeze({ title, entryLocationId, blocks })
-  });
+  return frozen({ ok: true, spec: deepFreeze({ title, entryLocationId, blocks }) });
 }
 
 function clonedBlockId(source: DraftSnapshot, destinationQuestId: string, sourceBlockId: string): string {
