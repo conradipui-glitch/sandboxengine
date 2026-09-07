@@ -6,7 +6,11 @@ import {
   type ResolvedIntent,
   type WorldState
 } from "@living-history/contracts";
-import type { IntentActionCatalogEntry } from "@living-history/ai";
+import type {
+  FactPacket,
+  IntentActionCatalogEntry,
+  NarrativeResult
+} from "@living-history/ai";
 import {
   applyTimeAdvancePlan,
   canonicalStringify,
@@ -132,12 +136,59 @@ export function createPaintIntentCatalog(
   ]);
 }
 
+/**
+ * Narrator input is derived only after Core has calculated the action.
+ * It is intentionally smaller than WorldState and contains no executable effects,
+ * draft data, hidden fields, min/max bounds, schedules or mutation instructions.
+ */
+export function buildFactPacket(input: {
+  readonly beforeState: WorldState;
+  readonly execution: ExplicitActionExecution;
+}): FactPacket {
+  const beforeResources = new Map(input.beforeState.resources.map((resource) => [resource.id, resource]));
+  const changedResources = input.execution.candidateState.resources
+    .filter((after) => beforeResources.get(after.id)?.value !== after.value)
+    .slice(0, 100)
+    .map((after) => {
+      const before = beforeResources.get(after.id);
+      if (!before) throw new Error(`candidate resource missing from before state: ${after.id}`);
+      return Object.freeze({
+        id: after.id,
+        unit: after.unit,
+        before: before.value,
+        after: after.value
+      });
+    });
+
+  return Object.freeze({
+    schemaVersion: "1.0" as const,
+    action: Object.freeze({
+      type: "core.paint",
+      status: input.execution.actionStatus,
+      requestedUnits: input.execution.requestedUnits,
+      completedUnits: input.execution.completedUnits,
+      durationSeconds: input.execution.durationSeconds,
+      reasonCode: input.execution.reasonCode
+    }),
+    clock: Object.freeze({
+      beforeElapsedSeconds: input.beforeState.clock.elapsedSeconds,
+      afterElapsedSeconds: input.execution.candidateState.clock.elapsedSeconds
+    }),
+    resources: Object.freeze(changedResources),
+    allowedSpeakerIds: Object.freeze(
+      input.execution.candidateState.entities.slice(0, 100).map((entity) => entity.id)
+    ),
+    observations: Object.freeze([])
+  });
+}
+
 export function buildCommittedPublicResponse(input: {
   readonly operationId: string;
   readonly turnId: string;
   readonly sessionId: string;
   readonly release: PinnedReleaseIdentity;
   readonly execution: ExplicitActionExecution;
+  readonly narrative?: NarrativeResult | null;
 }): RuntimePublicResponse {
   const playerView: PlayerView = projectPlayerState(
     input.sessionId,
@@ -145,6 +196,15 @@ export function buildCommittedPublicResponse(input: {
     input.release.releaseId,
     input.execution.candidateState
   );
+  const narrative = input.narrative
+    ? Object.freeze({
+        profile: input.narrative.profile,
+        source: input.narrative.source,
+        summary: input.narrative.content.summary,
+        dialogue: input.narrative.content.dialogue.map((line) => Object.freeze({ ...line })),
+        observationRefs: Object.freeze([...input.narrative.content.observationRefs])
+      })
+    : null;
   return deepFreeze({
     kind: "action_result",
     operationId: input.operationId,
@@ -157,6 +217,7 @@ export function buildCommittedPublicResponse(input: {
       durationSeconds: input.execution.durationSeconds,
       reasonCode: input.execution.reasonCode
     },
+    ...(narrative ? { narrative } : {}),
     playerView: toJsonValue(playerView)
   });
 }
