@@ -1,0 +1,68 @@
+name: B09 Transport Sync
+
+on:
+  push:
+    branches: [b09-03-version-history-studio-access]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+      - name: Patch bounded import transport
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          draft = Path('apps/server/src/draft-version-http.ts')
+          text = draft.read_text()
+          old = '''import {\n  MAX_DRAFT_HISTORY_LIMIT,'''
+          new = '''import {\n  MAX_DRAFT_HISTORY_LIMIT,\n  MAX_LHQUEST_ARCHIVE_BYTES,'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = 'const MAX_IMPORT_BASE64_CHARS = 240_000;'
+          new = 'const MAX_IMPORT_BASE64_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4;'
+          assert old in text
+          text = text.replace(old, new, 1)
+          draft.write_text(text)
+
+          control = Path('apps/server/src/control-server.ts')
+          text = control.read_text()
+          old = '''import {\n  createControlOpaqueSecret,'''
+          new = '''import {\n  MAX_LHQUEST_ARCHIVE_BYTES,\n  createControlOpaqueSecret,'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = 'const MAX_CONTROL_BODY_CHARS = 262_144;'
+          new = '''const MAX_CONTROL_BODY_CHARS = 262_144;\nconst MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '  const body = await readJsonBody(request);'
+          new = '  const body = await readJsonBody(request, controlBodyLimit(request));'
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '''async function readJsonBody(request: any): Promise<\n  | { readonly ok: true; readonly value: unknown }'''
+          new = '''function controlBodyLimit(request: any): number {\n  const rawUrl = typeof request?.url === "string" ? request.url : "";\n  const pathname = rawUrl.split("?", 1)[0] ?? "";\n  return /^\\/control\\/v1\\/projects\\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\\/imports$/.test(pathname)\n    ? MAX_CONTROL_IMPORT_BODY_CHARS\n    : MAX_CONTROL_BODY_CHARS;\n}\n\nasync function readJsonBody(request: any, maxChars = MAX_CONTROL_BODY_CHARS): Promise<\n  | { readonly ok: true; readonly value: unknown }'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '    if (body.length > MAX_CONTROL_BODY_CHARS) {'
+          new = '    if (body.length > maxChars) {'
+          assert old in text
+          text = text.replace(old, new, 1)
+          control.write_text(text)
+          PY
+      - name: Commit transport sync
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/draft-version-http.ts apps/server/src/control-server.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(B09-03): align HTTP import with canonical archive bounds"
+          git push origin HEAD:b09-03-version-history-studio-access
