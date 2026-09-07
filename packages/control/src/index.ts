@@ -5,6 +5,15 @@ export {
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
 export {
+  draftHistoryEntry,
+  compareDraftSnapshots,
+  analyzeDraftBlockReferences,
+  type DraftHistoryEntry,
+  type DraftComparison,
+  type DraftReference,
+  type DraftReferenceAnalysis
+} from "./draft-history.js";
+export {
   CONTROL_ROLES,
   createControlOpaqueSecret,
   createControlSessionId,
