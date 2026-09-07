@@ -100,6 +100,7 @@ const player = createPlayerDevServer({
   runtimeOrigin: `http://${runtimeAddress.host}:${runtimeAddress.port}`,
   metadata,
   presentation: {
+    release: Object.freeze({ questId: template.release.questId, releaseId: template.release.releaseId }),
     assets: presentationTemplate.catalog.assets,
     initialForSession(sessionId): JsonValue | null {
       const initial = presentationStorageModule.buildInitialReferencePresentation({
