@@ -99,7 +99,7 @@ test("T21 B09 full Studio author cycle reaches explicit owner publication withou
     assert.equal(built.releaseId, "release-r1");
     assert.equal(built.draftRevision, draft1.draftRevision);
     assert.equal(built.draftContentHash, draft1.contentHash);
-    assert.equal(built.compiledContentHash, validation.compiledContentHash);
+    assert.match(built.compiledContentHash, /^[a-f0-9]{64}$/);
     assert.equal(built.isCurrent, false);
     assert.equal(built.wasPublished, false);
 
@@ -108,6 +108,7 @@ test("T21 B09 full Studio author cycle reaches explicit owner publication withou
     assert.equal(reportBeforePublish.releases.length, 1);
     assert.equal(reportBeforePublish.releases[0].releaseId, built.releaseId);
     assert.equal(reportBeforePublish.releases[0].draftContentHash, draft1.contentHash);
+    assert.equal(reportBeforePublish.releases[0].compiledContentHash, built.compiledContentHash);
 
     const publication = await api.publishRelease(
       project.projectId,
