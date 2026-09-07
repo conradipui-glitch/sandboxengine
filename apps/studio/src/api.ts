@@ -6,6 +6,26 @@ export interface ProjectView {
   readonly title: string;
 }
 
+export interface ControlUserView {
+  readonly userId: string;
+  readonly username: string;
+}
+
+export interface ControlSessionView {
+  readonly sessionId: string;
+  readonly createdAtMs: number;
+  readonly expiresAtMs: number;
+}
+
+export interface ControlAuthView {
+  readonly user: ControlUserView;
+  readonly session: ControlSessionView;
+}
+
+interface ControlLoginResponse extends ControlAuthView {
+  readonly csrfToken: string;
+}
+
 export interface QuestSummaryView {
   readonly projectId: string;
   readonly questId: string;
@@ -99,11 +119,45 @@ export class ControlApiError extends Error {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+interface RequestOptions {
+  readonly csrf?: "if-present" | "omit";
+  readonly idempotencyKey?: string;
+}
+
 export class ControlApiClient {
+  private csrfToken: string | null = null;
+
   constructor(
     private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
     private readonly basePath = "/control/v1"
   ) {}
+
+  hasMutationProof(): boolean {
+    return this.csrfToken !== null;
+  }
+
+  async login(username: string, password: string): Promise<ControlAuthView> {
+    const body = await this.request<ControlLoginResponse>(
+      "POST",
+      "/auth/login",
+      { username, password },
+      { csrf: "omit" }
+    );
+    if (typeof body.csrfToken !== "string" || body.csrfToken.length < 20 || body.csrfToken.length > 256) {
+      throw new ControlApiError(200, "INVALID_CONTROL_RESPONSE", body);
+    }
+    this.csrfToken = body.csrfToken;
+    return Object.freeze({ user: body.user, session: body.session });
+  }
+
+  async getSession(): Promise<ControlAuthView> {
+    return this.request<ControlAuthView>("GET", "/auth/session");
+  }
+
+  async logout(): Promise<void> {
+    await this.request<unknown>("POST", "/auth/logout");
+    this.csrfToken = null;
+  }
 
   async listProjects(): Promise<readonly ProjectView[]> {
     const body = await this.request<{ readonly projects: readonly ProjectView[] }>("GET", "/projects");
@@ -222,12 +276,21 @@ export class ControlApiClient {
     return body.playtest;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["content-type"] = "application/json";
+    const mutation = method !== "GET" && method !== "HEAD";
+    if (mutation && options.csrf !== "omit" && this.csrfToken !== null) {
+      headers["x-csrf-token"] = this.csrfToken;
+    }
+    if (options.idempotencyKey !== undefined) headers["idempotency-key"] = options.idempotencyKey;
+
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.basePath}${path}`, {
         method,
-        headers: body === undefined ? undefined : { "content-type": "application/json" },
+        credentials: "same-origin",
+        headers: Object.keys(headers).length === 0 ? undefined : headers,
         body: body === undefined ? undefined : JSON.stringify(body)
       });
     } catch (error) {
@@ -237,6 +300,7 @@ export class ControlApiClient {
     const payload = await parseJson(response);
     if (!response.ok) {
       const code = readErrorCode(payload) ?? `HTTP_${response.status}`;
+      if (response.status === 401 && code === "CONTROL_AUTH_REQUIRED") this.csrfToken = null;
       throw new ControlApiError(response.status, code, payload);
     }
     return payload as T;
