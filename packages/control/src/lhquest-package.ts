@@ -12,8 +12,10 @@ import { LHQUEST_FORMAT_VERSION } from "./quest-export.js";
 import { readBoundedStoredZip, type BoundedZipFailureCode } from "./zip-read.js";
 
 export interface ParsedLhquestDraftPackage {
+  readonly sourceKind: "draft" | "release";
   readonly sourceQuestId: string;
   readonly sourceRevision: number;
+  readonly sourceReleaseId: string | null;
   readonly sourceContentHash: string;
   readonly title: string;
   readonly entryLocationId: string;
@@ -39,6 +41,17 @@ export type LhquestPackageFailureCode =
   | "HASH_MISMATCH"
   | "INVALID_QUEST"
   | "SOURCE_CONTENT_HASH_MISMATCH";
+
+type PackageSource =
+  | { readonly kind: "draft"; readonly questId: string; readonly draftRevision: number; readonly contentHash: string }
+  | {
+      readonly kind: "release";
+      readonly questId: string;
+      readonly releaseId: string;
+      readonly draftRevision: number;
+      readonly draftContentHash: string;
+      readonly compiledContentHash: string;
+    };
 
 const REQUIRED_FILES = ["SHA256SUMS", "manifest.json", "quest.json"] as const;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
@@ -84,7 +97,7 @@ export async function parseLhquestDraftPackage(archive: Uint8Array): Promise<Par
 }
 
 function validateManifest(value: unknown, questBytes: Uint8Array):
-  | { readonly ok: true; readonly source: { questId: string; draftRevision: number; contentHash: string } }
+  | { readonly ok: true; readonly source: PackageSource }
   | { readonly ok: false; readonly code: LhquestPackageFailureCode } {
   if (!isRecord(value) || !hasExactKeys(value, ["format", "formatVersion", "source", "compatibility", "integrity", "files"])) {
     return fail("INVALID_MANIFEST");
@@ -92,11 +105,8 @@ function validateManifest(value: unknown, questBytes: Uint8Array):
   if (value.format !== "living-history.lhquest") return fail("INVALID_MANIFEST");
   if (value.formatVersion !== LHQUEST_FORMAT_VERSION) return fail("UNSUPPORTED_FORMAT_VERSION");
 
-  if (!isRecord(value.source) || !hasExactKeys(value.source, ["kind", "questId", "draftRevision", "contentHash"])
-    || value.source.kind !== "draft" || !isId(value.source.questId)
-    || !isRevision(value.source.draftRevision) || !isHash(value.source.contentHash)) {
-    return fail("INVALID_MANIFEST");
-  }
+  const source = parseSource(value.source);
+  if (source === null) return fail("INVALID_MANIFEST");
 
   if (!isRecord(value.compatibility) || !hasExactKeys(value.compatibility, ["contractsSchemaVersion", "requiredPlugins"])) {
     return fail("INVALID_MANIFEST");
@@ -123,19 +133,35 @@ function validateManifest(value: unknown, questBytes: Uint8Array):
     return fail("HASH_MISMATCH");
   }
 
-  return Object.freeze({
-    ok: true,
-    source: Object.freeze({
-      questId: value.source.questId,
-      draftRevision: value.source.draftRevision,
-      contentHash: value.source.contentHash
-    })
-  });
+  return Object.freeze({ ok: true, source });
+}
+
+function parseSource(value: unknown): PackageSource | null {
+  if (!isRecord(value) || typeof value.kind !== "string") return null;
+  if (value.kind === "draft") {
+    if (!hasExactKeys(value, ["kind", "questId", "draftRevision", "contentHash"])
+      || !isId(value.questId) || !isRevision(value.draftRevision) || !isHash(value.contentHash)) return null;
+    return Object.freeze({ kind: "draft", questId: value.questId, draftRevision: value.draftRevision, contentHash: value.contentHash });
+  }
+  if (value.kind === "release") {
+    if (!hasExactKeys(value, ["kind", "questId", "releaseId", "draftRevision", "draftContentHash", "compiledContentHash"])
+      || !isId(value.questId) || !isId(value.releaseId) || !isRevision(value.draftRevision)
+      || !isHash(value.draftContentHash) || !isHash(value.compiledContentHash)) return null;
+    return Object.freeze({
+      kind: "release",
+      questId: value.questId,
+      releaseId: value.releaseId,
+      draftRevision: value.draftRevision,
+      draftContentHash: value.draftContentHash,
+      compiledContentHash: value.compiledContentHash
+    });
+  }
+  return null;
 }
 
 async function validateQuest(
   value: unknown,
-  source: { questId: string; draftRevision: number; contentHash: string }
+  source: PackageSource
 ): Promise<
   | { readonly ok: true; readonly value: ParsedLhquestDraftPackage }
   | { readonly ok: false; readonly code: LhquestPackageFailureCode }
@@ -153,30 +179,48 @@ async function validateQuest(
     if (!isBlock(raw)) return fail("INVALID_QUEST");
     blocks.push(cloneJson(raw));
   }
-  const release: QuestRelease = Object.freeze({
-    schemaVersion: CONTRACT_SCHEMA_VERSION,
-    questId: value.sourceQuestId,
-    releaseId: "draft-content",
-    title: value.title,
-    compatibility: Object.freeze({ contractsSchemaVersion: CONTRACT_SCHEMA_VERSION }),
-    blockIds: Object.freeze(blocks.map((block) => block.id)),
-    entryLocationId: value.entryLocationId
-  });
-  if (!hasValidQuestReleaseReferences(release, blocks)) return fail("INVALID_QUEST");
-  const compiled = await compileQuest(release, blocks);
-  if (!compiled.ok) return fail("INVALID_QUEST");
-  if (compiled.contentHash !== source.contentHash) return fail("SOURCE_CONTENT_HASH_MISMATCH");
+  const draftRelease = makeRelease(value.sourceQuestId, "draft-content", value.title, value.entryLocationId, blocks);
+  if (!hasValidQuestReleaseReferences(draftRelease, blocks)) return fail("INVALID_QUEST");
+  const draftCompiled = await compileQuest(draftRelease, blocks);
+  if (!draftCompiled.ok) return fail("INVALID_QUEST");
+
+  if (source.kind === "draft") {
+    if (draftCompiled.contentHash !== source.contentHash) return fail("SOURCE_CONTENT_HASH_MISMATCH");
+  } else {
+    if (draftCompiled.contentHash !== source.draftContentHash) return fail("SOURCE_CONTENT_HASH_MISMATCH");
+    const releaseCompiled = await compileQuest(
+      makeRelease(value.sourceQuestId, source.releaseId, value.title, value.entryLocationId, blocks),
+      blocks
+    );
+    if (!releaseCompiled.ok || releaseCompiled.contentHash !== source.compiledContentHash) {
+      return fail("SOURCE_CONTENT_HASH_MISMATCH");
+    }
+  }
 
   return Object.freeze({
     ok: true,
     value: deepFreeze({
+      sourceKind: source.kind,
       sourceQuestId: source.questId,
       sourceRevision: source.draftRevision,
-      sourceContentHash: source.contentHash,
+      sourceReleaseId: source.kind === "release" ? source.releaseId : null,
+      sourceContentHash: source.kind === "release" ? source.compiledContentHash : source.contentHash,
       title: value.title,
       entryLocationId: value.entryLocationId,
       blocks
     })
+  });
+}
+
+function makeRelease(questId: string, releaseId: string, title: string, entryLocationId: string, blocks: readonly Block[]): QuestRelease {
+  return Object.freeze({
+    schemaVersion: CONTRACT_SCHEMA_VERSION,
+    questId,
+    releaseId,
+    title,
+    compatibility: Object.freeze({ contractsSchemaVersion: CONTRACT_SCHEMA_VERSION }),
+    blockIds: Object.freeze(blocks.map((block) => block.id)),
+    entryLocationId
   });
 }
 
