@@ -20,7 +20,6 @@ export interface DraftVersionHttpContext {
   readonly requireIdempotencyKey: () => string | null;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
-  readonly sendBytes: (status: number, mediaType: string, filename: string, body: Uint8Array) => void;
   readonly sendNotFound: () => void;
 }
 
@@ -135,7 +134,13 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     } else if (result.kind === "invalid_request") {
       context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
     } else {
-      context.sendBytes(200, result.value.mediaType, result.value.filename, result.value.archive);
+      context.sendJson(200, {
+        filename: result.value.filename,
+        mediaType: result.value.mediaType,
+        encoding: "base64",
+        archiveBase64: base64(result.value.archive),
+        manifest: result.value.manifest
+      });
     }
     return true;
   }
@@ -254,6 +259,21 @@ function parsePositiveBoundedInteger(value: string, max: number): number | null 
   if (!/^[1-9][0-9]{0,5}$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= max ? parsed : null;
+}
+
+function base64(bytes: Uint8Array): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index] ?? 0;
+    const b = bytes[index + 1];
+    const c = bytes[index + 2];
+    output += alphabet[a >>> 2] ?? "";
+    output += alphabet[((a & 0x03) << 4) | ((b ?? 0) >>> 4)] ?? "";
+    output += b === undefined ? "=" : (alphabet[((b & 0x0f) << 2) | ((c ?? 0) >>> 6)] ?? "");
+    output += c === undefined ? "=" : (alphabet[c & 0x3f] ?? "");
+  }
+  return output;
 }
 
 function isRevision(value: unknown): value is number {
