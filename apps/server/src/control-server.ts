@@ -187,10 +187,20 @@ async function routeControlRequest(
 
   if (url.pathname === "/control/v1/projects") {
     if (method === "GET") {
-      const projects = auth
-        ? await auth.security.listProjectsForUser(identity!.user.userId)
-        : await store.listProjects();
-      sendJson(response, 200, { projects });
+      if (auth) {
+        const projects = await auth.security.listProjectsForUser(identity!.user.userId);
+        const views = await Promise.all(projects.map(async (project) => {
+          const role = await auth.security.getProjectRole(project.projectId, identity!.user.userId);
+          if (role === null) throw new Error("Control project membership disappeared during project listing");
+          return Object.freeze({ ...project, role });
+        }));
+        sendJson(response, 200, { projects: views });
+      } else {
+        const projects = await store.listProjects();
+        sendJson(response, 200, {
+          projects: projects.map((project) => Object.freeze({ ...project, role: "owner" as const }))
+        });
+      }
       return;
     }
     if (method === "POST") {
@@ -204,7 +214,9 @@ async function routeControlRequest(
       const result = auth
         ? await auth.security.createProjectAsOwner({ projectId: body.projectId, title: body.title }, identity!.user.userId)
         : await store.createProject({ projectId: body.projectId, title: body.title });
-      if (result.kind === "created") sendJson(response, 201, { project: result.project });
+      if (result.kind === "created") {
+        sendJson(response, 201, { project: Object.freeze({ ...result.project, role: "owner" as const }) });
+      }
       else if (result.kind === "project_exists") sendJson(response, 409, { error: { code: "PROJECT_EXISTS" } });
       else sendJson(response, 400, { error: { code: "INVALID_PROJECT" } });
       return;
