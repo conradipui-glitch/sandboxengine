@@ -118,6 +118,9 @@ export async function buildGeneratedDocs(root) {
     .map((plugin) => normalizeInstalledPluginMetadata(plugin))
     .sort((a, b) => a.pluginId.localeCompare(b.pluginId));
   const installedPluginCapabilityIds = [...new Set(installedPlugins.flatMap((plugin) => plugin.capabilityIds))].sort();
+  const installedPluginBlockTypeIds = [...new Set(installedPlugins.flatMap((plugin) => plugin.blockTypeIds))].sort();
+  const installedPluginActionTypeIds = [...new Set(installedPlugins.flatMap((plugin) => plugin.actionTypeIds))].sort();
+  const installedPluginRecipeIds = [...new Set(installedPlugins.flatMap((plugin) => plugin.recipeIds))].sort();
   const pluginSchemas = [{
     name: "plugin-manifest",
     version: pluginRegistry.pluginManifestSchemaVersion,
@@ -140,6 +143,9 @@ export async function buildGeneratedDocs(root) {
     enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
     installedPlugins,
     installedPluginCapabilityIds,
+    installedPluginBlockTypeIds,
+    installedPluginActionTypeIds,
+    installedPluginRecipeIds,
     blockKinds,
     gameplayEffectTypes,
     conditionTypes,
@@ -286,7 +292,12 @@ function buildSkill({ engineVersion, contractsSchemaVersion, presentationSchemaV
     : presentationCommandTypes.map((type) => `- \`${type}\``).join("\n");
   const pluginLines = installedPlugins.length === 0
     ? "- Нет установленных trusted plugins в этой сборке."
-    : installedPlugins.map((plugin) => `- \`${plugin.pluginId}@${plugin.version}\` — ${plugin.capabilityIds.join(", ") || "без capability IDs"}`).join("\n");
+    : installedPlugins.map((plugin) => {
+        const capabilities = plugin.capabilityIds.join(", ") || "без capability IDs";
+        const actions = plugin.actionTypeIds.join(", ") || "без action IDs";
+        const recipes = plugin.recipeIds.join(", ") || "без recipe IDs";
+        return `- \`${plugin.pluginId}@${plugin.version}\` — capabilities: ${capabilities}; actions: ${actions}; recipes: ${recipes}`;
+      }).join("\n");
   return `# Living History Engine — agent contract\n\n` +
     `Generated file. Do not edit by hand.\n\n` +
     `- Engine version: \`${engineVersion}\`\n` +
@@ -348,7 +359,13 @@ function normalizeInstalledPluginMetadata(plugin) {
     || typeof plugin.pluginId !== "string"
     || typeof plugin.version !== "string"
     || !Array.isArray(plugin.capabilityIds)
-    || !Array.isArray(plugin.schemaVersions)) {
+    || !Array.isArray(plugin.schemaVersions)
+    || !Array.isArray(plugin.recipeIds)
+    || !plugin.backend
+    || typeof plugin.backend !== "object"
+    || Array.isArray(plugin.backend)
+    || !Array.isArray(plugin.backend.blockTypeIds)
+    || !Array.isArray(plugin.backend.actionTypeIds)) {
     throw new Error("Invalid installed plugin metadata entry");
   }
   return {
@@ -357,7 +374,10 @@ function normalizeInstalledPluginMetadata(plugin) {
     capabilityIds: [...plugin.capabilityIds].sort(),
     schemaVersions: [...plugin.schemaVersions]
       .map((entry) => ({ schemaId: entry.schemaId, version: entry.version }))
-      .sort((a, b) => a.schemaId.localeCompare(b.schemaId))
+      .sort((a, b) => a.schemaId.localeCompare(b.schemaId)),
+    blockTypeIds: [...plugin.backend.blockTypeIds].sort(),
+    actionTypeIds: [...plugin.backend.actionTypeIds].sort(),
+    recipeIds: [...plugin.recipeIds].sort()
   };
 }
 
