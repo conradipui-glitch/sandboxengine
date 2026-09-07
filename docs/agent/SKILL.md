@@ -97,5 +97,9 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision участником проекта и фиксация immutable report
 - `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest участником проекта из проверенного draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}` — Чтение безопасных метаданных frozen playtest доступного проекта
+- `GET /control/v1/projects/{projectId}/quests/{questId}/releases` — Чтение immutable release summaries, current pointer и publication status участником проекта
+- `POST /control/v1/projects/{projectId}/quests/{questId}/releases` — Owner/editor сборка immutable release из точной успешной validation и compiled artifact hash
+- `POST /control/v1/projects/{projectId}/quests/{questId}/publish` — Owner-only атомарная публикация совместимого release через expected-current compare-and-set
+- `POST /control/v1/projects/{projectId}/quests/{questId}/rollback` — Owner-only pointer rollback к ранее опубликованному release через expected-current compare-and-set
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

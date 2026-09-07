@@ -32,6 +32,27 @@ export {
   SQLiteControlSecurityStore,
   type SQLiteControlSecurityStoreOptions
 } from "./security-stores.js";
+export {
+  cloneAndFreezeRelease,
+  isControlReleaseHash,
+  isControlReleaseId,
+  isControlReleaseRecord,
+  isReleaseIdempotencyKey,
+  isReleaseTimestamp,
+  type ControlAuthoredPluginSidecar,
+  type ControlPublicationEvent,
+  type ControlPublicationEventKind,
+  type ControlReleaseRecord,
+  type ControlReleaseStore,
+  type CreateStoredReleaseResult,
+  type PublishStoredReleaseResult,
+  type RollbackStoredReleaseResult
+} from "./releases.js";
+export {
+  MemoryControlReleaseStore,
+  SQLiteControlReleaseStore,
+  type SQLiteControlReleaseStoreOptions
+} from "./release-stores.js";
 export type {
   ApplyDraftChangesResult,
   ControlStore,

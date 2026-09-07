@@ -12,6 +12,8 @@ import {
   type Narrator
 } from "@living-history/ai";
 import type { JsonValue, WorldState } from "@living-history/contracts";
+import type { ControlReleaseStore } from "@living-history/control";
+import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import {
   SQLiteStorageBusyError,
   projectPlayerView,
@@ -33,6 +35,11 @@ import {
   type ExplicitActionExecution,
   type ExplicitActionExecutor
 } from "./action-service.js";
+import {
+  resolveCurrentPublishedRelease,
+  resolvePinnedPublishedRelease
+} from "./published-release-resolver.js";
+import type { PublishedSessionBindingStore } from "./published-session-binding.js";
 
 const MAX_BODY_CHARS = 16_384;
 const DEFAULT_LEASE_MS = 30_000;
@@ -46,10 +53,19 @@ export interface RuntimeSessionTemplate {
   readonly intentCatalog?: readonly IntentActionCatalogEntry[];
 }
 
+export interface RuntimePublishedModeOptions {
+  readonly releaseStore: ControlReleaseStore;
+  readonly pluginRegistry: PluginRegistrySnapshot;
+  readonly bindings: PublishedSessionBindingStore;
+}
+
 export interface RuntimeServerDependencies {
   readonly storage: RuntimeStorage;
   readonly guestAccess: RuntimeGuestSessionAccess;
+  /** Static templates are test/dev mode. Production published mode passes an empty array. */
   readonly templates: readonly RuntimeSessionTemplate[];
+  /** Published mode and static-template mode are deliberately mutually exclusive. */
+  readonly published?: RuntimePublishedModeOptions;
   readonly executor?: ExplicitActionExecutor;
   readonly intentInterpreter?: IntentInterpreter;
   readonly narrator?: Narrator;
@@ -69,8 +85,12 @@ export interface RuntimeHttpServer {
 
 export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies): RuntimeHttpServer {
   const templates = new Map(dependencies.templates.map((template) => [template.templateId, template]));
-  if (templates.size !== dependencies.templates.length || templates.size < 1) {
-    throw new TypeError("templates must have unique ids and cannot be empty");
+  if (templates.size !== dependencies.templates.length) {
+    throw new TypeError("templates must have unique ids");
+  }
+  const published = dependencies.published ?? null;
+  if ((published === null && templates.size < 1) || (published !== null && templates.size !== 0)) {
+    throw new TypeError("Runtime requires exactly one session source: static templates or published releases");
   }
   const templatesByRelease = new Map<string, RuntimeSessionTemplate>();
   for (const template of dependencies.templates) {
@@ -78,7 +98,7 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
     if (templatesByRelease.has(key)) throw new TypeError("templates must have unique release identities");
     templatesByRelease.set(key, template);
   }
-  const executor = dependencies.executor ?? createCoreExplicitActionExecutor();
+  const defaultExecutor = dependencies.executor ?? createCoreExplicitActionExecutor();
   const createSessionId = dependencies.createSessionId ?? (() => `session-${randomBytes(16).toString("hex")}`);
   const createCredential = dependencies.createCredential ?? (() => randomBytes(32).toString("base64url"));
   const leaseDurationMs = dependencies.leaseDurationMs ?? DEFAULT_LEASE_MS;
@@ -99,7 +119,8 @@ export function createRuntimeHttpServer(dependencies: RuntimeServerDependencies)
     guestAccess: dependencies.guestAccess,
     templates,
     templatesByRelease,
-    executor,
+    published,
+    defaultExecutor,
     intentInterpreter: dependencies.intentInterpreter ?? null,
     narrator: dependencies.narrator ?? null,
     narrativeProfile,
@@ -157,7 +178,8 @@ type ResolvedServerDependencies = {
   readonly guestAccess: RuntimeGuestSessionAccess;
   readonly templates: ReadonlyMap<string, RuntimeSessionTemplate>;
   readonly templatesByRelease: ReadonlyMap<string, RuntimeSessionTemplate>;
-  readonly executor: ExplicitActionExecutor;
+  readonly published: RuntimePublishedModeOptions | null;
+  readonly defaultExecutor: ExplicitActionExecutor;
   readonly intentInterpreter: IntentInterpreter | null;
   readonly narrator: Narrator | null;
   readonly narrativeProfile: NarrativeProfileId;
@@ -166,6 +188,15 @@ type ResolvedServerDependencies = {
   readonly createCredential: () => string;
   readonly leaseDurationMs: number;
 };
+
+type SessionExecutionContext = {
+  readonly executor: ExplicitActionExecutor | null;
+  readonly intentCatalog: readonly IntentActionCatalogEntry[];
+};
+
+type SessionExecutionContextResult =
+  | { readonly ok: true; readonly context: SessionExecutionContext }
+  | { readonly ok: false; readonly code: string };
 
 type TextClarificationReference = {
   readonly id: string;
@@ -255,14 +286,39 @@ async function createGuestSession(request: any, response: any, deps: ResolvedSer
     sendJson(response, body.status, { error: { code: body.code } });
     return;
   }
-  if (!isPlainObject(body.value) || Object.keys(body.value).length !== 1 || typeof body.value.templateId !== "string") {
-    sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
-    return;
-  }
-  const template = deps.templates.get(body.value.templateId);
-  if (!template) {
-    sendJson(response, 400, { error: { code: "INVALID_TEMPLATE" } });
-    return;
+
+  let release: PinnedReleaseIdentity;
+  let initialState: WorldState;
+  let sourceProjectId: string | null = null;
+  if (deps.published) {
+    if (!isPlainObject(body.value)
+      || !hasExactKeys(body.value, ["projectId", "questId"])
+      || !isRuntimeId(body.value.projectId)
+      || !isRuntimeId(body.value.questId)) {
+      sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
+      return;
+    }
+    const resolved = await resolveCurrentPublishedRelease(deps.published, body.value.projectId, body.value.questId);
+    if (!resolved.ok) {
+      const status = resolved.code === "NO_CURRENT_RELEASE" ? 409 : 503;
+      sendJson(response, status, { error: { code: "PUBLISHED_RELEASE_UNAVAILABLE", detailCode: resolved.code } });
+      return;
+    }
+    release = resolved.template.release;
+    initialState = resolved.template.initialState;
+    sourceProjectId = resolved.template.sourceProjectId;
+  } else {
+    if (!isPlainObject(body.value) || !hasExactKeys(body.value, ["templateId"]) || typeof body.value.templateId !== "string") {
+      sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
+      return;
+    }
+    const template = deps.templates.get(body.value.templateId);
+    if (!template) {
+      sendJson(response, 400, { error: { code: "INVALID_TEMPLATE" } });
+      return;
+    }
+    release = template.release;
+    initialState = template.initialState;
   }
 
   const sessionId = deps.createSessionId();
@@ -272,17 +328,44 @@ async function createGuestSession(request: any, response: any, deps: ResolvedSer
     return;
   }
   const credentialHash = sha256(credential);
-  const created = await deps.guestAccess.createGuestSession({
-    sessionId,
-    credentialHash,
-    release: template.release,
-    initialState: template.initialState
-  });
+
+  let createdBinding = false;
+  if (deps.published) {
+    const binding = await deps.published.bindings.createBinding({
+      sessionId,
+      projectId: sourceProjectId!,
+      release
+    });
+    if (binding.kind === "replay" || binding.kind === "session_binding_conflict") {
+      sendJson(response, 409, { error: { code: "SESSION_ID_COLLISION" } });
+      return;
+    }
+    if (binding.kind !== "created") {
+      sendJson(response, 500, { error: { code: "SESSION_BINDING_FAILED" } });
+      return;
+    }
+    createdBinding = true;
+  }
+
+  let created;
+  try {
+    created = await deps.guestAccess.createGuestSession({
+      sessionId,
+      credentialHash,
+      release,
+      initialState
+    });
+  } catch (error) {
+    if (createdBinding) await deps.published!.bindings.removeBinding(sessionId);
+    throw error;
+  }
   if (created.kind === "session_exists") {
+    if (createdBinding) await deps.published!.bindings.removeBinding(sessionId);
     sendJson(response, 409, { error: { code: "SESSION_ID_COLLISION" } });
     return;
   }
   if (created.kind !== "created") {
+    if (createdBinding) await deps.published!.bindings.removeBinding(sessionId);
     sendJson(response, 500, { error: { code: "SESSION_CREATE_FAILED" } });
     return;
   }
@@ -328,6 +411,13 @@ async function handleAction(
       return;
     }
   }
+
+  const contextResult = await resolveSessionExecutionContext(deps, sessionId);
+  if (!contextResult.ok) {
+    sendJson(response, 503, { error: { code: "PINNED_RELEASE_UNAVAILABLE", detailCode: contextResult.code } });
+    return;
+  }
+  const executionContext = contextResult.context;
 
   const requestIdentity = parsed.kind === "explicit"
     ? Object.freeze({ expectedRevision: parsed.expectedRevision, action: parsed.action })
@@ -394,9 +484,12 @@ async function handleAction(
 
   try {
     const execution = parsed.kind === "explicit"
-      ? deps.executor.execute(session.state, parsed.action)
+      ? executionContext.executor
+        ? executionContext.executor.execute(session.state, parsed.action)
+        : actionNotConfigured(claim.operation.operationId, session.revision)
       : await interpretAndMaybeExecuteText(
           deps,
+          executionContext,
           session,
           claim.operation.operationId,
           parsed.input,
@@ -464,6 +557,55 @@ async function handleAction(
   }
 }
 
+async function resolveSessionExecutionContext(
+  deps: ResolvedServerDependencies,
+  sessionId: string
+): Promise<SessionExecutionContextResult> {
+  const session = await deps.storage.loadSession(sessionId);
+  if (!session) return Object.freeze({ ok: false, code: "SESSION_NOT_FOUND" });
+
+  if (deps.published) {
+    const binding = await deps.published.bindings.getBinding(sessionId);
+    if (!binding) return Object.freeze({ ok: false, code: "SESSION_BINDING_NOT_FOUND" });
+    if (releaseKey(binding.release) !== releaseKey(session.release)) {
+      return Object.freeze({ ok: false, code: "PINNED_RELEASE_MISMATCH" });
+    }
+    const resolved = await resolvePinnedPublishedRelease(deps.published, binding);
+    if (!resolved.ok) return Object.freeze({ ok: false, code: resolved.code });
+    return Object.freeze({
+      ok: true,
+      context: Object.freeze({
+        executor: resolved.template.executor,
+        intentCatalog: Object.freeze([...resolved.template.intentCatalog])
+      })
+    });
+  }
+
+  const template = deps.templatesByRelease.get(releaseKey(session.release));
+  if (!template) return Object.freeze({ ok: false, code: "STATIC_TEMPLATE_NOT_FOUND" });
+  return Object.freeze({
+    ok: true,
+    context: Object.freeze({
+      executor: deps.defaultExecutor,
+      intentCatalog: Object.freeze([...(template.intentCatalog ?? [])])
+    })
+  });
+}
+
+function actionNotConfigured(
+  operationId: string,
+  revision: number
+): { readonly publicResponse: RuntimePublicResponse } {
+  return Object.freeze({
+    publicResponse: Object.freeze({
+      kind: "failed",
+      operationId,
+      code: "ACTION_NOT_CONFIGURED",
+      revision
+    })
+  });
+}
+
 async function narrateExecution(
   deps: ResolvedServerDependencies,
   session: SessionRecord,
@@ -490,14 +632,16 @@ async function narrateExecution(
 
 async function interpretAndMaybeExecuteText(
   deps: ResolvedServerDependencies,
+  context: SessionExecutionContext,
   session: SessionRecord,
   operationId: string,
   input: TextActionInput,
   deadlineAtMs: number
 ): Promise<ReturnType<ExplicitActionExecutor["executeIntent"]> | { readonly publicResponse: RuntimePublicResponse }> {
-  const template = deps.templatesByRelease.get(releaseKey(session.release));
-  const catalog = template?.intentCatalog;
-  if (!deps.intentInterpreter || !catalog || catalog.length === 0) {
+  const interpreter = deps.intentInterpreter;
+  const executor = context.executor;
+  const catalog = context.intentCatalog;
+  if (!interpreter || !executor || catalog.length === 0) {
     return Object.freeze({
       publicResponse: Object.freeze({
         kind: "failed",
@@ -509,7 +653,7 @@ async function interpretAndMaybeExecuteText(
   }
 
   const view = projectPlayerView(session);
-  const decision = await deps.intentInterpreter.interpret({
+  const decision = await interpreter.interpret({
     text: input.text,
     actionCatalog: catalog,
     allowedEntityIds: publicIds(view),
@@ -519,7 +663,7 @@ async function interpretAndMaybeExecuteText(
   });
 
   if (decision.kind === "resolved") {
-    return deps.executor.executeIntent(session.state, decision.intent);
+    return executor.executeIntent(session.state, decision.intent);
   }
   return Object.freeze({ publicResponse: decisionToPublicResponse(operationId, session.revision, decision) });
 }

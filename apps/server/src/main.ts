@@ -2,13 +2,20 @@
 import { mkdirSync } from "node:fs";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { dirname, resolve } from "node:path";
-import { SQLiteControlSecurityStore, SQLiteControlStore } from "@living-history/control";
+import {
+  SQLiteControlReleaseStore,
+  SQLiteControlSecurityStore,
+  SQLiteControlStore
+} from "@living-history/control";
+import { buildPluginRegistry } from "@living-history/plugins";
+import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import {
   SQLiteGuestSessionAccess,
   SQLiteRuntimeStorage
 } from "@living-history/runtime";
 import { createControlHttpServer } from "./control-server.js";
-import { createMinimalPaintTemplate, createRuntimeHttpServer } from "./server.js";
+import { SQLitePublishedSessionBindingStore } from "./published-session-binding.js";
+import { createRuntimeHttpServer } from "./server.js";
 
 declare const process: any;
 
@@ -33,7 +40,14 @@ const clock = Object.freeze({ nowMs: () => Date.now() });
 const storage = new SQLiteRuntimeStorage({ path: databasePath, clock });
 const guestAccess = new SQLiteGuestSessionAccess({ path: databasePath });
 const controlStore = new SQLiteControlStore({ path: databasePath });
+const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
+const publishedBindings = new SQLitePublishedSessionBindingStore({ path: databasePath });
 const controlSecurity = controlAuthenticated ? new SQLiteControlSecurityStore({ path: databasePath }) : null;
+const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
+if (!builtPluginRegistry.ok) {
+  throw new Error(`Production plugin registry failed: ${builtPluginRegistry.code}`);
+}
+const pluginRegistry = builtPluginRegistry.registry;
 
 if (controlSecurity) {
   const bootstrapUserId = process.env.CONTROL_BOOTSTRAP_USER_ID;
@@ -59,10 +73,20 @@ if (controlSecurity) {
 const runtime = createRuntimeHttpServer({
   storage,
   guestAccess,
-  templates: [createMinimalPaintTemplate()]
+  templates: [],
+  published: {
+    releaseStore,
+    pluginRegistry,
+    bindings: publishedBindings
+  }
 });
 const control = createControlHttpServer({
   store: controlStore,
+  releases: {
+    store: releaseStore,
+    pluginRegistry,
+    nowMs: clock.nowMs
+  },
   auth: controlSecurity ? {
     security: controlSecurity,
     allowedOrigins: controlAllowedOrigins,
@@ -80,6 +104,8 @@ async function shutdown(): Promise<void> {
   await control.close();
   await runtime.close();
   controlSecurity?.close();
+  publishedBindings.close();
+  releaseStore.close();
   controlStore.close();
   guestAccess.close();
   storage.close();

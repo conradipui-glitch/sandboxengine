@@ -11,7 +11,10 @@
       "@living-history/control": ["../../packages/control/src/index.ts"],
       "@living-history/ai": ["../../packages/ai/src/index.ts"],
       "@living-history/plugins": ["../../packages/plugins/src/index.ts"],
-      "@living-history/plugins/execution": ["../../packages/plugins/src/backend-execution.ts"]
+      "@living-history/plugins/execution": ["../../packages/plugins/src/backend-execution.ts"],
+      "@living-history/plugins/dice-check": ["../../packages/plugins/src/dice-check.ts"],
+      "@living-history/plugins/dice-check-artifact": ["../../packages/plugins/src/dice-check-artifact.ts"],
+      "@living-history/plugins/artifact-compatibility": ["../../packages/plugins/src/artifact-compatibility.ts"]
     }
   },
   "references": [
