@@ -392,7 +392,7 @@ async function handleLogin(
   }
   const nowMs = auth.nowMs();
   const key = `${loginRemoteKey(request)}|${boundedLoginIdentity(username)}`;
-  const retryAfterMs = loginRetryAfter(failures, key, nowMs);
+  const retryAfterMs = loginRetryAfter(failures, key, nowMs, auth.loginWindowMs);
   if (retryAfterMs > 0) {
     response.setHeader("retry-after", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     sendJson(response, 429, { error: { code: "LOGIN_RATE_LIMITED", retryAfterMs } });
@@ -535,13 +535,16 @@ function originAllowed(request: any, auth: AuthRuntime): boolean {
   return origin === undefined || auth.allowedOrigins.has(origin);
 }
 
-function loginRetryAfter(failures: Map<string, LoginFailureState>, key: string, nowMs: number): number {
+function loginRetryAfter(
+  failures: Map<string, LoginFailureState>,
+  key: string,
+  nowMs: number,
+  loginWindowMs: number
+): number {
   const state = failures.get(key);
   if (!state) return 0;
   if (state.blockedUntilMs > nowMs) return state.blockedUntilMs - nowMs;
-  if (nowMs - state.windowStartedAtMs >= DEFAULT_LOGIN_WINDOW_MS && state.blockedUntilMs <= nowMs) {
-    failures.delete(key);
-  }
+  if (nowMs - state.windowStartedAtMs >= loginWindowMs && state.blockedUntilMs <= nowMs) failures.delete(key);
   return 0;
 }
 
