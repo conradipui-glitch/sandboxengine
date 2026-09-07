@@ -1,85 +1,120 @@
 {
   "contractsSchemaVersion": "1.0",
+  "presentationSchemaVersion": "2.0",
   "schemas": [
     {
       "name": "action-result",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/action-result.schema.json",
       "id": "urn:living-history:schema:action-result:1.0"
     },
     {
       "name": "block",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/block.schema.json",
       "id": "urn:living-history:schema:block:1.0"
     },
     {
       "name": "calculated-action",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/calculated-action.schema.json",
       "id": "urn:living-history:schema:calculated-action:1.0"
     },
     {
       "name": "condition",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/condition.schema.json",
       "id": "urn:living-history:schema:condition:1.0"
     },
     {
       "name": "effect",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/effect.schema.json",
       "id": "urn:living-history:schema:effect:1.0"
     },
     {
       "name": "gameplay-effect",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/gameplay-effect.schema.json",
       "id": "urn:living-history:schema:gameplay-effect:1.0"
     },
     {
       "name": "presentation-plan",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/presentation-plan.schema.json",
       "id": "urn:living-history:schema:presentation-plan:1.0"
     },
     {
       "name": "quest-release",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/quest-release.schema.json",
       "id": "urn:living-history:schema:quest-release:1.0"
     },
     {
       "name": "resolved-intent",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/resolved-intent.schema.json",
       "id": "urn:living-history:schema:resolved-intent:1.0"
     },
     {
       "name": "scene-frame",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/scene-frame.schema.json",
       "id": "urn:living-history:schema:scene-frame:1.0"
     },
     {
       "name": "scheduled-effect-event",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/scheduled-effect-event.schema.json",
       "id": "urn:living-history:schema:scheduled-effect-event:1.0"
     },
     {
       "name": "scheduled-event",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/scheduled-event.schema.json",
       "id": "urn:living-history:schema:scheduled-event:1.0"
     },
     {
       "name": "scheduled-task",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/scheduled-task.schema.json",
       "id": "urn:living-history:schema:scheduled-task:1.0"
     },
     {
       "name": "scheduled-terminal-event",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/scheduled-terminal-event.schema.json",
       "id": "urn:living-history:schema:scheduled-terminal-event:1.0"
     },
     {
       "name": "social-act",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/social-act.schema.json",
       "id": "urn:living-history:schema:social-act:1.0"
     },
     {
       "name": "world-state",
+      "version": "1.0",
       "file": "packages/contracts/schemas/v1/world-state.schema.json",
       "id": "urn:living-history:schema:world-state:1.0"
+    },
+    {
+      "name": "asset-manifest",
+      "version": "2.0",
+      "file": "packages/contracts/schemas/v2/asset-manifest.schema.json",
+      "id": "urn:living-history:schema:asset-manifest:2.0"
+    },
+    {
+      "name": "presentation-plan",
+      "version": "2.0",
+      "file": "packages/contracts/schemas/v2/presentation-plan.schema.json",
+      "id": "urn:living-history:schema:presentation-plan:2.0"
+    },
+    {
+      "name": "scene-frame",
+      "version": "2.0",
+      "file": "packages/contracts/schemas/v2/scene-frame.schema.json",
+      "id": "urn:living-history:schema:scene-frame:2.0"
     }
   ]
 }

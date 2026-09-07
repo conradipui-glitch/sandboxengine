@@ -3,7 +3,8 @@
 Generated file. Do not edit by hand.
 
 - Engine version: `0.1.0`
-- Contracts schema version: `1.0`
+- Core contracts schema version: `1.0`
+- Presentation schema version: `2.0`
 - Canonical schemas: [schema-index.json](schema-index.json)
 - Machine capabilities: [capabilities.json](capabilities.json)
 - OpenAPI of implemented operations only: [api.openapi.json](api.openapi.json)
@@ -52,6 +53,21 @@ Generated file. Do not edit by hand.
 - `core.social.permission`
 - `core.social.request`
 - `core.social.response`
+
+## Available presentation commands
+
+- `actor.expression`
+- `actor.hide`
+- `actor.move`
+- `actor.show`
+- `audio.play`
+- `audio.stop`
+- `background.set`
+- `dialogue.show`
+- `item.show`
+- `overlay.close`
+- `overlay.open`
+- `wait`
 
 ## Available HTTP operations
 

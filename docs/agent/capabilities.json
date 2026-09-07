@@ -1,5 +1,6 @@
 {
   "contractsSchemaVersion": "1.0",
+  "presentationSchemaVersion": "2.0",
   "blockKinds": [
     "core.action",
     "core.character",
@@ -37,6 +38,20 @@
     "core.social.permission",
     "core.social.request",
     "core.social.response"
+  ],
+  "presentationCommandTypes": [
+    "actor.expression",
+    "actor.hide",
+    "actor.move",
+    "actor.show",
+    "audio.play",
+    "audio.stop",
+    "background.set",
+    "dialogue.show",
+    "item.show",
+    "overlay.close",
+    "overlay.open",
+    "wait"
   ],
   "operations": [
     {
