@@ -49,12 +49,36 @@
       "summary": "Восстановление публичного статуса или результата операции"
     },
     {
+      "id": "control.auth.login",
+      "method": "POST",
+      "path": "/control/v1/auth/login",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Вход закрытого Control-пользователя и выдача серверной сессии с CSRF proof"
+    },
+    {
+      "id": "control.auth.session",
+      "method": "GET",
+      "path": "/control/v1/auth/session",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Получение безопасных метаданных текущей Control-сессии"
+    },
+    {
+      "id": "control.auth.logout",
+      "method": "POST",
+      "path": "/control/v1/auth/logout",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "CSRF-защищённый отзыв текущей Control-сессии"
+    },
+    {
       "id": "control.projects.list",
       "method": "GET",
       "path": "/control/v1/projects",
       "readiness": "available",
       "successStatus": 200,
-      "summary": "Список локальных авторских проектов"
+      "summary": "Список доступных текущему автору проектов"
     },
     {
       "id": "control.projects.create",
@@ -62,7 +86,31 @@
       "path": "/control/v1/projects",
       "readiness": "available",
       "successStatus": 201,
-      "summary": "Создание локального авторского проекта"
+      "summary": "Создание авторского проекта; в authenticated mode создатель атомарно становится owner"
+    },
+    {
+      "id": "control.members.list",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/members",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner-only список участников проекта и ролей"
+    },
+    {
+      "id": "control.members.update",
+      "method": "PUT",
+      "path": "/control/v1/projects/{projectId}/members/{userId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner-only назначение роли owner/editor/tester существующему закрытому пользователю"
+    },
+    {
+      "id": "control.members.delete",
+      "method": "DELETE",
+      "path": "/control/v1/projects/{projectId}/members/{userId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner-only удаление участника с защитой последнего owner"
     },
     {
       "id": "control.quests.list",
@@ -70,7 +118,7 @@
       "path": "/control/v1/projects/{projectId}/quests",
       "readiness": "available",
       "successStatus": 200,
-      "summary": "Список квестов проекта и текущих draft revisions"
+      "summary": "Список квестов доступного проекта и текущих draft revisions"
     },
     {
       "id": "control.quests.create",
@@ -78,7 +126,7 @@
       "path": "/control/v1/projects/{projectId}/quests",
       "readiness": "available",
       "successStatus": 201,
-      "summary": "Создание квеста с начальным draft snapshot"
+      "summary": "Owner/editor создание квеста с начальным draft snapshot"
     },
     {
       "id": "control.draft.get",
@@ -86,7 +134,7 @@
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft",
       "readiness": "available",
       "successStatus": 200,
-      "summary": "Получение текущего авторского draft snapshot"
+      "summary": "Получение текущего авторского draft snapshot доступного проекта"
     },
     {
       "id": "control.draft.changes",
@@ -94,7 +142,7 @@
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/changes",
       "readiness": "available",
       "successStatus": 200,
-      "summary": "Атомарное применение change set к указанной draft revision"
+      "summary": "Owner/editor атомарное применение change set к указанной draft revision"
     },
     {
       "id": "control.validations.create",
@@ -102,7 +150,7 @@
       "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
       "readiness": "available",
       "successStatus": 201,
-      "summary": "Проверка конкретной draft revision и фиксация immutable report"
+      "summary": "Проверка конкретной draft revision участником проекта и фиксация immutable report"
     },
     {
       "id": "control.playtests.create",
@@ -110,7 +158,15 @@
       "path": "/control/v1/projects/{projectId}/quests/{questId}/playtests",
       "readiness": "available",
       "successStatus": 201,
-      "summary": "Создание frozen playtest из проверенного draft snapshot"
+      "summary": "Создание frozen playtest участником проекта из проверенного draft snapshot"
+    },
+    {
+      "id": "control.playtests.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Чтение безопасных метаданных frozen playtest доступного проекта"
     },
     {
       "id": "control.capabilities",

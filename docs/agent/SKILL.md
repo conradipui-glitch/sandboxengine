@@ -82,13 +82,20 @@ Generated file. Do not edit by hand.
 - `GET /v1/sessions/{sessionId}` — Получение player-safe состояния своей игровой сессии
 - `POST /v1/sessions/{sessionId}/actions` — Отправка одного поддержанного explicit игрового действия
 - `GET /v1/sessions/{sessionId}/operations/{operationId}` — Восстановление публичного статуса или результата операции
-- `GET /control/v1/projects` — Список локальных авторских проектов
-- `POST /control/v1/projects` — Создание локального авторского проекта
-- `GET /control/v1/projects/{projectId}/quests` — Список квестов проекта и текущих draft revisions
-- `POST /control/v1/projects/{projectId}/quests` — Создание квеста с начальным draft snapshot
-- `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot
-- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Атомарное применение change set к указанной draft revision
-- `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision и фиксация immutable report
-- `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest из проверенного draft snapshot
+- `POST /control/v1/auth/login` — Вход закрытого Control-пользователя и выдача серверной сессии с CSRF proof
+- `GET /control/v1/auth/session` — Получение безопасных метаданных текущей Control-сессии
+- `POST /control/v1/auth/logout` — CSRF-защищённый отзыв текущей Control-сессии
+- `GET /control/v1/projects` — Список доступных текущему автору проектов
+- `POST /control/v1/projects` — Создание авторского проекта; в authenticated mode создатель атомарно становится owner
+- `GET /control/v1/projects/{projectId}/members` — Owner-only список участников проекта и ролей
+- `PUT /control/v1/projects/{projectId}/members/{userId}` — Owner-only назначение роли owner/editor/tester существующему закрытому пользователю
+- `DELETE /control/v1/projects/{projectId}/members/{userId}` — Owner-only удаление участника с защитой последнего owner
+- `GET /control/v1/projects/{projectId}/quests` — Список квестов доступного проекта и текущих draft revisions
+- `POST /control/v1/projects/{projectId}/quests` — Owner/editor создание квеста с начальным draft snapshot
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot доступного проекта
+- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision участником проекта и фиксация immutable report
+- `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest участником проекта из проверенного draft snapshot
+- `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}` — Чтение безопасных метаданных frozen playtest доступного проекта
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

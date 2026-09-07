@@ -4,6 +4,34 @@ export {
   SQLiteControlStore,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
+export {
+  CONTROL_ROLES,
+  createControlOpaqueSecret,
+  createControlSessionId,
+  createPasswordVerifier,
+  hashControlOpaqueSecret,
+  isControlPassword,
+  isControlProjectRole,
+  isControlSecretHash,
+  isControlUserId,
+  isControlUsername,
+  timingSafeControlHashEqual,
+  verifyPasswordVerifier,
+  type ControlProjectMember,
+  type ControlProjectRole,
+  type ControlSecurityStore,
+  type ControlSessionRecord,
+  type ControlUserRecord,
+  type CreateControlSessionResult,
+  type ProvisionControlUserResult,
+  type RemoveProjectMemberResult,
+  type SetProjectMemberResult
+} from "./security.js";
+export {
+  MemoryControlSecurityStore,
+  SQLiteControlSecurityStore,
+  type SQLiteControlSecurityStoreOptions
+} from "./security-stores.js";
 export type {
   ApplyDraftChangesResult,
   ControlStore,
