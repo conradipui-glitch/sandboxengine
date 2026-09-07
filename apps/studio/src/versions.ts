@@ -34,13 +34,14 @@ export async function loadVersionsReadModel(
 export function renderVersionsPanel(
   model: VersionsReadModel | null,
   currentDraft: { readonly draftRevision: number; readonly contentHash: string } | null,
-  saveState: string
+  saveState: string,
+  errorMessage: string | null = null
 ): string {
   if (!currentDraft) return "";
   if (!model) {
     return `<section class="versions-section" aria-labelledby="versions-heading">
       <div class="section-title"><div><h2 id="versions-heading">Версии</h2><p>История и immutable releases загружаются с Control API.</p></div></div>
-      <div class="versions-loading">Загружаем server history…</div>
+      <div class="versions-loading ${errorMessage ? "error" : ""}">${escapeHtml(errorMessage ?? "Загружаем server history…")}</div>
     </section>`;
   }
 
