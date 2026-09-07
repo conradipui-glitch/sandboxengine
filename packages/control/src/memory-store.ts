@@ -6,6 +6,7 @@ import {
   type QuestRelease
 } from "@living-history/contracts";
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
+import { analyzeDraftBlockReferences } from "./draft-history.js";
 import type {
   ApplyDraftChangesResult,
   ControlStore,
@@ -33,6 +34,13 @@ interface QuestState {
 interface RestoreReplayRecord {
   readonly requestHash: string;
   readonly draft: DraftSnapshot;
+}
+
+interface DraftChangeContext {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly entryLocationId: string;
 }
 
 export class MemoryControlStore implements ControlStore {
@@ -123,6 +131,12 @@ export class MemoryControlStore implements ControlStore {
     let title = state.current.title;
     const blocks = state.current.blocks.map((block) => cloneJson(block));
     const errors: string[] = [];
+    const changeContext: DraftChangeContext = Object.freeze({
+      projectId,
+      questId,
+      draftRevision: state.current.draftRevision,
+      entryLocationId: state.current.entryLocationId
+    });
 
     for (let index = 0; index < changeSet.changes.length; index += 1) {
       const change = changeSet.changes[index];
@@ -130,7 +144,7 @@ export class MemoryControlStore implements ControlStore {
         errors.push(`change.missing:${index}`);
         continue;
       }
-      const error = applyTrialChange(change, blocks, (nextTitle) => { title = nextTitle; });
+      const error = applyTrialChange(change, blocks, (nextTitle) => { title = nextTitle; }, changeContext);
       if (error) errors.push(`${error}:${index}`);
     }
     if (errors.length > 0) return invalidChanges(errors);
@@ -371,7 +385,8 @@ function makeRelease(questId: string, title: string, entryLocationId: string, bl
 function applyTrialChange(
   change: DraftChange,
   blocks: Block[],
-  setTitle: (title: string) => void
+  setTitle: (title: string) => void,
+  context: DraftChangeContext
 ): string | null {
   if (!isRecord(change) || typeof change.kind !== "string") return "change.shape";
   if (change.kind === "quest.title.set") {
@@ -397,6 +412,21 @@ function applyTrialChange(
     if (!hasExactKeys(change, ["kind", "blockId"]) || !isId(change.blockId)) return "change.block_id";
     const index = blocks.findIndex((block) => block.id === change.blockId);
     if (index < 0) return "change.block_not_found";
+    const analysis = analyzeDraftBlockReferences({
+      projectId: context.projectId,
+      questId: context.questId,
+      draftRevision: context.draftRevision,
+      title: "deletion-preflight",
+      entryLocationId: context.entryLocationId,
+      blocks,
+      contentHash: "deletion-preflight"
+    }, change.blockId);
+    if (!analysis.safeToDelete) {
+      const reasons = analysis.references
+        .map((reference) => `${reference.sourceKind}:${reference.sourceId}:${reference.path}`)
+        .join(",");
+      return `change.block_referenced[${reasons}]`;
+    }
     blocks.splice(index, 1);
     return null;
   }
