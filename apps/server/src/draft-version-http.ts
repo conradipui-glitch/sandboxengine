@@ -4,12 +4,15 @@ import {
   buildDraftQuestExport,
   cloneQuestFromStore,
   compareDraftRevisions,
+  importQuestPackageFromStore,
   listDraftHistory,
   type ControlProjectRole,
   type ControlStore,
   type DraftHistoryPageOptions
 } from "@living-history/control";
 import { restoreControlDraft } from "./draft-version-authority.js";
+
+const MAX_IMPORT_BASE64_CHARS = 240_000;
 
 export interface DraftVersionHttpContext {
   readonly method: string;
@@ -108,6 +111,59 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     if (result.kind === "quest_not_found") context.sendNotFound();
     else if (result.kind === "revision_not_found") context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
     else context.sendJson(200, { analysis: result.analysis });
+    return true;
+  }
+
+  const imports = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/imports$/.exec(context.url.pathname);
+  if (imports) {
+    if (context.method !== "POST") { context.sendNotFound(); return true; }
+    const projectId = imports[1];
+    if (!projectId) { context.sendNotFound(); return true; }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_IMPORT_REQUEST" } });
+      return true;
+    }
+    if (!(await context.requireMutation())) return true;
+    const idempotencyKey = context.requireIdempotencyKey();
+    if (idempotencyKey === null) return true;
+    const body = await context.requireJsonObject();
+    if (body === null) return true;
+    if (!hasExactKeys(body, ["newQuestId", "archiveBase64"]) || !isId(body.newQuestId)
+      || typeof body.archiveBase64 !== "string" || body.archiveBase64.length < 4
+      || body.archiveBase64.length > MAX_IMPORT_BASE64_CHARS) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_IMPORT_REQUEST" } });
+      return true;
+    }
+    const archive = decodeBase64(body.archiveBase64);
+    if (archive === null) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_IMPORT_REQUEST" } });
+      return true;
+    }
+    const result = await importQuestPackageFromStore(context.store, projectId, {
+      newQuestId: body.newQuestId,
+      idempotencyKey,
+      archive
+    });
+    if (result.kind === "imported") context.sendJson(201, {
+      sourceQuestId: result.sourceQuestId,
+      sourceRevision: result.sourceRevision,
+      draft: result.draft
+    });
+    else if (result.kind === "replay") context.sendJson(200, {
+      sourceQuestId: result.sourceQuestId,
+      sourceRevision: result.sourceRevision,
+      draft: result.draft,
+      replay: true
+    });
+    else if (result.kind === "project_not_found") context.sendNotFound();
+    else if (result.kind === "destination_quest_exists") context.sendJson(409, { error: { code: "QUEST_ALREADY_EXISTS" } });
+    else if (result.kind === "idempotency_key_reused") context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    else if (result.kind === "invalid_package") context.sendJson(422, {
+      error: { code: "INVALID_LHQUEST_PACKAGE", reason: result.code }
+    });
+    else if (result.kind === "unsupported_store") context.sendJson(500, { error: { code: "CONTROL_IMPORT_STORE_UNAVAILABLE" } });
+    else context.sendJson(400, { error: { code: "INVALID_QUEST_IMPORT_REQUEST" } });
     return true;
   }
 
@@ -272,6 +328,30 @@ function base64(bytes: Uint8Array): string {
     output += alphabet[((a & 0x03) << 4) | ((b ?? 0) >>> 4)] ?? "";
     output += b === undefined ? "=" : (alphabet[((b & 0x0f) << 2) | ((c ?? 0) >>> 6)] ?? "");
     output += c === undefined ? "=" : (alphabet[c & 0x3f] ?? "");
+  }
+  return output;
+}
+
+function decodeBase64(value: string): Uint8Array | null {
+  if (value.length < 4 || value.length % 4 !== 0
+    || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
+  let padding = 0;
+  if (value.endsWith("==")) padding = 2;
+  else if (value.endsWith("=")) padding = 1;
+  const output = new Uint8Array((value.length / 4) * 3 - padding);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let cursor = 0;
+  for (let index = 0; index < value.length; index += 4) {
+    const a = alphabet.indexOf(value[index] ?? "");
+    const b = alphabet.indexOf(value[index + 1] ?? "");
+    const cChar = value[index + 2] ?? "=";
+    const dChar = value[index + 3] ?? "=";
+    const c = cChar === "=" ? 0 : alphabet.indexOf(cChar);
+    const d = dChar === "=" ? 0 : alphabet.indexOf(dChar);
+    if (a < 0 || b < 0 || c < 0 || d < 0) return null;
+    if (cursor < output.length) output[cursor++] = (a << 2) | (b >>> 4);
+    if (cursor < output.length) output[cursor++] = ((b & 0x0f) << 4) | (c >>> 2);
+    if (cursor < output.length) output[cursor++] = ((c & 0x03) << 6) | d;
   }
   return output;
 }
