@@ -20,6 +20,7 @@ import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
 import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
+import { routeDraftVersionHttp } from "./draft-version-http.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
 const CONTROL_SESSION_COOKIE = "lh_control_session";
@@ -333,6 +334,18 @@ async function routeControlRequest(
     }
     return;
   }
+
+  if (await routeDraftVersionHttp({
+    method,
+    url,
+    store,
+    requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
+    requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),
+    requireIdempotencyKey: () => requireIdempotencyKey(request, response),
+    requireJsonObject: () => requireJsonObject(request, response),
+    sendJson: (status, body) => sendJson(response, status, body),
+    sendNotFound: () => sendNotFound(response)
+  })) return;
 
   const validationsMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/validations$/.exec(url.pathname);
   if (method === "POST" && validationsMatch) {
