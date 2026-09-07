@@ -174,6 +174,7 @@ test("T13 narrator failure falls back, commits Core exactly once, and idempotent
   assert.equal(first.body.narrative.summary, "Действие выполнено: 1 из 1. Прошло 300 сек.");
   assert.deepEqual(first.body.narrative.dialogue, []);
   assert.deepEqual(first.body.narrative.observationRefs, []);
+  assert.equal("evidence" in first.body.narrative, false, "public narrative must not expose provider diagnostics");
   assert.equal(fixture.narratorProvider.callCount, 2);
   assert.equal(fixture.executionCount, 1);
 
@@ -205,10 +206,23 @@ test("B06-03 text intent and narrator share one deadline and narrator sees only 
     { expectedRevision: 0, input: { kind: "text", text: "Покрась один участок" } }
   );
   assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body.action, {
+    type: "core.paint",
+    status: "executed",
+    requestedUnits: 1,
+    completedUnits: 1,
+    durationSeconds: 300,
+    reasonCode: null
+  });
+  assert.equal(result.body.playerView.revision, 1);
+  assert.equal(result.body.playerView.clock.elapsedSeconds, 300);
+  assert.equal(result.body.playerView.resources[0].value, 1);
   assert.equal(result.body.narrative.source, "model");
   assert.equal(result.body.narrative.summary, "Краска легла ровным слоем.");
+  assert.equal("evidence" in result.body.narrative, false, "valid narrative still must not expose provider diagnostics");
   assert.equal(fixture.intentProvider.callCount, 1);
   assert.equal(fixture.narratorProvider.callCount, 1);
+  assert.equal(fixture.executionCount, 1, "narrator success must not trigger a second Core calculation");
   assert.equal(
     fixture.intentProvider.capturedRequests[0].deadlineAtMs,
     fixture.narratorProvider.capturedRequests[0].deadlineAtMs,
