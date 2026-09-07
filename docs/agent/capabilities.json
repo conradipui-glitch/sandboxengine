@@ -282,6 +282,13 @@
       "successStatus": 200
     },
     {
+      "id": "control.playtests.trace",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace",
+      "summary": "Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных",
+      "successStatus": 200
+    },
+    {
       "id": "control.releases.list",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/releases",

@@ -296,6 +296,17 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace": {
+      "get": {
+        "operationId": "control_playtests_trace",
+        "summary": "Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/releases": {
       "get": {
         "operationId": "control_releases_list",

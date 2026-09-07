@@ -104,6 +104,7 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision участником проекта и фиксация immutable report
 - `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest участником проекта из проверенного draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}` — Чтение безопасных метаданных frozen playtest доступного проекта
+- `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace` — Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных
 - `GET /control/v1/projects/{projectId}/quests/{questId}/releases` — Чтение immutable release summaries, current pointer и publication status участником проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/releases` — Owner/editor сборка immutable release из точной успешной validation и compiled artifact hash
 - `POST /control/v1/projects/{projectId}/quests/{questId}/publish` — Owner-only атомарная публикация совместимого release через expected-current compare-and-set
