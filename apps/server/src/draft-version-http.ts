@@ -1,6 +1,7 @@
 import {
   MAX_DRAFT_HISTORY_LIMIT,
   analyzeDraftReferences,
+  buildDraftQuestExport,
   cloneQuestFromStore,
   compareDraftRevisions,
   listDraftHistory,
@@ -19,12 +20,14 @@ export interface DraftVersionHttpContext {
   readonly requireIdempotencyKey: () => string | null;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
+  readonly sendBytes: (status: number, mediaType: string, filename: string, body: Uint8Array) => void;
   readonly sendNotFound: () => void;
 }
 
 /**
- * B09-03 draft/version + bounded clone routes. Authentication/session resolution
- * remains owned by control-server; this module receives only policy callbacks.
+ * B09-03 draft/version + bounded portability routes. Authentication/session
+ * resolution remains owned by control-server; this module receives only
+ * already-bounded policy callbacks.
  */
 export async function routeDraftVersionHttp(context: DraftVersionHttpContext): Promise<boolean> {
   const history = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/draft\/history$/.exec(context.url.pathname);
@@ -106,6 +109,34 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     if (result.kind === "quest_not_found") context.sendNotFound();
     else if (result.kind === "revision_not_found") context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
     else context.sendJson(200, { analysis: result.analysis });
+    return true;
+  }
+
+  const exportMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/export$/.exec(context.url.pathname);
+  if (exportMatch) {
+    if (context.method !== "GET") { context.sendNotFound(); return true; }
+    const projectId = exportMatch[1];
+    const questId = exportMatch[2];
+    if (!projectId || !questId) { context.sendNotFound(); return true; }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, ["draftRevision"])) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      return true;
+    }
+    const draftRevision = parseRevisionQuery(context.url.searchParams.get("draftRevision"));
+    if (draftRevision === null) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+      return true;
+    }
+    const result = await buildDraftQuestExport(context.store, projectId, questId, draftRevision);
+    if (result.kind === "quest_not_found") context.sendNotFound();
+    else if (result.kind === "revision_not_found") {
+      context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+    } else if (result.kind === "invalid_request") {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_EXPORT_REQUEST" } });
+    } else {
+      context.sendBytes(200, result.value.mediaType, result.value.filename, result.value.archive);
+    }
     return true;
   }
 
