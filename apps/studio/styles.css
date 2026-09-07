@@ -421,6 +421,23 @@ button.primary, .entity-form > button { background: #285fd6; border-color: #285f
 .publication-receipt strong { color: #245a34; }
 .publication-receipt span, .publication-receipt small { color: #597063; }
 
+
+.playtest-evidence { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d9dee8; }
+.evidence-identity { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.evidence-identity > div, .runtime-pin { padding: 9px 10px; border: 1px solid #d8dfeb; border-radius: 8px; background: #f8fafc; display: grid; gap: 3px; }
+.evidence-identity span, .evidence-identity code, .runtime-pin small { font-size: 11px; color: #68758a; }
+.runtime-pin { margin: 10px 0; }
+.evidence-error { padding: 9px 10px; border: 1px solid #e6bcbc; border-radius: 8px; background: #fff5f5; color: #7d3030; }
+.evidence-session { margin-top: 10px; border: 1px solid #d8dfeb; border-radius: 8px; overflow: hidden; }
+.evidence-session-head { padding: 9px 10px; background: #f7f9fc; display: flex; justify-content: space-between; gap: 10px; }
+.evidence-session-head div { display: grid; gap: 2px; }
+.evidence-session-head small, .evidence-session-head span { color: #68758a; font-size: 11px; }
+.evidence-operation { padding: 8px 10px; border-top: 1px solid #e4e8ef; }
+.evidence-operation summary { cursor: pointer; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.evidence-operation summary span { font-size: 11px; color: #68758a; }
+.evidence-operation pre { max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #111827; color: #e5e7eb; padding: 10px; border-radius: 6px; font-size: 11px; }
+@media (max-width: 700px) { .evidence-identity { grid-template-columns: 1fr 1fr; } }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }

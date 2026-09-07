@@ -1,4 +1,4 @@
-import type { Block } from "@living-history/contracts";
+import type { Block, JsonValue } from "@living-history/contracts";
 import type { ControlProjectRole, DraftChangeSet } from "@living-history/control";
 
 export interface ProjectView {
@@ -135,6 +135,42 @@ export interface PlaytestView {
   readonly contentHash: string;
   readonly validationId: string;
   readonly compiledContentHash: string;
+}
+
+export interface PlaytestTraceTurnView {
+  readonly turnId: string;
+  readonly beforeRevision: number;
+  readonly afterRevision: number;
+  readonly stateHash: string;
+}
+
+export interface PlaytestTraceOperationView {
+  readonly operationId: string;
+  readonly expectedRevision: number;
+  readonly status: "completed" | "finished_without_turn";
+  readonly completionKind: "turn" | "without_turn";
+  readonly turn: PlaytestTraceTurnView | null;
+  readonly publicResponse: Readonly<Record<string, JsonValue>>;
+}
+
+export interface PlaytestTraceSessionView {
+  readonly sessionId: string;
+  readonly currentRevision: number;
+  readonly operations: readonly PlaytestTraceOperationView[];
+  readonly hasMoreOperations: boolean;
+}
+
+export interface PlaytestTraceView {
+  readonly identityKind: "frozen_playtest";
+  readonly publishedRelease: false;
+  readonly playtest: PlaytestView;
+  readonly runtimePinnedRelease: {
+    readonly questId: string;
+    readonly releaseId: string;
+    readonly contentHash: string;
+  };
+  readonly sessions: readonly PlaytestTraceSessionView[];
+  readonly hasMoreSessions: boolean;
 }
 
 export class ControlApiError extends Error {
@@ -396,6 +432,14 @@ export class ControlApiClient {
       { draftRevision, validationId }
     );
     return body.playtest;
+  }
+
+  async getPlaytestTrace(projectId: string, questId: string, playtestId: string): Promise<PlaytestTraceView> {
+    const body = await this.request<{ readonly trace: PlaytestTraceView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/playtests/${encodeURIComponent(playtestId)}/trace`
+    );
+    return body.trace;
   }
 
   private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {

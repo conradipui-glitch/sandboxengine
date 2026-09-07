@@ -9,6 +9,7 @@ import {
   ControlApiClient,
   ControlApiError,
   type DraftView,
+  type PlaytestTraceView,
   type PlaytestView,
   type ProjectView,
   type QuestSummaryView,
@@ -42,6 +43,7 @@ import {
   renderAccessPanel,
   type StudioAccessState
 } from "./access.js";
+import { renderPlaytestEvidence } from "./playtest-evidence.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -51,6 +53,8 @@ interface StudioState {
   draft: DraftView | null;
   validation: ValidationView | null;
   playtest: PlaytestView | null;
+  playtestTrace: PlaytestTraceView | null;
+  playtestTraceError: string | null;
   versions: VersionsReadModel | null;
   versionsError: string | null;
   access: StudioAccessState;
@@ -72,6 +76,8 @@ export class StudioApp {
     draft: null,
     validation: null,
     playtest: null,
+    playtestTrace: null,
+    playtestTraceError: null,
     versions: null,
     versionsError: null,
     access: initialAccessState(),
@@ -118,6 +124,10 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "refresh-playtest-evidence") {
+      await this.refreshPlaytestEvidence();
+      return;
+    }
     if (action === "logout") {
       await this.logout();
       return;
@@ -268,6 +278,8 @@ export class StudioApp {
         this.state.draft = draft;
         this.state.validation = null;
         this.state.playtest = null;
+        this.state.playtestTrace = null;
+        this.state.playtestTraceError = null;
         this.state.versions = null;
         this.state.versionsError = null;
         await this.refreshVersions(projectId, questId);
@@ -552,6 +564,8 @@ export class StudioApp {
       this.state.draft = null;
       this.state.validation = null;
       this.state.playtest = null;
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = null;
       this.state.versions = null;
       this.state.versionsError = null;
       this.state.conflict = null;
@@ -732,12 +746,51 @@ export class StudioApp {
         draft.draftRevision,
         validation.validationId
       );
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = null;
+      await this.refreshPlaytestEvidence(false);
       this.state.phase = "saved";
-      this.state.message = `Frozen playtest ${this.state.playtest.playtestId} создан.`;
+      this.state.message = `Frozen playtest ${this.state.playtest.playtestId} создан; persisted evidence загружена.`;
     } catch (error) {
       this.setError(error);
     }
     this.render();
+  }
+
+  private async refreshPlaytestEvidence(renderAfter = true): Promise<void> {
+    const playtest = this.state.playtest;
+    if (!playtest) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    this.state.playtestTraceError = null;
+    try {
+      const trace = await this.api.getPlaytestTrace(projectId, questId, playtest.playtestId);
+      const identityMatches = trace.playtest.playtestId === playtest.playtestId
+        && trace.playtest.draftRevision === playtest.draftRevision
+        && trace.playtest.contentHash === playtest.contentHash
+        && trace.playtest.validationId === playtest.validationId
+        && trace.playtest.compiledContentHash === playtest.compiledContentHash
+        && trace.runtimePinnedRelease.questId === playtest.questId
+        && trace.runtimePinnedRelease.releaseId === `playtest-${playtest.playtestId}`
+        && trace.runtimePinnedRelease.contentHash === playtest.contentHash
+        && trace.identityKind === "frozen_playtest"
+        && trace.publishedRelease === false;
+      if (!identityMatches) throw new Error("Playtest trace identity mismatch.");
+      this.state.playtestTrace = trace;
+      if (renderAfter) {
+        const completed = trace.sessions.reduce((sum, session) => sum + session.operations.length, 0);
+        this.state.message = `Playtest evidence обновлена: ${trace.sessions.length} sessions · ${completed} completed ops.`;
+      }
+    } catch (error) {
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = error instanceof ControlApiError
+        ? `Playtest trace API: ${error.code}.`
+        : error instanceof Error
+          ? `Playtest trace: ${error.message}`
+          : "Playtest trace: неизвестная ошибка.";
+      if (renderAfter) this.state.message = "Persisted playtest evidence недоступна; frozen playtest не изменён.";
+    }
+    if (renderAfter) this.render();
   }
 
   private setError(error: unknown): void {
@@ -851,6 +904,7 @@ export class StudioApp {
                 : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
               ${validationPanel(this.state.validation, draft)}
               ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest)}
+              ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
             </section>
           ` : project ? `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите существующий квест или создайте новый в левой панели.</p></div>
@@ -973,7 +1027,8 @@ function playtestPanel(
     return `<div class="playtest-result">
       <strong>Frozen playtest готов</strong>
       <span>revision ${playtest.draftRevision} · ${id}</span>
-      <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится.</p>
+      <p>validation <code>${escapeHtml(playtest.validationId)}</code> · compiled <code>${escapeHtml(shortHash(playtest.compiledContentHash))}</code></p>
+      <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится. Это frozen playtest, а не published release.</p>
       <div class="launch-commands">
         <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
         <code>macOS/Linux: LH_PLAYTEST_ID=${attrId} npm run dev:player</code>
