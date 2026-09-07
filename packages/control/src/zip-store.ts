@@ -33,7 +33,7 @@ export function writeStoredZip(entries: readonly StoredZipEntry[]): Uint8Array {
   const paths = normalized.map((entry) => entry.path);
   if (new Set(paths).size !== paths.length) throw new TypeError("duplicate ZIP path");
 
-  const ordered = [...normalized].sort((left, right) => left.path.localeCompare(right.path));
+  const ordered = [...normalized].sort((left, right) => compareAscii(left.path, right.path));
   const encoder = new TextEncoder();
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
@@ -119,6 +119,10 @@ function isSafeZipPath(path: unknown): path is string {
     && !path.startsWith("/")
     && !/^[A-Za-z]:/.test(path)
     && path.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 const CRC_TABLE = (() => {
