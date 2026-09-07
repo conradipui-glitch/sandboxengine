@@ -184,7 +184,21 @@ function renderResult(result, errorMessage) {
     <div class="result-box ${status}">
       <strong>${label}</strong>
       <p>Запрошено: ${result.action.requestedUnits}. Выполнено: ${result.action.completedUnits}. Время хода: ${formatSeconds(result.action.durationSeconds)}.${reason}</p>
+      ${renderNarrative(result.narrative)}
       <code>operation ${escapeHtml(result.operationId)}</code>
+    </div>
+  `;
+}
+
+function renderNarrative(narrative) {
+  if (!narrative) return "";
+  const dialogue = narrative.dialogue.length === 0
+    ? ""
+    : `<div class="narrative-dialogue">${narrative.dialogue.map((line) => `<p><strong>${escapeHtml(line.speakerId)}:</strong> ${escapeHtml(line.text)}</p>`).join("")}</div>`;
+  return `
+    <div class="narrative-copy" data-source="${escapeHtml(narrative.source)}">
+      <p>${escapeHtml(narrative.summary)}</p>
+      ${dialogue}
     </div>
   `;
 }
