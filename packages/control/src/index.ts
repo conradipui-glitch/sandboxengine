@@ -7,8 +7,21 @@ export {
   type LhquestDraftManifest
 } from "./quest-export.js";
 export {
+  parseLhquestDraftPackage,
+  type LhquestPackageFailureCode,
+  type ParsedLhquestDraftPackage,
+  type ParseLhquestPackageResult
+} from "./lhquest-package.js";
+export {
   MemoryControlStore,
   SQLiteControlStore,
+  importQuestPackageFromStore,
+  type ImportCapableControlStore,
+  type ImportQuestDispatchResult,
+  type ImportQuestPackageInput,
+  type ImportQuestPackageResult
+} from "./portability-store.js";
+export {
   cloneQuestFromStore,
   type CloneCapableControlStore,
   type CloneQuestDispatchResult,
