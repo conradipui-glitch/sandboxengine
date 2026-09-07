@@ -1,6 +1,7 @@
 import {
   MAX_DRAFT_HISTORY_LIMIT,
   analyzeDraftReferences,
+  cloneQuestFromStore,
   compareDraftRevisions,
   listDraftHistory,
   type ControlProjectRole,
@@ -22,8 +23,8 @@ export interface DraftVersionHttpContext {
 }
 
 /**
- * B09-03 draft/version routes. Authentication/session resolution remains owned
- * by control-server; this module receives only already-bounded policy callbacks.
+ * B09-03 draft/version + bounded clone routes. Authentication/session resolution
+ * remains owned by control-server; this module receives only policy callbacks.
  */
 export async function routeDraftVersionHttp(context: DraftVersionHttpContext): Promise<boolean> {
   const history = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/draft\/history$/.exec(context.url.pathname);
@@ -51,9 +52,8 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     });
     const result = await listDraftHistory(context.store, projectId, questId, pageOptions);
     if (result.kind === "quest_not_found") context.sendNotFound();
-    else if (result.kind === "invalid_request") {
-      context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
-    } else context.sendJson(200, {
+    else if (result.kind === "invalid_request") context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
+    else context.sendJson(200, {
       currentRevision: result.currentRevision,
       history: result.history,
       nextBeforeRevision: result.nextBeforeRevision
@@ -80,9 +80,8 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     }
     const result = await compareDraftRevisions(context.store, projectId, questId, baseRevision, targetRevision);
     if (result.kind === "quest_not_found") context.sendNotFound();
-    else if (result.kind === "revision_not_found") {
-      context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
-    } else context.sendJson(200, { comparison: result.comparison });
+    else if (result.kind === "revision_not_found") context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+    else context.sendJson(200, { comparison: result.comparison });
     return true;
   }
 
@@ -105,9 +104,51 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     }
     const result = await analyzeDraftReferences(context.store, projectId, questId, revision, targetBlockId);
     if (result.kind === "quest_not_found") context.sendNotFound();
-    else if (result.kind === "revision_not_found") {
-      context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
-    } else context.sendJson(200, { analysis: result.analysis });
+    else if (result.kind === "revision_not_found") context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: result.revision } });
+    else context.sendJson(200, { analysis: result.analysis });
+    return true;
+  }
+
+  const clone = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/clone$/.exec(context.url.pathname);
+  if (clone) {
+    if (context.method !== "POST") { context.sendNotFound(); return true; }
+    const projectId = clone[1];
+    const sourceQuestId = clone[2];
+    if (!projectId || !sourceQuestId) { context.sendNotFound(); return true; }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_CLONE_REQUEST" } });
+      return true;
+    }
+    if (!(await context.requireMutation())) return true;
+    const idempotencyKey = context.requireIdempotencyKey();
+    if (idempotencyKey === null) return true;
+    const body = await context.requireJsonObject();
+    if (body === null) return true;
+    if (!hasExactKeys(body, ["newQuestId", "title"]) || !isId(body.newQuestId) || !isTitle(body.title)) {
+      context.sendJson(400, { error: { code: "INVALID_QUEST_CLONE_REQUEST" } });
+      return true;
+    }
+    const result = await cloneQuestFromStore(context.store, projectId, sourceQuestId, {
+      newQuestId: body.newQuestId,
+      title: body.title,
+      idempotencyKey
+    });
+    if (result.kind === "cloned") context.sendJson(201, { sourceRevision: result.sourceRevision, draft: result.draft });
+    else if (result.kind === "replay") context.sendJson(200, { sourceRevision: result.sourceRevision, draft: result.draft, replay: true });
+    else if (result.kind === "project_not_found" || result.kind === "source_quest_not_found") context.sendNotFound();
+    else if (result.kind === "destination_quest_exists") context.sendJson(409, { error: { code: "QUEST_ALREADY_EXISTS" } });
+    else if (result.kind === "idempotency_key_reused") context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    else if (result.kind === "unsupported_reference") context.sendJson(409, {
+      error: {
+        code: "QUEST_CLONE_UNSUPPORTED_REFERENCE",
+        blockId: result.blockId,
+        path: result.path,
+        targetBlockId: result.targetBlockId
+      }
+    });
+    else if (result.kind === "unsupported_store") context.sendJson(500, { error: { code: "CONTROL_CLONE_STORE_UNAVAILABLE" } });
+    else context.sendJson(400, { error: { code: "INVALID_QUEST_CLONE_REQUEST" } });
     return true;
   }
 
@@ -141,9 +182,8 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     });
     if (result.kind === "restored") context.sendJson(201, { draft: result.draft });
     else if (result.kind === "replay") context.sendJson(200, { draft: result.draft, replay: true });
-    else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "source_revision_not_found") {
-      context.sendNotFound();
-    } else if (result.kind === "revision_conflict") {
+    else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "source_revision_not_found") context.sendNotFound();
+    else if (result.kind === "revision_conflict") {
       const comparison = await compareDraftRevisions(context.store, projectId, questId, body.baseRevision, result.currentRevision);
       context.sendJson(409, {
         error: {
@@ -152,9 +192,8 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
           ...(comparison.kind === "compared" ? { comparison: comparison.comparison } : {})
         }
       });
-    } else if (result.kind === "idempotency_key_reused") {
-      context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
-    } else context.sendJson(400, { error: { code: "INVALID_DRAFT_RESTORE_REQUEST" } });
+    } else if (result.kind === "idempotency_key_reused") context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    else context.sendJson(400, { error: { code: "INVALID_DRAFT_RESTORE_REQUEST" } });
     return true;
   }
 
@@ -191,6 +230,9 @@ function isRevision(value: unknown): value is number {
 }
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
+}
+function isTitle(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 200;
 }
 function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
   const actual = Object.keys(value).sort();

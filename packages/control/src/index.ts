@@ -1,7 +1,14 @@
-export { MemoryControlStore } from "./memory-store.js";
+export {
+  MemoryControlStore,
+  SQLiteControlStore,
+  cloneQuestFromStore,
+  type CloneCapableControlStore,
+  type CloneQuestDispatchResult,
+  type CloneQuestInput,
+  type CloneQuestResult
+} from "./quest-clone.js";
 export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
-  SQLiteControlStore,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
 export {
