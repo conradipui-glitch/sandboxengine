@@ -5,6 +5,7 @@ import {
 } from "@living-history/contracts";
 import type { PluginManifest, PluginReleaseRequirements } from "./index.js";
 import type {
+  PluginResolverInput,
   TrustedPluginBackendRegistration,
   ValidatedPluginActionPlan
 } from "./execution.js";
@@ -141,7 +142,7 @@ export function createDiceCheckRegistration(
         const definitionId = readDefinitionId(args);
         return definitionId !== null && byId.has(definitionId);
       },
-      resolve(input) {
+      resolve(input: PluginResolverInput) {
         const definitionId = readDefinitionId(input.args);
         if (definitionId === null) throw new TypeError("dice-check definition id missing");
         const definition = byId.get(definitionId);
@@ -282,8 +283,11 @@ function materializeEffect(template: DiceCheckEffectTemplate, sourceId: string):
 }
 
 function readDefinitionId(args: JsonValue): string | null {
-  if (!isPlainObject(args) || !hasExactKeys(args, ["definitionId"])) return null;
-  return isId(args.definitionId) ? args.definitionId : null;
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
+  const record = args as Readonly<Record<string, JsonValue>>;
+  const keys = Object.keys(record);
+  if (keys.length !== 1 || keys[0] !== "definitionId") return null;
+  return isId(record.definitionId) ? record.definitionId : null;
 }
 
 function isEffectTemplateArray(value: unknown): value is readonly DiceCheckEffectTemplate[] {
