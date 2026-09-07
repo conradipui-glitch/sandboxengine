@@ -1,9 +1,37 @@
-import type { Block } from "@living-history/contracts";
-import type { DraftChangeSet } from "@living-history/control";
+import type { Block, JsonValue } from "@living-history/contracts";
+import type { ControlProjectRole, DraftChangeSet } from "@living-history/control";
 
 export interface ProjectView {
   readonly projectId: string;
   readonly title: string;
+  readonly role: ControlProjectRole;
+}
+
+export interface ControlUserView {
+  readonly userId: string;
+  readonly username: string;
+}
+
+export interface ControlSessionView {
+  readonly sessionId: string;
+  readonly createdAtMs: number;
+  readonly expiresAtMs: number;
+}
+
+export interface ControlAuthView {
+  readonly user: ControlUserView;
+  readonly session: ControlSessionView;
+}
+
+export interface ControlProjectMemberView {
+  readonly projectId: string;
+  readonly userId: string;
+  readonly username: string;
+  readonly role: ControlProjectRole;
+}
+
+interface ControlLoginResponse extends ControlAuthView {
+  readonly csrfToken: string;
 }
 
 export interface QuestSummaryView {
@@ -18,6 +46,92 @@ export interface QuestSummaryView {
 export interface DraftView extends QuestSummaryView {
   readonly blocks: readonly Block[];
 }
+
+export interface DraftHistoryEntryView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly contentHash: string;
+  readonly title: string;
+  readonly entryLocationId: string;
+  readonly blockCount: number;
+}
+
+export interface DraftHistoryPageView {
+  readonly currentRevision: number;
+  readonly history: readonly DraftHistoryEntryView[];
+  readonly nextBeforeRevision: number | null;
+}
+
+export interface DraftComparisonView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly baseRevision: number;
+  readonly targetRevision: number;
+  readonly titleChanged: boolean;
+  readonly entryLocationChanged: boolean;
+  readonly addedBlockIds: readonly string[];
+  readonly removedBlockIds: readonly string[];
+  readonly replacedBlockIds: readonly string[];
+}
+
+export interface DraftReferenceView {
+  readonly sourceKind: "quest" | "block";
+  readonly sourceId: string;
+  readonly path: string;
+  readonly targetBlockId: string;
+}
+
+export interface DraftReferenceAnalysisView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly targetBlockId: string;
+  readonly targetExists: boolean;
+  readonly safeToDelete: boolean;
+  readonly references: readonly DraftReferenceView[];
+}
+
+export interface ReleaseSummaryView {
+  readonly releaseId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly draftContentHash: string;
+  readonly validationId: string;
+  readonly compiledContentHash: string;
+  readonly contentHashAlgorithm: "sha256";
+  readonly isCurrent: boolean;
+  readonly wasPublished: boolean;
+}
+
+export interface ReleaseListView {
+  readonly currentReleaseId: string | null;
+  readonly releases: readonly ReleaseSummaryView[];
+}
+
+export interface PublicationEventView {
+  readonly eventSequence: number;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly kind: "publish" | "rollback";
+  readonly fromReleaseId: string | null;
+  readonly toReleaseId: string;
+  readonly actorUserId: string;
+  readonly createdAtMs: number;
+}
+
+export type PublishResultView =
+  | { readonly kind: "published"; readonly currentReleaseId: string; readonly event: PublicationEventView }
+  | { readonly kind: "unchanged"; readonly currentReleaseId: string }
+  | { readonly kind: "replay"; readonly outcome: "published" | "unchanged"; readonly currentReleaseId: string; readonly event: PublicationEventView | null };
+
+export type RollbackResultView =
+  | { readonly kind: "rolled_back"; readonly currentReleaseId: string; readonly event: PublicationEventView }
+  | { readonly kind: "unchanged"; readonly currentReleaseId: string }
+  | { readonly kind: "replay"; readonly outcome: "rolled_back" | "unchanged"; readonly currentReleaseId: string; readonly event: PublicationEventView | null };
+
+export type PublicationResultView = PublishResultView | RollbackResultView;
 
 export interface ValidationView {
   readonly validationId: string;
@@ -40,6 +154,63 @@ export interface PlaytestView {
   readonly compiledContentHash: string;
 }
 
+export interface PlaytestTraceTurnView {
+  readonly turnId: string;
+  readonly beforeRevision: number;
+  readonly afterRevision: number;
+  readonly stateHash: string;
+}
+
+export interface PlaytestTraceOperationView {
+  readonly operationId: string;
+  readonly expectedRevision: number;
+  readonly status: "completed" | "finished_without_turn";
+  readonly completionKind: "turn" | "without_turn";
+  readonly turn: PlaytestTraceTurnView | null;
+  readonly publicResponse: Readonly<Record<string, JsonValue>>;
+}
+
+export interface PlaytestTraceSessionView {
+  readonly sessionId: string;
+  readonly currentRevision: number;
+  readonly operations: readonly PlaytestTraceOperationView[];
+  readonly hasMoreOperations: boolean;
+}
+
+export interface PlaytestTraceView {
+  readonly identityKind: "frozen_playtest";
+  readonly publishedRelease: false;
+  readonly playtest: PlaytestView;
+  readonly runtimePinnedRelease: {
+    readonly questId: string;
+    readonly releaseId: string;
+    readonly contentHash: string;
+  };
+  readonly sessions: readonly PlaytestTraceSessionView[];
+  readonly hasMoreSessions: boolean;
+}
+
+export interface QuestExportView {
+  readonly filename: string;
+  readonly mediaType: string;
+  readonly encoding: "base64";
+  readonly archiveBase64: string;
+  readonly manifest: unknown;
+}
+
+export interface QuestCloneResultView {
+  readonly sourceRevision: number;
+  readonly draft: DraftView;
+  readonly replay?: true;
+}
+
+export interface QuestImportResultView {
+  readonly sourceQuestId: string;
+  readonly sourceRevision: number;
+  readonly draft: DraftView;
+  readonly replay?: true;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -53,15 +224,77 @@ export class ControlApiError extends Error {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+interface RequestOptions {
+  readonly csrf?: "if-present" | "omit";
+  readonly idempotencyKey?: string;
+}
+
 export class ControlApiClient {
+  private csrfToken: string | null = null;
+
   constructor(
     private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
     private readonly basePath = "/control/v1"
   ) {}
 
+  hasMutationProof(): boolean {
+    return this.csrfToken !== null;
+  }
+
+  async login(username: string, password: string): Promise<ControlAuthView> {
+    const body = await this.request<ControlLoginResponse>(
+      "POST",
+      "/auth/login",
+      { username, password },
+      { csrf: "omit" }
+    );
+    if (typeof body.csrfToken !== "string" || body.csrfToken.length < 20 || body.csrfToken.length > 256) {
+      throw new ControlApiError(200, "INVALID_CONTROL_RESPONSE", body);
+    }
+    this.csrfToken = body.csrfToken;
+    return Object.freeze({ user: body.user, session: body.session });
+  }
+
+  async getSession(): Promise<ControlAuthView> {
+    return this.request<ControlAuthView>("GET", "/auth/session");
+  }
+
+  async logout(): Promise<void> {
+    await this.request<unknown>("POST", "/auth/logout");
+    this.csrfToken = null;
+  }
+
   async listProjects(): Promise<readonly ProjectView[]> {
     const body = await this.request<{ readonly projects: readonly ProjectView[] }>("GET", "/projects");
     return body.projects;
+  }
+
+  async listProjectMembers(projectId: string): Promise<readonly ControlProjectMemberView[]> {
+    const body = await this.request<{ readonly members: readonly ControlProjectMemberView[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/members`
+    );
+    return body.members;
+  }
+
+  async setProjectMemberRole(
+    projectId: string,
+    userId: string,
+    role: ControlProjectRole
+  ): Promise<ControlProjectMemberView> {
+    const body = await this.request<{ readonly member: ControlProjectMemberView }>(
+      "PUT",
+      `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { role }
+    );
+    return body.member;
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<void> {
+    await this.request<unknown>(
+      "DELETE",
+      `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`
+    );
   }
 
   async createProject(input: { readonly projectId: string; readonly title: string }): Promise<ProjectView> {
@@ -105,6 +338,122 @@ export class ControlApiClient {
     return body.draft;
   }
 
+  async listDraftHistory(
+    projectId: string,
+    questId: string,
+    options: { readonly beforeRevision?: number; readonly limit?: number } = {}
+  ): Promise<DraftHistoryPageView> {
+    const params = new URLSearchParams();
+    if (options.beforeRevision !== undefined) params.set("beforeRevision", String(options.beforeRevision));
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    const query = params.size === 0 ? "" : `?${params.toString()}`;
+    return this.request<DraftHistoryPageView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/history${query}`
+    );
+  }
+
+  async compareDraftRevisions(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    targetRevision: number
+  ): Promise<DraftComparisonView> {
+    const params = new URLSearchParams({
+      baseRevision: String(baseRevision),
+      targetRevision: String(targetRevision)
+    });
+    const body = await this.request<{ readonly comparison: DraftComparisonView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/compare?${params.toString()}`
+    );
+    return body.comparison;
+  }
+
+  async analyzeDraftReferences(
+    projectId: string,
+    questId: string,
+    revision: number,
+    targetBlockId: string
+  ): Promise<DraftReferenceAnalysisView> {
+    const params = new URLSearchParams({ revision: String(revision), targetBlockId });
+    const body = await this.request<{ readonly analysis: DraftReferenceAnalysisView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/references?${params.toString()}`
+    );
+    return body.analysis;
+  }
+
+  async listReleases(projectId: string, questId: string): Promise<ReleaseListView> {
+    return this.request<ReleaseListView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/releases`
+    );
+  }
+
+  async publishRelease(
+    projectId: string,
+    questId: string,
+    releaseId: string,
+    expectedCurrentReleaseId: string | null,
+    idempotencyKey: string
+  ): Promise<PublishResultView> {
+    const body = await this.request<{ readonly publication: PublishResultView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/publish`,
+      { releaseId, expectedCurrentReleaseId },
+      { idempotencyKey }
+    );
+    return body.publication;
+  }
+
+  async rollbackRelease(
+    projectId: string,
+    questId: string,
+    targetReleaseId: string,
+    expectedCurrentReleaseId: string,
+    idempotencyKey: string
+  ): Promise<RollbackResultView> {
+    const body = await this.request<{ readonly publication: RollbackResultView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/rollback`,
+      { targetReleaseId, expectedCurrentReleaseId },
+      { idempotencyKey }
+    );
+    return body.publication;
+  }
+
+  async buildRelease(
+    projectId: string,
+    questId: string,
+    input: { readonly releaseId: string; readonly draftRevision: number; readonly validationId: string },
+    idempotencyKey: string
+  ): Promise<ReleaseSummaryView> {
+    const body = await this.request<{ readonly release: ReleaseSummaryView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/releases`,
+      input,
+      { idempotencyKey }
+    );
+    return body.release;
+  }
+
+  async restoreDraft(
+    projectId: string,
+    questId: string,
+    sourceRevision: number,
+    baseRevision: number,
+    idempotencyKey: string
+  ): Promise<DraftView> {
+    const body = await this.request<{ readonly draft: DraftView }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/restore`,
+      { sourceRevision, baseRevision },
+      { idempotencyKey }
+    );
+    return body.draft;
+  }
+
   async applyDraftChanges(projectId: string, questId: string, changeSet: DraftChangeSet): Promise<DraftView> {
     const body = await this.request<{ readonly draft: DraftView }>(
       "POST",
@@ -137,12 +486,73 @@ export class ControlApiClient {
     return body.playtest;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async cloneQuest(
+    projectId: string,
+    sourceQuestId: string,
+    input: { readonly newQuestId: string; readonly title: string },
+    idempotencyKey: string
+  ): Promise<QuestCloneResultView> {
+    return this.request<QuestCloneResultView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(sourceQuestId)}/clone`,
+      input,
+      { idempotencyKey }
+    );
+  }
+
+  async exportDraftQuest(projectId: string, questId: string, draftRevision: number): Promise<QuestExportView> {
+    const params = new URLSearchParams({ draftRevision: String(draftRevision) });
+    return this.request<QuestExportView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/export?${params.toString()}`
+    );
+  }
+
+  async exportReleaseQuest(projectId: string, questId: string, releaseId: string): Promise<QuestExportView> {
+    const params = new URLSearchParams({ releaseId });
+    return this.request<QuestExportView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/export?${params.toString()}`
+    );
+  }
+
+  async importQuest(
+    projectId: string,
+    newQuestId: string,
+    archiveBase64: string,
+    idempotencyKey: string
+  ): Promise<QuestImportResultView> {
+    return this.request<QuestImportResultView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/imports`,
+      { newQuestId, archiveBase64 },
+      { idempotencyKey }
+    );
+  }
+
+  async getPlaytestTrace(projectId: string, questId: string, playtestId: string): Promise<PlaytestTraceView> {
+    const body = await this.request<{ readonly trace: PlaytestTraceView }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/playtests/${encodeURIComponent(playtestId)}/trace`
+    );
+    return body.trace;
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["content-type"] = "application/json";
+    const mutation = method !== "GET" && method !== "HEAD";
+    if (mutation && options.csrf !== "omit" && this.csrfToken !== null) {
+      headers["x-csrf-token"] = this.csrfToken;
+    }
+    if (options.idempotencyKey !== undefined) headers["idempotency-key"] = options.idempotencyKey;
+
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.basePath}${path}`, {
         method,
-        headers: body === undefined ? undefined : { "content-type": "application/json" },
+        credentials: "same-origin",
+        headers: Object.keys(headers).length === 0 ? undefined : headers,
         body: body === undefined ? undefined : JSON.stringify(body)
       });
     } catch (error) {
@@ -152,6 +562,7 @@ export class ControlApiClient {
     const payload = await parseJson(response);
     if (!response.ok) {
       const code = readErrorCode(payload) ?? `HTTP_${response.status}`;
+      if (response.status === 401 && code === "CONTROL_AUTH_REQUIRED") this.csrfToken = null;
       throw new ControlApiError(response.status, code, payload);
     }
     return payload as T;

@@ -16,6 +16,20 @@ export {
   type SQLiteRuntimeStorageOptions
 } from "./sqlite-storage.js";
 export {
+  DEFAULT_PLAYTEST_TRACE_OPERATION_LIMIT,
+  DEFAULT_PLAYTEST_TRACE_SESSION_LIMIT,
+  MAX_PLAYTEST_TRACE_OPERATION_LIMIT,
+  MAX_PLAYTEST_TRACE_SESSION_LIMIT,
+  SQLitePlaytestTraceReader,
+  type PlaytestRuntimeTrace,
+  type PlaytestTraceOperationEvidence,
+  type PlaytestTraceReader,
+  type PlaytestTraceSessionEvidence,
+  type PlaytestTraceTurnEvidence,
+  type ReadPlaytestTraceInput,
+  type SQLitePlaytestTraceReaderOptions
+} from "./playtest-trace.js";
+export {
   SQLiteGuestSessionAccess,
   type SQLiteGuestSessionAccessOptions
 } from "./sqlite-guest-session-access.js";

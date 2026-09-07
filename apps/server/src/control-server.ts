@@ -1,6 +1,7 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
 import {
+  MAX_LHQUEST_ARCHIVE_BYTES,
   createControlOpaqueSecret,
   createControlSessionId,
   hashControlOpaqueSecret,
@@ -18,10 +19,13 @@ import {
 } from "@living-history/control";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
+import type { PlaytestTraceReader } from "@living-history/runtime";
 import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
+import { routeDraftVersionHttp } from "./draft-version-http.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
+const MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;
 const CONTROL_SESSION_COOKIE = "lh_control_session";
 const CONTROL_CSRF_HEADER = "x-csrf-token";
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -49,6 +53,7 @@ export interface ControlReleaseModeOptions {
 export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly releases?: ControlReleaseModeOptions;
+  readonly playtestTrace?: PlaytestTraceReader;
   readonly auth?: ControlAuthenticatedModeOptions;
 }
 
@@ -87,7 +92,15 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
-      await routeControlRequest(request, response, dependencies.store, releases, auth, failures);
+      await routeControlRequest(
+        request,
+        response,
+        dependencies.store,
+        releases,
+        dependencies.playtestTrace ?? null,
+        auth,
+        failures
+      );
     } catch (error) {
       if (isSqliteBusy(error)) {
         sendJson(response, 503, { error: { code: "CONTROL_STORAGE_BUSY" } });
@@ -139,6 +152,7 @@ async function routeControlRequest(
   response: any,
   store: ControlStore,
   releases: ControlReleaseModeOptions | null,
+  playtestTrace: PlaytestTraceReader | null,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
@@ -184,10 +198,20 @@ async function routeControlRequest(
 
   if (url.pathname === "/control/v1/projects") {
     if (method === "GET") {
-      const projects = auth
-        ? await auth.security.listProjectsForUser(identity!.user.userId)
-        : await store.listProjects();
-      sendJson(response, 200, { projects });
+      if (auth) {
+        const projects = await auth.security.listProjectsForUser(identity!.user.userId);
+        const views = await Promise.all(projects.map(async (project) => {
+          const role = await auth.security.getProjectRole(project.projectId, identity!.user.userId);
+          if (role === null) throw new Error("Control project membership disappeared during project listing");
+          return Object.freeze({ ...project, role });
+        }));
+        sendJson(response, 200, { projects: views });
+      } else {
+        const projects = await store.listProjects();
+        sendJson(response, 200, {
+          projects: projects.map((project) => Object.freeze({ ...project, role: "owner" as const }))
+        });
+      }
       return;
     }
     if (method === "POST") {
@@ -201,7 +225,9 @@ async function routeControlRequest(
       const result = auth
         ? await auth.security.createProjectAsOwner({ projectId: body.projectId, title: body.title }, identity!.user.userId)
         : await store.createProject({ projectId: body.projectId, title: body.title });
-      if (result.kind === "created") sendJson(response, 201, { project: result.project });
+      if (result.kind === "created") {
+        sendJson(response, 201, { project: Object.freeze({ ...result.project, role: "owner" as const }) });
+      }
       else if (result.kind === "project_exists") sendJson(response, 409, { error: { code: "PROJECT_EXISTS" } });
       else sendJson(response, 400, { error: { code: "INVALID_PROJECT" } });
       return;
@@ -333,6 +359,19 @@ async function routeControlRequest(
     }
     return;
   }
+
+  if (await routeDraftVersionHttp({
+    method,
+    url,
+    store,
+    releaseStore: releases?.store ?? null,
+    requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
+    requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),
+    requireIdempotencyKey: () => requireIdempotencyKey(request, response),
+    requireJsonObject: () => requireJsonObject(request, response),
+    sendJson: (status, body) => sendJson(response, status, body),
+    sendNotFound: () => sendNotFound(response)
+  })) return;
 
   const validationsMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/validations$/.exec(url.pathname);
   if (method === "POST" && validationsMatch) {
@@ -561,6 +600,37 @@ async function routeControlRequest(
     const playtest = await store.getPlaytest(playtestId);
     if (!playtest || playtest.projectId !== projectId || playtest.questId !== questId) sendNotFound(response);
     else sendJson(response, 200, { playtest: playtestView(playtest) });
+    return;
+  }
+
+  const playtestTraceMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/playtests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/trace$/.exec(url.pathname);
+  if (method === "GET" && playtestTraceMatch) {
+    const projectId = playtestTraceMatch[1];
+    const questId = playtestTraceMatch[2];
+    const playtestId = playtestTraceMatch[3];
+    if (!projectId || !questId || !playtestId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+    if (!playtestTrace) { sendNotFound(response); return; }
+    const playtest = await store.getPlaytest(playtestId);
+    if (!playtest || playtest.projectId !== projectId || playtest.questId !== questId) {
+      sendNotFound(response);
+      return;
+    }
+    const evidence = await playtestTrace.readPlaytestTrace({
+      questId: playtest.questId,
+      releaseId: `playtest-${playtest.playtestId}`,
+      contentHash: playtest.contentHash
+    });
+    sendJson(response, 200, {
+      trace: Object.freeze({
+        identityKind: "frozen_playtest",
+        publishedRelease: false,
+        playtest: playtestView(playtest),
+        runtimePinnedRelease: evidence.runtimePinnedRelease,
+        sessions: evidence.sessions,
+        hasMoreSessions: evidence.hasMoreSessions
+      })
+    });
     return;
   }
 
@@ -889,7 +959,7 @@ function requireIdempotencyKey(request: any, response: any): string | null {
 }
 
 async function requireJsonObject(request: any, response: any): Promise<Record<string, any> | null> {
-  const body = await readJsonBody(request);
+  const body = await readJsonBody(request, controlBodyLimit(request));
   if (!body.ok) {
     sendJson(response, body.status, { error: { code: body.code } });
     return null;
@@ -901,7 +971,15 @@ async function requireJsonObject(request: any, response: any): Promise<Record<st
   return body.value;
 }
 
-async function readJsonBody(request: any): Promise<
+function controlBodyLimit(request: any): number {
+  const rawUrl = typeof request?.url === "string" ? request.url : "";
+  const pathname = rawUrl.split("?", 1)[0] ?? "";
+  return /^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/.test(pathname)
+    ? MAX_CONTROL_IMPORT_BODY_CHARS
+    : MAX_CONTROL_BODY_CHARS;
+}
+
+async function readJsonBody(request: any, maxChars = MAX_CONTROL_BODY_CHARS): Promise<
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly status: number; readonly code: string }
 > {
@@ -913,7 +991,7 @@ async function readJsonBody(request: any): Promise<
   let body = "";
   for await (const chunk of request) {
     body += String(chunk);
-    if (body.length > MAX_CONTROL_BODY_CHARS) {
+    if (body.length > maxChars) {
       return Object.freeze({ ok: false, status: 413, code: "BODY_TOO_LARGE" });
     }
   }

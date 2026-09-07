@@ -6,6 +6,7 @@ import {
   type QuestRelease
 } from "@living-history/contracts";
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
+import { analyzeDraftBlockReferences } from "./draft-history.js";
 import type {
   ApplyDraftChangesResult,
   ControlStore,
@@ -20,6 +21,8 @@ import type {
   DraftValidationRecord,
   FrozenPlaytestRecord,
   ProjectRecord,
+  RestoreDraftInput,
+  RestoreDraftResult,
   ValidateDraftResult
 } from "./types.js";
 
@@ -28,11 +31,24 @@ interface QuestState {
   readonly history: Map<number, DraftSnapshot>;
 }
 
+interface RestoreReplayRecord {
+  readonly requestHash: string;
+  readonly draft: DraftSnapshot;
+}
+
+interface DraftChangeContext {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly draftRevision: number;
+  readonly entryLocationId: string;
+}
+
 export class MemoryControlStore implements ControlStore {
   readonly #projects = new Map<string, ProjectRecord>();
   readonly #quests = new Map<string, Map<string, QuestState>>();
   readonly #validations = new Map<string, DraftValidationRecord>();
   readonly #playtests = new Map<string, FrozenPlaytestRecord>();
+  readonly #restoreIdempotency = new Map<string, RestoreReplayRecord>();
   #validationCounter = 0;
   #playtestCounter = 0;
 
@@ -115,6 +131,12 @@ export class MemoryControlStore implements ControlStore {
     let title = state.current.title;
     const blocks = state.current.blocks.map((block) => cloneJson(block));
     const errors: string[] = [];
+    const changeContext: DraftChangeContext = Object.freeze({
+      projectId,
+      questId,
+      draftRevision: state.current.draftRevision,
+      entryLocationId: state.current.entryLocationId
+    });
 
     for (let index = 0; index < changeSet.changes.length; index += 1) {
       const change = changeSet.changes[index];
@@ -122,7 +144,7 @@ export class MemoryControlStore implements ControlStore {
         errors.push(`change.missing:${index}`);
         continue;
       }
-      const error = applyTrialChange(change, blocks, (nextTitle) => { title = nextTitle; });
+      const error = applyTrialChange(change, blocks, (nextTitle) => { title = nextTitle; }, changeContext);
       if (error) errors.push(`${error}:${index}`);
     }
     if (errors.length > 0) return invalidChanges(errors);
@@ -136,10 +158,62 @@ export class MemoryControlStore implements ControlStore {
       blocks
     });
     if (!built.ok) return invalidChanges(built.errors);
+    if (state.current.draftRevision !== changeSet.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentRevision: state.current.draftRevision });
+    }
 
     state.current = built.snapshot;
     state.history.set(built.snapshot.draftRevision, built.snapshot);
     return frozen({ kind: "updated", draft: cloneAndFreeze(built.snapshot) });
+  }
+
+  async restoreDraft(projectId: string, questId: string, input: RestoreDraftInput): Promise<RestoreDraftResult> {
+    if (!isRestoreDraftInput(input) || !isId(projectId) || !isId(questId)) return frozen({ kind: "invalid_request" });
+    if (!this.#projects.has(projectId)) return frozen({ kind: "project_not_found" });
+    const state = this.#quests.get(projectId)?.get(questId);
+    if (!state) return frozen({ kind: "quest_not_found" });
+
+    const replayKey = restoreKey(projectId, questId, input.idempotencyKey);
+    const replay = this.#restoreIdempotency.get(replayKey);
+    if (replay) {
+      return replay.requestHash === input.requestHash
+        ? frozen({ kind: "replay", draft: cloneAndFreeze(replay.draft) })
+        : frozen({ kind: "idempotency_key_reused" });
+    }
+
+    const source = state.history.get(input.sourceRevision);
+    if (!source) return frozen({ kind: "source_revision_not_found" });
+    if (state.current.draftRevision !== input.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentRevision: state.current.draftRevision });
+    }
+    if (input.baseRevision === Number.MAX_SAFE_INTEGER) return frozen({ kind: "invalid_request" });
+
+    const built = await buildSnapshot({
+      projectId,
+      questId,
+      draftRevision: input.baseRevision + 1,
+      title: source.title,
+      entryLocationId: source.entryLocationId,
+      blocks: source.blocks
+    });
+    if (!built.ok) return frozen({ kind: "invalid_request" });
+
+    // Another identical worker may have committed while canonical compile awaited.
+    // Observe its durable idempotency result before treating the moved revision as a conflict.
+    const racedReplay = this.#restoreIdempotency.get(replayKey);
+    if (racedReplay) {
+      return racedReplay.requestHash === input.requestHash
+        ? frozen({ kind: "replay", draft: cloneAndFreeze(racedReplay.draft) })
+        : frozen({ kind: "idempotency_key_reused" });
+    }
+    if (state.current.draftRevision !== input.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentRevision: state.current.draftRevision });
+    }
+
+    state.current = built.snapshot;
+    state.history.set(built.snapshot.draftRevision, built.snapshot);
+    this.#restoreIdempotency.set(replayKey, cloneAndFreeze({ requestHash: input.requestHash, draft: built.snapshot }));
+    return frozen({ kind: "restored", draft: cloneAndFreeze(built.snapshot) });
   }
 
   async validateDraft(projectId: string, questId: string, draftRevision: number): Promise<ValidateDraftResult> {
@@ -311,7 +385,8 @@ function makeRelease(questId: string, title: string, entryLocationId: string, bl
 function applyTrialChange(
   change: DraftChange,
   blocks: Block[],
-  setTitle: (title: string) => void
+  setTitle: (title: string) => void,
+  context: DraftChangeContext
 ): string | null {
   if (!isRecord(change) || typeof change.kind !== "string") return "change.shape";
   if (change.kind === "quest.title.set") {
@@ -337,6 +412,21 @@ function applyTrialChange(
     if (!hasExactKeys(change, ["kind", "blockId"]) || !isId(change.blockId)) return "change.block_id";
     const index = blocks.findIndex((block) => block.id === change.blockId);
     if (index < 0) return "change.block_not_found";
+    const analysis = analyzeDraftBlockReferences({
+      projectId: context.projectId,
+      questId: context.questId,
+      draftRevision: context.draftRevision,
+      title: "deletion-preflight",
+      entryLocationId: context.entryLocationId,
+      blocks,
+      contentHash: "deletion-preflight"
+    }, change.blockId);
+    if (!analysis.safeToDelete) {
+      const reasons = analysis.references
+        .map((reference) => `${reference.sourceKind}:${reference.sourceId}:${reference.path}`)
+        .join(",");
+      return `change.block_referenced[${reasons}]`;
+    }
     blocks.splice(index, 1);
     return null;
   }
@@ -350,6 +440,21 @@ function isDraftChangeSet(value: unknown): value is DraftChangeSet {
     && Array.isArray(value.changes)
     && value.changes.length >= 1
     && value.changes.length <= 100;
+}
+
+function isRestoreDraftInput(value: unknown): value is RestoreDraftInput {
+  return isRecord(value)
+    && hasExactKeys(value, ["sourceRevision", "baseRevision", "idempotencyKey", "requestHash"])
+    && isNonNegativeSafeInteger(value.sourceRevision)
+    && isNonNegativeSafeInteger(value.baseRevision)
+    && typeof value.idempotencyKey === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value.idempotencyKey)
+    && typeof value.requestHash === "string"
+    && /^[a-f0-9]{64}$/.test(value.requestHash);
+}
+
+function restoreKey(projectId: string, questId: string, idempotencyKey: string): string {
+  return `${projectId}\u0000${questId}\u0000${idempotencyKey}`;
 }
 
 function invalidQuest(errors: readonly string[]): CreateQuestResult {

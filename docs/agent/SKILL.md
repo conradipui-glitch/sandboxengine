@@ -94,9 +94,17 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests` — Owner/editor создание квеста с начальным draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot доступного проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft/history` — Постраничная история immutable draft revisions доступного проекта
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft/compare` — Серверное сравнение двух конкретных draft revisions без автоматического merge
+- `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления
+- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/restore` — Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS
+- `POST /control/v1/projects/{projectId}/quests/{sourceQuestId}/clone` — Owner/editor idempotent clone текущего source draft в независимый quest с remap внутренних block IDs
+- `GET /control/v1/projects/{projectId}/quests/{questId}/export` — Owner/editor экспорт точной immutable draft revision или exact immutable release как deterministic inert .lhquest.zip package
+- `POST /control/v1/projects/{projectId}/imports` — Owner/editor bounded fail-closed import .lhquest.zip в новый unpublished quest draft
 - `POST /control/v1/projects/{projectId}/quests/{questId}/validations` — Проверка конкретной draft revision участником проекта и фиксация immutable report
 - `POST /control/v1/projects/{projectId}/quests/{questId}/playtests` — Создание frozen playtest участником проекта из проверенного draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}` — Чтение безопасных метаданных frozen playtest доступного проекта
+- `GET /control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace` — Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных
 - `GET /control/v1/projects/{projectId}/quests/{questId}/releases` — Чтение immutable release summaries, current pointer и publication status участником проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/releases` — Owner/editor сборка immutable release из точной успешной validation и compiled artifact hash
 - `POST /control/v1/projects/{projectId}/quests/{questId}/publish` — Owner-only атомарная публикация совместимого release через expected-current compare-and-set

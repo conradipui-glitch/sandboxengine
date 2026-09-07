@@ -186,6 +186,83 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
+      "get": {
+        "operationId": "control_draft_history",
+        "summary": "Постраничная история immutable draft revisions доступного проекта",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/compare": {
+      "get": {
+        "operationId": "control_draft_compare",
+        "summary": "Серверное сравнение двух конкретных draft revisions без автоматического merge",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/references": {
+      "get": {
+        "operationId": "control_draft_references",
+        "summary": "Typed preflight зависимостей блока и объяснение безопасности удаления",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/restore": {
+      "post": {
+        "operationId": "control_draft_restore",
+        "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{sourceQuestId}/clone": {
+      "post": {
+        "operationId": "control_quest_clone",
+        "summary": "Owner/editor idempotent clone текущего source draft в независимый quest с remap внутренних block IDs",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/export": {
+      "get": {
+        "operationId": "control_quest_export",
+        "summary": "Owner/editor экспорт точной immutable draft revision или exact immutable release как deterministic inert .lhquest.zip package",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/imports": {
+      "post": {
+        "operationId": "control_imports_create",
+        "summary": "Owner/editor bounded fail-closed import .lhquest.zip в новый unpublished quest draft",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/validations": {
       "post": {
         "operationId": "control_validations_create",
@@ -212,6 +289,17 @@
       "get": {
         "operationId": "control_playtests_get",
         "summary": "Чтение безопасных метаданных frozen playtest доступного проекта",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace": {
+      "get": {
+        "operationId": "control_playtests_trace",
+        "summary": "Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных",
         "responses": {
           "200": {
             "description": "Successful response"

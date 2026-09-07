@@ -1,9 +1,15 @@
 import type { DraftChange } from "@living-history/control";
+import {
+  loadConflictState,
+  renderConflictPanel,
+  type ConflictState
+} from "./conflict.js";
 import type { ActionBlock } from "@living-history/contracts";
 import {
   ControlApiClient,
   ControlApiError,
   type DraftView,
+  type PlaytestTraceView,
   type PlaytestView,
   type ProjectView,
   type QuestSummaryView,
@@ -17,12 +23,34 @@ import {
   replacePaintActionCost,
   resourceBlocks
 } from "./forms.js";
-
-interface ConflictState {
-  readonly changes: readonly DraftChange[];
-  readonly previousRevision: number;
-  readonly currentRevision: number;
-}
+import {
+  loadVersionsReadModel,
+  renderVersionsPanel,
+  type PublicationReceipt,
+  type PublishReportIntent,
+  type ReleaseBuildIntent,
+  type RestoreIntent,
+  type VersionsReadModel
+} from "./versions.js";
+import {
+  authenticatedAccessState,
+  canCreateProject,
+  canEditProject,
+  canTestProject,
+  initialAccessState,
+  loadSelectedProjectAccess,
+  probeStudioAccess,
+  renderAccessPanel,
+  type StudioAccessState
+} from "./access.js";
+import { renderPlaytestEvidence } from "./playtest-evidence.js";
+import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
+import {
+  downloadQuestExport,
+  fileToBase64,
+  portabilityErrorMessage,
+  renderPortabilityPanel
+} from "./portability.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -32,7 +60,17 @@ interface StudioState {
   draft: DraftView | null;
   validation: ValidationView | null;
   playtest: PlaytestView | null;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "conflict" | "error";
+  playtestTrace: PlaytestTraceView | null;
+  playtestTraceError: string | null;
+  versions: VersionsReadModel | null;
+  versionsError: string | null;
+  access: StudioAccessState;
+  restoreIntent: RestoreIntent | null;
+  releaseBuildIntent: ReleaseBuildIntent | null;
+  publishReport: PublishReportIntent | null;
+  publicationReceipt: PublicationReceipt | null;
+  deletionIntent: DeletionIntent | null;
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -46,6 +84,16 @@ export class StudioApp {
     draft: null,
     validation: null,
     playtest: null,
+    playtestTrace: null,
+    playtestTraceError: null,
+    versions: null,
+    versionsError: null,
+    access: initialAccessState(),
+    restoreIntent: null,
+    releaseBuildIntent: null,
+    publishReport: null,
+    publicationReceipt: null,
+    deletionIntent: null,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -62,6 +110,13 @@ export class StudioApp {
   async start(): Promise<void> {
     this.render();
     try {
+      this.state.access = await probeStudioAccess(this.api);
+      if (this.state.access.mode === "anonymous") {
+        this.state.phase = "idle";
+        this.state.message = "Control требует вход. Введите закрытые Studio credentials.";
+        this.render();
+        return;
+      }
       this.state.projects = await this.api.listProjects();
       this.state.phase = "idle";
       this.state.message = this.state.projects.length === 0
@@ -78,6 +133,90 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "prepare-delete-block") {
+      const blockId = target.dataset.blockId;
+      if (blockId) await this.prepareDeleteBlock(blockId);
+      return;
+    }
+    if (action === "confirm-delete-block") {
+      await this.confirmDeleteBlock();
+      return;
+    }
+    if (action === "cancel-delete-block") {
+      this.state.deletionIntent = null;
+      this.state.message = "Deletion preflight закрыт; draft не изменён.";
+      this.render();
+      return;
+    }
+    if (action === "export-draft") {
+      const revision = Number(target.dataset.revision);
+      await this.exportDraftRevision(revision);
+      return;
+    }
+    if (action === "export-release") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) await this.exportRelease(releaseId);
+      return;
+    }
+    if (action === "refresh-playtest-evidence") {
+      await this.refreshPlaytestEvidence();
+      return;
+    }
+    if (action === "logout") {
+      await this.logout();
+      return;
+    }
+    if (action === "remove-member") {
+      const userId = target.dataset.userId;
+      if (userId) await this.removeProjectMember(userId);
+      return;
+    }
+    if (action === "prepare-publish") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) this.preparePublicationReport("publish", releaseId);
+      return;
+    }
+    if (action === "prepare-rollback") {
+      const releaseId = target.dataset.releaseId;
+      if (releaseId) this.preparePublicationReport("rollback", releaseId);
+      return;
+    }
+    if (action === "confirm-publication") {
+      await this.confirmPublication();
+      return;
+    }
+    if (action === "cancel-publish-report") {
+      this.state.publishReport = null;
+      this.state.message = "Publish report закрыт; current pointer не менялся.";
+      this.render();
+      return;
+    }
+    if (action === "confirm-release-build") {
+      await this.confirmReleaseBuild();
+      return;
+    }
+    if (action === "cancel-release-build") {
+      this.state.releaseBuildIntent = null;
+      this.state.message = "Release build отменён; immutable release не создавался.";
+      this.render();
+      return;
+    }
+    if (action === "prepare-restore") {
+      const sourceRevision = Number(target.dataset.revision);
+      this.prepareRestore(sourceRevision);
+      return;
+    }
+    if (action === "confirm-restore") {
+      await this.confirmRestore();
+      return;
+    }
+    if (action === "cancel-restore") {
+      this.state.restoreIntent = null;
+      this.state.phase = "idle";
+      this.state.message = "Restore отменён; draft не изменён.";
+      this.render();
+      return;
+    }
     if (action === "select-project") {
       const projectId = target.dataset.projectId;
       if (projectId) await this.selectProject(projectId);
@@ -116,6 +255,49 @@ export class StudioApp {
     const data = new FormData(form);
 
     try {
+      if (kind === "login") {
+        const auth = await this.api.login(text(data, "username"), rawText(data, "password"));
+        this.state.access = authenticatedAccessState(this.api, auth);
+        this.state.projects = await this.api.listProjects();
+        const selected = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+        this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, selected);
+        this.state.phase = "idle";
+        this.state.message = selected
+          ? `Вход подтверждён. Текущая роль: ${selected.role}.`
+          : "Вход выполнен. Выберите проект.";
+        this.render();
+        return;
+      }
+
+      if (kind === "clone-quest") {
+        await this.cloneSelectedQuest(text(data, "newQuestId"), text(data, "title"));
+        return;
+      }
+
+      if (kind === "import-quest") {
+        const selected = data.get("archive");
+        if (!(selected instanceof File) || selected.size < 1) throw new Error("Выберите непустой .lhquest.zip файл.");
+        await this.importQuestFile(text(data, "newQuestId"), selected);
+        return;
+      }
+
+      if (kind === "release-build") {
+        this.prepareReleaseBuild(text(data, "releaseId"));
+        return;
+      }
+
+      if (kind === "member-role") {
+        const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+        const userId = text(data, "userId");
+        await this.api.setProjectMemberRole(projectId, userId, projectRole(data, "role"));
+        const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+        this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
+        this.state.phase = "saved";
+        this.state.message = `Роль ${userId} обновлена сервером.`;
+        this.render();
+        return;
+      }
+
       if (kind === "project") {
         const project = await this.api.createProject({
           projectId: text(data, "projectId"),
@@ -142,6 +324,12 @@ export class StudioApp {
         this.state.draft = draft;
         this.state.validation = null;
         this.state.playtest = null;
+        this.state.playtestTrace = null;
+        this.state.playtestTraceError = null;
+        this.state.versions = null;
+        this.state.versionsError = null;
+        this.state.deletionIntent = null;
+        await this.refreshVersions(projectId, questId);
         this.state.phase = "saved";
         this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
         this.render();
@@ -189,6 +377,259 @@ export class StudioApp {
     }
   }
 
+  private prepareReleaseBuild(releaseId: string): void {
+    const draft = requireDraft(this.state.draft);
+    const validation = this.state.validation;
+    if (!validation
+      || validation.status !== "valid"
+      || validation.draftRevision !== draft.draftRevision
+      || validation.contentHash !== draft.contentHash) {
+      throw new Error("Для release build нужна valid validation текущей revision/hash.");
+    }
+    this.state.releaseBuildIntent = Object.freeze({
+      releaseId,
+      draftRevision: draft.draftRevision,
+      draftContentHash: draft.contentHash,
+      validationId: validation.validationId,
+      idempotencyKey: mutationKey("release-build")
+    });
+    this.state.publishReport = null;
+    this.state.message = `Подготовлен immutable release ${releaseId}; build требует отдельного подтверждения.`;
+    this.render();
+  }
+
+  private async confirmReleaseBuild(): Promise<void> {
+    const intent = this.state.releaseBuildIntent;
+    if (!intent) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    const validation = this.state.validation;
+    const stale = draft.draftRevision !== intent.draftRevision
+      || draft.contentHash !== intent.draftContentHash
+      || validation === null
+      || validation.status !== "valid"
+      || validation.validationId !== intent.validationId
+      || validation.draftRevision !== intent.draftRevision
+      || validation.contentHash !== intent.draftContentHash;
+    if (stale) {
+      this.state.releaseBuildIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = "Release build не отправлен: draft/validation уже изменились.";
+      this.render();
+      return;
+    }
+    this.state.phase = "building-release";
+    this.state.message = `Создаём immutable release ${intent.releaseId} из r${intent.draftRevision}…`;
+    this.render();
+    try {
+      const release = await this.api.buildRelease(projectId, questId, {
+        releaseId: intent.releaseId,
+        draftRevision: intent.draftRevision,
+        validationId: intent.validationId
+      }, intent.idempotencyKey);
+      this.state.releaseBuildIntent = null;
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = `Immutable release ${release.releaseId} создан. Он ещё НЕ опубликован.`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private preparePublicationReport(action: "publish" | "rollback", releaseId: string): void {
+    const versions = this.state.versions;
+    const release = versions?.releases.find((item) => item.releaseId === releaseId) ?? null;
+    if (!versions || !release || release.isCurrent) return;
+    if (action === "rollback" && (!release.wasPublished || versions.currentReleaseId === null)) return;
+    if (action === "publish" && release.wasPublished) return;
+    this.state.publishReport = Object.freeze({
+      action,
+      releaseId: release.releaseId,
+      draftRevision: release.draftRevision,
+      draftContentHash: release.draftContentHash,
+      compiledContentHash: release.compiledContentHash,
+      expectedCurrentReleaseId: versions.currentReleaseId,
+      idempotencyKey: mutationKey(action)
+    });
+    this.state.releaseBuildIntent = null;
+    this.state.publicationReceipt = null;
+    this.state.message = `${action === "rollback" ? "Rollback" : "Publish"} report для ${release.releaseId} подготовлен. Current pointer ещё не менялся.`;
+    this.render();
+  }
+
+  private async confirmPublication(): Promise<void> {
+    const report = this.state.publishReport;
+    const versions = this.state.versions;
+    if (!report || !versions) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const release = versions.releases.find((item) => item.releaseId === report.releaseId) ?? null;
+    const stale = versions.currentReleaseId !== report.expectedCurrentReleaseId
+      || release === null
+      || release.isCurrent
+      || release.draftRevision !== report.draftRevision
+      || release.draftContentHash !== report.draftContentHash
+      || release.compiledContentHash !== report.compiledContentHash
+      || (report.action === "rollback" && (!release.wasPublished || report.expectedCurrentReleaseId === null))
+      || (report.action === "publish" && release.wasPublished);
+    if (stale) {
+      this.state.publishReport = null;
+      this.state.publicationReceipt = null;
+      this.state.deletionIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = "Publication report устарел; current release truth изменился. Сформируйте report заново.";
+      this.render();
+      return;
+    }
+
+    this.state.phase = "publishing";
+    this.state.message = `${report.action === "rollback" ? "Rollback" : "Publish"} ${report.releaseId}: ждём server receipt…`;
+    this.render();
+    try {
+      const result = report.action === "rollback"
+        ? await this.api.rollbackRelease(
+            projectId,
+            questId,
+            report.releaseId,
+            report.expectedCurrentReleaseId!,
+            report.idempotencyKey
+          )
+        : await this.api.publishRelease(
+            projectId,
+            questId,
+            report.releaseId,
+            report.expectedCurrentReleaseId,
+            report.idempotencyKey
+          );
+      this.state.publishReport = null;
+      this.state.publicationReceipt = Object.freeze({ action: report.action, releaseId: report.releaseId, result });
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = report.action === "rollback"
+        ? `Rollback ${report.releaseId} подтверждён server receipt; current pointer перечитан.`
+        : `Опубликовано ${report.releaseId}: server receipt получен, current pointer перечитан.`;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 409 && error.code === "CURRENT_RELEASE_CONFLICT") {
+        this.state.publishReport = null;
+        this.state.publicationReceipt = null;
+        await this.refreshVersions(projectId, questId);
+        this.state.phase = "conflict";
+        this.state.message = "Publication CAS conflict: current pointer изменился на сервере. Ничего не переприцелено автоматически.";
+      } else {
+        this.setError(error);
+      }
+    }
+    this.render();
+  }
+
+  private prepareRestore(sourceRevision: number): void {
+    const draft = requireDraft(this.state.draft);
+    if (!Number.isSafeInteger(sourceRevision) || sourceRevision < 0 || sourceRevision === draft.draftRevision) return;
+    this.state.restoreIntent = Object.freeze({
+      sourceRevision,
+      baseRevision: draft.draftRevision,
+      idempotencyKey: mutationKey("restore")
+    });
+    this.state.phase = "idle";
+    this.state.message = `Подготовлен restore r${sourceRevision}. Нужна отдельная подтверждающая операция.`;
+    this.render();
+  }
+
+  private async confirmRestore(): Promise<void> {
+    const intent = this.state.restoreIntent;
+    if (!intent) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    if (draft.draftRevision !== intent.baseRevision) {
+      this.state.restoreIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = `Restore не отправлен: base r${intent.baseRevision}, current r${draft.draftRevision}.`;
+      this.render();
+      return;
+    }
+    this.state.phase = "restoring";
+    this.state.message = `Восстанавливаем r${intent.sourceRevision} поверх base r${intent.baseRevision}…`;
+    this.render();
+    try {
+      const restored = await this.api.restoreDraft(
+        projectId,
+        questId,
+        intent.sourceRevision,
+        intent.baseRevision,
+        intent.idempotencyKey
+      );
+      this.state.draft = restored;
+      this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
+      this.state.conflict = null;
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.refreshVersions(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = `r${intent.sourceRevision} восстановлена как новая r${restored.draftRevision}. Immutable releases не менялись.`;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
+        const fresh = await this.api.getDraft(projectId, questId);
+        this.state.draft = fresh;
+        this.state.restoreIntent = null;
+        this.state.releaseBuildIntent = null;
+        this.state.publishReport = null;
+        await this.refreshVersions(projectId, questId);
+        this.state.phase = "conflict";
+        this.state.message = `Restore не выполнен: сервер уже на r${fresh.draftRevision}. Ничего не перезаписано.`;
+      } else {
+        this.setError(error);
+      }
+    }
+    this.render();
+  }
+
+  private async removeProjectMember(userId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    try {
+      await this.api.removeProjectMember(projectId, userId);
+      const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+      this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
+      this.state.phase = "saved";
+      this.state.message = `Участник ${userId} удалён сервером.`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private async logout(): Promise<void> {
+    try {
+      await this.api.logout();
+      this.state.access = await probeStudioAccess(this.api);
+      this.state.projects = [];
+      this.state.selectedProjectId = null;
+      this.state.quests = [];
+      this.state.selectedQuestId = null;
+      this.state.draft = null;
+      this.state.validation = null;
+      this.state.playtest = null;
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = null;
+      this.state.versions = null;
+      this.state.versionsError = null;
+      this.state.conflict = null;
+      this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
+      this.state.publicationReceipt = null;
+      this.state.deletionIntent = null;
+      this.state.phase = "idle";
+      this.state.message = "Сессия завершена.";
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
   private async selectProject(projectId: string): Promise<void> {
     this.state.phase = "loading";
     this.state.message = "Загружаем квесты…";
@@ -197,10 +638,18 @@ export class StudioApp {
     this.state.draft = null;
     this.state.validation = null;
     this.state.playtest = null;
+    this.state.versions = null;
+    this.state.versionsError = null;
     this.state.conflict = null;
+    this.state.restoreIntent = null;
+    this.state.releaseBuildIntent = null;
+    this.state.publishReport = null;
+    this.state.publicationReceipt = null;
     this.render();
     try {
       this.state.quests = await this.api.listQuests(projectId);
+      const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+      this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
       this.state.phase = "idle";
       this.state.message = this.state.quests.length === 0 ? "В проекте пока нет квестов." : "Выберите квест.";
     } catch (error) {
@@ -216,12 +665,21 @@ export class StudioApp {
     this.state.selectedQuestId = questId;
     this.state.validation = null;
     this.state.playtest = null;
+    this.state.versions = null;
+    this.state.versionsError = null;
     this.state.conflict = null;
+    this.state.restoreIntent = null;
+    this.state.releaseBuildIntent = null;
+    this.state.publishReport = null;
+    this.state.publicationReceipt = null;
     this.render();
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
+      await this.refreshVersions(projectId, questId);
       this.state.phase = "idle";
-      this.state.message = "Draft загружен с Control API.";
+      this.state.message = this.state.versionsError === null
+        ? "Draft и Versions загружены с Control API."
+        : "Draft загружен; Versions временно недоступны.";
     } catch (error) {
       this.setError(error);
     }
@@ -244,17 +702,26 @@ export class StudioApp {
       this.state.phase = "saved";
       this.state.message = `Сохранено. Текущая revision: ${this.state.draft.draftRevision}.`;
       this.state.conflict = null;
+      this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
+      await this.refreshVersions(projectId, questId);
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
+        await this.refreshVersions(projectId, questId);
+        this.state.restoreIntent = null;
         this.state.phase = "conflict";
         this.state.message = `Draft изменился на сервере: ${draft.draftRevision} → ${fresh.draftRevision}. Ничего не перезаписано.`;
-        this.state.conflict = Object.freeze({
+        this.state.conflict = await loadConflictState(
+          this.api,
+          projectId,
+          questId,
           changes,
-          previousRevision: draft.draftRevision,
-          currentRevision: fresh.draftRevision
-        });
+          draft.draftRevision,
+          fresh.draftRevision
+        );
       } else {
         this.setError(error);
       }
@@ -267,6 +734,20 @@ export class StudioApp {
     if (!conflict) return;
     this.state.conflict = null;
     await this.saveChanges(conflict.changes);
+  }
+
+  private async refreshVersions(projectId: string, questId: string): Promise<void> {
+    this.state.versions = null;
+    this.state.versionsError = null;
+    try {
+      this.state.versions = await loadVersionsReadModel(this.api, projectId, questId);
+    } catch (error) {
+      this.state.versionsError = error instanceof ControlApiError
+        ? `Versions API: ${error.code}.`
+        : error instanceof Error
+          ? `Versions: ${error.message}`
+          : "Versions: неизвестная ошибка.";
+    }
   }
 
   private async validateCurrentDraft(): Promise<void> {
@@ -314,12 +795,156 @@ export class StudioApp {
         draft.draftRevision,
         validation.validationId
       );
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = null;
+      await this.refreshPlaytestEvidence(false);
       this.state.phase = "saved";
-      this.state.message = `Frozen playtest ${this.state.playtest.playtestId} создан.`;
+      this.state.message = `Frozen playtest ${this.state.playtest.playtestId} создан; persisted evidence загружена.`;
     } catch (error) {
       this.setError(error);
     }
     this.render();
+  }
+
+  private async prepareDeleteBlock(blockId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const draft = requireDraft(this.state.draft);
+    try {
+      const analysis = await this.api.analyzeDraftReferences(projectId, questId, draft.draftRevision, blockId);
+      this.state.deletionIntent = Object.freeze({
+        targetBlockId: blockId,
+        baseRevision: draft.draftRevision,
+        analysis
+      });
+      this.state.phase = "idle";
+      this.state.message = analysis.safeToDelete
+        ? `Deletion preflight green для ${blockId} на r${draft.draftRevision}; требуется отдельное подтверждение.`
+        : `Deletion blocked для ${blockId}: ${analysis.references.length} reference(s).`;
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private async confirmDeleteBlock(): Promise<void> {
+    const intent = this.state.deletionIntent;
+    const draft = requireDraft(this.state.draft);
+    if (!intent || !intent.analysis.safeToDelete || !intent.analysis.targetExists) return;
+    if (draft.draftRevision !== intent.baseRevision || intent.analysis.draftRevision !== intent.baseRevision) {
+      this.state.phase = "conflict";
+      this.state.message = `Deletion preflight устарел: r${intent.baseRevision} → r${draft.draftRevision}. Ничего не удалено.`;
+      this.render();
+      return;
+    }
+    const targetBlockId = intent.targetBlockId;
+    this.state.deletionIntent = null;
+    await this.saveChanges([{ kind: "block.remove", blockId: targetBlockId }]);
+  }
+
+  private async cloneSelectedQuest(newQuestId: string, title: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const sourceQuestId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    this.state.phase = "saving";
+    this.state.message = `Clone ${sourceQuestId} → ${newQuestId}…`;
+    this.render();
+    try {
+      const result = await this.api.cloneQuest(projectId, sourceQuestId, { newQuestId, title }, mutationKey("clone"));
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.selectQuest(result.draft.questId);
+      this.state.phase = "saved";
+      this.state.message = `Clone создан из ${sourceQuestId} r${result.sourceRevision} как ${result.draft.questId} r${result.draft.draftRevision}. Source не менялся.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async exportDraftRevision(revision: number): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid draft revision for export.");
+    try {
+      const exported = await this.api.exportDraftQuest(projectId, questId, revision);
+      downloadQuestExport(exported);
+      this.state.phase = "saved";
+      this.state.message = `Exact draft export r${revision}: ${exported.filename}. Ничего не опубликовано.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async exportRelease(releaseId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    try {
+      const exported = await this.api.exportReleaseQuest(projectId, questId, releaseId);
+      downloadQuestExport(exported);
+      this.state.phase = "saved";
+      this.state.message = `Exact immutable release export ${releaseId}: ${exported.filename}. Current pointer не менялся.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async importQuestFile(newQuestId: string, file: File): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    this.state.phase = "saving";
+    this.state.message = `Передаём ${file.name} серверному bounded import parser…`;
+    this.render();
+    try {
+      const archiveBase64 = await fileToBase64(file);
+      const result = await this.api.importQuest(projectId, newQuestId, archiveBase64, mutationKey("import"));
+      this.state.quests = await this.api.listQuests(projectId);
+      await this.selectQuest(result.draft.questId);
+      this.state.phase = "saved";
+      this.state.message = `Import ${result.sourceQuestId} r${result.sourceRevision} создан как новый draft ${result.draft.questId} r${result.draft.draftRevision}. Не опубликован.`;
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = portabilityErrorMessage(error);
+    }
+    this.render();
+  }
+
+  private async refreshPlaytestEvidence(renderAfter = true): Promise<void> {
+    const playtest = this.state.playtest;
+    if (!playtest) return;
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    this.state.playtestTraceError = null;
+    try {
+      const trace = await this.api.getPlaytestTrace(projectId, questId, playtest.playtestId);
+      const identityMatches = trace.playtest.playtestId === playtest.playtestId
+        && trace.playtest.draftRevision === playtest.draftRevision
+        && trace.playtest.contentHash === playtest.contentHash
+        && trace.playtest.validationId === playtest.validationId
+        && trace.playtest.compiledContentHash === playtest.compiledContentHash
+        && trace.runtimePinnedRelease.questId === playtest.questId
+        && trace.runtimePinnedRelease.releaseId === `playtest-${playtest.playtestId}`
+        && trace.runtimePinnedRelease.contentHash === playtest.contentHash
+        && trace.identityKind === "frozen_playtest"
+        && trace.publishedRelease === false;
+      if (!identityMatches) throw new Error("Playtest trace identity mismatch.");
+      this.state.playtestTrace = trace;
+      if (renderAfter) {
+        const completed = trace.sessions.reduce((sum, session) => sum + session.operations.length, 0);
+        this.state.message = `Playtest evidence обновлена: ${trace.sessions.length} sessions · ${completed} completed ops.`;
+      }
+    } catch (error) {
+      this.state.playtestTrace = null;
+      this.state.playtestTraceError = error instanceof ControlApiError
+        ? `Playtest trace API: ${error.code}.`
+        : error instanceof Error
+          ? `Playtest trace: ${error.message}`
+          : "Playtest trace: неизвестная ошибка.";
+      if (renderAfter) this.state.message = "Persisted playtest evidence недоступна; frozen playtest не изменён.";
+    }
+    if (renderAfter) this.render();
   }
 
   private setError(error: unknown): void {
@@ -339,6 +964,10 @@ export class StudioApp {
     const draft = this.state.draft;
     const resources = draft ? resourceBlocks(draft.blocks) : [];
     const actions = draft ? paintActionBlocks(draft.blocks) : [];
+    const allowProjectCreate = canCreateProject(this.state.access);
+    const allowEdit = canEditProject(this.state.access, project);
+    const allowTest = canTestProject(this.state.access, project);
+    const allowPublish = allowEdit && project?.role === "owner";
 
     this.root.innerHTML = `
       <div class="studio-shell">
@@ -351,13 +980,14 @@ export class StudioApp {
         </header>
 
         <aside class="sidebar" aria-label="Навигация по проектам">
+          ${renderAccessPanel(this.state.access, project)}
           <section class="sidebar-section">
             <div class="section-heading-row"><h2>Проекты</h2><span>${this.state.projects.length}</span></div>
             <div class="rail-list">${this.state.projects.map((item) => `
               <button class="rail-item ${item.projectId === this.state.selectedProjectId ? "active" : ""}" data-action="select-project" data-project-id="${escapeAttr(item.projectId)}">
-                <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.projectId)}</small>
+                <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.projectId)} · ${escapeHtml(item.role)}</small>
               </button>`).join("") || `<div class="empty-rail">Пока пусто</div>`}</div>
-            ${projectForm()}
+            ${allowProjectCreate ? projectForm() : ""}
           </section>
 
           ${project ? `<section class="sidebar-section">
@@ -366,7 +996,7 @@ export class StudioApp {
               <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
                 <strong>${escapeHtml(item.title)}</strong><small>r${item.draftRevision} · ${escapeHtml(item.questId)}</small>
               </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
-            ${questForm()}
+            ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
           </section>` : ""}
         </aside>
 
@@ -381,7 +1011,25 @@ export class StudioApp {
               <div class="draft-meta"><span>revision <strong>${draft.draftRevision}</strong></span><code title="content hash">${escapeHtml(shortHash(draft.contentHash))}</code></div>
             </section>
 
-            ${this.state.conflict ? conflictPanel(this.state.conflict) : ""}
+            ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
+
+            ${renderVersionsPanel(
+              this.state.versions,
+              draft,
+              saveStateLabel(this.state.phase),
+              this.state.versionsError,
+              allowEdit,
+              this.state.restoreIntent,
+              allowEdit,
+              this.state.validation,
+              this.state.releaseBuildIntent,
+              allowPublish,
+              this.state.publishReport,
+              this.state.publicationReceipt
+            )}
+
+            ${renderPortabilityPanel(draft, this.state.versions, allowEdit)}
+            ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
             <div class="editor-grid">
               <section class="editor-section">
@@ -390,14 +1038,17 @@ export class StudioApp {
                   <article class="entity-row">
                     <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.id)} · ${escapeHtml(resource.data.unit)}</small></div>
                     <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
+                    ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Delete…</button>` : ""}
                   </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
-                ${resourceForm()}
+                ${allowEdit ? resourceForm() : `<p class="form-hint">Read-only: изменения draft недоступны для текущей роли/session.</p>`}
               </section>
 
               <section class="editor-section">
                 <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Bounded core.paint без произвольного JSON.</p></div></div>
-                <div class="entity-list">${actions.map((action) => paintActionRow(action)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
-                ${resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`}
+                <div class="entity-list">${actions.map((action) => paintActionRow(action, allowEdit)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
+                ${allowEdit
+                  ? (resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`)
+                  : `<p class="form-hint">Read-only: изменение действий недоступно для текущей роли/session.</p>`}
               </section>
             </div>
 
@@ -406,9 +1057,12 @@ export class StudioApp {
                 <h2>Проверка квеста</h2>
                 <p>Validation всегда привязана к конкретной server revision и content hash.</p>
               </div>
-              <button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>
+              ${allowTest
+                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
+                : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
               ${validationPanel(this.state.validation, draft)}
-              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase)}
+              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest)}
+              ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
             </section>
           ` : project ? `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите существующий квест или создайте новый в левой панели.</p></div>
@@ -424,6 +1078,17 @@ export class StudioApp {
       element?.focus();
     }
   }
+}
+
+function saveStateLabel(phase: StudioState["phase"]): string {
+  if (phase === "saving") return "saving…";
+  if (phase === "saved") return "server saved";
+  if (phase === "restoring") return "restoring…";
+  if (phase === "building-release") return "building immutable release…";
+  if (phase === "publishing") return "awaiting publication receipt…";
+  if (phase === "conflict") return "conflict — server draft preserved";
+  if (phase === "error") return "check status message";
+  return "server state";
 }
 
 function projectForm(): string {
@@ -476,22 +1141,15 @@ function paintActionForm(resources: ReturnType<typeof resourceBlocks>): string {
   </form>`;
 }
 
-function paintActionRow(action: ActionBlock): string {
+function paintActionRow(action: ActionBlock, editable: boolean): string {
   return `<article class="entity-row action-row">
     <div><strong>${escapeHtml(action.title)}</strong><small>${escapeHtml(action.id)} · ${escapeHtml(action.data.resourceId)} · ${action.data.durationSecondsPerUnit}s</small></div>
-    <form data-form="paint-cost" class="cost-form">
+    ${editable ? `<div class="action-edit-controls"><form data-form="paint-cost" class="cost-form">
       <input type="hidden" name="blockId" value="${escapeAttr(action.id)}">
       <label>Стоимость<input data-focus-key="cost-${escapeAttr(action.id)}" name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="${action.data.resourceUnitsPerUnit}"></label>
       <button type="submit">Сохранить</button>
-    </form>
+    </form><button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(action.id)}">Delete…</button></div>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
   </article>`;
-}
-
-function conflictPanel(conflict: ConflictState): string {
-  return `<section class="conflict-panel" role="alert">
-    <div><strong>Обнаружена новая server revision</strong><p>Локальная правка была подготовлена для r${conflict.previousRevision}, но сервер уже на r${conflict.currentRevision}. Автоматического overwrite не было.</p></div>
-    <div class="button-row"><button class="primary" data-action="retry-conflict">Повторить правку на r${conflict.currentRevision}</button><button data-action="cancel-conflict">Отменить локальную правку</button></div>
-  </section>`;
 }
 
 function validationPanel(validation: ValidationView | null, draft: DraftView): string {
@@ -509,7 +1167,8 @@ function playtestPanel(
   playtest: PlaytestView | null,
   validation: ValidationView | null,
   draft: DraftView,
-  phase: StudioState["phase"]
+  phase: StudioState["phase"],
+  canMutate: boolean
 ): string {
   const validationCurrent = validation !== null
     && validation.status === "valid"
@@ -526,7 +1185,8 @@ function playtestPanel(
     return `<div class="playtest-result">
       <strong>Frozen playtest готов</strong>
       <span>revision ${playtest.draftRevision} · ${id}</span>
-      <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится.</p>
+      <p>validation <code>${escapeHtml(playtest.validationId)}</code> · compiled <code>${escapeHtml(shortHash(playtest.compiledContentHash))}</code></p>
+      <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится. Это frozen playtest, а не published release.</p>
       <div class="launch-commands">
         <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
         <code>macOS/Linux: LH_PLAYTEST_ID=${attrId} npm run dev:player</code>
@@ -538,6 +1198,7 @@ function playtestPanel(
     ? `<p class="stale-note">Последний frozen playtest относится к revision ${playtest.draftRevision}; он остаётся неизменным.</p>`
     : "";
   if (!validationCurrent) return `<div class="playtest-result">${oldPlaytest}</div>`;
+  if (!canMutate) return `<div class="playtest-result">${oldPlaytest}<p>Playtest mutation недоступна для текущей роли/session.</p></div>`;
   return `<div class="playtest-result">
     ${oldPlaytest}
     <strong>Revision можно заморозить для Player</strong>
@@ -550,6 +1211,27 @@ function text(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Поле ${name} обязательно.`);
   return value.trim();
+}
+
+function mutationKey(prefix: string): string {
+  if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
+    throw new Error("Secure browser UUID unavailable for idempotency key.");
+  }
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function projectRole(data: FormData, name: string): ProjectView["role"] {
+  const value = text(data, name);
+  if (value !== "owner" && value !== "editor" && value !== "tester") {
+    throw new Error(`Поле ${name} содержит неизвестную роль.`);
+  }
+  return value;
+}
+
+function rawText(data: FormData, name: string): string {
+  const value = data.get(name);
+  if (typeof value !== "string" || value.length === 0) throw new Error(`Поле ${name} обязательно.`);
+  return value;
 }
 
 function integer(data: FormData, name: string): number {

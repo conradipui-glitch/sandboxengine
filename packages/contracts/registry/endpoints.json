@@ -145,6 +145,62 @@
       "summary": "Owner/editor атомарное применение change set к указанной draft revision"
     },
     {
+      "id": "control.draft.history",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Постраничная история immutable draft revisions доступного проекта"
+    },
+    {
+      "id": "control.draft.compare",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/compare",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Серверное сравнение двух конкретных draft revisions без автоматического merge"
+    },
+    {
+      "id": "control.draft.references",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/references",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Typed preflight зависимостей блока и объяснение безопасности удаления"
+    },
+    {
+      "id": "control.draft.restore",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/restore",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor idempotent восстановление прошлой revision как новой revision по baseRevision CAS"
+    },
+    {
+      "id": "control.quest.clone",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{sourceQuestId}/clone",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor idempotent clone текущего source draft в независимый quest с remap внутренних block IDs"
+    },
+    {
+      "id": "control.quest.export",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/export",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor экспорт точной immutable draft revision или exact immutable release как deterministic inert .lhquest.zip package"
+    },
+    {
+      "id": "control.imports.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/imports",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor bounded fail-closed import .lhquest.zip в новый unpublished quest draft"
+    },
+    {
       "id": "control.validations.create",
       "method": "POST",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/validations",
@@ -167,6 +223,14 @@
       "readiness": "available",
       "successStatus": 200,
       "summary": "Чтение безопасных метаданных frozen playtest доступного проекта"
+    },
+    {
+      "id": "control.playtests.trace",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/playtests/{playtestId}/trace",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Чтение bounded persisted Runtime evidence для exact frozen playtest без replay gameplay и без guest credential/idempotency/fencing данных"
     },
     {
       "id": "control.releases.list",

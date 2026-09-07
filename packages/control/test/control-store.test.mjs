@@ -120,7 +120,7 @@ test("B05-01 referenced resource cannot be removed and draft stays unchanged", a
     changes: [{ kind: "block.remove", blockId: "blue_paint" }]
   });
   assert.equal(removed.kind, "invalid_change_set");
-  assert.ok(removed.errors.includes("quest.references"));
+  assert.deepEqual(removed.errors, ["change.block_referenced[block:paint:data.resourceId]:0"]);
 
   const current = await store.getDraft("project", "quest");
   assert.equal(current.draftRevision, 1);

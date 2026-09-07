@@ -1,9 +1,69 @@
-export { MemoryControlStore } from "./memory-store.js";
+export {
+  LHQUEST_FORMAT_VERSION,
+  LHQUEST_MEDIA_TYPE,
+  buildDraftQuestExport,
+  type BuildDraftQuestExportResult,
+  type DraftQuestExport,
+  type LhquestDraftManifest
+} from "./quest-export.js";
+export {
+  buildReleaseQuestExport,
+  type BuildReleaseQuestExportResult,
+  type LhquestReleaseManifest,
+  type ReleaseQuestExport
+} from "./release-export.js";
+export {
+  parseLhquestDraftPackage,
+  type LhquestPackageFailureCode,
+  type ParsedLhquestDraftPackage,
+  type ParseLhquestPackageResult
+} from "./lhquest-package.js";
+export {
+  MAX_LHQUEST_ARCHIVE_BYTES,
+  MAX_LHQUEST_ENTRY_BYTES,
+  MAX_LHQUEST_UNPACKED_BYTES,
+  MAX_LHQUEST_FILE_COUNT
+} from "./zip-read.js";
+export {
+  MemoryControlStore,
+  SQLiteControlStore,
+  importQuestPackageFromStore,
+  type ImportCapableControlStore,
+  type ImportQuestDispatchResult,
+  type ImportQuestPackageInput,
+  type ImportQuestPackageResult
+} from "./portability-store.js";
+export {
+  cloneQuestFromStore,
+  type CloneCapableControlStore,
+  type CloneQuestDispatchResult,
+  type CloneQuestInput,
+  type CloneQuestResult
+} from "./quest-clone.js";
 export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
-  SQLiteControlStore,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
+export {
+  draftHistoryEntry,
+  compareDraftSnapshots,
+  analyzeDraftBlockReferences,
+  type DraftHistoryEntry,
+  type DraftComparison,
+  type DraftReference,
+  type DraftReferenceAnalysis
+} from "./draft-history.js";
+export {
+  DEFAULT_DRAFT_HISTORY_LIMIT,
+  MAX_DRAFT_HISTORY_LIMIT,
+  listDraftHistory,
+  compareDraftRevisions,
+  analyzeDraftReferences,
+  type DraftHistoryPageOptions,
+  type ListDraftHistoryResult,
+  type CompareDraftRevisionsResult,
+  type AnalyzeDraftReferencesResult
+} from "./draft-history-service.js";
 export {
   CONTROL_ROLES,
   createControlOpaqueSecret,
@@ -67,5 +127,7 @@ export type {
   DraftValidationRecord,
   FrozenPlaytestRecord,
   ProjectRecord,
+  RestoreDraftInput,
+  RestoreDraftResult,
   ValidateDraftResult
 } from "./types.js";

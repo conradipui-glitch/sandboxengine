@@ -8,6 +8,20 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
+const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
+  "content-type",
+  "cookie",
+  "origin",
+  "x-csrf-token",
+  "idempotency-key"
+] as const);
+const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
+  "set-cookie",
+  "retry-after",
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+  "vary"
+] as const);
 
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
@@ -73,8 +87,10 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
   const method = String(request.method ?? "GET").toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
   const headers: Record<string, string> = {};
-  const contentType = request.headers?.["content-type"];
-  if (typeof contentType === "string") headers["content-type"] = contentType;
+  for (const name of CONTROL_REQUEST_HEADER_ALLOWLIST) {
+    const value = request.headers?.[name];
+    if (typeof value === "string") headers[name] = value;
+  }
 
   let upstream: Response;
   try {
@@ -88,6 +104,10 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
   response.statusCode = upstream.status;
   response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/json; charset=utf-8");
   response.setHeader("cache-control", "no-store");
+  for (const name of CONTROL_RESPONSE_HEADER_ALLOWLIST) {
+    const value = upstream.headers.get(name);
+    if (value !== null) response.setHeader(name, value);
+  }
   response.end(payload);
 }
 
