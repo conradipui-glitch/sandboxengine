@@ -27,6 +27,17 @@ import {
   renderVersionsPanel,
   type VersionsReadModel
 } from "./versions.js";
+import {
+  authenticatedAccessState,
+  canCreateProject,
+  canEditProject,
+  canTestProject,
+  initialAccessState,
+  loadSelectedProjectAccess,
+  probeStudioAccess,
+  renderAccessPanel,
+  type StudioAccessState
+} from "./access.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -38,6 +49,7 @@ interface StudioState {
   playtest: PlaytestView | null;
   versions: VersionsReadModel | null;
   versionsError: string | null;
+  access: StudioAccessState;
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
@@ -54,6 +66,7 @@ export class StudioApp {
     playtest: null,
     versions: null,
     versionsError: null,
+    access: initialAccessState(),
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -70,6 +83,13 @@ export class StudioApp {
   async start(): Promise<void> {
     this.render();
     try {
+      this.state.access = await probeStudioAccess(this.api);
+      if (this.state.access.mode === "anonymous") {
+        this.state.phase = "idle";
+        this.state.message = "Control требует вход. Введите закрытые Studio credentials.";
+        this.render();
+        return;
+      }
       this.state.projects = await this.api.listProjects();
       this.state.phase = "idle";
       this.state.message = this.state.projects.length === 0
@@ -86,6 +106,10 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "logout") {
+      await this.logout();
+      return;
+    }
     if (action === "select-project") {
       const projectId = target.dataset.projectId;
       if (projectId) await this.selectProject(projectId);
@@ -124,6 +148,20 @@ export class StudioApp {
     const data = new FormData(form);
 
     try {
+      if (kind === "login") {
+        const auth = await this.api.login(text(data, "username"), rawText(data, "password"));
+        this.state.access = authenticatedAccessState(this.api, auth);
+        this.state.projects = await this.api.listProjects();
+        const selected = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+        this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, selected);
+        this.state.phase = "idle";
+        this.state.message = selected
+          ? `Вход подтверждён. Текущая роль: ${selected.role}.`
+          : "Вход выполнен. Выберите проект.";
+        this.render();
+        return;
+      }
+
       if (kind === "project") {
         const project = await this.api.createProject({
           projectId: text(data, "projectId"),
@@ -200,6 +238,28 @@ export class StudioApp {
     }
   }
 
+  private async logout(): Promise<void> {
+    try {
+      await this.api.logout();
+      this.state.access = await probeStudioAccess(this.api);
+      this.state.projects = [];
+      this.state.selectedProjectId = null;
+      this.state.quests = [];
+      this.state.selectedQuestId = null;
+      this.state.draft = null;
+      this.state.validation = null;
+      this.state.playtest = null;
+      this.state.versions = null;
+      this.state.versionsError = null;
+      this.state.conflict = null;
+      this.state.phase = "idle";
+      this.state.message = "Сессия завершена.";
+    } catch (error) {
+      this.setError(error);
+    }
+    this.render();
+  }
+
   private async selectProject(projectId: string): Promise<void> {
     this.state.phase = "loading";
     this.state.message = "Загружаем квесты…";
@@ -214,6 +274,8 @@ export class StudioApp {
     this.render();
     try {
       this.state.quests = await this.api.listQuests(projectId);
+      const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+      this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
       this.state.phase = "idle";
       this.state.message = this.state.quests.length === 0 ? "В проекте пока нет квестов." : "Выберите квест.";
     } catch (error) {
@@ -376,6 +438,9 @@ export class StudioApp {
     const draft = this.state.draft;
     const resources = draft ? resourceBlocks(draft.blocks) : [];
     const actions = draft ? paintActionBlocks(draft.blocks) : [];
+    const allowProjectCreate = canCreateProject(this.state.access);
+    const allowEdit = canEditProject(this.state.access, project);
+    const allowTest = canTestProject(this.state.access, project);
 
     this.root.innerHTML = `
       <div class="studio-shell">
@@ -388,13 +453,14 @@ export class StudioApp {
         </header>
 
         <aside class="sidebar" aria-label="Навигация по проектам">
+          ${renderAccessPanel(this.state.access, project)}
           <section class="sidebar-section">
             <div class="section-heading-row"><h2>Проекты</h2><span>${this.state.projects.length}</span></div>
             <div class="rail-list">${this.state.projects.map((item) => `
               <button class="rail-item ${item.projectId === this.state.selectedProjectId ? "active" : ""}" data-action="select-project" data-project-id="${escapeAttr(item.projectId)}">
-                <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.projectId)}</small>
+                <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.projectId)} · ${escapeHtml(item.role)}</small>
               </button>`).join("") || `<div class="empty-rail">Пока пусто</div>`}</div>
-            ${projectForm()}
+            ${allowProjectCreate ? projectForm() : ""}
           </section>
 
           ${project ? `<section class="sidebar-section">
@@ -403,7 +469,7 @@ export class StudioApp {
               <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
                 <strong>${escapeHtml(item.title)}</strong><small>r${item.draftRevision} · ${escapeHtml(item.questId)}</small>
               </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
-            ${questForm()}
+            ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
           </section>` : ""}
         </aside>
 
@@ -435,13 +501,15 @@ export class StudioApp {
                     <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.id)} · ${escapeHtml(resource.data.unit)}</small></div>
                     <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
                   </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
-                ${resourceForm()}
+                ${allowEdit ? resourceForm() : `<p class="form-hint">Read-only: изменения draft недоступны для текущей роли/session.</p>`}
               </section>
 
               <section class="editor-section">
                 <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Bounded core.paint без произвольного JSON.</p></div></div>
-                <div class="entity-list">${actions.map((action) => paintActionRow(action)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
-                ${resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`}
+                <div class="entity-list">${actions.map((action) => paintActionRow(action, allowEdit)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
+                ${allowEdit
+                  ? (resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`)
+                  : `<p class="form-hint">Read-only: изменение действий недоступно для текущей роли/session.</p>`}
               </section>
             </div>
 
@@ -450,9 +518,11 @@ export class StudioApp {
                 <h2>Проверка квеста</h2>
                 <p>Validation всегда привязана к конкретной server revision и content hash.</p>
               </div>
-              <button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>
+              ${allowTest
+                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
+                : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
               ${validationPanel(this.state.validation, draft)}
-              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase)}
+              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest)}
             </section>
           ` : project ? `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите существующий квест или создайте новый в левой панели.</p></div>
@@ -528,14 +598,14 @@ function paintActionForm(resources: ReturnType<typeof resourceBlocks>): string {
   </form>`;
 }
 
-function paintActionRow(action: ActionBlock): string {
+function paintActionRow(action: ActionBlock, editable: boolean): string {
   return `<article class="entity-row action-row">
     <div><strong>${escapeHtml(action.title)}</strong><small>${escapeHtml(action.id)} · ${escapeHtml(action.data.resourceId)} · ${action.data.durationSecondsPerUnit}s</small></div>
-    <form data-form="paint-cost" class="cost-form">
+    ${editable ? `<form data-form="paint-cost" class="cost-form">
       <input type="hidden" name="blockId" value="${escapeAttr(action.id)}">
       <label>Стоимость<input data-focus-key="cost-${escapeAttr(action.id)}" name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="${action.data.resourceUnitsPerUnit}"></label>
       <button type="submit">Сохранить</button>
-    </form>
+    </form>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
   </article>`;
 }
 
@@ -554,7 +624,8 @@ function playtestPanel(
   playtest: PlaytestView | null,
   validation: ValidationView | null,
   draft: DraftView,
-  phase: StudioState["phase"]
+  phase: StudioState["phase"],
+  canMutate: boolean
 ): string {
   const validationCurrent = validation !== null
     && validation.status === "valid"
@@ -583,6 +654,7 @@ function playtestPanel(
     ? `<p class="stale-note">Последний frozen playtest относится к revision ${playtest.draftRevision}; он остаётся неизменным.</p>`
     : "";
   if (!validationCurrent) return `<div class="playtest-result">${oldPlaytest}</div>`;
+  if (!canMutate) return `<div class="playtest-result">${oldPlaytest}<p>Playtest mutation недоступна для текущей роли/session.</p></div>`;
   return `<div class="playtest-result">
     ${oldPlaytest}
     <strong>Revision можно заморозить для Player</strong>
@@ -595,6 +667,12 @@ function text(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Поле ${name} обязательно.`);
   return value.trim();
+}
+
+function rawText(data: FormData, name: string): string {
+  const value = data.get(name);
+  if (typeof value !== "string" || value.length === 0) throw new Error(`Поле ${name} обязательно.`);
+  return value;
 }
 
 function integer(data: FormData, name: string): number {
