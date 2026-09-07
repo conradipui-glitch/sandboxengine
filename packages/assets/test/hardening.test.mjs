@@ -122,6 +122,7 @@ test("bounded audio profiles reject codec/profile ambiguity instead of inventing
   const opusLike = new Uint8Array(64);
   writeAscii(opusLike, 0, "OggS");
   opusLike[4] = 0;
+  opusLike[5] = 0x02;
   opusLike[26] = 1;
   opusLike[27] = 8;
   writeAscii(opusLike, 28, "OpusHead");
