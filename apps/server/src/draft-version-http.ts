@@ -1,4 +1,5 @@
 import {
+  MAX_DRAFT_HISTORY_LIMIT,
   analyzeDraftReferences,
   compareDraftRevisions,
   listDraftHistory,
@@ -31,13 +32,30 @@ export async function routeDraftVersionHttp(context: DraftVersionHttpContext): P
     const questId = history[2];
     if (!projectId || !questId) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "tester"))) return true;
-    if (!hasExactQuery(context.url.searchParams, [])) {
+    if (!hasOptionalExactQuery(context.url.searchParams, ["beforeRevision", "limit"])) {
       context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
       return true;
     }
-    const result = await listDraftHistory(context.store, projectId, questId);
+    const beforeRaw = context.url.searchParams.get("beforeRevision");
+    const limitRaw = context.url.searchParams.get("limit");
+    const beforeRevision = beforeRaw === null ? undefined : parseRevisionQuery(beforeRaw);
+    const limit = limitRaw === null ? undefined : parsePositiveBoundedInteger(limitRaw, MAX_DRAFT_HISTORY_LIMIT);
+    if ((beforeRaw !== null && beforeRevision === null) || (limitRaw !== null && limit === null)) {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
+      return true;
+    }
+    const result = await listDraftHistory(context.store, projectId, questId, {
+      ...(beforeRevision === undefined ? {} : { beforeRevision }),
+      ...(limit === undefined ? {} : { limit })
+    });
     if (result.kind === "quest_not_found") context.sendNotFound();
-    else context.sendJson(200, { currentRevision: result.currentRevision, history: result.history });
+    else if (result.kind === "invalid_request") {
+      context.sendJson(400, { error: { code: "INVALID_DRAFT_HISTORY_REQUEST" } });
+    } else context.sendJson(200, {
+      currentRevision: result.currentRevision,
+      history: result.history,
+      nextBeforeRevision: result.nextBeforeRevision
+    });
     return true;
   }
 
@@ -148,10 +166,22 @@ function hasExactQuery(params: URLSearchParams, keys: readonly string[]): boolea
   return expected.every((key) => params.getAll(key).length === 1);
 }
 
+function hasOptionalExactQuery(params: URLSearchParams, allowedKeys: readonly string[]): boolean {
+  const actual = [...params.keys()];
+  if (actual.some((key) => !allowedKeys.includes(key))) return false;
+  return allowedKeys.every((key) => params.getAll(key).length <= 1);
+}
+
 function parseRevisionQuery(value: string | null): number | null {
   if (value === null || !/^(?:0|[1-9][0-9]{0,15})$/.test(value)) return null;
   const parsed = Number(value);
   return isRevision(parsed) ? parsed : null;
+}
+
+function parsePositiveBoundedInteger(value: string, max: number): number | null {
+  if (!/^[1-9][0-9]{0,5}$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= max ? parsed : null;
 }
 
 function isRevision(value: unknown): value is number {
