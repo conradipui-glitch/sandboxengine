@@ -1,7 +1,8 @@
 {
   "engineVersion": "0.1.0",
   "contractsSchemaVersion": "1.0",
+  "presentationSchemaVersion": "2.0",
   "registryVersion": "1.0",
-  "registryHash": "86d93105859f7c812f5d7e9f667a4d9bb3b01c2ab726fffd941b965197d97889",
+  "registryHash": "0b1fa6e4e23374cc00fd5cca61ecbbc0aec2a5df3ab83c1da2ce82fb8cf6e36c",
   "availableOperationCount": 13
 }

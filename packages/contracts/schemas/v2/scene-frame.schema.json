@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:scene-frame:2.0",
+  "title": "SceneFrameV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "frameId", "sceneId", "sessionId", "questId", "releaseId", "revision", "turnId", "background", "layerOrder", "actors", "items", "overlays", "dialogue", "activeDialogueLineId", "music"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "frameId": { "$ref": "#/$defs/id" },
+    "sceneId": { "$ref": "#/$defs/id" },
+    "sessionId": { "$ref": "#/$defs/id" },
+    "questId": { "$ref": "#/$defs/id" },
+    "releaseId": { "$ref": "#/$defs/id" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "turnId": {
+      "anyOf": [
+        { "$ref": "#/$defs/id" },
+        { "type": "null" }
+      ]
+    },
+    "background": {
+      "anyOf": [
+        { "$ref": "#/$defs/assetRef" },
+        { "type": "null" }
+      ]
+    },
+    "layerOrder": {
+      "type": "array",
+      "maxItems": 224,
+      "items": { "$ref": "#/$defs/layerRef" }
+    },
+    "actors": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/actor" }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "overlays": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/overlay" }
+    },
+    "dialogue": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/dialogueLine" }
+    },
+    "activeDialogueLineId": {
+      "anyOf": [
+        { "$ref": "#/$defs/id" },
+        { "type": "null" }
+      ]
+    },
+    "music": {
+      "anyOf": [
+        { "$ref": "#/$defs/music" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "assetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetId", "hash"],
+      "properties": {
+        "assetId": { "$ref": "#/$defs/id" },
+        "hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "layerRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["actor", "item", "overlay"] },
+        "id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "entityId", "asset", "slot", "expression"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "entityId": { "$ref": "#/$defs/id" },
+        "asset": {
+          "anyOf": [
+            { "$ref": "#/$defs/assetRef" },
+            { "type": "null" }
+          ]
+        },
+        "slot": { "$ref": "#/$defs/id" },
+        "expression": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "asset", "slot"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "asset": { "$ref": "#/$defs/assetRef" },
+        "slot": { "$ref": "#/$defs/id" }
+      }
+    },
+    "overlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "body"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/id" },
+        "title": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 2000 },
+            { "type": "null" }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 8000 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "dialogueLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "speakerId", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "speakerId": {
+          "anyOf": [
+            { "$ref": "#/$defs/id" },
+            { "type": "null" }
+          ]
+        },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      }
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "asset", "loop"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "asset": { "$ref": "#/$defs/assetRef" },
+        "loop": { "type": "boolean" }
+      }
+    }
+  }
+}

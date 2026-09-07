@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:living-history:schema:asset-manifest:2.0",
+  "title": "AssetManifestV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "hash", "kind", "mimeType", "widthPx", "heightPx", "durationMs", "altText", "source", "rights"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "id": { "$ref": "#/$defs/id" },
+    "hash": { "$ref": "#/$defs/hash" },
+    "kind": { "enum": ["image", "audio"] },
+    "mimeType": {
+      "enum": ["image/png", "image/webp", "image/jpeg", "audio/mpeg", "audio/ogg", "audio/wav"]
+    },
+    "widthPx": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+    "heightPx": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+    "durationMs": { "$ref": "#/$defs/nullableNonNegativeInteger" },
+    "altText": { "$ref": "#/$defs/nullableShortText" },
+    "source": { "$ref": "#/$defs/nullableLongText" },
+    "rights": { "$ref": "#/$defs/nullableLongText" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "image" } } },
+      "then": {
+        "properties": {
+          "mimeType": { "enum": ["image/png", "image/webp", "image/jpeg"] },
+          "durationMs": { "type": "null" },
+          "altText": { "type": "string", "minLength": 1, "maxLength": 1000 }
+        }
+      },
+      "else": {
+        "properties": {
+          "mimeType": { "enum": ["audio/mpeg", "audio/ogg", "audio/wav"] },
+          "widthPx": { "type": "null" },
+          "heightPx": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableNonNegativeInteger": {
+      "anyOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "nullableShortText": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 1000 },
+        { "type": "null" }
+      ]
+    },
+    "nullableLongText": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 2000 },
+        { "type": "null" }
+      ]
+    }
+  }
+}

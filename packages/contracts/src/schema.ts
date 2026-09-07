@@ -3,8 +3,15 @@ export const CONTRACT_SCHEMA_VERSION = "1.0" as const;
 export type ContractSchemaVersion = typeof CONTRACT_SCHEMA_VERSION;
 
 /**
+ * Presentation v1 remains frozen for backward compatibility. B07 introduces
+ * a separate breaking presentation contract rather than mutating v1 in place.
+ */
+export const PRESENTATION_SCHEMA_VERSION = "2.0" as const;
+export type PresentationSchemaVersion = typeof PRESENTATION_SCHEMA_VERSION;
+
+/**
  * Stable identifiers for the canonical JSON Schemas.
- * The JSON files in packages/contracts/schemas/v1 are authoritative; contract
+ * The JSON files in packages/contracts/schemas are authoritative; contract
  * tests assert that these convenience constants stay identical to their $id.
  */
 export const CONTRACT_SCHEMA_IDS = {
@@ -23,5 +30,8 @@ export const CONTRACT_SCHEMA_IDS = {
   presentationPlan: "urn:living-history:schema:presentation-plan:1.0",
   block: "urn:living-history:schema:block:1.0",
   questRelease: "urn:living-history:schema:quest-release:1.0",
-  resolvedIntent: "urn:living-history:schema:resolved-intent:1.0"
+  resolvedIntent: "urn:living-history:schema:resolved-intent:1.0",
+  assetManifestV2: "urn:living-history:schema:asset-manifest:2.0",
+  sceneFrameV2: "urn:living-history:schema:scene-frame:2.0",
+  presentationPlanV2: "urn:living-history:schema:presentation-plan:2.0"
 } as const;
