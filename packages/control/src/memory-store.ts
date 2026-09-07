@@ -184,15 +184,16 @@ export class MemoryControlStore implements ControlStore {
     });
     if (!built.ok) return frozen({ kind: "invalid_request" });
 
-    // Re-check after async compile so another writer cannot be overwritten.
-    if (state.current.draftRevision !== input.baseRevision) {
-      return frozen({ kind: "revision_conflict", currentRevision: state.current.draftRevision });
-    }
-    if (this.#restoreIdempotency.has(replayKey)) {
-      const racedReplay = this.#restoreIdempotency.get(replayKey)!;
+    // Another identical worker may have committed while canonical compile awaited.
+    // Observe its durable idempotency result before treating the moved revision as a conflict.
+    const racedReplay = this.#restoreIdempotency.get(replayKey);
+    if (racedReplay) {
       return racedReplay.requestHash === input.requestHash
         ? frozen({ kind: "replay", draft: cloneAndFreeze(racedReplay.draft) })
         : frozen({ kind: "idempotency_key_reused" });
+    }
+    if (state.current.draftRevision !== input.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentRevision: state.current.draftRevision });
     }
 
     state.current = built.snapshot;
