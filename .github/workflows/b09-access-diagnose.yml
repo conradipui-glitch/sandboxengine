@@ -1,0 +1,31 @@
+name: B09 Access Diagnose
+
+on:
+  push:
+    branches:
+      - b09-03-version-history-studio-access
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b09-03-version-history-studio-access
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Typecheck
+        run: timeout 45s npm run typecheck
+      - name: Access test
+        run: timeout 30s node --test apps/studio/test/access.test.mjs
+      - name: API auth test
+        run: timeout 30s node --test apps/studio/test/api-auth.test.mjs
+      - name: Existing Studio suite
+        run: timeout 90s node --test apps/studio/test/*.test.mjs
