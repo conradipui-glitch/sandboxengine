@@ -89,7 +89,6 @@ if insert_at is None:
 operations[insert_at:insert_at] = b10_operations
 registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + '\n')
 
-# Keep B10.b endpoints honest: they are not implemented in this closure.
 by_id = {operation['id']: operation for operation in operations}
 for planned_id in ('control.capabilities', 'control.agent-kit'):
     if by_id[planned_id]['readiness'] != 'planned':
@@ -155,18 +154,18 @@ test("B10.a registry advertises exactly the implemented author HTTP surface and 
 
 task_path = root / 'docs/tasks/B10-author-assistant.md'
 task = task_path.read_text()
-old_tail = '''## First bounded slice
-
-Implement **B10.a.1–3 only** first: `AuthoringProposal` typed contract + validate-on-copy deterministic preview/diff + atomic exact-revision/idempotent apply in Control/server with Memory/SQLite regressions. No chat UI, MCP, Skills or Codex until this micro-gate is green.
-'''
+heading = '## First bounded slice'
+heading_at = task.rfind(heading)
+if heading_at < 0:
+    raise RuntimeError('B10 task current-checkpoint heading missing')
+if task.find(heading, heading_at + 1) >= 0:
+    raise RuntimeError('B10 task current-checkpoint heading ambiguous')
 new_tail = '''## Current bounded checkpoint
 
 **B10.a is implemented through the persistent Studio shell and in-flight Stop semantics.** The branch now has typed proposal preview/apply, durable Memory/SQLite jobs/checkpoints/conversation/artifacts, server discovery/segment/cancel contracts, persistent Studio chat, job-scoped server-artifact Apply, stale fail-closed preview, budget pause/resume, and cancellation that aborts the active backend signal and discards late success before proposal persistence. Registry/generated-doc truth for the eight implemented B10.a HTTP operations is closed in the same change set; `control.capabilities` and `control.agent-kit` remain planned until their B10.b server contracts exist.
 
 Next bounded slice after exact-head root CI: **B10.b.9 bounded context selector only** — selected blocks + nearest typed dependencies + installed capability catalog + persisted context evidence. Do not add MCP broker, external task package, Codex adapter, shell/filesystem/repository/deployment authority, or mark B10.b endpoints available in that slice.
 '''
-if task.count(old_tail) != 1:
-    raise RuntimeError('B10 task current-checkpoint anchor mismatch')
-task_path.write_text(task.replace(old_tail, new_tail, 1))
+task_path.write_text(task[:heading_at] + new_tail)
 
 print('B10.a registry truth staged: 40 available operations')
