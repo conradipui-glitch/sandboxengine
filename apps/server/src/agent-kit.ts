@@ -18,13 +18,23 @@ const AGENT_KIT_PATHS = Object.freeze([
   "docs/agent/api.openapi.json",
   "docs/agent/capabilities.json",
   "docs/agent/compatibility.json",
-  "docs/agent/schema-index.json"
+  "docs/agent/schema-index.json",
+  "docs/agent/recipes/quest-authoring.md",
+  "docs/agent/recipes/scene-presentation.md",
+  "docs/agent/recipes/plugin-extension.md",
+  "docs/agent/recipes/ui-provider-extension.md",
+  "docs/agent/recipes/migration-validation.md"
 ] as const);
 const DOC_HASH_PATHS = Object.freeze([
   "docs/agent/SKILL.md",
   "docs/agent/api.openapi.json",
   "docs/agent/capabilities.json",
-  "docs/agent/schema-index.json"
+  "docs/agent/schema-index.json",
+  "docs/agent/recipes/quest-authoring.md",
+  "docs/agent/recipes/scene-presentation.md",
+  "docs/agent/recipes/plugin-extension.md",
+  "docs/agent/recipes/ui-provider-extension.md",
+  "docs/agent/recipes/migration-validation.md"
 ] as const);
 
 export interface InstalledAgentKitIdentity {

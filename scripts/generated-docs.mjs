@@ -1,24 +1,127 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+
+export const AGENT_RECIPE_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: "quest-authoring",
+    title: "Quest authoring",
+    goal: "Prepare bounded typed quest draft changes through canonical AuthoringProposal preview/apply semantics.",
+    requiredPaths: Object.freeze([
+      "packages/contracts/schemas/v1/block.schema.json",
+      "packages/control/src/authoring-proposal.ts"
+    ]),
+    verificationScripts: Object.freeze(["test:contracts", "test:control", "test:server"]),
+    invariants: Object.freeze([
+      "Use typed Control draft changes only and bind them to the exact base revision/content hash.",
+      "Preview and validate on a copy before Apply; stale bases never authorize overwrite.",
+      "Quest authoring does not publish releases, change access roles, or mutate Runtime/player state."
+    ])
+  }),
+  Object.freeze({
+    id: "scene-presentation",
+    title: "Scene presentation",
+    goal: "Change presentation data without widening it into gameplay authority.",
+    requiredPaths: Object.freeze([
+      "packages/contracts/schemas/v2/scene-frame.schema.json",
+      "packages/contracts/schemas/v2/presentation-plan.schema.json",
+      "apps/player/presentation-renderer.js"
+    ]),
+    verificationScripts: Object.freeze(["test:contracts", "test:player", "check:boundaries"]),
+    invariants: Object.freeze([
+      "Presentation references exact allowed assets/actors and remains reload-safe.",
+      "Presentation commands cannot mutate gameplay state or execute arbitrary code.",
+      "Renderer changes must preserve the existing Player/Runtime/Core authority boundary."
+    ])
+  }),
+  Object.freeze({
+    id: "plugin-extension",
+    title: "Plugin extension",
+    goal: "Prepare a manifest-bound plugin extension that stays inside installed plugin contracts.",
+    requiredPaths: Object.freeze([
+      "packages/plugins/schemas/v1/plugin-manifest.schema.json",
+      "packages/plugins/registry/installed.json"
+    ]),
+    verificationScripts: Object.freeze(["test:plugins", "test:core", "test:server", "check:boundaries"]),
+    invariants: Object.freeze([
+      "Plugin-owned IDs and capabilities must be declared by a compatible installed manifest.",
+      "No executable URL, raw HTML, secret, or repository/deployment authority is granted by a plugin recipe.",
+      "Core remains generic; plugin output still passes existing canonical Core validation gates."
+    ])
+  }),
+  Object.freeze({
+    id: "ui-provider-extension",
+    title: "UI/provider extension",
+    goal: "Extend Studio UI or AI provider composition without moving credentials or authority into the browser.",
+    requiredPaths: Object.freeze([
+      "apps/studio/src/api.ts",
+      "packages/ai/src/provider.ts",
+      "packages/ai/src/agent-backend.ts"
+    ]),
+    verificationScripts: Object.freeze(["test:ai", "test:studio", "check:boundaries"]),
+    invariants: Object.freeze([
+      "Browser state is presentation/transport only and never becomes authorization or revision authority.",
+      "Provider credentials stay server-side and provider/AgentBackend code cannot write drafts or gameplay state directly.",
+      "This recipe grants no shell, filesystem, repository mutation, deployment, or secret-read capability."
+    ])
+  }),
+  Object.freeze({
+    id: "migration-validation",
+    title: "Migration validation",
+    goal: "Validate compatibility-sensitive changes without claiming an automatic migration implementation.",
+    requiredPaths: Object.freeze([
+      "packages/contracts/schemas/v1/block.schema.json",
+      "packages/contracts/schemas/v2/scene-frame.schema.json",
+      "scripts/generated-docs.mjs"
+    ]),
+    verificationScripts: Object.freeze(["typecheck", "test:contracts", "docs:check", "verify"]),
+    invariants: Object.freeze([
+      "Treat compatibility/hash mismatch as explicit evidence; never silently rewrite authored history or immutable releases.",
+      "Generated docs and schemas must remain deterministic and current before compatibility is accepted.",
+      "This is validation guidance only; it does not claim an automatic migration, publish, rollback, or deployment tool."
+    ])
+  })
+]);
+
+export const AGENT_RECIPE_PATHS = Object.freeze(
+  AGENT_RECIPE_DEFINITIONS.map((recipe) => `docs/agent/recipes/${recipe.id}.md`)
+);
 
 export const GENERATED_DOC_PATHS = [
   "docs/agent/SKILL.md",
   "docs/agent/api.openapi.json",
   "docs/agent/capabilities.json",
   "docs/agent/compatibility.json",
-  "docs/agent/schema-index.json"
+  "docs/agent/schema-index.json",
+  ...AGENT_RECIPE_PATHS
 ];
 
 export const GENERATED_DOC_HASH_PATHS = Object.freeze([
   "docs/agent/SKILL.md",
   "docs/agent/api.openapi.json",
   "docs/agent/capabilities.json",
-  "docs/agent/schema-index.json"
+  "docs/agent/schema-index.json",
+  ...AGENT_RECIPE_PATHS
+]);
+
+const SAFE_AGENT_RECIPE_SCRIPTS = new Set([
+  "typecheck",
+  "test:contracts",
+  "test:plugins",
+  "test:core",
+  "test:ai",
+  "test:control",
+  "test:server",
+  "test:studio",
+  "test:player",
+  "check:boundaries",
+  "docs:check",
+  "verify"
 ]);
 
 export async function buildGeneratedDocs(root) {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+  await validateAgentRecipeDefinitions(root, packageJson);
   const registry = JSON.parse(await readFile(resolve(root, "packages/contracts/registry/endpoints.json"), "utf8"));
   const pluginRegistry = JSON.parse(await readFile(resolve(root, "packages/plugins/registry/installed.json"), "utf8"));
   const pluginManifestSchema = JSON.parse(await readFile(resolve(root, "packages/plugins/schemas/v1/plugin-manifest.schema.json"), "utf8"));
@@ -209,6 +312,9 @@ export async function buildGeneratedDocs(root) {
     ["docs/agent/capabilities.json", formatJson(capabilities)],
     ["docs/agent/schema-index.json", formatJson(schemaIndex)]
   ]);
+  for (const recipe of AGENT_RECIPE_DEFINITIONS) {
+    rendered.set(`docs/agent/recipes/${recipe.id}.md`, buildAgentRecipe(recipe));
+  }
   const apiHash = sha256(rendered.get("docs/agent/api.openapi.json"));
   const docsHash = computeGeneratedDocsHash(rendered);
   const compatibility = {
@@ -232,8 +338,82 @@ export async function buildGeneratedDocs(root) {
     ["docs/agent/api.openapi.json", rendered.get("docs/agent/api.openapi.json")],
     ["docs/agent/capabilities.json", rendered.get("docs/agent/capabilities.json")],
     ["docs/agent/compatibility.json", formatJson(compatibility)],
-    ["docs/agent/schema-index.json", rendered.get("docs/agent/schema-index.json")]
+    ["docs/agent/schema-index.json", rendered.get("docs/agent/schema-index.json")],
+    ...AGENT_RECIPE_PATHS.map((path) => [path, rendered.get(path)])
   ]);
+}
+
+export async function validateAgentRecipeDefinitions(root, packageJson, definitions = AGENT_RECIPE_DEFINITIONS) {
+  if (!packageJson || typeof packageJson !== "object" || !packageJson.scripts || typeof packageJson.scripts !== "object") {
+    throw new Error("Agent recipe validation requires package.json scripts");
+  }
+  const ids = new Set();
+  for (const recipe of definitions) {
+    if (!recipe || typeof recipe !== "object" || !/^[a-z][a-z0-9-]{1,63}$/.test(recipe.id ?? "")) {
+      throw new Error("Invalid agent recipe id");
+    }
+    if (ids.has(recipe.id)) throw new Error(`Duplicate agent recipe id: ${recipe.id}`);
+    ids.add(recipe.id);
+    if (typeof recipe.title !== "string" || recipe.title.length < 1 || recipe.title.length > 120) {
+      throw new Error(`Invalid agent recipe title: ${recipe.id}`);
+    }
+    if (typeof recipe.goal !== "string" || recipe.goal.length < 1 || recipe.goal.length > 500) {
+      throw new Error(`Invalid agent recipe goal: ${recipe.id}`);
+    }
+    if (!Array.isArray(recipe.requiredPaths) || recipe.requiredPaths.length < 1 || recipe.requiredPaths.length > 16) {
+      throw new Error(`Invalid requiredPaths for agent recipe: ${recipe.id}`);
+    }
+    for (const path of recipe.requiredPaths) {
+      if (typeof path !== "string" || path.length < 1 || path.length > 240 || path.startsWith("/") || path.includes("\\") || path.split("/").includes("..")) {
+        throw new Error(`Unsafe agent recipe path: ${recipe.id}`);
+      }
+      try {
+        await access(resolve(root, path));
+      } catch {
+        throw new Error(`Missing agent recipe path: ${recipe.id}: ${path}`);
+      }
+    }
+    if (!Array.isArray(recipe.verificationScripts) || recipe.verificationScripts.length < 1 || recipe.verificationScripts.length > 12) {
+      throw new Error(`Invalid verificationScripts for agent recipe: ${recipe.id}`);
+    }
+    for (const script of recipe.verificationScripts) {
+      if (!SAFE_AGENT_RECIPE_SCRIPTS.has(script)) throw new Error(`Unsafe agent recipe verification script: ${recipe.id}: ${script}`);
+      if (typeof packageJson.scripts[script] !== "string" || packageJson.scripts[script].length < 1) {
+        throw new Error(`Missing npm script for agent recipe: ${recipe.id}: ${script}`);
+      }
+    }
+    if (!Array.isArray(recipe.invariants) || recipe.invariants.length < 1 || recipe.invariants.length > 12
+      || recipe.invariants.some((item) => typeof item !== "string" || item.length < 1 || item.length > 500)) {
+      throw new Error(`Invalid invariants for agent recipe: ${recipe.id}`);
+    }
+  }
+  return true;
+}
+
+function buildAgentRecipe(recipe) {
+  const paths = recipe.requiredPaths.map((path) => `- \`${path}\``).join("\n");
+  const commands = recipe.verificationScripts.map((script) => `- \`npm run ${script}\``).join("\n");
+  const invariants = recipe.invariants.map((item) => `- ${item}`).join("\n");
+  return `# ${recipe.title}
+
+${recipe.goal}
+
+> This recipe is generated documentation/task material only. It does not grant tools, permissions, shell access, repository mutation, deployment authority, secret access, or gameplay authority.
+
+## Required repository paths
+
+${paths}
+
+## Verification commands
+
+These commands are evidence instructions for an authorized external workflow; this agent kit does not itself grant command execution.
+
+${commands}
+
+## Invariants
+
+${invariants}
+`;
 }
 
 export function computeGeneratedDocsHash(generated) {

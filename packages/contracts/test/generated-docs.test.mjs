@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
+  AGENT_RECIPE_DEFINITIONS,
+  AGENT_RECIPE_PATHS,
   buildGeneratedDocs,
   computeGeneratedDocsHash,
-  findStaleGeneratedPaths
+  findStaleGeneratedPaths,
+  validateAgentRecipeDefinitions
 } from "../../../scripts/generated-docs.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -44,6 +47,16 @@ test("generated agent contracts expose only implemented capabilities", async () 
   assert.match(compatibility.apiHash, /^[a-f0-9]{64}$/);
   assert.match(compatibility.docsHash, /^[a-f0-9]{64}$/);
   assert.equal(compatibility.docsHash, computeGeneratedDocsHash(generated));
+  assert.equal(AGENT_RECIPE_PATHS.length, 5);
+  for (const path of AGENT_RECIPE_PATHS) {
+    const recipe = generated.get(path);
+    assert.equal(typeof recipe, "string");
+    assert.match(recipe, /generated documentation\/task material only/);
+    assert.match(recipe, /does not itself grant command execution/);
+  }
+  const changedRecipe = new Map(generated);
+  changedRecipe.set(AGENT_RECIPE_PATHS[0], `${changedRecipe.get(AGENT_RECIPE_PATHS[0])}\nchanged\n`);
+  assert.notEqual(computeGeneratedDocsHash(changedRecipe), compatibility.docsHash);
 
   assert.equal(capabilities.contractsSchemaVersion, "1.0");
   assert.equal(capabilities.presentationSchemaVersion, "2.0");
@@ -98,4 +111,36 @@ test("generated docs are deterministic and stale content is detected", async () 
   staleCopy.set("docs/agent/capabilities.json", "{}\n");
   assert.deepEqual(findStaleGeneratedPaths(first, staleCopy), ["docs/agent/capabilities.json"]);
   assert.deepEqual(findStaleGeneratedPaths(first, second), []);
+});
+
+
+test("B10.b.10 checked agent recipes reject missing paths and unsafe verification scripts", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../../../package.json", import.meta.url), "utf8"));
+  assert.equal(await validateAgentRecipeDefinitions(root, packageJson), true);
+
+  const missingPath = [{
+    ...AGENT_RECIPE_DEFINITIONS[0],
+    requiredPaths: ["packages/contracts/schemas/v1/definitely-missing.schema.json"]
+  }];
+  await assert.rejects(
+    validateAgentRecipeDefinitions(root, packageJson, missingPath),
+    /Missing agent recipe path/
+  );
+
+  const existingButUnsafeScript = [{
+    ...AGENT_RECIPE_DEFINITIONS[0],
+    verificationScripts: ["build"]
+  }];
+  await assert.rejects(
+    validateAgentRecipeDefinitions(root, packageJson, existingButUnsafeScript),
+    /Unsafe agent recipe verification script/
+  );
+
+  const commandLines = AGENT_RECIPE_DEFINITIONS.flatMap((recipe) =>
+    recipe.verificationScripts.map((script) => `npm run ${script}`)
+  );
+  for (const command of commandLines) {
+    assert.match(command, /^npm run [a-z0-9:-]+$/);
+    assert.doesNotMatch(command, /(?:deploy|publish|curl|wget|git|shell|exec)/i);
+  }
 });

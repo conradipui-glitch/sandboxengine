@@ -115,8 +115,17 @@ test("B10.a proposal HTTP is editor-scoped, preview-only, CSRF/idempotent on app
       "docs/agent/api.openapi.json",
       "docs/agent/capabilities.json",
       "docs/agent/compatibility.json",
-      "docs/agent/schema-index.json"
+      "docs/agent/schema-index.json",
+      "docs/agent/recipes/quest-authoring.md",
+      "docs/agent/recipes/scene-presentation.md",
+      "docs/agent/recipes/plugin-extension.md",
+      "docs/agent/recipes/ui-provider-extension.md",
+      "docs/agent/recipes/migration-validation.md"
     ]);
+    for (const file of kit.body.files.filter((item) => item.path.startsWith("docs/agent/recipes/"))) {
+      assert.match(file.content, /generated documentation\/task material only/);
+      assert.match(file.sha256, /^[a-f0-9]{64}$/);
+    }
     assert.match(kit.body.identity.apiHash, /^[a-f0-9]{64}$/);
     assert.match(kit.body.identity.docsHash, /^[a-f0-9]{64}$/);
     const handshake = agentKitWriteHeaders(kit.body.identity);
