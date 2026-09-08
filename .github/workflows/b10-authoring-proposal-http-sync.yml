@@ -1,0 +1,33 @@
+name: B10 authoring proposal HTTP sync
+
+on:
+  push:
+    branches:
+      - b10-author-assistant
+    paths:
+      - scripts/b10-authoring-proposal-http-sync.py
+      - .github/workflows/b10-authoring-proposal-http-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply bounded router patch
+        run: python3 scripts/b10-authoring-proposal-http-sync.py
+      - name: Remove staging artifacts
+        run: rm scripts/b10-authoring-proposal-http-sync.py .github/workflows/b10-authoring-proposal-http-sync.yml
+      - name: Verify patch hygiene
+        run: git diff --check
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(B10): route authoring proposal HTTP authority"
+          git push origin HEAD:b10-author-assistant
