@@ -6,58 +6,49 @@
 |---|---|---|
 | Репозиторий | **B01–B11 published; B12 in progress** | B11 Engine merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`; published main CI #682 / `34237754065` success |
 | Контракты/Core | **published through B11** | generic conditions/effects/authored cases; Core boundary tests reject quest-specific identities |
-| Runtime storage/API | **published through B11** | release/session pinning, explicit authored options, free-text boundary, blocked/no-turn, idempotent replay |
+| Runtime storage/API | **B12.2 restore/restart evidence GREEN** | PR #36 head `8113d7129544ad58aa0c628489d2415de78bf6d9`; CI #686 / `34241997225` |
 | Authoring / Control / Studio | **published through B10/B11 integration** | draft history/restore, release/publication, access controls, author assistant and playtest path |
-| Presentation/assets/Player | **published through B11** | safe `PlayerView + situation`, client-compatible BFF projection, verified Florence binaries |
+| Presentation/assets/Player | **B12.2 asset restore GREEN** | all 12 Florence binaries survive backup→restore and re-match pinned SHA-256 manifest |
 | Plugins | **B08 published** | trusted manifest/registry/execution + artifact-bound plugin evidence |
-| Real quests | **B11 published** | Florence + Transfer Desk use shared Core without quest-ID branches; semantic acceptance and asset hashes proved |
-| Sandbox production integration | **B11 published** | `sandbox` merge `3d9cc885592ec229d2083883ea38d83de9fcc199`; production deploy #49 / `34238155592` success |
-| Release hardening | **B12.1 in progress** | frozen release baseline + companion post-deploy read-only smoke; then restore/restart drill |
+| Real quests | **B11 published** | Florence + Transfer Desk use shared Core without quest-ID branches; semantic acceptance proved |
+| Sandbox production integration | **B12.1 external smoke GREEN** | merge `a6d5db944960ab7c8672349e329e6ff9ba4ff649`; production #50 / `34239102418`; Cloudflare version `cd0d8948-86d3-4a56-9b5f-c97bbec79771` |
+| Release hardening | **B12.1 + B12.2 accepted; B12.3 active** | next: dependency vulnerability triage + quota/error/log/secret-boundary gate |
 | Builder/deployment product | **B13 not started** | explicitly outside B12 release acceptance |
 
-## Published B11 checkpoint
+## B12.1 accepted — external production smoke
 
-### Engine
+Production workflow #50 / run `34239102418` passed after merge `a6d5db944960ab7c8672349e329e6ff9ba4ff649`:
 
-- PR #35 final head: `8d8d899e14a8d2ff56e9aac0e6ba94695738c194`;
-- PR CI #681 / run `34237564459`: **success**;
-- merge: `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
-- published `main` CI #682 / run `34237754065`: **success**.
+- install, 49 sandbox tests and build — PASS;
+- Wrangler deploy — PASS;
+- deployed Cloudflare version `cd0d8948-86d3-4a56-9b5f-c97bbec79771`;
+- `/api/health` — PASS on attempt 1;
+- `/api/scenarios` — PASS on attempt 1;
+- `/` — PASS on attempt 1.
 
-### Sandbox / Cloudflare
+The smoke is read-only and does not create a game session or synthetic product analytics.
 
-- PR #10 verified head: `5480c77a59912f435c3f9d1bafc2985c23fbe531`;
-- Verify #5 / run `34236822232`: **success**;
-- merge: `3d9cc885592ec229d2083883ea38d83de9fcc199`;
-- production deploy #49 / run `34238155592`: **success** (install, 49 tests, build, Wrangler deploy);
-- deployed Worker: `living-history-sandbox`;
-- Cloudflare version: `573525a6-4ff5-43d9-9642-62504eabb289`;
-- deployed bindings include `HistorySession`, `ProductAnalytics`, `RuntimeRouteSession`.
+## B12.2 accepted — backup/restore + restart/recovery
 
-B11 publication does not silently enable Engine routing. Missing/unexpected `ENGINE_FLORENCE_ROLLOUT` remains `off`, and existing legacy sessions are not converted.
+Root `npm run verify` now includes `npm run drill:backup-restore`.
 
-## B12 — release and operational handoff
+Exact evidence from PR #36 CI #686 / run `34241997225` on implementation head `8113d7129544ad58aa0c628489d2415de78bf6d9`:
 
-B12 follows `docs/SPECIFICATION.md`: clean install/build/full regression, bounded provider eval, backup/restore with assets, restart/quota/log checks, timing/token evidence, release documentation, rollback and external smoke of any deployed address.
+- SQLite online backup: 11 pages;
+- restored `session-1`: revision 1, pinned `release-1`, exact content hash;
+- exactly one persisted turn after restore;
+- retry of committed operation returns idempotent replay;
+- 12/12 Florence assets restored with SHA-256 verification against `living-history.asset-migration/1`;
+- existing T10/T12 durable recovery suite reran successfully: lost-response replay, crash-before-commit rollback, lease reacquire, fencing and busy-policy atomicity.
 
-The durable evidence ledger is `docs/RELEASE-REPORT.md`. Unknown or unrun checks remain explicitly pending.
+Scope is local standalone Engine SQLite + repository assets. No Cloudflare Durable Object backup claim is made.
 
-### B12.1 current bounded slice
+## B12.3 active — release security / quota / logs
 
-- release branch starts from exact published B11 Engine merge;
-- companion `sandbox` branch starts from exact published B11 production merge;
-- add a post-Wrangler **read-only** external smoke to the production workflow;
-- smoke checks `/api/health`, `/api/scenarios` and the deployed application shell with bounded retries/timeouts;
-- no test session is created and production analytics are not polluted;
-- record the real post-deploy smoke run in `docs/RELEASE-REPORT.md` before closing B12.1.
+CI #686 exposed a new release blocker during `npm ci`: **2 known vulnerabilities (1 moderate, 1 high)**. Before any release candidate/tag, B12.3 must identify the exact advisory/dependency, determine runtime vs dev-only reachability, and either upgrade/mitigate or record a justified non-runtime exception with a reproducible audit gate.
 
-## Next gates after B12.1
+The same slice consolidates quota/error and secret/log evidence already present in B06/B09 tests and adds only missing release-sensitive checks.
 
-1. backup/restore + restart/recovery drill from a clean checkout;
-2. quota/error/log boundary checks;
-3. bounded live provider evaluation with explicit model/budget and honest Codex status;
-4. consolidate T01–33/T36–37 evidence and re-run release-sensitive gaps;
-5. README/runbook/changelog/final docs gate;
-6. exact release-candidate verify, rollback drill, then release tag.
+Canonical ledger: `docs/RELEASE-REPORT.md`.
 
 Do not begin B13 while B12 release blockers remain open.
