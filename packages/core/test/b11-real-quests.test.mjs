@@ -61,14 +61,18 @@ test("B11 real Florence compiles through generic contracts and keeps six beats s
   const durations = new Set(florence.beats.beats.flatMap((beat) => beat.options.map((option) => option.clockAdvanceSeconds)));
   assert.equal(durations.size > 3, true, "narrative beat index must not imply a fixed clock step");
   assert.equal(findOption(florence.beats, "draft").status, "conditional");
-  assert.deepEqual(findOption(florence.beats, "draft").effects, []);
+  assert.equal(findOption(florence.beats, "draft").effects[0].resourceId, "patron-trust");
   assert.equal(findOption(florence.beats, "counter").status, "conditional");
+  assert.equal(findOption(florence.beats, "counter").cases.length, 1, "conditional default may become executed only through generic state conditions");
+  assert.equal(findOption(florence.beats, "deliver").cases.length, 3, "terminal meaning is state-dependent authored data");
 
+  // Core data-level proof applies only each option's default effects. Dynamic
+  // authored cases are deliberately executed in the Runtime adapter tests.
   let state = florence.state;
   for (const optionId of florence.beats.canonicalRoute) {
     const option = findOption(florence.beats, optionId);
     const result = tryApplyEffectBatch(state, option.effects);
-    assert.equal(result.ok, true, `canonical option ${optionId} must apply`);
+    assert.equal(result.ok, true, `canonical default effects for ${optionId} must apply`);
     state = result.state;
   }
 
@@ -77,10 +81,12 @@ test("B11 real Florence compiles through generic contracts and keeps six beats s
     "pigment-jars": 2,
     "workshop-cash": 2,
     "guild-trust": 4,
-    "patron-trust": 1,
-    "fresco-progress": 3
+    "patron-trust": 3,
+    "fresco-progress": 3,
+    "contract-rights": 0,
+    "deal-open": 1
   });
-  assert.equal(findOption(florence.beats, "deliver").terminal.outcome, "Незавершённое принято");
+  assert.equal(findOption(florence.beats, "deliver").terminal.outcome, "Фрагмент без печати");
 
   const assets = await readJson("../../../examples/florence/source-assets.json");
   assert.equal(assets.source.commit, "092bcef0be5943e32bf02f08f9e9d4cde393fa95");
