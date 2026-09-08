@@ -12,3 +12,11 @@ Required evidence before GREEN:
 - shared deadline produces typed MCP timeout rather than hidden fallback;
 - parent cancellation aborts MCP and prevents the second backend turn;
 - targeted AI/Control/Server/boundary/docs gates and final exact-head root `npm run verify` are GREEN.
+
+Targeted gate evidence:
+
+- one-shot run `34202744446` completed success;
+- Typecheck, Control regressions, full Server regressions, boundary gate, docs gate and diff gate all passed;
+- self-clean removed both staging patchers, the one-shot workflow and the temporary type diagnostic before production commit;
+- targeted production head: `6216c60997801d10d36fa33670943d9ee39a3aa2`;
+- final exact-head root CI remains the closing proof for this slice.
