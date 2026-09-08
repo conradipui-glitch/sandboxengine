@@ -1,0 +1,32 @@
+name: B10 author conversation type fix
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-author-conversation-type-fix.mjs
+      - .github/workflows/b10-author-conversation-type-fix.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply exact type fix
+        run: node scripts/b10-author-conversation-type-fix.mjs
+      - name: Remove staging artifacts
+        run: rm scripts/b10-author-conversation-type-fix.mjs .github/workflows/b10-author-conversation-type-fix.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'conversation: AuthorConversationStore' apps/server/src/control-server.ts
+          test ! -e scripts/b10-author-conversation-type-fix.mjs
+          test ! -e .github/workflows/b10-author-conversation-type-fix.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/control-server.ts scripts/b10-author-conversation-type-fix.mjs .github/workflows/b10-author-conversation-type-fix.yml
+          git commit -m "fix(B10): carry conversation composition through Control router"
+          git push origin HEAD:b10-author-assistant
