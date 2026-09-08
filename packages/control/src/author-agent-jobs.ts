@@ -50,6 +50,7 @@ export type AuthorAgentCheckpointFact =
   | { readonly kind: "job.created" }
   | { readonly kind: "job.started" }
   | { readonly kind: "draft.read"; readonly blockCount: number }
+  | { readonly kind: "segment.requested"; readonly requestId: string; readonly requestHash: string }
   | { readonly kind: "proposal.produced"; readonly proposalId: string }
   | { readonly kind: "proposal.previewed"; readonly proposalId: string; readonly stale: boolean; readonly applyAllowed: boolean }
   | { readonly kind: "proposal.applied"; readonly proposalId: string; readonly resultRevision: number }
@@ -855,6 +856,9 @@ function isCheckpointFact(value: unknown): value is AuthorAgentCheckpointFact {
       return hasExactKeys(value, ["kind"]);
     case "draft.read":
       return hasExactKeys(value, ["kind", "blockCount"]) && isNonNegativeSafeInteger(value.blockCount);
+    case "segment.requested":
+      return hasExactKeys(value, ["kind", "requestId", "requestHash"])
+        && isId(value.requestId) && isHash(value.requestHash);
     case "proposal.produced":
       return hasExactKeys(value, ["kind", "proposalId"]) && isId(value.proposalId);
     case "proposal.previewed":

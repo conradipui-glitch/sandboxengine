@@ -23,6 +23,7 @@ import type { PlaytestTraceReader } from "@living-history/runtime";
 import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 import { routeDraftVersionHttp } from "./draft-version-http.js";
+import type { AuthorAssistantDependencies } from "./author-assistant.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
 const MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;
@@ -54,6 +55,7 @@ export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly releases?: ControlReleaseModeOptions;
   readonly playtestTrace?: PlaytestTraceReader;
+  readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store">;
   readonly auth?: ControlAuthenticatedModeOptions;
 }
 
@@ -98,6 +100,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         dependencies.store,
         releases,
         dependencies.playtestTrace ?? null,
+        dependencies.authorAssistant ?? null,
         auth,
         failures
       );
@@ -153,6 +156,7 @@ async function routeControlRequest(
   store: ControlStore,
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
+  authorAssistant: Omit<AuthorAssistantDependencies, "store"> | null,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
@@ -365,6 +369,8 @@ async function routeControlRequest(
     url,
     store,
     releaseStore: releases?.store ?? null,
+    authorAssistant: authorAssistant ? { ...authorAssistant, store } : null,
+    actorUserId: identity?.user.userId ?? "local-owner",
     requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
     requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),
     requireIdempotencyKey: () => requireIdempotencyKey(request, response),
