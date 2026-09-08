@@ -77,7 +77,7 @@ jobs:
             assert.ok(layout.scrollWidth <= 360, `document horizontal overflow: ${layout.scrollWidth}`);
             assert.ok(layout.bodyScrollWidth <= 360, `body horizontal overflow: ${layout.bodyScrollWidth}`);
 
-            assert.match(await firstTour.innerText(), /Шаг 1 из 8/);
+            assert.match(await firstTour.innerText(), /шаг 1 из 8/i);
             await page.locator('[data-onboarding-action="tour-skip"]').click();
             await firstTour.waitFor({ state: 'detached' });
 
@@ -107,11 +107,11 @@ jobs:
             await page.locator('[data-onboarding-action="repeat-tour"]').click();
             const replay = page.locator('.lh-tour-card');
             await replay.waitFor();
-            assert.match(await replay.innerText(), /Шаг 1 из 8/);
+            assert.match(await replay.innerText(), /шаг 1 из 8/i);
             await page.locator('[data-onboarding-action="tour-next"]').click();
-            assert.match(await replay.innerText(), /Шаг 2 из 8/);
+            assert.match(await replay.innerText(), /шаг 2 из 8/i);
             await page.locator('[data-onboarding-action="tour-back"]').click();
-            assert.match(await replay.innerText(), /Шаг 1 из 8/);
+            assert.match(await replay.innerText(), /шаг 1 из 8/i);
             await page.locator('[data-onboarding-action="tour-skip"]').click();
             await replay.waitFor({ state: 'detached' });
 
