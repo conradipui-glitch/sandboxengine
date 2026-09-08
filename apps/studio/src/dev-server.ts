@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
+import { isLocalOperatorRequest, readLocalJson, type LocalAuthorProvider } from "./local-author-provider.js";
 
 const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
 const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
@@ -28,6 +29,7 @@ const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
 
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
+  readonly authorProvider?: LocalAuthorProvider;
 }
 
 export interface StudioDevServer {
@@ -43,6 +45,16 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   const server = createServer(async (request: any, response: any) => {
     try {
       const url = new URL(String(request.url ?? "/"), "http://studio.local");
+      if (url.pathname === "/local/author-provider" && options.authorProvider) {
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: "local_operator_required" }); return; }
+        try {
+          if (request.method === "POST") options.authorProvider.configure(await readLocalJson(request));
+          else if (request.method === "DELETE") options.authorProvider.disconnect();
+          else if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
+          sendJson(response, 200, options.authorProvider.status());
+        } catch { sendJson(response, 400, { error: "invalid_settings" }); }
+        return;
+      }
       if (url.pathname.startsWith("/control/")) {
         await proxyControl(request, response, control, url);
         return;

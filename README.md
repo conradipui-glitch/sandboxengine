@@ -2,7 +2,7 @@
 
 Переносимый движок причинных интерактивных историй с server-authoritative Runtime, Studio для авторинга, Player, immutable releases, SQLite persistence, plugins, presentation/assets и ограниченными AI-границами.
 
-Текущий релизный цикл: **B12 — release and operational handoff**. B01–B11 опубликованы; B12 hardening идёт в PR #36. Тег релиза ещё не создан.
+Опубликован **v0.1.0 (B01–B12)**. Ветка `feat/live-author-studio` содержит незавершённые заготовки подключения ИИ в Studio и [план доделывания L00–L09](docs/tasks/LIVE-AUTHOR-COMPLETION.md). Для заготовок подтверждён только typecheck; функциональная приёмка ещё предстоит.
 
 ## Что уже реализовано
 
@@ -36,7 +36,7 @@ npm run verify
 npm run dev:studio
 ```
 
-Это loopback-среда автора с SQLite persistence. Dev Author Assistant намеренно использует deterministic scripted no-tools backend; он не выдаётся за реальный внешний AI provider.
+Это loopback-среда автора с SQLite persistence. В релизе v0.1.0 помощник использует scripted backend. В этой рабочей ветке начата замена на настраиваемый API provider: форма «Подключение ИИ-помощника», OpenRouter/совместимый API, ключ в памяти серверного процесса. Это пока непроверенная сквозным тестом заготовка; её ограничения и порядок завершения перечислены в плане L00–L09.
 
 После создания frozen playtest Studio показывает `LH_PLAYTEST_ID` и команду запуска Player. Player не вычисляет gameplay арифметику на клиенте.
 

@@ -2,6 +2,8 @@
 
 Последнее обновление: 2026-09-08.
 
+Текущая работа в `feat/live-author-studio`: [L00–L09 — завершение live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). Есть заготовки API-подключения и контекста; подтверждён только typecheck. Сквозной тест, браузер, live API и кнопка Player ещё не приняты. Это не меняет исторические статусы релиза ниже. B13 — последующий, не текущий шаг.
+
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
 | Репозиторий | **B01–B12 published** | B12 merge `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; tag `v0.1.0` |
@@ -38,4 +40,4 @@ Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `do
 
 ## Next block
 
-B13 — Builder/code/GitHub/deployment orchestration — may now start as a separate acceptance block. It must not rewrite or weaken the published `v0.1.0` evidence.
+Сначала L00–L09 по текущему handoff. B13 — Builder/code/GitHub/deployment orchestration — остаётся отдельным последующим блоком и не меняет опубликованные доказательства `v0.1.0`.

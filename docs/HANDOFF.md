@@ -2,7 +2,9 @@
 
 Обновлено: 2026-09-08
 
-Текущий блок: **B12 published / B13 next**  
+Текущий блок: **L00 — ревью заготовок live authoring; B12 опубликован**  
+Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Пользователь запросил план для продолжения младшей моделью; реализация остановлена на заготовках. Успешен только `npm run typecheck`; новые функциональные тесты, browser/live acceptance и Player launch ещё не сделаны. Следующий шаг — L00, затем L01/L02 по зависимостям. B13 отложен за этот маршрут.
+
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  
 Published `main` CI: #729 / `34251551857` — success
@@ -34,9 +36,9 @@ The API key existed only as a GitHub Actions Secret. The one-shot live-eval work
 
 Deterministic adapter/account/controller evidence is green: exact protocol pin, account isolation, quota semantics, logout/rotation, browser/device-code flow and no automatic paid fallback. No authenticated live subscription App Server session is claimed in `v0.1.0`.
 
-## Next block — B13
+## Последующий блок — B13, после L00–L09
 
-B13 is now allowed to start from accepted B12. It is a separate Builder/deployment acceptance block and must preserve the published `v0.1.0` evidence.
+B13 допускается после принятого B12, но текущий приоритет пользователя — завершение сквозного авторского маршрута L00–L09. Builder/deployment остаётся отдельным блоком; опубликованные доказательства `v0.1.0` сохраняются.
 
 The first bounded slice should follow the canonical specification rather than expand scope ad hoc: establish the exact B13 baseline and implement the smallest repo/workspace boundary before any production deployment authority.
 

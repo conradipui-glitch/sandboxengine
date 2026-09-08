@@ -28,6 +28,7 @@ import {
   type ProviderUsage
 } from "@living-history/ai";
 import { loadInstalledAgentKit } from "./agent-kit.js";
+import { AUTHOR_OUTPUT_CONTRACT } from "./author-output-contract.js";
 import type { AuthorMcpClient } from "./author-mcp.js";
 import { AUTHOR_REFERENCE_TOOL_PROTOCOL_INSTRUCTION, runAuthorBackendToolProtocol } from "./author-backend-tool-protocol.js";
 
@@ -47,6 +48,8 @@ export interface AuthorAssistantDependencies {
   readonly referenceMcpClient?: AuthorMcpClient;
   readonly nowMs?: () => number;
   readonly backendDeadlineMs?: number;
+  /** Explicit local author mode: complete small quest or fail before an API call. */
+  readonly contextScope?: "entry" | "small_quest";
 }
 
 export interface CreateAuthorAssistantJobInput {
@@ -215,9 +218,12 @@ export async function runAuthorAssistantSegment(
   if (!snapshot || snapshot.contentHash !== current.contentHash) {
     return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable");
   }
+  if (dependencies.contextScope === "small_quest" && snapshot.blocks.length > 32) {
+    return failInvalidOutput(dependencies, job, EMPTY_USAGE, "context_too_large");
+  }
   const contextResult = buildAuthorContextBundle(
     snapshot,
-    [snapshot.entryLocationId],
+    dependencies.contextScope === "small_quest" ? snapshot.blocks.map((block) => block.id) : [snapshot.entryLocationId],
     dependencies.capabilityCatalog ?? CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG
   );
   if (contextResult.kind !== "built") {
@@ -294,6 +300,7 @@ export async function runAuthorAssistantSegment(
     }
 
     const systemInstruction = "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. The supplied authoring context is intentionally bounded; omitted blocks may still exist, so never infer their absence. If a mechanic is not representable by the supplied installed capability catalog, put it in missingCapabilities and do not fake a block."
+      + `\n${AUTHOR_OUTPUT_CONTRACT}`
       + (dependencies.referenceMcpClient ? ` ${AUTHOR_REFERENCE_TOOL_PROTOCOL_INSTRUCTION}` : "");
     const backendLoop = await runAuthorBackendToolProtocol({
       backend: dependencies.backend,
