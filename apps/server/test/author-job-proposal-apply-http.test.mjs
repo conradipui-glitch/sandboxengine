@@ -36,7 +36,11 @@ async function setup() {
   const jobs = new MemoryAuthorAgentJobStore();
   const artifacts = new MemoryAuthorAgentProposalArtifactStore(jobs);
   const conversation = new MemoryAuthorConversationStore(jobs);
-  const backend = new ScriptedAgentBackend({ backendId: "scripted-author", turnSteps: [{ kind: "success", outputText: output() }] });
+  const backend = new ScriptedAgentBackend({
+    backendId: "scripted-author",
+    turnSteps: [{ kind: "success", outputText: output() }],
+    nowMs: () => 0
+  });
   const control = createControlHttpServer({
     store,
     auth: { security, allowedOrigins: [ORIGIN], secureCookies: true },
@@ -98,6 +102,7 @@ test("B10.a cancelled job cannot Apply a previously produced proposal", async ()
     const created = await request(base, "/control/v1/projects/p1/quests/quest/author/jobs", { method: "POST", headers: { ...headers, "idempotency-key": "create-cancel" }, json: {} });
     const jobId = created.body.job.jobId;
     const segment = await request(base, `/control/v1/projects/p1/quests/quest/author/jobs/${jobId}/segments`, { method: "POST", headers: { ...headers, "idempotency-key": "segment-cancel" }, json: { instruction: "Add paint" } });
+    assert.equal(segment.status, 200);
     const proposalId = segment.body.proposal.proposalId;
     const cancelled = await request(base, `/control/v1/projects/p1/quests/quest/author/jobs/${jobId}/cancel`, { method: "POST", headers: { ...headers, "idempotency-key": "cancel-1" }, json: {} });
     assert.equal(cancelled.status, 200);
