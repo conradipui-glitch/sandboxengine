@@ -1,0 +1,39 @@
+name: B10.a registry docs sync
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-a-registry-docs-sync.py
+      - .github/workflows/b10-a-registry-docs-sync.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply B10.a registry truth
+        run: python3 scripts/b10-a-registry-docs-sync.py
+      - name: Regenerate deterministic agent docs
+        run: node scripts/docs-generate.mjs
+      - name: Remove staging artifacts
+        run: rm scripts/b10-a-registry-docs-sync.py .github/workflows/b10-a-registry-docs-sync.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'control.author.jobs.proposals.apply' packages/contracts/registry/endpoints.json
+          grep -q 'control_author_jobs_proposals_apply' docs/agent/api.openapi.json
+          grep -q '"availableOperationCount": 40' docs/agent/compatibility.json
+          grep -q 'B10.b.9 bounded context selector only' docs/tasks/B10-author-assistant.md
+          test -f packages/contracts/test/b10-registry.test.mjs
+          test ! -e scripts/b10-a-registry-docs-sync.py
+          test ! -e .github/workflows/b10-a-registry-docs-sync.yml
+      - name: Commit production truth closure
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/contracts/registry/endpoints.json packages/contracts/test/b10-registry.test.mjs docs/agent/SKILL.md docs/agent/api.openapi.json docs/agent/capabilities.json docs/agent/compatibility.json docs/agent/schema-index.json docs/tasks/B10-author-assistant.md scripts/b10-a-registry-docs-sync.py .github/workflows/b10-a-registry-docs-sync.yml
+          git commit -m "docs(B10): close author assistant registry truth"
+          git push origin HEAD:b10-author-assistant
