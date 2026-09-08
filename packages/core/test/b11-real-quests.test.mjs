@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import {
   compileQuest,
@@ -92,7 +93,24 @@ test("B11 real Florence compiles through generic contracts and keeps six beats s
   assert.equal(assets.source.commit, "092bcef0be5943e32bf02f08f9e9d4cde393fa95");
   assert.equal(assets.visuals.length, 6);
   assert.equal(assets.audio.length, 6);
-  assert.equal(assets.binaryCopyStatus, "pending-byte-safe-transfer");
+  assert.equal(assets.binaryCopyStatus, "verified-in-repository");
+  assert.equal(assets.assetMigrationManifest, "asset-migration-manifest.json");
+
+  const manifest = await readJson("../../../examples/florence/asset-migration-manifest.json");
+  assert.equal(manifest.format, "living-history.asset-migration/1");
+  assert.deepEqual(manifest.source, assets.source);
+  assert.equal(manifest.files.length, 12);
+  for (const file of manifest.files) {
+    const relative = file.path.replace(/^examples\/florence\//, "");
+    const bytes = await readFile(new URL(`../../../examples/florence/${relative}`, import.meta.url));
+    assert.equal(bytes.length, file.bytes, `${file.path} byte count must match migration manifest`);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), file.sha256, `${file.path} SHA-256 must match migration manifest`);
+  }
+  for (const visual of assets.visuals) {
+    const manifestEntry = manifest.files.find((entry) => entry.path.endsWith(visual.targetPath));
+    assert.ok(manifestEntry, `missing manifest entry for ${visual.id}`);
+    assert.equal(manifestEntry.gitBlobSha, visual.gitBlobSha, `${visual.id} must preserve the exact pinned source Git blob`);
+  }
 });
 
 test("B11 Transfer Desk proves a different social/item causal shape with atomic blocking", async () => {
