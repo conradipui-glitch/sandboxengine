@@ -1,6 +1,6 @@
 import type { IntentActionCatalogEntry } from "@living-history/ai";
-import type { JsonValue, ResolvedIntent, WorldState, WorldTerminal } from "@living-history/contracts";
-import { tryApplyEffectBatch } from "@living-history/core";
+import type { Condition, JsonValue, ResolvedIntent, WorldState, WorldTerminal } from "@living-history/contracts";
+import { evaluateCondition, tryApplyEffectBatch } from "@living-history/core";
 
 export const AUTHORED_SCENARIO_SIDECAR_KIND = "core.authored-scenario" as const;
 export const AUTHORED_SCENARIO_FORMAT = "living-history.authored-scenario/1" as const;
@@ -10,10 +10,18 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const MAX_BEATS = 100;
 const MAX_OPTIONS_PER_BEAT = 20;
+const MAX_CASES_PER_OPTION = 20;
 const MAX_EFFECTS_PER_OPTION = 100;
 const MAX_CLOCK_ADVANCE_SECONDS = 31_536_000;
 
 export type AuthoredOptionStatus = "executed" | "conditional" | "blocked";
+
+export interface AuthoredScenarioOptionCase {
+  readonly when: Condition;
+  readonly status: AuthoredOptionStatus;
+  readonly effects: readonly unknown[];
+  readonly terminal?: WorldTerminal;
+}
 
 export interface AuthoredScenarioOption {
   readonly id: string;
@@ -21,6 +29,7 @@ export interface AuthoredScenarioOption {
   readonly clockAdvanceSeconds: number;
   readonly effects: readonly unknown[];
   readonly terminal?: WorldTerminal;
+  readonly cases?: readonly AuthoredScenarioOptionCase[];
   readonly meaning?: string;
 }
 
@@ -62,6 +71,16 @@ export type AuthoredScenarioExecution =
       readonly reasonCode: string;
       readonly candidateState: null;
     };
+
+type ResolvedOption = {
+  readonly ok: true;
+  readonly status: AuthoredOptionStatus;
+  readonly effects: readonly unknown[];
+  readonly terminal: WorldTerminal | null;
+} | {
+  readonly ok: false;
+  readonly code: string;
+};
 
 export function createAuthoredScenarioSidecar(input: {
   readonly artifactHash: string;
@@ -141,9 +160,12 @@ export function executeAuthoredOption(
   if (!beat) return blocked(optionId, null, "BEAT_NOT_AVAILABLE");
   const option = beat.options.find((candidate) => candidate.id === optionId);
   if (!option) return blocked(optionId, beat.id, "OPTION_NOT_AVAILABLE");
-  if (option.status === "blocked") return blocked(option.id, beat.id, "AUTHORED_BLOCKED");
 
-  const applied = tryApplyEffectBatch(state, option.effects);
+  const resolved = resolveOption(option, state);
+  if (!resolved.ok) return blocked(option.id, beat.id, resolved.code);
+  if (resolved.status === "blocked") return blocked(option.id, beat.id, "AUTHORED_BLOCKED");
+
+  const applied = tryApplyEffectBatch(state, resolved.effects);
   if (!applied.ok) return blocked(option.id, beat.id, `EFFECT_${applied.code.toUpperCase()}`);
   const nextClock = state.clock.elapsedSeconds + option.clockAdvanceSeconds;
   if (!Number.isSafeInteger(nextClock)) return blocked(option.id, beat.id, "CLOCK_OVERFLOW");
@@ -152,14 +174,14 @@ export function executeAuthoredOption(
     ...applied.state,
     revision: state.revision + 1,
     clock: { elapsedSeconds: nextClock },
-    terminal: option.terminal ? { ...option.terminal } : state.terminal
+    terminal: resolved.terminal ? { ...resolved.terminal } : state.terminal
   });
 
   return deepFreeze({
     committed: true as const,
     optionId: option.id,
     beatId: beat.id,
-    status: option.status,
+    status: resolved.status,
     durationSeconds: option.clockAdvanceSeconds,
     reasonCode: null,
     candidateState
@@ -180,7 +202,7 @@ export function authoredScenarioPublicSituation(
       title: beat.title ?? null,
       options: beat.options.map((option) => ({
         id: option.id,
-        status: option.status,
+        status: resolveOption(option, state).ok ? resolveOption(option, state).status : "blocked",
         meaning: option.meaning ?? null
       }))
     }
@@ -192,6 +214,27 @@ function currentBeat(
   state: WorldState
 ): AuthoredScenarioBeat | null {
   return scenario.beats[state.revision] ?? null;
+}
+
+function resolveOption(option: AuthoredScenarioOption, state: WorldState): ResolvedOption {
+  for (const optionCase of option.cases ?? []) {
+    const evaluated = evaluateCondition(state, optionCase.when);
+    if (!evaluated.ok) return Object.freeze({ ok: false, code: `CASE_${evaluated.code.toUpperCase()}` });
+    if (evaluated.value) {
+      return Object.freeze({
+        ok: true,
+        status: optionCase.status,
+        effects: optionCase.effects,
+        terminal: optionCase.terminal ?? option.terminal ?? null
+      });
+    }
+  }
+  return Object.freeze({
+    ok: true,
+    status: option.status,
+    effects: option.effects,
+    terminal: option.terminal ?? null
+  });
 }
 
 function blocked(optionId: string | null, beatId: string | null, reasonCode: string): AuthoredScenarioExecution {
@@ -234,13 +277,15 @@ function normalizeScenario(value: unknown): AuthoredScenarioSidecarData | null {
     for (const rawOption of rawBeat.options) {
       if (!isPlainObject(rawOption) || typeof rawOption.id !== "string" || !ID.test(rawOption.id)
         || optionIds.has(rawOption.id)
-        || (rawOption.status !== "executed" && rawOption.status !== "conditional" && rawOption.status !== "blocked")
+        || !isOptionStatus(rawOption.status)
         || !Number.isSafeInteger(rawOption.clockAdvanceSeconds) || Number(rawOption.clockAdvanceSeconds) < 0
         || Number(rawOption.clockAdvanceSeconds) > MAX_CLOCK_ADVANCE_SECONDS
         || !Array.isArray(rawOption.effects) || rawOption.effects.length > MAX_EFFECTS_PER_OPTION) return null;
       if (rawOption.meaning !== undefined && (typeof rawOption.meaning !== "string" || rawOption.meaning.length > 2_000)) return null;
       const terminal = normalizeTerminal(rawOption.terminal);
       if (rawOption.terminal !== undefined && terminal === null) return null;
+      const cases = normalizeCases(rawOption.cases, state);
+      if (rawOption.cases !== undefined && cases === null) return null;
       optionIds.add(rawOption.id);
       options.push(deepFreeze({
         id: rawOption.id,
@@ -248,6 +293,7 @@ function normalizeScenario(value: unknown): AuthoredScenarioSidecarData | null {
         clockAdvanceSeconds: Number(rawOption.clockAdvanceSeconds),
         effects: cloneJson(rawOption.effects),
         ...(terminal ? { terminal } : {}),
+        ...(cases && cases.length > 0 ? { cases } : {}),
         ...(typeof rawOption.meaning === "string" ? { meaning: rawOption.meaning } : {})
       }));
     }
@@ -267,12 +313,40 @@ function normalizeScenario(value: unknown): AuthoredScenarioSidecarData | null {
   });
 }
 
+function normalizeCases(value: unknown, state: WorldState): readonly AuthoredScenarioOptionCase[] | null {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_CASES_PER_OPTION) return null;
+  const cases: AuthoredScenarioOptionCase[] = [];
+  for (const rawCase of value) {
+    if (!isPlainObject(rawCase)
+      || !hasExactKeys(rawCase, rawCase.terminal === undefined ? ["when", "status", "effects"] : ["when", "status", "effects", "terminal"])
+      || !isOptionStatus(rawCase.status)
+      || !Array.isArray(rawCase.effects) || rawCase.effects.length > MAX_EFFECTS_PER_OPTION) return null;
+    const condition = cloneJson(rawCase.when) as Condition;
+    if (!evaluateCondition(state, condition).ok) return null;
+    const terminal = normalizeTerminal(rawCase.terminal);
+    if (rawCase.terminal !== undefined && terminal === null) return null;
+    if (rawCase.status === "blocked" && (rawCase.effects.length > 0 || terminal !== null)) return null;
+    cases.push(deepFreeze({
+      when: condition,
+      status: rawCase.status,
+      effects: cloneJson(rawCase.effects),
+      ...(terminal ? { terminal } : {})
+    }));
+  }
+  return deepFreeze(cases);
+}
+
 function normalizeTerminal(value: unknown): WorldTerminal | null {
   if (value === undefined) return null;
   if (!isPlainObject(value) || !hasExactKeys(value, ["reason", "outcome"])) return null;
   if (typeof value.reason !== "string" || value.reason.length < 1 || value.reason.length > 500
     || typeof value.outcome !== "string" || value.outcome.length < 1 || value.outcome.length > 2_000) return null;
   return deepFreeze({ reason: value.reason, outcome: value.outcome });
+}
+
+function isOptionStatus(value: unknown): value is AuthoredOptionStatus {
+  return value === "executed" || value === "conditional" || value === "blocked";
 }
 
 function isPlainObject(value: unknown): value is Record<string, any> {
