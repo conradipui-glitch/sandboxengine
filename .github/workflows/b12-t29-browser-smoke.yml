@@ -63,7 +63,10 @@ jobs:
           try {
             await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
             await page.locator('.studio-shell').waitFor();
-            await page.locator('#studio-onboarding-layer').waitFor();
+            await page.locator('#studio-onboarding-layer').waitFor({ state: 'attached' });
+
+            const firstTour = page.locator('.lh-tour-card');
+            await firstTour.waitFor();
 
             const layout = await page.evaluate(() => ({
               innerWidth: window.innerWidth,
@@ -74,8 +77,6 @@ jobs:
             assert.ok(layout.scrollWidth <= 360, `document horizontal overflow: ${layout.scrollWidth}`);
             assert.ok(layout.bodyScrollWidth <= 360, `body horizontal overflow: ${layout.bodyScrollWidth}`);
 
-            const firstTour = page.locator('.lh-tour-card');
-            await firstTour.waitFor();
             assert.match(await firstTour.innerText(), /Шаг 1 из 8/);
             await page.locator('[data-onboarding-action="tour-skip"]').click();
             await firstTour.waitFor({ state: 'detached' });
