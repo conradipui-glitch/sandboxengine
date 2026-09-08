@@ -184,9 +184,16 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
     case "budget.paused": return `Segment budget paused: ${fact.toolCallsUsed} tools, ${fact.activeTimeMsUsed}ms`;
     case "job.resumed": return "Открыт новый bounded segment";
     case "job.cancelled": return "Job остановлен пользователем";
-    case "job.failed": return `Job failed: ${fact.code}`;
+    case "job.failed": return `Job failed: ${fact.code}${jobFailedHint(fact.code)}`;
     case "job.succeeded": return "Job completed";
   }
+}
+
+function jobFailedHint(code: string): string {
+  if (code === "backend.auth_required") return " — ИИ не подключён или ключ отклонён: укажите провайдера, модель и ключ в форме «Подключение ИИ-помощника» выше.";
+  if (code === "backend.rate_limited") return " — провайдер отвечает 429; повторите позже.";
+  if (code === "backend.timeout") return " — провайдер не ответил за отведённое время; повторите запрос.";
+  return "";
 }
 
 function shortHash(value: string): string {

@@ -89,7 +89,7 @@ export class LocalAuthorProvider {
         try {
           const result = await provider.generate(request);
           if (generation === this.#generation) {
-            this.#lastErrorCode = result.ok ? null : result.error.code;
+            this.#lastErrorCode = result.ok ? null : statusErrorCode(result);
             this.#activeRequests = Math.max(0, this.#activeRequests - 1);
             if (this.#activeRequests === 0) this.#state = result.ok ? "connected" : "error";
           }
@@ -136,6 +136,15 @@ export class LocalAuthorProviderRequestError extends Error {
   constructor(readonly code: "BODY_TOO_LARGE" | "INVALID_JSON", readonly status: 400 | 413) {
     super(code);
   }
+}
+
+/** Mirror the bridge's AgentBackend error semantics so the UI never shows raw provider enums like "http". */
+function statusErrorCode(result: Extract<GenerateResult, { ok: false }>): string {
+  const error = result.error;
+  if (error.httpStatus === 401 || error.httpStatus === 403) return "auth_required";
+  if (error.httpStatus === 429) return "rate_limited";
+  if (error.code === "aborted" || error.code === "timeout" || error.code === "invalid_response") return error.code;
+  return "backend_error";
 }
 
 function localJsonError(code: "BODY_TOO_LARGE" | "INVALID_JSON", status: 400 | 413): LocalAuthorProviderRequestError {

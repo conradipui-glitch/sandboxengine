@@ -2,8 +2,8 @@
 
 Обновлено: 2026-09-09
 
-Текущий блок: **L03 — настройка провайдера в Studio; L00–L02 приняты; B12 опубликован**  
-Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L00 подтверждён свежими проверками; следующая bounded-карточка — L01. B13 отложен за этот маршрут.
+Текущий блок: **L04 — контекст и формат ответа; L00–L03 приняты; B12 опубликован**  
+Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L02 подтверждены свежими проверками; L03 принят 2026-09-09. B13 отложен за этот маршрут.
 
 ## L00 — baseline review (2026-09-09)
 
@@ -36,6 +36,22 @@
 - no paid API call; fetch-only stubs exercised the real HTTP adapter.
 
 Следующее: L03 — provider settings lifecycle, safe process-memory credential handling and user-visible statuses.
+
+## L03 — provider settings lifecycle (2026-09-09)
+
+- explicit Studio provider state machine: `not_configured → settings_saved → requesting → connected | error`; rotation/disconnect invalidate outstanding sessions;
+- `connectionCheck` reflects the real lifecycle outcome; the always-`not_performed` stub is gone;
+- status errors use AgentBackend semantics (`auth_required`/`rate_limited`/`timeout`/`invalid_response`/`backend_error`/`network`); raw provider enums are not exposed;
+- UI renders all five states with targeted hints; password field cleared on submit/disconnect; key stays process-memory only and is never echoed; `remainingTokens` stays `null` («неизвестен»);
+- no-key/rejected-key assistant failures explain where to connect the AI (`backend.auth_required` hint in the assistant progress panel);
+- failed settings updates keep the working configuration; no provider call while saving settings;
+- `npm run typecheck` — exit 0;
+- `node --test apps/studio/test/live-author-provider-lifecycle.test.mjs` — exit 0, 1/1 (new lifecycle test);
+- boundary + UI tests — exit 0, 7/7; `packages/ai` + `packages/control` — exit 0, 143/143;
+- `apps/studio` group 55/59: 4 failures reproduce without L03 changes (pre-existing B05/B10-era scripted-backend expectations on this branch);
+- no paid API call; Node `24.18.0` vs `>=24.19.0 <25` remains an environment limitation.
+
+Следующее: L04 — контекст и формат ответа (canonical schema, полный small-quest контекст, свежий revision после Apply).
 
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  
