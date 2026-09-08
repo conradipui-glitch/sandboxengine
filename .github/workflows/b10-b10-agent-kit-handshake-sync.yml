@@ -1,0 +1,52 @@
+name: B10.b.10 agent kit handshake sync
+on:
+  push:
+    branches:
+      - b10-author-assistant
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply agent-kit handshake slice
+        run: python3 scripts/b10-b10-agent-kit-handshake-sync.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Regenerate installed agent docs
+        run: npm run docs:generate
+      - name: Targeted B10.b.10 gate
+        run: |
+          npm run typecheck
+          npm run test:contracts
+          npm run test:server
+          npm run test:studio
+          npm run docs:check
+      - name: Remove staging artifacts
+        run: |
+          rm scripts/b10-b10-agent-kit-handshake-sync.py
+          rm .github/workflows/b10-b10-agent-kit-handshake-sync.yml
+      - name: Verify patch hygiene
+        shell: bash
+        run: |
+          test ! -e scripts/b10-b10-agent-kit-handshake-sync.py
+          test ! -e .github/workflows/b10-b10-agent-kit-handshake-sync.yml
+          git diff --check
+      - name: Commit production handshake slice
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(B10): bind agent writes to installed kit"
+          git push origin HEAD:b10-author-assistant
