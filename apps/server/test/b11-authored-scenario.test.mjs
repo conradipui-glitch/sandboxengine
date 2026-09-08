@@ -38,6 +38,12 @@ function resourceValues(state) {
   return Object.fromEntries(state.resources.map((resource) => [resource.id, resource.value]));
 }
 
+function resourceValue(state, id) {
+  const resource = state.resources.find((entry) => entry.id === id);
+  assert.ok(resource, `resource ${id} must exist`);
+  return resource.value;
+}
+
 function runRoute(scenario, route) {
   let state = scenario.initialState;
   const statuses = [];
@@ -75,26 +81,29 @@ test("B11 authored scenario sidecar is artifact/quest bound and exposes only the
   assert.equal(first.status, "conditional");
   assert.equal(first.candidateState.revision, 1);
   assert.equal(first.candidateState.clock.elapsedSeconds, 900);
+  assert.equal(resourceValue(first.candidateState, "contract-rights"), 0, "request must not grant authorship rights");
   assert.deepEqual(
     createAuthoredIntentCatalog(sidecar.data, first.candidateState)[0].args.optionId.enum,
     ["ledger", "team", "refuse"]
   );
 });
 
-test("B11 Florence canonical + compromise + authorship routes execute without quest branches in Core", async () => {
+test("B11 Florence canonical + paid compromise + preserve-authorship routes keep distinct source meanings", async () => {
   const florence = await loadExample("florence");
   const scenario = sidecarFor("florence-workshop", florence).data;
 
   const canonical = runRoute(scenario, ["draft", "ledger", "counter", "pigment", "public", "deliver"]);
-  assert.deepEqual(canonical.statuses, ["conditional", "executed", "conditional", "executed", "executed", "executed"]);
+  assert.deepEqual(canonical.statuses, ["conditional", "executed", "executed", "executed", "executed", "executed"]);
   assert.equal(canonical.state.revision, 6);
   assert.equal(canonical.state.clock.elapsedSeconds, 7800);
   assert.deepEqual(resourceValues(canonical.state), {
     "pigment-jars": 2,
     "workshop-cash": 2,
     "guild-trust": 4,
-    "patron-trust": 1,
-    "fresco-progress": 3
+    "patron-trust": 4,
+    "fresco-progress": 3,
+    "contract-rights": 1,
+    "deal-open": 1
   });
   assert.deepEqual(canonical.state.terminal, {
     reason: "source-route-complete",
@@ -109,9 +118,14 @@ test("B11 Florence canonical + compromise + authorship routes execute without qu
     "workshop-cash": 3,
     "guild-trust": 4,
     "patron-trust": 4,
-    "fresco-progress": 3
+    "fresco-progress": 3,
+    "contract-rights": 0,
+    "deal-open": 1
   });
-  assert.equal(compromise.state.terminal.outcome, "Незавершённое принято");
+  assert.deepEqual(compromise.state.terminal, {
+    reason: "paid-compromise",
+    outcome: "Чужое имя над вашей работой"
+  });
 
   const authorship = runRoute(scenario, ["close", "refuse", "protect", "testimony", "rest", "sign"]);
   assert.equal(authorship.state.revision, 6);
@@ -119,13 +133,40 @@ test("B11 Florence canonical + compromise + authorship routes execute without qu
   assert.deepEqual(resourceValues(authorship.state), {
     "pigment-jars": 2,
     "workshop-cash": 2,
-    "guild-trust": 4,
+    "guild-trust": 3,
     "patron-trust": 1,
-    "fresco-progress": 1
+    "fresco-progress": 1,
+    "contract-rights": 0,
+    "deal-open": 1
   });
   assert.deepEqual(authorship.state.terminal, {
     reason: "authorship-preserved",
     outcome: "Имя без заказчика"
+  });
+});
+
+test("B11 Florence state-dependent cases preserve conditional negotiation, proof-backed agreement and withdrawal", async () => {
+  const florence = await loadExample("florence");
+  const scenario = sidecarFor("florence-workshop", florence).data;
+
+  const weakCounter = runRoute(scenario, ["healer", "ledger", "counter"]);
+  assert.deepEqual(weakCounter.statuses, ["executed", "executed", "conditional"]);
+  assert.equal(resourceValue(weakCounter.state, "contract-rights"), 0);
+
+  const proofBacked = runRoute(scenario, ["healer", "ledger", "counter", "testimony", "public", "deliver"]);
+  assert.equal(resourceValue(proofBacked.state, "contract-rights"), 1);
+  assert.equal(proofBacked.state.terminal.outcome, "Незавершённое принято");
+
+  const recognizedSignature = runRoute(scenario, ["draft", "ledger", "counter", "pigment", "rest", "sign"]);
+  assert.equal(recognizedSignature.state.terminal.outcome, "Имя, прочитанное вслух");
+
+  const withdrawn = runRoute(scenario, ["healer", "team", "advance", "withdraw", "rest", "deliver"]);
+  assert.equal(resourceValue(withdrawn.state, "workshop-cash"), 1, "only the received advance is returned");
+  assert.equal(resourceValue(withdrawn.state, "deal-open"), 0);
+  assert.equal(resourceValue(withdrawn.state, "contract-rights"), 0);
+  assert.deepEqual(withdrawn.state.terminal, {
+    reason: "deal-withdrawn",
+    outcome: "Фрагмент без печати"
   });
 });
 
