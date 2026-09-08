@@ -373,6 +373,13 @@
       "successStatus": 201
     },
     {
+      "id": "control.author.jobs.proposals.task-package",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}",
+      "summary": "Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets",
+      "successStatus": 200
+    },
+    {
       "id": "control.agent-kit",
       "method": "GET",
       "path": "/control/v1/agent-kit",

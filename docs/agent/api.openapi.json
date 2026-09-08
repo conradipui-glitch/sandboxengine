@@ -435,6 +435,17 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}": {
+      "get": {
+        "operationId": "control_author_jobs_proposals_task_package",
+        "summary": "Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/agent-kit": {
       "get": {
         "operationId": "control_agent_kit",

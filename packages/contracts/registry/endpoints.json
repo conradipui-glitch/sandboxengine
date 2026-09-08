@@ -329,6 +329,14 @@
       "summary": "Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint"
     },
     {
+      "id": "control.author.jobs.proposals.task-package",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets"
+    },
+    {
       "id": "control.capabilities",
       "method": "GET",
       "path": "/control/v1/capabilities",

@@ -18,6 +18,7 @@ import {
   type RunAuthorAssistantSegmentResult
 } from "./author-assistant.js";
 import { loadInstalledAgentKit } from "./agent-kit.js";
+import { buildExternalAuthorTaskPackage } from "./author-task-package.js";
 
 const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
 
@@ -231,6 +232,79 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       }
     }
     sendSegmentResult(context, result);
+    return true;
+  }
+
+
+  const taskPackage = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/author\/jobs\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/proposals\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/task-packages\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(context.url.pathname);
+  if (taskPackage) {
+    if (context.method !== "GET") { context.sendNotFound(); return true; }
+    const projectId = taskPackage[1];
+    const questId = taskPackage[2];
+    const jobId = taskPackage[3];
+    const proposalId = taskPackage[4];
+    const capabilityId = taskPackage[5];
+    if (!projectId || !questId || !jobId || !proposalId || !capabilityId
+      || context.authorAssistant === null || context.authorConversation === null) {
+      context.sendNotFound();
+      return true;
+    }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_AUTHOR_TASK_PACKAGE_REQUEST" } });
+      return true;
+    }
+    const job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
+    if (!job) { context.sendNotFound(); return true; }
+    const checkpoints = await context.authorAssistant.jobs.listCheckpoints(jobId);
+    if (!checkpoints) { context.sendNotFound(); return true; }
+    const pinned = checkpoints.filter((entry) => entry.fact.kind === "broker.pinned");
+    const installedKit = loadInstalledAgentKit();
+    if (pinned.length !== 1 || pinned[0]!.fact.kind !== "broker.pinned"
+      || pinned[0]!.fact.installedDocsHash !== installedKit.identity.docsHash) {
+      context.sendJson(409, { error: { code: "AUTHOR_TASK_PACKAGE_STALE_AGENT_KIT" } });
+      return true;
+    }
+
+    const messages = await context.authorConversation.listMessages(jobId);
+    if (!messages) { context.sendNotFound(); return true; }
+    const proposalMessage = [...messages].reverse().find((message) =>
+      message.role === "assistant" && message.proposalId === proposalId && message.proposalTurnKey !== null
+    );
+    if (!proposalMessage || proposalMessage.proposalTurnKey === null) { context.sendNotFound(); return true; }
+    const artifact = await context.authorAssistant.artifacts.getProposalArtifact(jobId, proposalMessage.proposalTurnKey);
+    const proposal = artifact?.proposal;
+    if (!artifact || !proposal
+      || proposal.proposalId !== proposalId
+      || proposal.projectId !== projectId
+      || proposal.questId !== questId
+      || proposal.origin.kind !== "assistant"
+      || proposal.origin.jobId !== jobId
+      || proposal.origin.backendId !== job.backendId) {
+      context.sendJson(409, { error: { code: "AUTHOR_PROPOSAL_ARTIFACT_MISMATCH" } });
+      return true;
+    }
+
+    const built = buildExternalAuthorTaskPackage(proposal, capabilityId, installedKit);
+    if (built.kind === "capability_not_missing") { context.sendNotFound(); return true; }
+    if (built.kind === "capability_already_installed") {
+      context.sendJson(409, { error: { code: "AUTHOR_TASK_CAPABILITY_ALREADY_INSTALLED" } });
+      return true;
+    }
+    if (built.kind === "unsafe_goal") {
+      context.sendJson(422, { error: { code: "AUTHOR_TASK_PACKAGE_UNSAFE_GOAL" } });
+      return true;
+    }
+    if (built.kind !== "built") {
+      context.sendJson(500, { error: { code: "AUTHOR_TASK_PACKAGE_BUILD_FAILED" } });
+      return true;
+    }
+    context.sendJson(200, {
+      filename: built.filename,
+      mediaType: built.mediaType,
+      sha256: built.sha256,
+      taskPackage: built.taskPackage
+    });
     return true;
   }
 

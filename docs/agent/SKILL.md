@@ -117,6 +117,7 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/segments` — Owner/editor CSRF/idempotency protected bounded author segment execution with durable replay, pause/resume and no automatic draft mutation
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/cancel` — Owner/editor cancellation of a durable author job including abort of the exact in-flight backend signal and rejection of late output
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply` — Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint
+- `GET /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}` — Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets
 - `GET /control/v1/agent-kit` — Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.
