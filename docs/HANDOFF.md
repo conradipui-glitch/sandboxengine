@@ -2,73 +2,102 @@
 
 Обновлено: 2026-09-08
 
-Текущий блок: **B09-03 — version history, portability and completed Studio author cycle**  
-База: published B09-02 merge `5b4499e348432b7fb67c0294811c024250f1f634`  
-B09-02 main CI: `34149100136` — success  
-Ветка: `b09-03-version-history-studio-access`  
-PR: #33  
-Статус: **functional accepted; canonical B09 BLOCKER=0/HIGH=0; final current-head Publication Gate next**
+Текущий блок: **B11 — реальные квесты и интеграция**  
+База: published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637`  
+B10 exact main CI: #650 / run `34209005817` — success  
+Ветка: `b11-real-quests-integration`  
+Статус: **B11.0/B00 source confirmation GREEN; B11.1 real quest packages next**
 
 ## Published foundation
 
-B01–B08, B09-01 and B09-02 are published. B09-02 canonical merge/base for this branch is `5b4499e348432b7fb67c0294811c024250f1f634`, exact main push CI `34149100136` success.
+B01–B10 опубликованы.
 
-## What B09-03 now provides
+B10 закрыл интерактивный author-assistant цикл и его границы:
 
-- durable draft history over immutable revision snapshots;
-- deterministic compare and visible stale-editor conflicts, with no automatic merge;
-- restore-old-as-new-revision with stale-base CAS and idempotency;
-- typed reference/deletion preflight sharing semantics with actual deletion recheck;
-- independent quest clone with deterministic authored ID/reference remap;
-- exact deterministic `.lhquest.zip` draft/release export, secret/player-state exclusion and hashes;
-- hostile-input bounded atomic/idempotent import into a new unpublished draft;
-- Studio Versions surface over real history/releases/current pointer;
-- Studio Access over B09-01 session/member/role APIs;
-- exact release build report separated from explicit owner publish/rollback receipt;
-- persisted frozen-playtest evidence from Runtime sessions/completed operations/turns, never AI/gameplay reconstruction;
-- Studio clone/export/import and dangerous deletion UX over real server contracts;
-- endpoint registry/OpenAPI/agent generated truth synchronized with implemented B09-03 routes.
+- verified PR #34 head `f03e283d5e027cb93dea7d3f149685b058724ad0`;
+- merge SHA `4e5fea2888d14440c60ad48abffbefe42abfe637`;
+- exact main CI #650 / `34209005817` success;
+- semantic audit unresolved BLOCKER 0;
+- Codex adapter boundary;
+- account/login/quota isolation;
+- regression `author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
 
-## Acceptance evidence
+Do not claim a real authenticated Codex subscription run in CI: the accepted evidence is deterministic protocol evidence because CI has no configured authenticated local App Server.
 
-- Studio Restore — CI #460 success;
-- immutable release build + exact report — CI #464 success;
-- owner publish/rollback — CI #469 success;
-- persisted Runtime trace reader — CI #473 success;
-- Control playtest trace route — CI #477 success;
-- Studio playtest evidence E2E — CI #481 success;
-- Studio portability UX — CI #485 success;
-- Studio deletion/reference UX — CI #489 success;
-- T21 full author path — CI #491 success;
-- T22 stale-editor conflict — CI #492 success;
-- T25 hostile archive/exact portability is covered by canonical Control package/security/atomicity suites included in root verify;
-- playtest trace registry/generated-doc sync workflow `34166172838` — success.
+## B11.0 closed
 
-Canonical audit: `docs/audits/2026-09-08-b09-canonical-semantic-audit.md` → unresolved BLOCKER **0**, HIGH **0**.  
-ADR: `docs/decisions/0031-server-authoritative-author-lifecycle-portability.md`.  
-Task: `docs/tasks/B09-03-version-history-studio-access.md`.
+The old B00 documentation debt is closed in `docs/BASELINE.md` and the migration contract is frozen in `docs/tasks/B11-01-source-migration-map.md`.
 
-## Important boundaries to preserve
+Confirmed source:
 
-- Studio/browser is never revision/reference/archive/gameplay/publication authority.
-- Restore creates a new revision; it never rewinds history.
-- A green deletion preflight is not an authorization token; mutation rechecks current server references.
-- Clone/import create new draft identity and never rewrite source releases/playtests or auto-publish.
-- `.lhquest.zip` is inert authored data, not executable content or project/session backup.
-- Frozen playtest trace is persisted evidence and is distinct from a published release.
-- Release build does not publish. Publish/rollback are explicit owner-only exact-current CAS operations.
-- Existing Runtime sessions stay pinned to exact release mechanics across publish/rollback.
-- B10 must use these Control contracts rather than adding an agent bypass around Studio/server authority.
+- repo `conradipui-glitch/sandbox`;
+- Florence merge PR #9;
+- exact source SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
+- current source main checked at `f9b0cd0d607da48d89827f0a1a882b74e9b78e50`;
+- post-baseline drift is README/docs only, gameplay baseline did not move;
+- exact source production run #47 / `34012448412` succeeded through install, tests, build and Worker deploy.
+
+Mapped legacy runtime:
+
+- React/Vite client;
+- Cloudflare Worker API;
+- `HistorySession` Durable Object as authoritative game storage;
+- `StoredGame { state, processedKeys, analytics }` under storage key `game`;
+- browser localStorage is not the canonical save; it stores anonymous visitor identity;
+- gameplay routes are `POST /api/games`, `GET /api/games/:id`, `POST /api/games/:id/turn`, plus scenario/metrics/health routes;
+- retries use saved idempotency keys;
+- old sessions must stay on the old runtime instead of being silently converted.
+
+Florence source evidence:
+
+- six semantic decisions;
+- canonical route `draft → ledger → counter → pigment → public → deliver` reaches victory with six trace entries;
+- legacy authored tests recursively cover all 729 prepared `3^6` routes;
+- conditional vs executed behavior is explicit;
+- blocked/unknown compound actions do not partially mutate state;
+- save/restore does not double-charge;
+- a legacy save missing Florence memory is not given fabricated facts.
+
+## B11 architecture contract
+
+Preserve these boundaries:
+
+- **no Florence-specific branch in `packages/core`**;
+- no generic runtime/Core type named `FlorenceMemory`;
+- quest-specific facts/actors/resources remain authored data;
+- six source turns migrate as **narrative beats**, while elapsed world time stays on the generic clock/scheduler;
+- presentation/assets never become gameplay authority;
+- freeform AI may interpret/propose, while Core/runtime owns validation and mutation;
+- `executed`, `conditional` and blocked/precondition semantics remain distinguishable;
+- no client-side gameplay arithmetic;
+- immutable release + published-session binding remains the rollout authority.
+
+## Real quests required by B11
+
+### `examples/florence`
+
+Move the real Florence scenario semantics from the exact source SHA into generic Engine contracts/state. Preserve causal meaning, not source implementation branches or exact prose.
+
+### `examples/transfer-desk`
+
+The existing `packages/contracts/fixtures/transfer-desk` is only a B01 contract fixture. B11 requires a full second example with a different causal shape: different goal, item transfer/possession, social context and resource pressure. It must not be Florence with renamed actors.
+
+## Rollout contract for later B11 integration
+
+- do not modify or migrate old live `sandbox` sessions;
+- the adapter/BFF chooses legacy vs Engine only when creating a new Florence session;
+- the chosen runtime/release is pinned to the session;
+- changing a rollout flag never moves an in-progress session;
+- rollback stops routing future sessions to Engine while both kinds of existing session continue on their pinned runtime.
 
 ## Exact next sequence
 
-1. finish the B09-03 worklog/closure docs on this branch;
-2. fetch the resulting **exact current PR head** and require its ordinary root CI success (`npm run verify`, including deterministic `docs:check`);
-3. update PR #33 body with canonical audit + final CI evidence;
-4. ensure there is no unresolved blocking review state and mark PR ready;
-5. merge using the exact pinned current head SHA — do not merge a moved head;
-6. fetch the exact workflow with `event=push`, `head_branch=main`, `head_sha=<merge SHA>` and require success;
-7. only then call **B09-03 and canonical B09 published**;
-8. start **B10 — interactive author assistant, Skills/MCP broker and Codex adapter** exactly from that verified B09-03 merge SHA.
+1. create `examples/florence` using only generic contracts/extensions;
+2. create `examples/transfer-desk` as a genuinely different real quest;
+3. add deterministic contract/scenario tests and verify no Florence identifiers enter `packages/core`;
+4. run root `npm run verify` on the exact B11 head;
+5. only then add the minimal `sandbox` adapter/BFF + new-session routing flag;
+6. run old/new semantic comparison using the canonical Florence route plus representative compromise/refusal routes;
+7. prove rollback/session pinning and complete B11 acceptance before B12.
 
-Do not start B10 from the feature branch, a pre-closure SHA or an unverified main ref.
+Do not begin by editing the legacy app or by introducing a Florence special case into the Engine. The next implementation surface is the two real quest packages.
