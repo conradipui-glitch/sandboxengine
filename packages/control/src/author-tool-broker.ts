@@ -13,7 +13,8 @@ export const AUTHOR_TOOL_IDS = Object.freeze([
   "author.draft.read",
   "author.proposal.preview",
   "author.proposal.apply",
-  "docs.agent-kit.read"
+  "docs.agent-kit.read",
+  "docs.reference.read"
 ] as const);
 export type AuthorToolId = (typeof AUTHOR_TOOL_IDS)[number];
 export type AuthorToolSource = "builtin" | "skill" | "mcp";
@@ -28,7 +29,8 @@ const TRUSTED_AUTHOR_TOOLS: readonly TrustedAuthorToolDescriptor[] = Object.free
   Object.freeze({ toolId: "author.draft.read", operationKind: "draft.read", builtinFallback: true }),
   Object.freeze({ toolId: "author.proposal.preview", operationKind: "proposal.preview", builtinFallback: true }),
   Object.freeze({ toolId: "author.proposal.apply", operationKind: "proposal.apply", builtinFallback: true }),
-  Object.freeze({ toolId: "docs.agent-kit.read", operationKind: null, builtinFallback: true })
+  Object.freeze({ toolId: "docs.agent-kit.read", operationKind: null, builtinFallback: true }),
+  Object.freeze({ toolId: "docs.reference.read", operationKind: null, builtinFallback: false })
 ]);
 
 export const AUTHOR_TOOL_BROKER_POLICY_HASH = sha256(canonicalStringify({
@@ -98,7 +100,7 @@ export function buildAuthorToolBrokerPin(
   installedDocsHash: string
 ): BuildAuthorToolBrokerPinResult {
   if (!isHash(installedDocsHash) || !job || typeof job !== "object") return frozen({ kind: "invalid_request" });
-  const allowed = new Set<AuthorToolId>(["docs.agent-kit.read"]);
+  const allowed = new Set<AuthorToolId>(["docs.agent-kit.read", "docs.reference.read"]);
   for (const operationKind of job.grant.allowedOperations) {
     const toolId = toolIdForOperation(operationKind);
     if (toolId === null) return frozen({ kind: "invalid_request" });

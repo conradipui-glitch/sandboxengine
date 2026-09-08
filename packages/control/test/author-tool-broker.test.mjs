@@ -55,7 +55,8 @@ test("B10.b.11 broker pins server policy and third-party Skill/MCP text cannot g
     "author.draft.read",
     "author.proposal.apply",
     "author.proposal.preview",
-    "docs.agent-kit.read"
+    "docs.agent-kit.read",
+    "docs.reference.read"
   ]);
   assert.equal(Object.isFrozen(pinned.pin), true);
   assert.equal(Object.isFrozen(pinned.pin.allowedToolIds), true);
@@ -147,7 +148,7 @@ test("B10.b.11 broker never widens a reduced job grant", async () => {
   assert.equal(started.kind, "updated");
   const pinned = await ensureAuthorToolBrokerPin(store, started.job, HASH_A, 1002);
   assert.equal(pinned.kind, "pinned");
-  assert.deepEqual(pinned.pin.allowedToolIds, ["author.draft.read", "docs.agent-kit.read"]);
+  assert.deepEqual(pinned.pin.allowedToolIds, ["author.draft.read", "docs.agent-kit.read", "docs.reference.read"]);
   const deniedApply = authorizeAuthorToolBrokerRequest(pinned.pin, pinned.job, {
     toolId: "author.proposal.apply", source: "skill"
   });

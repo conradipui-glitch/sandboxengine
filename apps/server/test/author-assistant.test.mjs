@@ -162,7 +162,7 @@ test("B10.a explicit autoApply goes through proposal preview/apply and creates e
   assert.match(brokerPin.fact.installedDocsHash, /^[a-f0-9]{64}$/);
   assert.match(brokerPin.fact.contractHash, /^[a-f0-9]{64}$/);
   assert.deepEqual(brokerPin.fact.allowedToolIds, [
-    "author.draft.read", "author.proposal.apply", "author.proposal.preview", "docs.agent-kit.read"
+    "author.draft.read", "author.proposal.apply", "author.proposal.preview", "docs.agent-kit.read", "docs.reference.read"
   ]);
   assert.ok(checkpoints.some((entry) => entry.fact.kind === "draft.read"));
   assert.ok(checkpoints.some((entry) => entry.fact.kind === "proposal.produced"));
