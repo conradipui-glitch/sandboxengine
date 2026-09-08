@@ -13,7 +13,7 @@ permissions:
 
 env:
   LHE_EVAL_API_KEY: ${{ secrets.LHE_EVAL_API_KEY }}
-  LHE_EVAL_MODEL: openai/gpt-5-mini
+  LHE_EVAL_MODEL: ${{ vars.LHE_EVAL_MODEL }}
   LHE_EVAL_OUTPUT: /tmp/b12-live-eval.json
 
 jobs:
