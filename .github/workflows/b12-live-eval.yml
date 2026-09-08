@@ -1,0 +1,63 @@
+name: B12 bounded live provider eval
+
+on:
+  push:
+    branches: [b12-release-hardening]
+    paths:
+      - .github/workflows/b12-live-eval.yml
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build evaluator dependencies
+        run: npm run typecheck
+
+      - name: Run bounded live eval or report not configured
+        env:
+          LHE_EVAL_API_KEY: ${{ secrets.LHE_EVAL_API_KEY }}
+          LHE_EVAL_MODEL: ${{ vars.LHE_EVAL_MODEL || secrets.LHE_EVAL_MODEL }}
+          LHE_EVAL_BASE_URL: ${{ vars.LHE_EVAL_BASE_URL || secrets.LHE_EVAL_BASE_URL }}
+          LHE_EVAL_OUTPUT: b12-live-eval.json
+        run: npm run eval:ai
+
+      - name: Summarize safe eval status
+        run: |
+          node - <<'NODE'
+          const report = JSON.parse(require('node:fs').readFileSync('b12-live-eval.json', 'utf8'));
+          const safe = {
+            status: report.status,
+            provider: report.provider,
+            model: report.model,
+            summary: report.summary ?? null,
+            cases: Array.isArray(report.cases) ? report.cases.map((entry) => ({
+              id: entry.id,
+              kind: entry.kind,
+              contractPass: entry.contractPass,
+              semanticPass: entry.semanticPass,
+              latencyMs: entry.latencyMs,
+              attempts: entry.attempts,
+              usage: entry.usage,
+              modelId: entry.modelId,
+              source: entry.source ?? null,
+              error: entry.error ?? null
+            })) : []
+          };
+          console.log('B12_LIVE_EVAL_SAFE_SUMMARY=' + JSON.stringify(safe));
+          NODE
