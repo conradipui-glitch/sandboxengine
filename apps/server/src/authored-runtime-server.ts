@@ -137,9 +137,16 @@ async function route(request: any, response: any, deps: ReturnType<typeof resolv
   if (method === "GET" && sessionMatch) {
     const sessionId = sessionMatch[1];
     if (!sessionId || !(await authenticate(request, deps.guestAccess, sessionId))) return sendNotFound(response);
-    const session = await deps.storage.loadSession(sessionId);
-    if (!session) return sendNotFound(response);
-    sendJson(response, 200, { playerView: projectPlayerView(session) });
+    const context = await resolveContext(deps, sessionId);
+    if (!context.ok) {
+      return sendJson(response, context.code === "SESSION_NOT_FOUND" ? 404 : 503, {
+        error: { code: "PINNED_RELEASE_UNAVAILABLE", detailCode: context.code }
+      });
+    }
+    sendJson(response, 200, {
+      playerView: projectPlayerView(context.context.session),
+      situation: authoredScenarioPublicSituation(context.context.scenario, context.context.session.state)
+    });
     return;
   }
 
@@ -210,7 +217,12 @@ async function createSession(request: any, response: any, deps: ReturnType<typeo
     return sendJson(response, created.kind === "session_exists" ? 409 : 500, { error: { code: "SESSION_CREATE_FAILED" } });
   }
 
-  sendJson(response, 201, { sessionId, credential, playerView: projectPlayerView(created.session) });
+  sendJson(response, 201, {
+    sessionId,
+    credential,
+    playerView: projectPlayerView(created.session),
+    situation: authoredScenarioPublicSituation(authored.scenario, created.session.state)
+  });
 }
 
 async function handleAction(request: any, response: any, deps: ReturnType<typeof resolvedDeps>, sessionId: string): Promise<void> {
@@ -255,7 +267,12 @@ async function handleAction(request: any, response: any, deps: ReturnType<typeof
     return finishWithoutTurn(response, deps, fresh.context.session, claim.operation, execution.publicResponse);
   }
   if (!execution.committed) {
-    const publicResponse = blockedResponse(claim.operation.operationId, fresh.context.session, execution);
+    const publicResponse = blockedResponse(
+      claim.operation.operationId,
+      fresh.context.session,
+      fresh.context.scenario,
+      execution
+    );
     return finishWithoutTurn(response, deps, fresh.context.session, claim.operation, publicResponse);
   }
 
@@ -264,6 +281,7 @@ async function handleAction(request: any, response: any, deps: ReturnType<typeof
     claim.operation.operationId,
     turnId,
     fresh.context.session,
+    fresh.context.scenario,
     execution
   );
   const committed = await deps.storage.commitTurn({
@@ -361,6 +379,7 @@ function committedResponse(
   operationId: string,
   turnId: string,
   session: SessionRecord,
+  scenario: AuthoredScenarioSidecarData,
   execution: Extract<AuthoredScenarioExecution, { readonly committed: true }>
 ): RuntimePublicResponse {
   return Object.freeze({
@@ -380,13 +399,15 @@ function committedResponse(
       session.release.questId,
       session.release.releaseId,
       execution.candidateState
-    )))
+    ))),
+    situation: authoredScenarioPublicSituation(scenario, execution.candidateState)
   });
 }
 
 function blockedResponse(
   operationId: string,
   session: SessionRecord,
+  scenario: AuthoredScenarioSidecarData,
   execution: Extract<AuthoredScenarioExecution, { readonly committed: false }>
 ): RuntimePublicResponse {
   return Object.freeze({
@@ -400,7 +421,8 @@ function blockedResponse(
       durationSeconds: 0,
       reasonCode: execution.reasonCode
     },
-    playerView: JSON.parse(JSON.stringify(projectPlayerView(session)))
+    playerView: JSON.parse(JSON.stringify(projectPlayerView(session))),
+    situation: authoredScenarioPublicSituation(scenario, session.state)
   });
 }
 
