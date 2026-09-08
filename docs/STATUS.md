@@ -4,7 +4,7 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B11 published; B12 release candidate hardening** | B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`; B12 PR #36 |
+| Репозиторий | **B01–B11 published; B12 mandatory gates complete** | B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`; B12 PR #36 |
 | Core/Runtime | **GREEN** | full deterministic suite + durable restart/replay/fencing |
 | Storage/assets | **B12 GREEN / scoped** | online backup/restore + 12/12 Florence hashes; no Cloudflare DO claim |
 | Studio/Player | **GREEN** | author/playtest/publication paths + T29 real 360×800 keyboard/focus smoke `34246143800` |
@@ -13,21 +13,25 @@
 | Security/quota | **GREEN** | permanent release audit 0/0 + 429 no-turn save integrity |
 | Real quests | **B11 published** | Florence + Transfer Desk through generic Core/Runtime |
 | Production companion | **B12.1 smoke GREEN** | `sandbox` production #50 / `34239102418` |
-| Acceptance matrix | **consolidated** | T01–33/T36–37 in `docs/B12-ACCEPTANCE-MATRIX.md`; T29 gap closed |
-| Live provider evidence | **BLOCKED / not_configured** | run `34243952551`: no `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL`; no fake live claim |
-| Codex live subscription | **UNAVAILABLE** | deterministic T37 boundary green; no authenticated live App Server run claimed |
+| Acceptance matrix | **mandatory B12 evidence complete** | T01–33/T36–37 in `docs/B12-ACCEPTANCE-MATRIX.md` |
+| Live provider evidence | **GREEN / model-quality limitation** | OpenRouter run `34250711595`, `deepseek/deepseek-v4-flash-0731`: contract 12/12, semantic 5/12, 16 attempts, mean 12.176 s, max 25.002 s |
+| Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | B13 Builder/deployment | **not started** | outside B12 |
 
 ## Current B12 position
 
-All autonomous functional/operational release gates found so far are closed: external production smoke, dependency remediation, backup/restore, restart recovery, quota-save integrity, mobile keyboard/onboarding, durable release rollback and persistent startup/shutdown.
+All mandatory B12 functional, operational and external provider evidence is now present. External production smoke, dependency remediation, backup/restore, restart recovery, quota-save integrity, mobile keyboard/onboarding, durable release rollback, persistent startup/shutdown and one real compatible-provider eval are recorded.
 
-Latest full regression before this documentation sync: exact implementation head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`, CI #713 / run `34246765104` — success.
+The selected live model `deepseek/deepseek-v4-flash-0731` passed every structural contract case but scored 5/12 (41.7%) on the small semantic corpus. This is recorded as a model-quality limitation, not hidden and not treated as proof that this model is the recommended intent parser. Narrative cases passed 4/4; aggregate token usage remains `null` because the provider did not report complete usage for every case.
 
-## Remaining blocker
+The one-shot workflow that referenced the repository API secret has been deleted after evidence capture. No credential-bearing eval workflow is intended to ship.
 
-B12 specification requires a bounded live provider eval and attempt/token/latency release statement. The real evaluator was invoked in CI but returned `status: not_configured`; the release environment contains no explicit key/model. Until a real configured bounded run is recorded, the B12 tag remains intentionally absent.
+## Final publication sequence
+
+1. run final exact-head `npm run verify` + docs gate on the cleaned B12 head;
+2. make PR #36 ready and merge only that exact green head;
+3. verify `main` CI on the merge commit;
+4. create the concrete B12 release tag on the verified merge commit;
+5. only then begin B13.
 
 Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `docs/RELEASE-REPORT.md`.
-
-Do not start B13 or create the B12 tag while the live-provider gate is unresolved.
