@@ -1,183 +1,102 @@
-# Living History Engine — Release Report
+# Living History Engine — B12 Release Report
 
-Status: **B12 in progress — B12.1, B12.2 and B12.3 accepted**  
-Report started: 2026-09-08  
-Release baseline: `sandboxengine@5b438214f1d709dd43244f107f883f6b2fc5f6ac`
+Status: **B12 internal/operational gates green; live provider evidence still unavailable**  
+Updated: 2026-09-08  
+Release baseline: B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`  
+Release branch: `b12-release-hardening` / PR #36
 
-This report is the evidence ledger for B12. A green build or a successful deployment alone does not close B12. Unknown, unavailable and not-yet-run checks remain explicit rather than being converted to pass.
+This is the evidence ledger. A green build is not allowed to erase an unavailable external check.
 
-## 1. Published B11 baseline
+## Accepted evidence
 
-### Engine
-
-| Evidence | Result |
-|---|---|
-| B11 PR #35 final head | `8d8d899e14a8d2ff56e9aac0e6ba94695738c194` |
-| PR CI #681 / run `34237564459` | **PASS** — full root verify |
-| B11 merge | `5b438214f1d709dd43244f107f883f6b2fc5f6ac` |
-| published `main` CI #682 / run `34237754065` | **PASS** — full root verify |
-
-### Sandbox production integration
-
-| Evidence | Result |
-|---|---|
-| B11 integration merge | `3d9cc885592ec229d2083883ea38d83de9fcc199` |
-| production deploy #49 / run `34238155592` | **PASS** — install, 49 tests, build, Wrangler deploy |
-| B11 Cloudflare version | `573525a6-4ff5-43d9-9642-62504eabb289` |
-| B12.1 smoke PR #11 head | `401043e2a815e9ff4991bbaccb00c9c84b3bb399` |
-| PR Verify #6 / run `34238768580` | **PASS** — install, tests, build, smoke-probe syntax |
-| B12.1 merge | `a6d5db944960ab7c8672349e329e6ff9ba4ff649` |
-| production deploy #50 / run `34239102418` | **PASS** — install, 49 tests, build, Wrangler deploy, external smoke |
-| current Cloudflare version | `cd0d8948-86d3-4a56-9b5f-c97bbec79771` |
-| deployed DO bindings | `HistorySession`, `ProductAnalytics`, `RuntimeRouteSession` |
-
-Production rollout note: publication does not itself enable Florence Engine assignment. Missing/unexpected `ENGINE_FLORENCE_ROLLOUT` normalizes to `off`; existing legacy sessions are not converted.
-
-## 2. B12 release gates
-
-| Gate | Status | Evidence / next action |
+| Gate | Result | Exact evidence |
 |---|---|---|
-| clean checkout + `npm ci` | **PASS** | PR #36 CI #698 / run `34243238408`; 0 known vulnerabilities after install |
-| full `npm run verify` | **PASS on B12.3 implementation head** | head `6f5588b2d88870f89a002b6db84867e1b6a3bc41`; CI #698 / `34243238408` |
-| external deployed-address smoke | **PASS — B12.1** | production #50 / `34239102418`; all probes passed after deploy |
-| backup/restore incl. assets | **PASS — B12.2** | SQLite backup + clean restore + 12/12 asset hashes |
-| restart / operation recovery | **PASS — B12.2 local SQLite Runtime** | durable T10/T12 suite + restored replay |
-| dependency vulnerability gate | **PASS — B12.3** | full and production dependency graphs both 0 known vulnerabilities; permanent audit gate in root verify |
-| quota/error save integrity | **PASS — B12.3 within implemented scope** | provider HTTP 429 exhaustion is bounded, replayable no-turn, save remains unchanged; prepared authored action still works |
-| quota telemetry semantics | **PASS — B12.3 deterministic evidence** | zero/null/stale/credential-revision and management-vs-inference separation remain explicit |
-| secret/public-error boundary | **PASS — B12.3 deterministic release evidence** | provider bodies/credentials are absent from normalized errors/safe views; exports/task packages/trace paths retain secret-free checks |
-| bounded provider live eval | **PENDING — B12.4** | explicit live credentials + model required; otherwise release statement must say `not_configured`/unavailable |
-| token / attempt / latency report | **PENDING — B12.4** | `eval:ai` already emits per-case usage, attempts and latency when live configured |
-| T01–33 / T36–37 matrix | **PENDING CONSOLIDATION** | map exact existing evidence and identify only real gaps |
-| Codex live status | **PENDING RELEASE STATEMENT** | deterministic protocol evidence exists; live subscription evidence only if an actual account is available |
-| README / runbook / changelog | **PENDING B12 AUDIT** | update against actual RC behavior |
-| final docs gate | **PENDING FINAL RC** | docs gate is green now; renew on final RC |
-| rollback procedure | **PENDING DRILL** | prove release/session rollback, not prose only |
-| release tag / commit | **NOT CREATED** | only after all release blockers are closed |
+| B11 published baseline | **PASS** | B11 merge `5b438214...`; main CI #682 / `34237754065` |
+| external production smoke | **PASS** | companion `sandbox` merge `a6d5db94...`; deploy #50 / `34239102418`; Cloudflare version `cd0d8948-86d3-4a56-9b5f-c97bbec79771`; `/api/health`, `/api/scenarios`, `/` pass attempt 1 |
+| dependency audit | **PASS** | B12.3 CI #698 / `34243238408`: `npm ci` 0 vulnerabilities; full/production audit 0 |
+| backup/restore | **PASS / SCOPED** | drill in root verify: 11 pages, revision 1, pinned `release-1`, one turn, idempotent replay, 12/12 Florence hashes |
+| restart/recovery | **PASS** | T10/T12 durable suite + backup restore replay |
+| quota/rate-limit save integrity | **PASS** | two retryable provider HTTP 429 failures → replayable no-turn; save unchanged; prepared authored action still commits |
+| release rollback | **PASS** | CI #709 / `34245705625`, rerun in #713: r1→r2→rollback r1 + restart; active session pinning preserved |
+| T29 mobile/browser | **PASS** | one-shot Chromium `34246143800`: 360×800, focus/keyboard/onboarding/replay and no blocking overflow/error |
+| persistent start/stop | **PASS** | head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`, CI #713 / `34246765104`: `/healthz` 200, Control read 200, SQLite created, SIGTERM exit 0 |
+| full regression before docs sync | **PASS** | CI #713 / `34246765104`; audit + all tests + three release drills + boundaries + docs |
+| T01–33/T36–37 consolidation | **DONE** | `docs/B12-ACCEPTANCE-MATRIX.md` |
 
-## 3. B12.1 — external production smoke — ACCEPTED
+## B12.1 — production smoke
 
-Companion `conradipui-glitch/sandbox` PR #11 added a bounded read-only smoke immediately after `wrangler deploy --keep-vars`.
+The companion Worker deploy is reachable after real deployment and the smoke is read-only. It creates no synthetic game session/analytics event. Publication does not enable `ENGINE_FLORENCE_ROLLOUT`; existing legacy sessions are not converted.
 
-Accepted production evidence:
+## B12.2 — backup/restore and restart
 
-- merge: `a6d5db944960ab7c8672349e329e6ff9ba4ff649`;
-- production workflow: #50 / run `34239102418` — **success**;
-- deployed version: `cd0d8948-86d3-4a56-9b5f-c97bbec79771`;
-- `GET /api/health` — **PASS**, attempt 1;
-- `GET /api/scenarios` — **PASS**, attempt 1;
-- `GET /` — **PASS**, attempt 1;
-- smoke ran only after Wrangler reported successful deployment;
-- probe is read-only and creates no game session or synthetic product-analytics event.
+`npm run drill:backup-restore` is permanent root-verify evidence. It uses SQLite online backup rather than a raw live WAL-file copy. Scope is standalone Engine SQLite plus repository Florence assets, **not Cloudflare Durable Objects**.
 
-## 4. B12.2 — backup/restore + restart/recovery — ACCEPTED FOR LOCAL ENGINE STORAGE
+## B12.3 — security/quota/public error boundary
 
-Root `npm run verify` includes `npm run drill:backup-restore`. The drill uses Node 24's SQLite online backup API instead of copying only the main database file while WAL mode may be active.
+The initial build-only advisories were remediated by `ajv@8.20.0` and `fast-uri@3.1.7`. The temporary contents-write lock refresh workflow was deleted. Permanent `npm run audit:release` blocks moderate/high/critical findings in the full graph.
 
-Exact evidence first accepted on implementation head `8113d7129544ad58aa0c628489d2415de78bf6d9`, CI #686 / `34241997225`, and rerun successfully by later B12 exact-head CI:
+Existing exact tests preserve quota zero vs null/stale semantics, inference vs management credential separation, sanitized provider errors, secret-free exports/task packages/playtest views and project/session isolation.
 
-- SQLite online backup transferred **11 pages**;
-- restored `session-1` at revision **1**;
-- pinned `release-1` and exact content hash preserved;
-- exactly one turn preserved;
-- retry of committed operation returns idempotent replay;
-- Florence asset manifest `living-history.asset-migration/1` preserved;
-- **12/12** assets restored and SHA-256 checked;
-- pinned source commit remains `092bcef0be5943e32bf02f08f9e9d4cde393fa95`.
+## B12.4 — live provider evaluation — UNAVAILABLE, NOT PASS
 
-The durable recovery suite also proves lost-response replay, crash-before-commit rollback, lease reacquire, stale fencing rejection and bounded SQLite busy failure without partial publication.
+A one-shot read-only CI probe ran `npm run eval:ai` in run `34243952551` with the documented release environment names. Result:
 
-**Scope limitation:** standalone Engine local SQLite Runtime + repository Florence assets. This is deliberately not claimed as a Cloudflare Durable Object backup/restore test.
+```json
+{"status":"not_configured","provider":"https://openrouter.ai/api/v1","model":null,"cases":[]}
+```
 
-## 5. B12.3 — release security / quota / log gate — ACCEPTED
+Neither `LHE_EVAL_API_KEY` nor `LHE_EVAL_MODEL` was configured. Therefore no real-model semantic rate, attempts, tokens or latency exists. Deterministic provider tests are not substituted for live evidence.
 
-Exact accepted implementation head: `6f5588b2d88870f89a002b6db84867e1b6a3bc41`.  
-PR #36 CI #698 / run `34243238408` — **success**.
+The evaluator is already bounded and, once configured, records per-case contract/semantic result, latency, attempts, provider-reported tokens, model ID and request IDs.
 
-### Dependency remediation and permanent gate
+## B12.5 — mobile/keyboard Studio release smoke — ACCEPTED
 
-Earlier B12 install evidence exposed one moderate and one high advisory in the dev/build graph:
+Final one-shot Chromium evidence: run `34246143800`.
 
-- direct dev dependency `ajv@8.17.1` had the `$data` ReDoS advisory affecting versions below the fixed range;
-- transitive `fast-uri@3.1.0` carried the high-severity findings;
-- the production dependency graph was already clean.
+Machine result:
 
-B12 upgraded the build graph to:
+```json
+{"result":"pass","viewport":"360x800","horizontalOverflow":false,"onboarding":["auto-start","skip","help","escape-focus-return","replay","next","back","skip"],"editableControl":"project-title","keyboardInputPreserved":true,"pageErrors":0,"unexpectedHttpFailures":0,"canonicalLocalAuthProbe404":true,"favicon404Observed":false}
+```
 
-- `ajv@8.20.0`;
-- `fast-uri@3.1.7` through a refreshed lockfile.
+The exact 404 for `/control/v1/auth/session` is a tested local Studio protocol signal selecting local-owner mode, not an unknown failed resource. Temporary Playwright workflow/dependency installation was removed after evidence capture and is not part of the release lockfile.
 
-A one-shot contents-write lock-refresh workflow was used only on the B12 branch, then deleted before the accepted head. It does not ship in the PR.
+## B12.6 — durable release rollback — ACCEPTED
 
-The permanent `npm run audit:release` gate is now part of root `npm run verify`. Exact CI #698 proves:
+Permanent `npm run drill:rollback` is in root verify. It proves:
 
-- `npm ci` — **found 0 vulnerabilities**;
-- all dependencies — info 0, low 0, moderate 0, high 0, critical 0;
-- production dependencies — info 0, low 0, moderate 0, high 0, critical 0;
-- moderate/high/critical findings anywhere now fail the release audit.
+- immutable release r1 then r2 publication;
+- session A remains pinned to r1;
+- session B created after r2 remains pinned to r2;
+- rollback moves the current pointer r2→r1 only for future sessions;
+- full store/runtime reopen preserves pointer and bindings;
+- session C after rollback gets r1;
+- immutable hashes and publication history are unchanged.
 
-### Provider quota/rate-limit save integrity
+First accepted CI #709 / `34245705625`; renewed in CI #713.
 
-`apps/server/test/b12-runtime-quota-integrity.test.mjs` adds the missing release-sensitive cross-layer proof:
+## B12.7 — persistent startup/shutdown — ACCEPTED
 
-- the intent provider returns two retryable HTTP 429 responses;
-- retry count remains bounded to the existing interpreter policy;
-- Runtime returns `INTENT_FAILED` as a no-turn result;
-- world revision stays 0, elapsed time/resources/state stay unchanged and no turn is persisted;
-- retry of the same idempotency key replays the same no-turn result without another provider call;
-- an explicit prepared authored option remains available afterwards and commits normally.
+`npm start` now names the compiled Node+SQLite Runtime+Control entrypoint. Permanent `npm run drill:startup-shutdown` starts it on ephemeral loopback ports and validates actual bound-port reporting, Runtime `/healthz`, a safe Control read, SQLite file creation and SIGTERM clean exit.
 
-This proves save integrity for upstream provider quota/rate-limit failure. It does **not** claim a separate local project billing-quota subsystem that the Engine does not implement.
+Exact implementation head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`; CI #713 / `34246765104` — success.
 
-### Existing quota and secret-boundary evidence consolidated by the same exact CI
+## Codex release statement
 
-The exact B12.3 run also reruns and passes deterministic checks that:
+Codex adapter/account/controller deterministic tests cover protocol pinning, account isolation, browser/device-code modes, quota null/zero, logout/credential rotation and explicit no paid-API fallback. An authenticated live Codex subscription App Server run is **not available and not claimed**.
 
-- real numeric zero is preserved and unknown quota values remain `null`;
-- stale quota is explicit and cache identity includes credential revision;
-- OpenRouter inference-key quota and account-management credential remain separate;
-- quota endpoint failure does not fabricate an inference failure or fake balance;
-- Codex account/quota state is isolated per controller/account and logout/credential rotation invalidates cached state/session handles;
-- provider credentials never enter configured URLs or safe connection views;
-- normalized HTTP provider errors omit raw provider bodies and credentials;
-- `eval:ai` in unconfigured mode does not echo unrelated environment secrets;
-- draft/release exports are structurally secret-free;
-- secret-shaped imported/task-package material is rejected;
-- playtest evidence and public Player views remain deny-by-default and project/session scoped.
+## Current release limitations
 
-`check:boundaries` and `docs:check` also passed in the same exact run.
+- live provider eval is `not_configured` and remains the mandatory B12 external blocker;
+- persistent `npm start` does not automatically compose a live provider;
+- built-in log rotation is not shipped; supervisor/platform owns stdout/stderr retention;
+- no Cloudflare DO backup claim;
+- no shared-network SQLite multi-writer claim;
+- Florence Engine production rollout is an explicit companion-app operation;
+- B13 Builder/code/GitHub/deployment orchestration is not shipped.
 
-## 6. B12.4 — bounded live provider eval + telemetry — NEXT
+## Remaining blocker and finalization
 
-The existing `npm run eval:ai` is already explicitly opt-in and requires:
+Only after a real `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL` is intentionally configured should B12 run one bounded live eval, record real model/provider + attempts/tokens/latency, then renew final exact-head root CI/docs gate and create the concrete release tag.
 
-- `LHE_EVAL_API_KEY`;
-- `LHE_EVAL_MODEL`;
-- optional `LHE_EVAL_BASE_URL` (defaults to OpenRouter compatible API);
-- optional `LHE_EVAL_OUTPUT`.
-
-When configured, it runs a bounded corpus of runtime intent and narrative cases and records per-case:
-
-- semantic/contract result;
-- latency in milliseconds;
-- number of provider attempts;
-- input/output/total tokens when reported by the provider;
-- model ID and provider request IDs.
-
-B12.4 must use a real configured credential/model if the release environment actually provides one. If not, the release evidence must record `not_configured`/unavailable and must not promote deterministic fake-provider tests into live-model evidence. The eval does not belong in ordinary `npm run verify` because it is external and potentially paid.
-
-## 7. Known release constraints
-
-- B13 Builder/deployment orchestration is not part of B12 release acceptance and must not be presented as shipped.
-- Florence Engine production rollout is a separate operational decision; publication of the BFF does not imply the route is enabled.
-- Production smoke proves public reachability and shell/API health; it does not prove Engine routing is enabled and intentionally does not mutate production state.
-- Live provider/Codex claims remain limited to evidence actually obtained with real credentials/accounts.
-
-## 8. Remaining release blockers
-
-1. B12.4 bounded live provider eval + attempt/token/latency release statement;
-2. acceptance-matrix consolidation for T01–33/T36–37;
-3. release README/runbook/changelog and tested rollback procedure;
-4. final exact-head CI, concrete RC commit and release tag.
-
-No release tag should be created while any blocker above remains unresolved.
+No B12 tag exists yet.

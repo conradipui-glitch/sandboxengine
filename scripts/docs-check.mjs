@@ -10,11 +10,15 @@ import {
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const required = [
   "README.md",
+  "CHANGELOG.md",
   "AGENTS.md",
   "CONTRIBUTING.md",
   "docs/SPECIFICATION.md",
   "docs/STATUS.md",
   "docs/HANDOFF.md",
+  "docs/RELEASE-REPORT.md",
+  "docs/B12-ACCEPTANCE-MATRIX.md",
+  "docs/RUNBOOK.md",
   "docs/MVP.md",
   "docs/BASELINE.md",
   "docs/TEAM.md",
@@ -35,8 +39,17 @@ if (missing.length > 0) {
 } else {
   const readme = await readFile(resolve(root, "README.md"), "utf8");
   const agentIndex = await readFile(resolve(root, "docs/agent/README.md"), "utf8");
-  if (!readme.includes("docs/SPECIFICATION.md") || !readme.includes("docs/HANDOFF.md")) {
-    throw new Error("README must link the specification and handoff");
+  const requiredReadmeLinks = [
+    "docs/SPECIFICATION.md",
+    "docs/HANDOFF.md",
+    "docs/RELEASE-REPORT.md",
+    "docs/B12-ACCEPTANCE-MATRIX.md",
+    "docs/RUNBOOK.md",
+    "CHANGELOG.md"
+  ];
+  const missingReadmeLinks = requiredReadmeLinks.filter((path) => !readme.includes(path));
+  if (missingReadmeLinks.length > 0) {
+    throw new Error("README must link release navigation: " + missingReadmeLinks.join(", "));
   }
   if (!agentIndex.includes("docs/SPECIFICATION.md")) {
     throw new Error("Agent entry point must point to the specification");

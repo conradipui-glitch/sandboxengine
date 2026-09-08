@@ -2,84 +2,74 @@
 
 Updated: 2026-09-08  
 Release branch: `b12-release-hardening` / PR #36  
-Primary exact regression evidence: CI #698 / run `34243238408` on implementation head `6f5588b2d88870f89a002b6db84867e1b6a3bc41`  
-Production smoke: `sandbox` run `34239102418`  
-Live-eval availability probe: run `34243952551`
+Latest full regression before docs sync: CI #713 / run `34246765104` on head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb` — **PASS**  
+Production smoke: `sandbox` run `34239102418` — **PASS**  
+T29 real browser smoke: run `34246143800` — **PASS**  
+Live-eval availability probe: run `34243952551` — **not_configured**
 
-This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T34–T35 and the Builder-specific code-isolation part of T33 belong to B13 by specification and are not silently counted as B12 release capability.
-
-Status vocabulary:
-
-- **PASS** — required behavior is exercised by deterministic or production evidence already in the release chain.
-- **PASS / SCOPED** — accepted for the explicitly stated standalone Engine release boundary; broader platform claims are excluded.
-- **PARTIAL / RELEASE GAP** — meaningful evidence exists, but one required part is not actually exercised yet.
-- **LIVE UNAVAILABLE** — deterministic boundary exists, but an actual external account/provider run was unavailable; no fake claim is substituted.
-- **DEFERRED B13** — specification explicitly places this part outside B12.
+This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T34–T35 and Builder-specific code/deployment isolation are B13 scope and are not silently counted as B12 capability.
 
 | ID | Status | Release evidence / limitation |
 |---|---|---|
-| T01 | **PASS** | Core action/effect tests prove resource-limited partial paint, exact completed units/time and blocked repeat without extra time. |
-| T02 | **PASS** | Intent/Core regressions preserve negation/hypothetical boundaries; player consent/signature is never fabricated from text that does not authorize it. |
-| T03 | **PASS** | Location/availability conditions and social-agency tests prevent impossible local interaction/teleport-style presence assumptions. |
-| T04 | **PASS** | Social-agency + intent corpus keep request, permission and future consent distinct. |
-| T05 | **PASS** | Scheduler tests prove ordered mid-action events and that later steps observe the changed world state. |
-| T06 | **PASS** | Clock/deadline tests cover equal-time completion/deadline ordering and midnight arithmetic. |
-| T07 | **PASS** | Item/atomic effect tests prevent double location and reject invalid transfer/consume batches without partial mutation. |
-| T08 | **PASS** | Scheduler event-step limits reject runaway immediate-event chains without partial commit. |
-| T09 | **PASS** | Intent tests cover unknown/ambiguous/multi-action/stale clarification paths without inventing actions. |
-| T10 | **PASS** | Runtime storage/API tests prove same-key replay and same-key/different-request conflict with a single transition. |
-| T11 | **PASS** | Operation claim/revision/fencing tests prove concurrent commands cannot both own/commit the same revision. |
-| T12 | **PASS** | SQLite restart suite proves crash-before-commit recovery, lost-response replay, expired lease reacquire and stale fencing rejection. |
-| T13 | **PASS** | AI failure tests prove intent timeout/invalid output does not consume a turn; narrator failure falls back without duplicating gameplay mutation. |
-| T14 | **PASS** | Narrator/output validation rejects unknown speakers, illegal effects and unsafe references; safe fallback does not expose hidden state. |
-| T15 | **PASS** | Guest/project/session authorization and public projection tests deny cross-session/project access and keep secret/full state out of Player responses. |
-| T16 | **PASS** | Prompt-injection corpus cannot grant money/state mutation outside allowed action rules. |
-| T17 | **PASS** | Compile/plugin/publication gates reject broken references, duplicate IDs, unknown/incompatible plugins and report exact validation failures. |
-| T18 | **PASS** | Immutable release/session pinning + publication rollback tests prove active sessions stay on their release while future sessions follow the current pointer. B11 companion routing adds the same invariant across legacy/Engine runtimes. |
-| T19 | **PASS** | Presentation executor tests cover sequence/parallel, skip/reduced motion, blocked audio/missing resource fallback while gameplay state remains identical. |
-| T20 | **PASS** | Player presentation/replay tests restore the last frame and reject duplicate/old operation effects after reload/retry. |
-| T21 | **PASS** | B09 full-author-cycle and B10 canonical regressions cover create/edit/validate/frozen playtest/publish path without hand-editing quest JSON. |
-| T22 | **PASS** | Draft revision/conflict tests and stale AI proposal checks prevent silent overwrite and require explicit compare/retry/apply. |
-| T23 | **PASS** | `dice-check` plugin tests prove deterministic seed behavior, registration without Core quest/plugin ID branches and text fallback when UI capability is absent. |
-| T24 | **PASS** | `docs:check`, generated contract checks and registry/docs gates fail on drift and are part of root verify. |
-| T25 | **PASS** | Portability/import tests cover valid export/import plus traversal/size/secret-shaped input rejection; exports remain structurally secret-free. |
-| T26 | **PASS** | Real `examples/transfer-desk` proves a different item/social/resource quest works through shared Core/Runtime without Florence-specific branches. |
-| T27 | **PASS** | Published B11 semantic acceptance preserves frozen Florence source mapping across canonical, compromise, refusal/authorship, conditional and withdrawal routes; migrated assets are pinned and verified. |
-| T28 | **PASS / SCOPED** | B12.2 proves clean SQLite backup/restore, restart/recovery, assets and idempotent replay; B12.3 proves upstream 429 no-turn save integrity. Scope is standalone Engine SQLite/repository assets, not Cloudflare Durable Object backup. |
-| T29 | **PARTIAL / RELEASE GAP** | Onboarding tests prove repeat/skip/back, optional failure-safe preference, real Studio anchors and no AI/network dependency; Studio test proves responsive CSS at `max-width: 680px`. A real browser/mobile-width focus+keyboard interaction has not yet been executed. |
-| T30 | **PARTIAL / LIVE UNAVAILABLE** | Deterministic provider/profile/custom-endpoint/capability tests are green. One-shot B12 live eval run `34243952551` found `LHE_EVAL_API_KEY` and `LHE_EVAL_MODEL` unset, so no real provider/model claim is made. |
-| T31 | **PASS** | Quota tests preserve zero vs unknown/null, separate management/inference credentials, tolerate denied management endpoints, expose stale state and avoid fabricated balance/tokens. |
-| T32 | **PASS** | AuthorJob/checkpoint/busy-control tests cover multi-block creation, retry/no duplication, persisted progress, pause/resume and budget/rate-limit handling without draft corruption. |
-| T33 | **PASS for B12 author boundary; DEFERRED B13 for Builder code isolation** | MCP/Skill broker/task-package tests deny secret/shell/deploy capability escalation and permission widening. Specification assigns Builder repository/deployment code isolation to B13. |
-| T36 | **PASS** | Agent-kit/docs applicability, broker pinning/fallback and MCP/Skill lifecycle tests keep active-task version/permissions stable when external capability is unavailable or changes. |
-| T37 | **PASS deterministic boundary; LIVE UNAVAILABLE** | Codex adapter/controller tests cover access failure/expiry, account isolation, quota and logout without paid-API fallback. No authenticated live Codex subscription run is claimed. |
+| T01 | **PASS** | Core partial/executed/blocked resource math and time invariants. |
+| T02 | **PASS** | Negation/hypothetical/agency boundaries; consent is not fabricated. |
+| T03 | **PASS** | Presence/location conditions reject impossible local interaction. |
+| T04 | **PASS** | Request, permission and response remain distinct social acts. |
+| T05 | **PASS** | Mid-action events are ordered and later steps observe changed state. |
+| T06 | **PASS** | Equal-time deadline ordering and midnight arithmetic are deterministic. |
+| T07 | **PASS** | Item/effect batches are atomic and cannot double-place items. |
+| T08 | **PASS** | Immediate-event chains hit a global bounded step budget without partial commit. |
+| T09 | **PASS** | Unknown/ambiguous/multi-action/stale clarification paths do not invent actions. |
+| T10 | **PASS** | Same-key replay is byte-stable; changed request cannot reuse the key. |
+| T11 | **PASS** | Concurrent commands cannot both own/commit one revision. |
+| T12 | **PASS** | SQLite lost-response/crash/reacquire/fencing restart recovery. |
+| T13 | **PASS** | AI intent/narrator failure never duplicates or consumes gameplay incorrectly. |
+| T14 | **PASS** | Narration validation/fallback rejects hidden/unknown authority. |
+| T15 | **PASS** | Guest/project/session isolation and deny-by-default Player projection. |
+| T16 | **PASS** | Prompt injection cannot widen action/effect authority. |
+| T17 | **PASS** | Compile/plugin/publication validation fails closed on incompatible data. |
+| T18 | **PASS** | B12 permanent rollback drill proves immutable current-pointer rollback, restart persistence and old/new session pinning. CI #713. |
+| T19 | **PASS** | Presentation sequence/parallel/skip/failure fallback leaves gameplay authoritative state unchanged. |
+| T20 | **PASS** | Reload/retry restores committed frame and never replays obsolete presentation effects. |
+| T21 | **PASS** | Human Studio author cycle reaches validation/playtest/publication without manual quest JSON editing. |
+| T22 | **PASS** | Draft and AI proposal conflicts are visible and never silently overwrite. |
+| T23 | **PASS** | `dice-check` plugin deterministic and isolated from Core-specific branches. |
+| T24 | **PASS** | Generated docs/registry drift is CI-gated. |
+| T25 | **PASS** | Export/import portability plus traversal/size/secret rejection. |
+| T26 | **PASS** | Transfer Desk proves a second causal/item/social quest through generic Core/Runtime. |
+| T27 | **PASS** | Published B11 Florence semantic routes and migrated asset provenance remain pinned. |
+| T28 | **PASS / SCOPED** | Backup/restore, restart, startup/shutdown, assets, 429 no-turn save integrity all pass for standalone SQLite Engine. No Cloudflare DO backup claim. |
+| T29 | **PASS** | One-shot real Chromium run `34246143800`: 360×800, no horizontal overflow, auto-tour/skip/help/Escape focus return/replay/next/back/skip, real project-title keyboard input preserved, 0 page errors and 0 unexpected HTTP failures. Canonical local auth-probe 404 was explicitly classified by existing access semantics. Temporary Playwright workflow was deleted afterwards. |
+| T30 | **PARTIAL / LIVE UNAVAILABLE** | Deterministic OpenRouter/custom endpoint/capability tests pass. Live probe `34243952551` found no `LHE_EVAL_API_KEY`/`LHE_EVAL_MODEL`, so no real-model success/tokens/latency claim exists. |
+| T31 | **PASS** | Quota null/0/stale semantics, management-vs-inference credentials and denied quota endpoint behavior. |
+| T32 | **PASS** | Author jobs persist/replay/pause/resume/cancel without duplicate mutation. |
+| T33 | **PASS for B12 author boundary; DEFERRED B13 for Builder code/deploy** | Skills/MCP broker denies secret/shell/deploy capability escalation; Builder repository/deployment authority is B13. |
+| T36 | **PASS** | Agent-kit/Skill/MCP applicability and version/permission pinning fail closed. |
+| T37 | **PASS deterministic boundary; LIVE UNAVAILABLE** | Codex adapter/controller covers protocol/auth/quota/logout/isolation with no paid fallback; no authenticated live subscription run is claimed. |
 
-## Current B12 gaps surfaced by consolidation
+## Release-wide operational evidence
 
-### G1 — T29 browser/mobile interaction
+- dependency graphs: 0 known vulnerabilities at B12 security gate;
+- backup/restore: 11 SQLite pages, exact restored session/release/turn and 12/12 Florence hashes;
+- rollback: publish r1 → r2 → rollback r1, restart, immutable hashes/history and session A/B/C pinning preserved;
+- persistent entrypoint: Runtime `/healthz` 200, Control safe read 200, SQLite created, SIGTERM exit code 0;
+- external production shell/API smoke: PASS on deployed companion Worker.
 
-This is an actionable release gap. A bounded browser smoke must use the actual built Studio at a mobile-width viewport and prove at minimum:
+## Remaining B12 gap
 
-1. Studio loads at ~360 px width without horizontal UI loss that blocks the authoring path;
-2. onboarding can be started/skipped/replayed;
-3. an actual editable control can receive focus and keyboard input while the onboarding/help surface is available;
-4. the input value survives the interaction and is not hidden behind a blocking overlay.
+### G2 — configured live provider evidence
 
-A CSS regex alone is not sufficient evidence.
+Run `34243952551` executed the real opt-in evaluator entrypoint but the release environment supplied neither required key nor model. Result:
 
-### G2 — T30 live provider evidence
-
-Availability probe `34243952551` ran the real `npm run eval:ai` entry point with the documented CI configuration names and returned:
-
-- status `not_configured`;
+- `status: not_configured`;
 - provider label `https://openrouter.ai/api/v1`;
 - model `null`;
-- no live cases, tokens, attempts or latency to report.
+- no live cases, attempts, token usage or latency exists to report.
 
-This is an environment/configuration limitation, not a passed live eval. B12 may continue with independent release gates, but final release documentation must retain this limitation until a real `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL` is intentionally configured and one bounded run is recorded.
+This is the only unresolved mandatory external B12 evidence after the autonomous gates above. It must not be converted into PASS using fake-provider tests.
 
-## Next bounded action
+Authenticated live Codex subscription evidence is also unavailable and remains a release limitation, but deterministic T37 boundary behavior is covered.
 
-Close **G1/T29** with a one-shot, read-only browser smoke in CI. Do not add a permanent browser framework to the runtime solely for release evidence unless the smoke exposes a real product defect that needs a durable regression test.
+## Finalization rule
 
-After G1: release README/runbook/changelog + rollback drill, then final RC review. G2 remains explicitly live-unavailable unless real credentials are supplied/configured.
+Do not create the B12 release tag until one intentionally configured bounded live provider eval records the real provider/model and case telemetry required by the B12 specification, followed by final exact-head `npm run verify` and docs gate.
