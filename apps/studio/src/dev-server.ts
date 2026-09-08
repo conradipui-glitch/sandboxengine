@@ -29,15 +29,30 @@ const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
 const STUDIO_PROXY_BODY_LIMIT_BYTES = 262_144;
 const STUDIO_PROXY_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]);
 
+export type PlayerLaunchOutcome =
+  | { readonly ok: true; readonly url: string; readonly playtestId: string }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+export type PlayerLauncher = (playtestId: string) => Promise<PlayerLaunchOutcome>;
+
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
+  readonly playerLauncher?: PlayerLauncher;
 }
 
 export interface StudioDevServer {
   readonly server: any;
   listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }>;
   close(): Promise<void>;
+}
+
+let playerLaunchChain: Promise<unknown> = Promise.resolve();
+
+function launchPlayerSerialized(launcher: PlayerLauncher, playtestId: string): Promise<PlayerLaunchOutcome> {
+  const next = playerLaunchChain.then(() => launcher(playtestId));
+  playerLaunchChain = next.catch(() => undefined);
+  return next;
 }
 
 export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
@@ -47,6 +62,26 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   const server = createServer(async (request: any, response: any) => {
     try {
       const url = new URL(String(request.url ?? "/"), "http://studio.local");
+      if (url.pathname === "/local/launch-player" && options.playerLauncher) {
+        if (url.searchParams.size !== 0) { sendJson(response, 400, { error: { code: "INVALID_LAUNCH_REQUEST" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        if (request.method !== "POST") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
+        try {
+          const body = await readLocalJson(request) as { playtestId?: unknown };
+          const playtestId = typeof body?.playtestId === "string" ? body.playtestId.trim() : "";
+          if (!playtestId || playtestId.length > 200) { sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } }); return; }
+          const outcome = await launchPlayerSerialized(options.playerLauncher, playtestId);
+          if (outcome.ok) sendJson(response, 200, { ok: true, url: outcome.url, playtestId: outcome.playtestId });
+          else sendJson(response, outcome.code === "playtest_not_found" ? 404 : 409, { error: { code: outcome.code, message: outcome.message } });
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) {
+            sendJson(response, error.status, { error: { code: error.code } });
+          } else {
+            sendJson(response, 400, { error: { code: "INVALID_LAUNCH_REQUEST" } });
+          }
+        }
+        return;
+      }
       if (url.pathname === "/local/author-provider" && options.authorProvider) {
         if (url.searchParams.size !== 0) { sendJson(response, 400, { error: { code: "INVALID_SETTINGS_REQUEST" } }); return; }
         if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }

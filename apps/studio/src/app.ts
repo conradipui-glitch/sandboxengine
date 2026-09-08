@@ -76,6 +76,9 @@ interface StudioState {
   publishReport: PublishReportIntent | null;
   publicationReceipt: PublicationReceipt | null;
   deletionIntent: DeletionIntent | null;
+  playerUrl: string | null;
+  playerError: string | null;
+  playerLaunching: boolean;
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "assistant-starting" | "assistant-running" | "assistant-applying" | "assistant-stopping" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
@@ -101,6 +104,9 @@ export class StudioApp {
     publishReport: null,
     publicationReceipt: null,
     deletionIntent: null,
+    playerUrl: null,
+    playerError: null,
+    playerLaunching: false,
     phase: "loading",
     message: "Загружаем проекты…",
     conflict: null
@@ -254,6 +260,10 @@ export class StudioApp {
     }
     if (action === "create-playtest") {
       await this.createCurrentPlaytest();
+      return;
+    }
+    if (action === "launch-player") {
+      await this.launchCurrentPlayer();
       return;
     }
     if (action === "retry-conflict") {
@@ -986,6 +996,47 @@ export class StudioApp {
     this.render();
   }
 
+  private async launchCurrentPlayer(): Promise<void> {
+    const playtest = this.state.playtest;
+    if (!playtest) {
+      this.state.phase = "error";
+      this.state.message = "Сначала создайте frozen playtest.";
+      this.render();
+      return;
+    }
+    if (this.state.playerLaunching) return;
+    this.state.playerLaunching = true;
+    this.state.playerError = null;
+    this.state.message = "Запускаем Player для замороженной версии…";
+    this.render();
+    try {
+      const response = await fetch("/local/launch-player", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
+        body: JSON.stringify({ playtestId: playtest.playtestId })
+      });
+      const value = await response.json().catch(() => null);
+      if (!response.ok || !value?.ok) {
+        const code = typeof value?.error?.code === "string" ? value.error.code : `HTTP ${response.status}`;
+        this.state.playerUrl = null;
+        this.state.playerError = code === "playtest_not_found"
+          ? "Frozen playtest не найден на сервере. Создайте playtest заново."
+          : code === "unsupported_playtest"
+            ? "Player поддерживает ровно одно действие core.paint; этот playtest не подходит."
+            : `Не удалось запустить Player: ${code}`;
+      } else {
+        this.state.playerUrl = String(value.url);
+        this.state.playerError = null;
+        this.state.message = `Player запущен: ${String(value.url)}`;
+      }
+    } catch (error) {
+      this.state.playerUrl = null;
+      this.state.playerError = error instanceof Error ? error.message : "Не удалось связаться с локальным сервером Studio.";
+    }
+    this.state.playerLaunching = false;
+    this.render();
+  }
+
   private async prepareDeleteBlock(blockId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
     const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
@@ -1247,7 +1298,9 @@ export class StudioApp {
                 ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
                 : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
               ${validationPanel(this.state.validation, draft)}
-              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest)}
+              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
+        playerUrl: this.state.playerUrl, playerError: this.state.playerError, playerLaunching: this.state.playerLaunching
+      })}
               ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
             </section>
           ` : project ? `
@@ -1361,7 +1414,8 @@ function playtestPanel(
   validation: ValidationView | null,
   draft: DraftView,
   phase: StudioState["phase"],
-  canMutate: boolean
+  canMutate: boolean,
+  options: { readonly playerUrl: string | null; readonly playerError: string | null; readonly playerLaunching: boolean }
 ): string {
   const validationCurrent = validation !== null
     && validation.status === "valid"
@@ -1380,10 +1434,14 @@ function playtestPanel(
       <span>revision ${playtest.draftRevision} · ${id}</span>
       <p>validation <code>${escapeHtml(playtest.validationId)}</code> · compiled <code>${escapeHtml(shortHash(playtest.compiledContentHash))}</code></p>
       <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится. Это frozen playtest, а не published release.</p>
-      <div class="launch-commands">
+      ${options.playerUrl
+        ? `<p>Player запущен: <a href="${escapeAttr(options.playerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(options.playerUrl)}</a></p>`
+        : `<button class="primary" data-action="launch-player" ${options.playerLaunching ? "disabled" : ""}>${options.playerLaunching ? "Запускаем Player…" : "Открыть в Player"}</button>`}
+      ${options.playerError ? `<p class="stale-note">${escapeHtml(options.playerError)}</p>` : ""}
+      <details class="launch-commands"><summary>Запуск вручную из терминала</summary>
         <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
         <code>macOS/Linux: LH_PLAYTEST_ID=${attrId} npm run dev:player</code>
-      </div>
+      </details>
     </div>`;
   }
 

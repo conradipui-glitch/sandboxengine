@@ -53,7 +53,21 @@ const control = controlServerModule.createControlHttpServer({
   }
 });
 const controlAddress = await control.listen(Number(process.env.LH_CONTROL_PORT ?? 0), "127.0.0.1");
-const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider });
+type PlayerLaunchOutcome =
+  | { readonly ok: true; readonly url: string; readonly playtestId: string }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+interface PlayerLaunchModule {
+  launchFrozenPlayer(options: { databasePath: string; playtestId: string }): Promise<PlayerLaunchOutcome>;
+  closeAllPlayers(): Promise<void>;
+}
+const playerLaunchModule = await import(new URL("../../../player/dist/src/launch.js", import.meta.url).href) as PlayerLaunchModule;
+const playerLauncher = async (playtestId: string) => {
+  const launched = await playerLaunchModule.launchFrozenPlayer({ databasePath, playtestId });
+  if (launched.ok) return { ok: true as const, url: launched.url, playtestId: launched.playtestId };
+  return { ok: false as const, code: launched.code, message: launched.message };
+};
+const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher });
 const studioAddress = await studio.listen(Number(process.env.LH_STUDIO_PORT ?? 4173), "127.0.0.1");
 
 console.log(`Living History Studio: http://${studioAddress.host}:${studioAddress.port}`);
@@ -61,6 +75,7 @@ console.log(`Control API (loopback only): http://${controlAddress.host}:${contro
 console.log("Author Assistant: configure an API provider in Studio (key held in process memory; no tools)");
 
 const shutdown = async () => {
+  await playerLaunchModule.closeAllPlayers();
   authorProvider.disconnect();
   await studio.close();
   await control.close();
