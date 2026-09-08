@@ -12,9 +12,8 @@ permissions:
   contents: read
 
 env:
-  # Replace only these two empty values in GitHub UI before the release eval run.
-  LHE_EVAL_API_KEY: ""
-  LHE_EVAL_MODEL: ""
+  LHE_EVAL_API_KEY: ${{ secrets.LHE_EVAL_API_KEY }}
+  LHE_EVAL_MODEL: ${{ vars.LHE_EVAL_MODEL }}
   LHE_EVAL_OUTPUT: /tmp/b12-live-eval.json
 
 jobs:
