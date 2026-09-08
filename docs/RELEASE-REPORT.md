@@ -1,6 +1,6 @@
 # Living History Engine — Release Report
 
-Status: **B12 in progress — B12.1 external deployment smoke accepted**  
+Status: **B12 in progress — B12.1 and B12.2 accepted**  
 Report started: 2026-09-08  
 Release baseline: `sandboxengine@5b438214f1d709dd43244f107f883f6b2fc5f6ac`
 
@@ -38,20 +38,20 @@ Production rollout note: publication does not itself enable Florence Engine assi
 
 | Gate | Status | Evidence / next action |
 |---|---|---|
-| clean checkout + `npm ci` | **PASS (current B12 evidence)** | Engine PR #36 CI #683 / run `34239045563`; sandbox production #50 also installed from lockfile |
-| full `npm run verify` | **PASS on current Engine B12 head before this report update** | PR #36 CI #683 / `34239045563`; renew exact-head evidence after report/drill changes |
-| build from release candidate | **PARTIAL** | production sandbox build proven; final Engine RC commit not selected yet |
+| clean checkout + `npm ci` | **PASS** | Engine PR #36 CI #686 / run `34241997225` |
+| full `npm run verify` | **PASS on B12.2 implementation head** | head `8113d7129544ad58aa0c628489d2415de78bf6d9`; CI #686 / `34241997225` |
 | external deployed-address smoke | **PASS** | production #50 / `34239102418`; all probes passed after deploy |
-| backup/restore incl. assets | **PENDING — B12.2** | next bounded slice |
-| restart / operation recovery | **PENDING — B12.2** | next bounded slice |
-| quota/error behavior | **PENDING** | prove limits fail without corrupting saves |
-| logs / secret-boundary review | **PENDING** | inspect release logs and public errors; secrets must not appear |
+| backup/restore incl. assets | **PASS — B12.2** | CI #686 release drill; SQLite backup + clean restore + 12 asset hashes |
+| restart / operation recovery | **PASS — local SQLite Runtime** | existing T10/T12 durable restart suite + restored replay in B12.2 drill |
+| dependency vulnerability triage | **OPEN BLOCKER / B12.3** | `npm ci` currently reports 1 moderate + 1 high; exact advisory/runtime relevance must be identified |
+| quota/error behavior | **PENDING B12.3** | prove limits/errors do not corrupt saves |
+| logs / secret-boundary review | **PENDING B12.3** | inspect release logs/public errors; secrets must not appear |
 | bounded provider live eval | **PENDING** | explicit provider/model/budget; fake tests are not live evidence |
 | token / attempt / latency report | **PENDING** | record measured scenario results; unknown values remain unknown |
 | T01–33 / T36–37 matrix | **PENDING CONSOLIDATION** | map existing evidence, rerun only missing/release-sensitive checks |
 | Codex live status | **PENDING RELEASE STATEMENT** | state verified/unavailable/limited exactly; no API/subscription conflation |
 | README / runbook / changelog | **PENDING B12 AUDIT** | update only against actual RC behavior |
-| final docs gate | **PENDING FINAL RC** | `npm run docs:check` as part of exact RC verify |
+| final docs gate | **PENDING FINAL RC** | `npm run docs:check` is green now; renew on final RC |
 | rollback procedure | **PENDING DRILL** | must identify tested release/session behavior, not prose-only rollback |
 | release tag / commit | **NOT CREATED** | only after all release blockers are closed |
 
@@ -65,43 +65,61 @@ Accepted production evidence:
 - production workflow: #50 / run `34239102418` — **success**;
 - deployed version: `cd0d8948-86d3-4a56-9b5f-c97bbec79771`;
 - `GET /api/health` — **PASS**, attempt 1;
-- `GET /api/scenarios` — **PASS**, attempt 1; payload includes Florence and legacy Russia scenario;
-- `GET /` — **PASS**, attempt 1; deployed application shell validated;
-- smoke completed only after Wrangler reported successful deployment;
+- `GET /api/scenarios` — **PASS**, attempt 1;
+- `GET /` — **PASS**, attempt 1;
+- smoke ran only after Wrangler reported successful deployment;
 - probe is read-only and creates no game session or synthetic product-analytics event.
 
-This closes the release-evidence gap from B11, where Wrangler deployment was proven but no post-deploy HTTP request was part of the workflow.
+## 4. B12.2 — backup/restore + restart/recovery — ACCEPTED FOR LOCAL ENGINE STORAGE
 
-## 4. B12.2 — backup/restore and restart/recovery drill
+The release branch adds `npm run drill:backup-restore`, and root `npm run verify` now requires it. The drill uses Node 24's SQLite backup API rather than copying only the main database file while WAL mode may be active.
 
-**Next bounded slice.** Required evidence must prove behavior, not merely the presence of backup code or storage tests.
+Exact evidence:
 
-Target acceptance:
+- implementation head: `8113d7129544ad58aa0c628489d2415de78bf6d9`;
+- PR #36 CI #686 / run `34241997225` — **success**;
+- SQLite online backup transferred **11 pages**;
+- restored session: `session-1`;
+- restored revision: **1**;
+- restored pinned release: `release-1`;
+- restored content hash: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`;
+- restored turn count: **1**;
+- retry of the committed operation after restore: **idempotent replay = true**;
+- Florence asset manifest: `living-history.asset-migration/1`;
+- restored assets: **12/12**;
+- every restored asset was rechecked against the pinned SHA-256 manifest;
+- pinned Florence source commit remained `092bcef0be5943e32bf02f08f9e9d4cde393fa95`.
 
-1. create or use a deterministic persisted session/release fixture;
-2. export/backup the authoritative storage plus referenced asset identities;
-3. restore into a clean storage instance;
-4. prove restored `PlayerView`, revision, release identity and asset references match the pre-backup state;
-5. simulate process/storage-adapter restart and recover the same session;
-6. replay the same operation key and prove no duplicate mutation/charge;
-7. record exact commands/tests and failure boundaries in this report.
+The same exact CI also reran the existing durable recovery suite:
 
-The drill must not claim Cloudflare Durable Object backup semantics unless they are actually exercised. A local SQLite/storage drill is valid Engine release evidence when clearly labeled as such; production-platform recovery evidence remains separately identified.
+- lost response after commit replays identically after adapter restart;
+- crash before commit leaves revision/turn unchanged;
+- expired lease is reacquired with a higher fencing token;
+- stale worker commit is rejected;
+- final committed operation replays after another restart;
+- SQLite busy timeout fails without publishing partial operation state.
 
-## 5. Known release constraints
+**Scope limitation:** this is evidence for the standalone Engine's local SQLite Runtime and repository Florence assets. It is deliberately **not** claimed as a Cloudflare Durable Object backup/restore test.
+
+## 5. B12.3 — release security / quota / log gate — NEXT
+
+A new release blocker surfaced in exact CI: `npm ci` reported **2 vulnerabilities: 1 moderate, 1 high**. B12 must identify the exact dependency/advisory and whether it is runtime-reachable or dev-only before choosing upgrade, mitigation or documented non-runtime exception.
+
+B12.3 also consolidates existing quota/error/secret-boundary tests into release evidence and adds only the missing release-sensitive checks. A high-severity advisory is not ignored merely because the functional test suite is green.
+
+## 6. Known release constraints
 
 - B13 Builder/deployment orchestration is not part of B12 release acceptance and must not be presented as shipped.
 - Florence Engine production rollout is a separate operational decision; publication of the BFF does not imply the route is enabled.
 - Live provider/Codex statements remain pending until their dedicated bounded checks are run with actual available credentials/accounts and explicit budget.
 - The production smoke proves public reachability and API/client shell health; it does not prove Engine routing is enabled, nor does it mutate production state.
 
-## 6. Remaining release blockers
+## 7. Remaining release blockers
 
-1. backup/restore + restart/recovery drill;
-2. quota/error and log/secret-boundary checks;
-3. bounded provider evaluation and release telemetry summary;
-4. evidence consolidation for T01–33/T36–37;
-5. release docs/runbook/changelog and tested rollback procedure;
-6. final exact-head CI, concrete RC commit and release tag.
+1. dependency vulnerability triage + quota/error/log/secret-boundary release gate;
+2. bounded provider evaluation and release telemetry summary;
+3. evidence consolidation for T01–33/T36–37;
+4. release docs/runbook/changelog and tested rollback procedure;
+5. final exact-head CI, concrete RC commit and release tag.
 
 No release tag should be created while any blocker above remains unresolved.
