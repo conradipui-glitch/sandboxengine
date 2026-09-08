@@ -27,3 +27,8 @@ replace_once(
     'function toolResultJson(request: AuthorBackendReferenceToolRequest, result: Exclude<Awaited<ReturnType<ReturnType<typeof createAuthorReferenceToolBridge>["readReference"]>>, { kind: "pending" | "paused_budget" | "denied" }>): string {',
     'function toolResultJson(request: AuthorBackendReferenceToolRequest, result: Exclude<AuthorReferenceToolBridgeResult, { kind: "pending" | "paused_budget" | "denied" }>): string {'
 )
+replace_once(
+    "apps/server/src/author-mcp.ts",
+    '    removeParentAbort?.();',
+    '    const cleanupParentAbort = removeParentAbort as (() => void) | null;\n    cleanupParentAbort?.();'
+)
