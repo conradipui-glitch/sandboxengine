@@ -242,6 +242,30 @@ export interface AuthorProposalApplyView {
   readonly replay?: true;
 }
 
+export interface AgentKitIdentityView {
+  readonly engineVersion: string;
+  readonly contractsSchemaVersion: string;
+  readonly presentationSchemaVersion: string;
+  readonly pluginManifestSchemaVersion: string;
+  readonly enginePluginApiVersion: string;
+  readonly registryVersion: string;
+  readonly registryHash: string;
+  readonly pluginRegistryVersion: string;
+  readonly pluginRegistryHash: string;
+  readonly apiHash: string;
+  readonly docsHash: string;
+}
+
+export interface AgentKitView {
+  readonly identity: AgentKitIdentityView;
+  readonly files: readonly {
+    readonly path: string;
+    readonly mediaType: string;
+    readonly sha256: string;
+    readonly content: string;
+  }[];
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -258,6 +282,7 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 interface RequestOptions {
   readonly csrf?: "if-present" | "omit";
   readonly idempotencyKey?: string;
+  readonly agentKitIdentity?: AgentKitIdentityView;
 }
 
 export class ControlApiClient {
@@ -293,6 +318,10 @@ export class ControlApiClient {
   async logout(): Promise<void> {
     await this.request<unknown>("POST", "/auth/logout");
     this.csrfToken = null;
+  }
+
+  async getAgentKit(): Promise<AgentKitView> {
+    return this.request<AgentKitView>("GET", "/agent-kit");
   }
 
   async listProjects(): Promise<readonly ProjectView[]> {
@@ -424,11 +453,12 @@ export class ControlApiClient {
     proposalId: string,
     idempotencyKey: string
   ): Promise<AuthorProposalApplyView> {
+    const agentKit = await this.getAgentKit();
     return this.request<AuthorProposalApplyView>(
       "POST",
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
       {},
-      { idempotencyKey }
+      { idempotencyKey, agentKitIdentity: agentKit.identity }
     );
   }
 
@@ -447,11 +477,12 @@ export class ControlApiClient {
     proposal: AuthoringProposal,
     idempotencyKey: string
   ): Promise<AuthorProposalApplyView> {
+    const agentKit = await this.getAgentKit();
     return this.request<AuthorProposalApplyView>(
       "POST",
       `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/proposals/apply`,
       { proposal },
-      { idempotencyKey }
+      { idempotencyKey, agentKitIdentity: agentKit.identity }
     );
   }
 
@@ -671,6 +702,11 @@ export class ControlApiClient {
       headers["x-csrf-token"] = this.csrfToken;
     }
     if (options.idempotencyKey !== undefined) headers["idempotency-key"] = options.idempotencyKey;
+    if (options.agentKitIdentity !== undefined) {
+      headers["x-lh-engine-version"] = options.agentKitIdentity.engineVersion;
+      headers["x-lh-registry-hash"] = options.agentKitIdentity.registryHash;
+      headers["x-lh-docs-hash"] = options.agentKitIdentity.docsHash;
+    }
 
     let response: Response;
     try {

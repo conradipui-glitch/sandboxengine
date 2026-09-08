@@ -16,7 +16,7 @@ const EXPECTED_B10_A = Object.freeze([
   ["control.author.jobs.proposals.apply", "POST", "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply", 201]
 ]);
 
-test("B10.a registry advertises exactly the implemented author HTTP surface and keeps B10.b/B13 unavailable", async () => {
+test("B10 registry advertises B10.a author HTTP plus the implemented B10.b.10 agent-kit read and keeps later authority unavailable", async () => {
   const registry = JSON.parse(await readFile(new URL("../registry/endpoints.json", import.meta.url), "utf8"));
   const byId = new Map(registry.operations.map((operation) => [operation.id, operation]));
 
@@ -30,10 +30,11 @@ test("B10.a registry advertises exactly the implemented author HTTP surface and 
   }
 
   const available = registry.operations.filter((operation) => operation.readiness === "available");
-  assert.equal(available.length, 40);
+  assert.equal(available.length, 41);
   assert.equal(available.filter((operation) => /^control\.author(?:ing)?\./.test(operation.id)).length, EXPECTED_B10_A.length);
   assert.equal(byId.get("control.capabilities")?.readiness, "planned");
-  assert.equal(byId.get("control.agent-kit")?.readiness, "planned");
+  assert.equal(byId.get("control.agent-kit")?.readiness, "available");
+  assert.equal(byId.get("control.agent-kit")?.path, "/control/v1/agent-kit");
 
   for (const operation of available) {
     assert.doesNotMatch(operation.id, /(?:builder|repository|github|deploy)/i);
@@ -44,13 +45,14 @@ test("B10.a registry advertises exactly the implemented author HTTP surface and 
   const openapi = JSON.parse(generated.get("docs/agent/api.openapi.json"));
   const capabilities = JSON.parse(generated.get("docs/agent/capabilities.json"));
   const compatibility = JSON.parse(generated.get("docs/agent/compatibility.json"));
-  assert.equal(compatibility.availableOperationCount, 40);
-  assert.equal(capabilities.operations.length, 40);
+  assert.equal(compatibility.availableOperationCount, 41);
+  assert.equal(capabilities.operations.length, 41);
 
   for (const [id, method, path] of EXPECTED_B10_A) {
     assert.equal(openapi.paths[path]?.[method.toLowerCase()]?.operationId, id.replace(/[^A-Za-z0-9_]/g, "_"));
     assert.equal(capabilities.operations.some((operation) => operation.id === id), true);
   }
   assert.equal(capabilities.operations.some((operation) => operation.id === "control.capabilities"), false);
-  assert.equal(capabilities.operations.some((operation) => operation.id === "control.agent-kit"), false);
+  assert.equal(capabilities.operations.some((operation) => operation.id === "control.agent-kit"), true);
+  assert.equal(openapi.paths["/control/v1/agent-kit"]?.get?.operationId, "control_agent_kit");
 });

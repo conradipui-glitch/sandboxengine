@@ -13,6 +13,7 @@ export interface AuthoringProposalHttpContext {
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
   readonly requireIdempotencyKey: () => string | null;
+  readonly requireAgentKitHandshake: () => boolean;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
   readonly sendNotFound: () => void;
@@ -75,6 +76,7 @@ export async function routeAuthoringProposalHttp(context: AuthoringProposalHttpC
     return true;
   }
 
+  if (!context.requireAgentKitHandshake()) return true;
   const result = await applyAuthoringProposalFromStore(context.store, proposal, idempotencyKey!);
   if (result.kind === "applied") {
     context.sendJson(201, { draft: result.draft, application: result.application });

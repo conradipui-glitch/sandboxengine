@@ -13,7 +13,10 @@ const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
   "cookie",
   "origin",
   "x-csrf-token",
-  "idempotency-key"
+  "idempotency-key",
+  "x-lh-engine-version",
+  "x-lh-registry-hash",
+  "x-lh-docs-hash"
 ] as const);
 const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
   "set-cookie",

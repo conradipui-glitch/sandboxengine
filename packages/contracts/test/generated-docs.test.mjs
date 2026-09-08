@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import {
   buildGeneratedDocs,
+  computeGeneratedDocsHash,
   findStaleGeneratedPaths
 } from "../../../scripts/generated-docs.mjs";
 
@@ -19,6 +20,7 @@ test("generated agent contracts expose only implemented capabilities", async () 
   const openapi = JSON.parse(generated.get("docs/agent/api.openapi.json"));
   const capabilities = JSON.parse(generated.get("docs/agent/capabilities.json"));
   const schemaIndex = JSON.parse(generated.get("docs/agent/schema-index.json"));
+  const compatibility = JSON.parse(generated.get("docs/agent/compatibility.json"));
   const skill = generated.get("docs/agent/SKILL.md");
 
   assert.deepEqual(
@@ -38,6 +40,10 @@ test("generated agent contracts expose only implemented capabilities", async () 
     assert.equal(capabilities.operations.some((candidate) => candidate.id === operation.id), false);
     assert.equal(skill.includes(`${operation.method} ${operation.path}`), false);
   }
+
+  assert.match(compatibility.apiHash, /^[a-f0-9]{64}$/);
+  assert.match(compatibility.docsHash, /^[a-f0-9]{64}$/);
+  assert.equal(compatibility.docsHash, computeGeneratedDocsHash(generated));
 
   assert.equal(capabilities.contractsSchemaVersion, "1.0");
   assert.equal(capabilities.presentationSchemaVersion, "2.0");

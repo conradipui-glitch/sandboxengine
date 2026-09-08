@@ -57,6 +57,9 @@ test("B09-03 Studio proxy preserves session/CSRF/idempotency boundary without fo
           origin: "http://127.0.0.1:4173",
           "x-csrf-token": "csrf-proof",
           "idempotency-key": "publish-1",
+          "x-lh-engine-version": "0.1.0",
+          "x-lh-registry-hash": "1".repeat(64),
+          "x-lh-docs-hash": "2".repeat(64),
           "x-not-forwarded": "secret-browser-header"
         },
         body: JSON.stringify({ releaseId: "release-1" })
@@ -79,6 +82,9 @@ test("B09-03 Studio proxy preserves session/CSRF/idempotency boundary without fo
     assert.equal(received.headers.origin, "http://127.0.0.1:4173");
     assert.equal(received.headers["x-csrf-token"], "csrf-proof");
     assert.equal(received.headers["idempotency-key"], "publish-1");
+    assert.equal(received.headers["x-lh-engine-version"], "0.1.0");
+    assert.equal(received.headers["x-lh-registry-hash"], "1".repeat(64));
+    assert.equal(received.headers["x-lh-docs-hash"], "2".repeat(64));
     assert.equal(received.headers["x-not-forwarded"], undefined);
     assert.deepEqual(JSON.parse(received.body), { releaseId: "release-1" });
   } finally {

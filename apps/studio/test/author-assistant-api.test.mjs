@@ -35,6 +35,19 @@ test("B10.a Studio author client keeps discovery read-only and sends CSRF/idempo
       session: { sessionId: "session-1", createdAtMs: 1, expiresAtMs: 9999 },
       csrfToken: "csrf-token-for-author-assistant-tests"
     });
+    if (path.endsWith("/agent-kit")) return jsonResponse(200, { identity: {
+  engineVersion: "0.1.0",
+  contractsSchemaVersion: "1.0",
+  presentationSchemaVersion: "2.0",
+  pluginManifestSchemaVersion: "1.0",
+  enginePluginApiVersion: "1.0.0",
+  registryVersion: "1.0",
+  registryHash: "1".repeat(64),
+  pluginRegistryVersion: "1.0",
+  pluginRegistryHash: "2".repeat(64),
+  apiHash: "3".repeat(64),
+  docsHash: "4".repeat(64)
+}, files: [] });
     if (path.endsWith("/author/jobs") && init.method === "GET") return jsonResponse(200, { jobs: [job] });
     if (path.endsWith("/author/jobs") && init.method === "POST") return jsonResponse(201, { job });
     if (path.endsWith("/author/jobs/job-1") && init.method === "GET") return jsonResponse(200, {
@@ -69,6 +82,7 @@ test("B10.a Studio author client keeps discovery read-only and sends CSRF/idempo
     ["POST", "/control/v1/projects/p1/quests/quest/author/jobs/job-1/segments"],
     ["POST", "/control/v1/projects/p1/quests/quest/author/jobs/job-1/cancel"],
     ["POST", "/control/v1/projects/p1/quests/quest/draft/proposals/preview"],
+    ["GET", "/control/v1/agent-kit"],
     ["POST", "/control/v1/projects/p1/quests/quest/draft/proposals/apply"]
   ]);
 
@@ -76,7 +90,7 @@ test("B10.a Studio author client keeps discovery read-only and sends CSRF/idempo
     assert.equal(new Headers(afterLogin[index].init.headers).get("x-csrf-token"), null);
     assert.equal(new Headers(afterLogin[index].init.headers).get("idempotency-key"), null);
   }
-  for (const [index, key] of [[1, "create-1"], [3, "segment-1"], [4, "cancel-1"], [6, "apply-1"]]) {
+  for (const [index, key] of [[1, "create-1"], [3, "segment-1"], [4, "cancel-1"], [7, "apply-1"]]) {
     const headers = new Headers(afterLogin[index].init.headers);
     assert.equal(headers.get("x-csrf-token"), "csrf-token-for-author-assistant-tests");
     assert.equal(headers.get("idempotency-key"), key);
@@ -84,6 +98,10 @@ test("B10.a Studio author client keeps discovery read-only and sends CSRF/idempo
   const previewHeaders = new Headers(afterLogin[5].init.headers);
   assert.equal(previewHeaders.get("x-csrf-token"), "csrf-token-for-author-assistant-tests");
   assert.equal(previewHeaders.get("idempotency-key"), null);
+  const kitHeaders = new Headers(afterLogin[7].init.headers);
+  assert.equal(kitHeaders.get("x-lh-engine-version"), "0.1.0");
+  assert.equal(kitHeaders.get("x-lh-registry-hash"), "1".repeat(64));
+  assert.equal(kitHeaders.get("x-lh-docs-hash"), "4".repeat(64));
   assert.deepEqual(JSON.parse(afterLogin[3].init.body), { instruction: "Add paint", resumeBudget: true });
-  assert.deepEqual(JSON.parse(afterLogin[6].init.body), { proposal });
+  assert.deepEqual(JSON.parse(afterLogin[7].init.body), { proposal });
 });

@@ -27,6 +27,7 @@ export interface AuthorJobHttpContext {
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
   readonly requireIdempotencyKey: () => string | null;
+  readonly requireAgentKitHandshake: () => boolean;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
   readonly sendNotFound: () => void;
@@ -282,6 +283,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       return true;
     }
 
+    if (!context.requireAgentKitHandshake()) return true;
     const applied = await applyAuthoringProposalFromStore(context.authorAssistant.store, proposal, idempotencyKey);
     if (applied.kind === "applied" || applied.kind === "replay") {
       const checkpointed = await ensureAppliedCheckpoint(

@@ -371,6 +371,13 @@
       "path": "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply",
       "summary": "Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint",
       "successStatus": 201
+    },
+    {
+      "id": "control.agent-kit",
+      "method": "GET",
+      "path": "/control/v1/agent-kit",
+      "summary": "Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake",
+      "successStatus": 200
     }
   ]
 }

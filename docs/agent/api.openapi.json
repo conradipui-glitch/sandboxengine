@@ -434,6 +434,17 @@
           }
         }
       }
+    },
+    "/control/v1/agent-kit": {
+      "get": {
+        "operationId": "control_agent_kit",
+        "summary": "Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
     }
   }
 }

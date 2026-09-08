@@ -26,6 +26,14 @@ import { publishControlRelease, rollbackControlRelease } from "./release-publica
 import { routeDraftVersionHttp } from "./draft-version-http.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
 import { buildInstalledAuthorContextCapabilityCatalog } from "./author-context-catalog.js";
+import {
+  AGENT_KIT_DOCS_HASH_HEADER,
+  AGENT_KIT_ENGINE_VERSION_HEADER,
+  AGENT_KIT_REGISTRY_HASH_HEADER,
+  agentKitHandshakeMatches,
+  loadInstalledAgentKit,
+  type InstalledAgentKit
+} from "./agent-kit.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
 const MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;
@@ -99,6 +107,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         capabilityCatalog: buildInstalledAuthorContextCapabilityCatalog(releases?.pluginRegistry ?? null)
       })
     : null;
+  const agentKit = loadInstalledAgentKit();
   const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -109,6 +118,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         releases,
         dependencies.playtestTrace ?? null,
         authorAssistant,
+        agentKit,
         auth,
         failures
       );
@@ -165,6 +175,7 @@ async function routeControlRequest(
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
   authorAssistant: (Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore }) | null,
+  agentKit: InstalledAgentKit,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
@@ -205,6 +216,16 @@ async function routeControlRequest(
     await auth.security.revokeSession(identity!.session.sessionId);
     response.setHeader("set-cookie", expiredSessionCookie(auth.secureCookies));
     sendJson(response, 200, { revoked: true });
+    return;
+  }
+
+  if (url.pathname === "/control/v1/agent-kit") {
+    if (method !== "GET") { sendNotFound(response); return; }
+    if (url.searchParams.size !== 0) {
+      sendJson(response, 400, { error: { code: "INVALID_AGENT_KIT_REQUEST" } });
+      return;
+    }
+    sendJson(response, 200, agentKit);
     return;
   }
 
@@ -383,6 +404,7 @@ async function routeControlRequest(
     requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
     requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),
     requireIdempotencyKey: () => requireIdempotencyKey(request, response),
+    requireAgentKitHandshake: () => requireAgentKitHandshake(request, response, agentKit),
     requireJsonObject: () => requireJsonObject(request, response),
     sendJson: (status, body) => sendJson(response, status, body),
     sendNotFound: () => sendNotFound(response)
@@ -820,7 +842,7 @@ function applyCorsHeaders(response: any, origin: string): void {
 function sendCorsPreflight(response: any): void {
   response.statusCode = 204;
   response.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
-  response.setHeader("access-control-allow-headers", "content-type, x-csrf-token, idempotency-key");
+  response.setHeader("access-control-allow-headers", "content-type, x-csrf-token, idempotency-key, x-lh-engine-version, x-lh-registry-hash, x-lh-docs-hash");
   response.setHeader("access-control-max-age", "600");
   response.setHeader("cache-control", "no-store");
   response.setHeader("x-content-type-options", "nosniff");
@@ -962,6 +984,23 @@ function releaseNowMs(releases: ControlReleaseModeOptions, auth: AuthRuntime | n
   const value = releases.nowMs ? releases.nowMs() : auth ? auth.nowMs() : Date.now();
   if (!Number.isSafeInteger(value) || value < 0) throw new RangeError("Control release clock outside bounds");
   return value;
+}
+
+function requireAgentKitHandshake(request: any, response: any, agentKit: InstalledAgentKit): boolean {
+  const headers = Object.freeze({
+    [AGENT_KIT_ENGINE_VERSION_HEADER]: readHeader(request, AGENT_KIT_ENGINE_VERSION_HEADER),
+    [AGENT_KIT_REGISTRY_HASH_HEADER]: readHeader(request, AGENT_KIT_REGISTRY_HASH_HEADER),
+    [AGENT_KIT_DOCS_HASH_HEADER]: readHeader(request, AGENT_KIT_DOCS_HASH_HEADER)
+  });
+  if (agentKitHandshakeMatches(headers, agentKit.identity)) return true;
+  sendJson(response, 409, {
+    error: {
+      code: "AGENT_KIT_STALE",
+      message: "Refresh /control/v1/agent-kit before applying assistant-authored draft changes.",
+      expected: agentKit.identity
+    }
+  });
+  return false;
 }
 
 function requireIdempotencyKey(request: any, response: any): string | null {

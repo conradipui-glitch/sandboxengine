@@ -10,6 +10,13 @@ export const GENERATED_DOC_PATHS = [
   "docs/agent/schema-index.json"
 ];
 
+export const GENERATED_DOC_HASH_PATHS = Object.freeze([
+  "docs/agent/SKILL.md",
+  "docs/agent/api.openapi.json",
+  "docs/agent/capabilities.json",
+  "docs/agent/schema-index.json"
+]);
+
 export async function buildGeneratedDocs(root) {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const registry = JSON.parse(await readFile(resolve(root, "packages/contracts/registry/endpoints.json"), "utf8"));
@@ -178,19 +185,6 @@ export async function buildGeneratedDocs(root) {
     schemas
   }));
   const pluginRegistryHash = sha256(canonicalStringify(pluginRegistry));
-  const compatibility = {
-    engineVersion: packageJson.version,
-    contractsSchemaVersion,
-    presentationSchemaVersion,
-    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
-    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
-    registryVersion: registry.registryVersion,
-    registryHash,
-    pluginRegistryVersion: pluginRegistry.registryVersion,
-    pluginRegistryHash,
-    installedPluginCount: installedPlugins.length,
-    availableOperationCount: availableOperations.length
-  };
   const skill = buildSkill({
     engineVersion: packageJson.version,
     contractsSchemaVersion,
@@ -209,13 +203,46 @@ export async function buildGeneratedDocs(root) {
     availableOperations
   });
 
-  return new Map([
+  const rendered = new Map([
     ["docs/agent/SKILL.md", skill],
     ["docs/agent/api.openapi.json", formatJson(openapi)],
     ["docs/agent/capabilities.json", formatJson(capabilities)],
-    ["docs/agent/compatibility.json", formatJson(compatibility)],
     ["docs/agent/schema-index.json", formatJson(schemaIndex)]
   ]);
+  const apiHash = sha256(rendered.get("docs/agent/api.openapi.json"));
+  const docsHash = computeGeneratedDocsHash(rendered);
+  const compatibility = {
+    engineVersion: packageJson.version,
+    contractsSchemaVersion,
+    presentationSchemaVersion,
+    pluginManifestSchemaVersion: pluginRegistry.pluginManifestSchemaVersion,
+    enginePluginApiVersion: pluginRegistry.enginePluginApiVersion,
+    registryVersion: registry.registryVersion,
+    registryHash,
+    pluginRegistryVersion: pluginRegistry.registryVersion,
+    pluginRegistryHash,
+    apiHash,
+    docsHash,
+    installedPluginCount: installedPlugins.length,
+    availableOperationCount: availableOperations.length
+  };
+
+  return new Map([
+    ["docs/agent/SKILL.md", rendered.get("docs/agent/SKILL.md")],
+    ["docs/agent/api.openapi.json", rendered.get("docs/agent/api.openapi.json")],
+    ["docs/agent/capabilities.json", rendered.get("docs/agent/capabilities.json")],
+    ["docs/agent/compatibility.json", formatJson(compatibility)],
+    ["docs/agent/schema-index.json", rendered.get("docs/agent/schema-index.json")]
+  ]);
+}
+
+export function computeGeneratedDocsHash(generated) {
+  const manifest = GENERATED_DOC_HASH_PATHS.map((path) => {
+    const contents = generated.get(path);
+    if (typeof contents !== "string") throw new Error(`Missing generated doc for hash: ${path}`);
+    return { path, sha256: sha256(contents) };
+  });
+  return sha256(canonicalStringify(manifest));
 }
 
 export async function writeGeneratedDocs(root) {

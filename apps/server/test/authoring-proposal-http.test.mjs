@@ -39,6 +39,14 @@ function sessionHeaders(loginResult, csrf = true) {
   return headers;
 }
 
+function agentKitWriteHeaders(identity) {
+  return {
+    "x-lh-engine-version": identity.engineVersion,
+    "x-lh-registry-hash": identity.registryHash,
+    "x-lh-docs-hash": identity.docsHash
+  };
+}
+
 function proposal(base, questId = "quest", overrides = {}) {
   return {
     proposalId: `proposal-${questId}`,
@@ -92,8 +100,27 @@ test("B10.a proposal HTTP is editor-scoped, preview-only, CSRF/idempotent on app
     assert.equal(testerPreview.status, 403);
     assert.equal(testerPreview.body.error.code, "CONTROL_FORBIDDEN");
 
+    const unauthKit = await request(base, "/control/v1/agent-kit", { headers: { origin: ORIGIN } });
+    assert.equal(unauthKit.status, 401);
+    assert.equal(unauthKit.body.error.code, "CONTROL_AUTH_REQUIRED");
+
     const editorLogin = await login(base, "editor.user", "editor password 123");
     const editorHeaders = sessionHeaders(editorLogin);
+    const kit = await request(base, "/control/v1/agent-kit", {
+      headers: { origin: ORIGIN, cookie: editorHeaders.cookie }
+    });
+    assert.equal(kit.status, 200);
+    assert.deepEqual(kit.body.files.map((file) => file.path), [
+      "docs/agent/SKILL.md",
+      "docs/agent/api.openapi.json",
+      "docs/agent/capabilities.json",
+      "docs/agent/compatibility.json",
+      "docs/agent/schema-index.json"
+    ]);
+    assert.match(kit.body.identity.apiHash, /^[a-f0-9]{64}$/);
+    assert.match(kit.body.identity.docsHash, /^[a-f0-9]{64}$/);
+    const handshake = agentKitWriteHeaders(kit.body.identity);
+
     const preview = await request(base, "/control/v1/projects/p1/quests/quest/draft/proposals/preview", {
       method: "POST", headers: { origin: ORIGIN, cookie: editorHeaders.cookie }, json: { proposal: input }
     });
@@ -125,7 +152,23 @@ test("B10.a proposal HTTP is editor-scoped, preview-only, CSRF/idempotent on app
     assert.equal(noCsrf.body.error.code, "CONTROL_CSRF_REQUIRED");
     assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
 
-    const applyHeaders = { ...editorHeaders, "idempotency-key": "proposal-http-1" };
+    const missingKit = await request(base, "/control/v1/projects/p1/quests/quest/draft/proposals/apply", {
+      method: "POST", headers: { ...editorHeaders, "idempotency-key": "proposal-http-no-kit" }, json: { proposal: input }
+    });
+    assert.equal(missingKit.status, 409);
+    assert.equal(missingKit.body.error.code, "AGENT_KIT_STALE");
+    assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
+
+    const mismatchedKit = await request(base, "/control/v1/projects/p1/quests/quest/draft/proposals/apply", {
+      method: "POST",
+      headers: { ...editorHeaders, ...handshake, "x-lh-docs-hash": "0".repeat(64), "idempotency-key": "proposal-http-bad-kit" },
+      json: { proposal: input }
+    });
+    assert.equal(mismatchedKit.status, 409);
+    assert.equal(mismatchedKit.body.error.code, "AGENT_KIT_STALE");
+    assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
+
+    const applyHeaders = { ...editorHeaders, ...handshake, "idempotency-key": "proposal-http-1" };
     const applied = await request(base, "/control/v1/projects/p1/quests/quest/draft/proposals/apply", {
       method: "POST", headers: applyHeaders, json: { proposal: input }
     });
@@ -166,7 +209,7 @@ test("B10.a proposal HTTP is editor-scoped, preview-only, CSRF/idempotent on app
     assert.equal(stalePreview.body.preview.currentRevision, 1);
 
     const staleApply = await request(base, "/control/v1/projects/p1/quests/stale/draft/proposals/apply", {
-      method: "POST", headers: { ...editorHeaders, "idempotency-key": "stale-proposal" }, json: { proposal: staleInput }
+      method: "POST", headers: { ...editorHeaders, ...handshake, "idempotency-key": "stale-proposal" }, json: { proposal: staleInput }
     });
     assert.equal(staleApply.status, 409);
     assert.equal(staleApply.body.error.code, "DRAFT_REVISION_CONFLICT");

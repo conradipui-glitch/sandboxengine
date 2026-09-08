@@ -32,6 +32,7 @@ export interface DraftVersionHttpContext {
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
   readonly requireIdempotencyKey: () => string | null;
+  readonly requireAgentKitHandshake: () => boolean;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
   readonly sendNotFound: () => void;

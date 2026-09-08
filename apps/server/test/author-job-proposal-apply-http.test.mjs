@@ -57,12 +57,24 @@ function sessionHeaders(loginResult) {
   assert.ok(cookie);
   return { origin: ORIGIN, cookie: cookie.split(";", 1)[0], "x-csrf-token": loginResult.body.csrfToken };
 }
+async function writeHeaders(base, loginResult) {
+  const headers = sessionHeaders(loginResult);
+  const kit = await request(base, "/control/v1/agent-kit", { headers: { origin: ORIGIN, cookie: headers.cookie } });
+  assert.equal(kit.status, 200);
+  return {
+    ...headers,
+    "x-lh-engine-version": kit.body.identity.engineVersion,
+    "x-lh-registry-hash": kit.body.identity.registryHash,
+    "x-lh-docs-hash": kit.body.identity.docsHash
+  };
+}
 
 test("B10.a job-scoped Apply resolves durable artifact, commits once and checkpoints once", async () => {
   const { store, jobs, control, base } = await setup();
   try {
     const auth = await login(base);
     const headers = sessionHeaders(auth);
+    const agentWriteHeaders = await writeHeaders(base, auth);
     const created = await request(base, "/control/v1/projects/p1/quests/quest/author/jobs", { method: "POST", headers: { ...headers, "idempotency-key": "create-1" }, json: {} });
     assert.equal(created.status, 201);
     const jobId = created.body.job.jobId;
@@ -72,7 +84,12 @@ test("B10.a job-scoped Apply resolves durable artifact, commits once and checkpo
     assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
 
     const applyPath = `/control/v1/projects/p1/quests/quest/author/jobs/${jobId}/proposals/${proposalId}/apply`;
-    const first = await request(base, applyPath, { method: "POST", headers: { ...headers, "idempotency-key": "apply-1" }, json: {} });
+    const missingHandshake = await request(base, applyPath, { method: "POST", headers: { ...headers, "idempotency-key": "apply-no-kit" }, json: {} });
+    assert.equal(missingHandshake.status, 409);
+    assert.equal(missingHandshake.body.error.code, "AGENT_KIT_STALE");
+    assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
+
+    const first = await request(base, applyPath, { method: "POST", headers: { ...agentWriteHeaders, "idempotency-key": "apply-1" }, json: {} });
     assert.equal(first.status, 201);
     assert.equal(first.body.draft.draftRevision, 1);
     assert.equal((await store.getDraft("p1", "quest")).draftRevision, 1);
@@ -82,7 +99,7 @@ test("B10.a job-scoped Apply resolves durable artifact, commits once and checkpo
     assert.equal(appliedFact.proposalId, proposalId);
     assert.equal(appliedFact.resultRevision, 1);
 
-    const replay = await request(base, applyPath, { method: "POST", headers: { ...headers, "idempotency-key": "apply-1" }, json: {} });
+    const replay = await request(base, applyPath, { method: "POST", headers: { ...agentWriteHeaders, "idempotency-key": "apply-1" }, json: {} });
     assert.equal(replay.status, 200);
     assert.equal(replay.body.replay, true);
     checkpoints = await jobs.listCheckpoints(jobId);

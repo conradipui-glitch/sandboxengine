@@ -339,8 +339,9 @@
       "id": "control.agent-kit",
       "method": "GET",
       "path": "/control/v1/agent-kit",
-      "readiness": "planned",
-      "summary": "Комплект актуальных контрактов для агента"
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake"
     }
   ]
 }
