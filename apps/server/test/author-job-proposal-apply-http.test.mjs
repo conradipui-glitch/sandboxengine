@@ -107,3 +107,24 @@ test("B10.a cancelled job cannot Apply a previously produced proposal", async ()
     assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
   } finally { await control.close(); }
 });
+
+test("B10.a job-scoped Apply rejects browser-supplied proposal JSON before mutation", async () => {
+  const { store, control, base } = await setup();
+  try {
+    const auth = await login(base);
+    const headers = sessionHeaders(auth);
+    const created = await request(base, "/control/v1/projects/p1/quests/quest/author/jobs", { method: "POST", headers: { ...headers, "idempotency-key": "create-body" }, json: {} });
+    const jobId = created.body.job.jobId;
+    const segment = await request(base, `/control/v1/projects/p1/quests/quest/author/jobs/${jobId}/segments`, { method: "POST", headers: { ...headers, "idempotency-key": "segment-body" }, json: { instruction: "Add paint" } });
+    assert.equal(segment.status, 200);
+    const proposalId = segment.body.proposal.proposalId;
+    const attempted = await request(base, `/control/v1/projects/p1/quests/quest/author/jobs/${jobId}/proposals/${proposalId}/apply`, {
+      method: "POST",
+      headers: { ...headers, "idempotency-key": "apply-body" },
+      json: { proposal: { ...segment.body.proposal, explanation: "browser modified" } }
+    });
+    assert.equal(attempted.status, 400);
+    assert.equal(attempted.body.error.code, "INVALID_AUTHOR_PROPOSAL_APPLY_REQUEST");
+    assert.equal((await store.getDraft("p1", "quest")).draftRevision, 0);
+  } finally { await control.close(); }
+});
