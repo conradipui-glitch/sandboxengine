@@ -118,6 +118,10 @@ test("B10.a Stop aborts in-flight backend signal and discards a late success res
     assert.equal(messages.some((message) => message.role === "assistant"), false);
     const checkpoints = await jobs.listCheckpoints(jobId);
     assert.equal(checkpoints.some((entry) => entry.fact.kind === "proposal.produced"), false);
+    assert.equal(checkpoints.some((entry) => entry.fact.kind === "proposal.previewed"), false);
+    assert.equal(checkpoints.some((entry) => entry.fact.kind === "proposal.applied"), false);
     assert.equal(checkpoints.some((entry) => entry.fact.kind === "job.cancelled"), true);
+    const finalJob = await jobs.getJob(jobId);
+    assert.equal(finalJob.state, "cancelled");
   } finally { await control.close(); }
 });
