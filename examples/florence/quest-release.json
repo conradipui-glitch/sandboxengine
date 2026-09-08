@@ -18,7 +18,9 @@
     "workshop-cash",
     "guild-trust",
     "patron-trust",
-    "fresco-progress"
+    "fresco-progress",
+    "contract-rights",
+    "deal-open"
   ],
   "entryLocationId": "workshop"
 }
