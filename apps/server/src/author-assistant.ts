@@ -5,6 +5,7 @@ import {
   previewAuthoringProposalFromStore,
   type AuthorAgentJobRecord,
   type AuthorAgentJobStore,
+  type AuthorAgentProposalArtifactStore,
   type AuthoringProposal,
   type AuthoringProposalApplication,
   type AuthoringProposalPreview,
@@ -30,6 +31,7 @@ const AUTHOR_MAX_OUTPUT_TOKENS = 8_192;
 export interface AuthorAssistantDependencies {
   readonly store: ControlStore;
   readonly jobs: AuthorAgentJobStore;
+  readonly artifacts: AuthorAgentProposalArtifactStore;
   readonly backend: AgentBackend;
   readonly profileId: string;
   readonly nowMs?: () => number;
@@ -207,58 +209,94 @@ export async function runAuthorAssistantSegment(
   }
   if (job.state === "paused_budget") return frozen({ kind: "paused_budget", job });
 
-  const sessionDeadline = now(dependencies) + deadlineMs;
-  const opened = await dependencies.backend.openSession({ profileId: dependencies.profileId, deadlineAtMs: sessionDeadline });
-  if (!opened.ok) return failBackend(dependencies, job, opened.error.code, EMPTY_USAGE);
-
-  const turn = await dependencies.backend.runTurn({
-    session: opened.session,
-    messages: [
-      {
-        role: "system",
-        content: "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. If a mechanic is not representable, put it in missingCapabilities and do not fake a block."
-      },
-      {
-        role: "user",
-        content: `Instruction:\n${input.instruction}\n\nExact quest draft snapshot:\n${contextJson}`
-      }
-    ],
-    maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,
-    deadlineAtMs: sessionDeadline
-  });
-  if (!turn.ok) {
-    await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
-    return failBackend(dependencies, job, turn.error.code, turn.usage);
-  }
-  const closed = await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
-  if (!closed.ok) return failBackend(dependencies, job, closed.error.code, turn.usage);
-
-  const parsed = parseBackendProposalBody(turn.outputText);
-  if (!parsed) return failInvalidOutput(dependencies, job, turn.usage, "backend_output_invalid");
-  const proposalId = `proposal-${sha256(canonicalStringify({ jobId: job.jobId, turnKey, body: parsed })).slice(0, 40)}`;
-  const proposal: AuthoringProposal = deepFreeze({
-    proposalId,
-    projectId: job.projectId,
-    questId: job.questId,
-    baseRevision: snapshot.draftRevision,
-    baseContentHash: snapshot.contentHash,
-    explanation: parsed.explanation,
-    changes: parsed.changes.map(cloneJson),
-    missingCapabilities: parsed.missingCapabilities.map(cloneJson),
-    origin: {
-      kind: "assistant",
-      backendId: dependencies.backend.safeView.backendId,
-      jobId: job.jobId
+  let proposal: AuthoringProposal;
+  let usage: ProviderUsage;
+  const persistedArtifact = await dependencies.artifacts.getProposalArtifact(job.jobId, turnKey);
+  if (persistedArtifact) {
+    if (persistedArtifact.proposal.projectId !== job.projectId
+      || persistedArtifact.proposal.questId !== job.questId
+      || persistedArtifact.proposal.baseRevision !== snapshot.draftRevision
+      || persistedArtifact.proposal.baseContentHash !== snapshot.contentHash
+      || persistedArtifact.proposal.origin.backendId !== dependencies.backend.safeView.backendId) {
+      return failInvalidOutput(dependencies, job, EMPTY_USAGE, "proposal_artifact_mismatch");
     }
-  });
-  const produced = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
-    kind: "proposal.produced",
-    proposalId
-  }, now(dependencies));
-  if (produced.kind !== "updated") return jobConflict(dependencies, job.jobId);
-  job = produced.job;
+    proposal = persistedArtifact.proposal;
+    usage = persistedArtifact.usage;
+  } else {
+    const sessionDeadline = now(dependencies) + deadlineMs;
+    const opened = await dependencies.backend.openSession({ profileId: dependencies.profileId, deadlineAtMs: sessionDeadline });
+    if (!opened.ok) return failBackend(dependencies, job, opened.error.code, EMPTY_USAGE);
 
-  const previewOperationId = `preview-${proposalId.slice("proposal-".length)}`;
+    const turn = await dependencies.backend.runTurn({
+      session: opened.session,
+      messages: [
+        {
+          role: "system",
+          content: "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. If a mechanic is not representable, put it in missingCapabilities and do not fake a block."
+        },
+        {
+          role: "user",
+          content: `Instruction:\\n${input.instruction}\\n\\nExact quest draft snapshot:\\n${contextJson}`
+        }
+      ],
+      maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,
+      deadlineAtMs: sessionDeadline
+    });
+    if (!turn.ok) {
+      await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
+      return failBackend(dependencies, job, turn.error.code, turn.usage);
+    }
+    const closed = await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
+    if (!closed.ok) return failBackend(dependencies, job, closed.error.code, turn.usage);
+
+    const parsed = parseBackendProposalBody(turn.outputText);
+    if (!parsed) return failInvalidOutput(dependencies, job, turn.usage, "backend_output_invalid");
+    const proposalId = `proposal-${sha256(canonicalStringify({ jobId: job.jobId, turnKey, body: parsed })).slice(0, 40)}`;
+    const generatedProposal: AuthoringProposal = deepFreeze({
+      proposalId: proposal.proposalId,
+      projectId: job.projectId,
+      questId: job.questId,
+      baseRevision: snapshot.draftRevision,
+      baseContentHash: snapshot.contentHash,
+      explanation: parsed.explanation,
+      changes: parsed.changes.map(cloneJson),
+      missingCapabilities: parsed.missingCapabilities.map(cloneJson),
+      origin: {
+        kind: "assistant",
+        backendId: dependencies.backend.safeView.backendId,
+        jobId: job.jobId
+      }
+    });
+    const saved = await dependencies.artifacts.saveProposalArtifact(job.jobId, {
+      turnKey,
+      proposal: generatedProposal,
+      usage: turn.usage,
+      createdAtMs: now(dependencies)
+    });
+    if (saved.kind === "job_not_found" || saved.kind === "invalid_request") return jobConflict(dependencies, job.jobId);
+    if (saved.kind === "turn_key_reused") {
+      const canonicalArtifact = await dependencies.artifacts.getProposalArtifact(job.jobId, turnKey);
+      if (!canonicalArtifact) return jobConflict(dependencies, job.jobId);
+      proposal = canonicalArtifact.proposal;
+      usage = canonicalArtifact.usage;
+    } else {
+      proposal = saved.artifact.proposal;
+      usage = saved.artifact.usage;
+    }
+  }
+
+  const checkpoints = await dependencies.jobs.listCheckpoints(job.jobId);
+  if (!checkpoints) return frozen({ kind: "job_not_found" });
+  if (!checkpoints.some((entry) => entry.fact.kind === "proposal.produced" && entry.fact.proposalId === proposal.proposalId)) {
+    const produced = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
+      kind: "proposal.produced",
+      proposalId: proposal.proposalId
+    }, now(dependencies));
+    if (produced.kind !== "updated") return jobConflict(dependencies, job.jobId);
+    job = produced.job;
+  }
+
+  const previewOperationId = `preview-${proposal.proposalId.slice("proposal-".length)}`;
   const previewHash = sha256(canonicalStringify({ operation: "proposal.preview", proposal }));
   const previewReserved = await dependencies.jobs.reserveOperation(job.jobId, {
     expectedJobVersion: job.jobVersion,
@@ -274,13 +312,13 @@ export async function runAuthorAssistantSegment(
   }
   job = previewReserved.job;
   const previewResult = await previewAuthoringProposalFromStore(dependencies.store, proposal);
-  if (previewResult.kind === "unsupported_store") return failStoreUnavailable(dependencies, job, turn.usage);
-  if (previewResult.kind === "invalid_proposal") return failProposalInvalid(dependencies, job, previewResult.errors, turn.usage);
+  if (previewResult.kind === "unsupported_store") return failStoreUnavailable(dependencies, job, usage);
+  if (previewResult.kind === "invalid_proposal") return failProposalInvalid(dependencies, job, previewResult.errors, usage);
   if (previewResult.kind === "base_snapshot_mismatch") {
-    return failProposalConflict(dependencies, job, snapshot.draftRevision, previewResult.actualContentHash, turn.usage);
+    return failProposalConflict(dependencies, job, snapshot.draftRevision, previewResult.actualContentHash, usage);
   }
   if (previewResult.kind === "revision_not_found" || previewResult.kind === "project_not_found" || previewResult.kind === "quest_not_found") {
-    return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", turn.usage);
+    return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", usage);
   }
 
   const preview = previewResult.preview;
@@ -290,7 +328,7 @@ export async function runAuthorAssistantSegment(
       requestHash: previewHash,
       result: {
         kind: "proposal_previewed",
-        proposalId,
+        proposalId: proposal.proposalId,
         stale: preview.stale,
         applyAllowed: preview.applyAllowed
       },
@@ -302,7 +340,7 @@ export async function runAuthorAssistantSegment(
     if (completed.kind === "completed") {
       const checkpointed = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
         kind: "proposal.previewed",
-        proposalId,
+        proposalId: proposal.proposalId,
         stale: preview.stale,
         applyAllowed: preview.applyAllowed
       }, now(dependencies));
@@ -314,8 +352,8 @@ export async function runAuthorAssistantSegment(
 
   if (preview.stale) {
     const latest = await dependencies.store.getDraft(job.projectId, job.questId);
-    if (!latest) return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", turn.usage);
-    return failProposalConflict(dependencies, job, latest.draftRevision, latest.contentHash, turn.usage);
+    if (!latest) return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", usage);
+    return failProposalConflict(dependencies, job, latest.draftRevision, latest.contentHash, usage);
   }
   if (!input.autoApply || !preview.applyAllowed) {
     const waiting = await dependencies.jobs.transitionJob(job.jobId, {
@@ -324,10 +362,10 @@ export async function runAuthorAssistantSegment(
       atMs: now(dependencies)
     });
     if (waiting.kind !== "updated") return jobConflict(dependencies, job.jobId);
-    return frozen({ kind: "proposal_ready", job: waiting.job, proposal, preview, usage: turn.usage });
+    return frozen({ kind: "proposal_ready", job: waiting.job, proposal, preview, usage: usage });
   }
 
-  const applyOperationId = `apply-${proposalId.slice("proposal-".length)}`;
+  const applyOperationId = `apply-${proposal.proposalId.slice("proposal-".length)}`;
   const applyHash = sha256(canonicalStringify({ operation: "proposal.apply", proposal }));
   const applyReserved = await dependencies.jobs.reserveOperation(job.jobId, {
     expectedJobVersion: job.jobVersion,
@@ -346,15 +384,15 @@ export async function runAuthorAssistantSegment(
   const applied = await applyAuthoringProposalFromStore(
     dependencies.store,
     proposal,
-    `author-${sha256(canonicalStringify({ jobId: job.jobId, proposalId })).slice(0, 48)}`
+    `author-${sha256(canonicalStringify({ jobId: job.jobId, proposalId: proposal.proposalId })).slice(0, 48)}`
   );
-  if (applied.kind === "unsupported_store") return failStoreUnavailable(dependencies, job, turn.usage);
-  if (applied.kind === "invalid_proposal") return failProposalInvalid(dependencies, job, applied.errors, turn.usage);
+  if (applied.kind === "unsupported_store") return failStoreUnavailable(dependencies, job, usage);
+  if (applied.kind === "invalid_proposal") return failProposalInvalid(dependencies, job, applied.errors, usage);
   if (applied.kind === "revision_conflict") {
-    return failProposalConflict(dependencies, job, applied.currentRevision, applied.currentContentHash, turn.usage);
+    return failProposalConflict(dependencies, job, applied.currentRevision, applied.currentContentHash, usage);
   }
   if (applied.kind === "base_snapshot_mismatch") {
-    return failProposalConflict(dependencies, job, applied.revision, applied.actualContentHash, turn.usage);
+    return failProposalConflict(dependencies, job, applied.revision, applied.actualContentHash, usage);
   }
   if (applied.kind === "missing_capability") {
     const waiting = await dependencies.jobs.transitionJob(job.jobId, {
@@ -363,13 +401,13 @@ export async function runAuthorAssistantSegment(
       atMs: now(dependencies)
     });
     if (waiting.kind !== "updated") return jobConflict(dependencies, job.jobId);
-    return frozen({ kind: "proposal_ready", job: waiting.job, proposal, preview, usage: turn.usage });
+    return frozen({ kind: "proposal_ready", job: waiting.job, proposal, preview, usage: usage });
   }
   if (applied.kind === "project_not_found" || applied.kind === "quest_not_found" || applied.kind === "revision_not_found") {
-    return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", turn.usage);
+    return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable", usage);
   }
   if (applied.kind === "idempotency_key_reused" || applied.kind === "invalid_request") {
-    return failProposalInvalid(dependencies, job, [applied.kind], turn.usage);
+    return failProposalInvalid(dependencies, job, [applied.kind], usage);
   }
 
   if (applyReserved.kind !== "replay") {
@@ -378,7 +416,7 @@ export async function runAuthorAssistantSegment(
       requestHash: applyHash,
       result: {
         kind: "proposal_applied",
-        proposalId,
+        proposalId: proposal.proposalId,
         resultRevision: applied.draft.draftRevision,
         resultContentHash: applied.draft.contentHash
       },
@@ -390,7 +428,7 @@ export async function runAuthorAssistantSegment(
     if (completed.kind === "completed") {
       const checkpointed = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
         kind: "proposal.applied",
-        proposalId,
+        proposalId: proposal.proposalId,
         resultRevision: applied.draft.draftRevision
       }, now(dependencies));
       if (checkpointed.kind !== "updated") return jobConflict(dependencies, job.jobId);
@@ -412,7 +450,7 @@ export async function runAuthorAssistantSegment(
     preview,
     draft: applied.draft,
     application: applied.application,
-    usage: turn.usage
+    usage: usage
   });
 }
 
