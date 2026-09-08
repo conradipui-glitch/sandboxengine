@@ -183,8 +183,14 @@ test("B10.a renderer escapes conversation and missing-capability text", async ()
     explanation: "<img src=x onerror=alert(1)>",
     missingCapabilities: Object.freeze([{ capabilityId: "unsafe<script>", reason: "<b>not supported</b>" }])
   });
-  const unsafeRead = read(job(), unsafeProposal);
-  unsafeRead.messages[1] = Object.freeze({ ...unsafeRead.messages[1], text: "<script>alert(1)</script>" });
+  const baseUnsafeRead = read(job(), unsafeProposal);
+  const unsafeRead = Object.freeze({
+    ...baseUnsafeRead,
+    messages: Object.freeze([
+      baseUnsafeRead.messages[0],
+      Object.freeze({ ...baseUnsafeRead.messages[1], text: "<script>alert(1)</script>" })
+    ])
+  });
   const api = {
     async listAuthorJobs() { return [job()]; },
     async getAuthorJob() { return unsafeRead; },
