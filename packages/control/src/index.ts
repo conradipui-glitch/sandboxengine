@@ -64,6 +64,32 @@ export {
   type PreviewAuthoringProposalDispatchResult
 } from "./authoring-proposal-store.js";
 export {
+  AUTHOR_AGENT_JOB_STATES,
+  DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
+  DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS,
+  MAX_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
+  MAX_AUTHOR_AGENT_MAX_TOOL_CALLS,
+  MemoryAuthorAgentJobStore,
+  SQLiteAuthorAgentJobStore,
+  type AuthorAgentCapabilityGrant,
+  type AuthorAgentCheckpoint,
+  type AuthorAgentCheckpointFact,
+  type AuthorAgentJobRecord,
+  type AuthorAgentJobState,
+  type AuthorAgentJobStore,
+  type AuthorAgentOperationKind,
+  type AuthorAgentOperationRecord,
+  type AuthorAgentOperationResult,
+  type CompleteAuthorAgentOperationInput,
+  type CompleteAuthorAgentOperationResult,
+  type CreateAuthorAgentJobInput,
+  type CreateAuthorAgentJobResult,
+  type ReserveAuthorAgentOperationInput,
+  type ReserveAuthorAgentOperationResult,
+  type TransitionAuthorAgentJobInput,
+  type TransitionAuthorAgentJobResult
+} from "./author-agent-jobs.js";
+export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
