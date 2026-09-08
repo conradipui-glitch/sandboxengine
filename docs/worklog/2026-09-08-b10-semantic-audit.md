@@ -24,6 +24,12 @@ Generated agent-kit compatibility binds engine/schema/API/registry/docs hashes. 
 
 `apps/studio/test/b10-full-author-assistant-cycle.test.mjs` is the closure regression for the user-visible fake-backend path: natural-language author request -> linked resource/action proposal -> server preview -> job-scoped Apply -> correction by second author message -> second Apply -> validation -> frozen playtest. It uses `ControlApiClient` rather than hand-submitting an `AuthoringProposal`.
 
+## Targeted closure evidence
+
+- B10.c.13 Codex adapter boundary: production head `72972e48095ff6a0920a28127fad7425b610dc8c`, targeted run `34207098014` — typecheck/AI/boundary/docs/diff/self-clean GREEN.
+- B10.c.14 account/login/quota isolation: production head `b021fc33bd949e1bf6ffffe144e8efa78393d8fc`, targeted run `34208186688` — typecheck/AI/server/boundary/docs/diff/self-clean GREEN.
+- B10 closure acceptance: production head `b78a0bf68748c27240731689a2d50c60e92a0ddc`, targeted run `34208615382` — typecheck/Studio/server/AI/boundary/docs/diff/self-clean GREEN, including the full fake-backend author-to-playtest regression.
+
 ## Live Codex limitation
 
 No authenticated real Codex App Server account/process is configured in repository CI. The task explicitly allows deterministic adapter/protocol evidence in that environment. Therefore no live subscription run is claimed. When a real local App Server/account is configured, one bounded authoring run is still useful operational evidence but is not a blocker for deterministic B10 acceptance.
@@ -38,7 +44,7 @@ No authenticated real Codex App Server account/process is configured in reposito
 - External task package is inert and cannot mutate the repository itself.
 - Codex account methods are outside `AgentBackend`; author turns cannot call login/logout/quota methods.
 
-**Unresolved BLOCKER: 0**, conditional only on the closure regression and final exact-head root verify remaining green.
+**Unresolved BLOCKER: 0.**
 
 ## Publication gate
 
