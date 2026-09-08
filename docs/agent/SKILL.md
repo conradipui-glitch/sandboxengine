@@ -109,5 +109,13 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/releases` — Owner/editor сборка immutable release из точной успешной validation и compiled artifact hash
 - `POST /control/v1/projects/{projectId}/quests/{questId}/publish` — Owner-only атомарная публикация совместимого release через expected-current compare-and-set
 - `POST /control/v1/projects/{projectId}/quests/{questId}/rollback` — Owner-only pointer rollback к ранее опубликованному release через expected-current compare-and-set
+- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/proposals/preview` — Owner/editor server-authoritative validate-on-copy preview typed AuthoringProposal against its exact immutable base revision without draft mutation
+- `POST /control/v1/projects/{projectId}/quests/{questId}/draft/proposals/apply` — Owner/editor CSRF/idempotency protected atomic apply of a typed AuthoringProposal only when exact base revision/hash is still current
+- `GET /control/v1/projects/{projectId}/quests/{questId}/author/jobs` — Owner/editor discovery of their durable author jobs for one exact project and quest
+- `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs` — Owner/editor CSRF/idempotency protected creation of a bounded durable author job pinned to the current draft snapshot
+- `GET /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}` — Owner/editor read of their persisted author job, factual checkpoints, conversation and durable proposal artifacts
+- `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/segments` — Owner/editor CSRF/idempotency protected bounded author segment execution with durable replay, pause/resume and no automatic draft mutation
+- `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/cancel` — Owner/editor cancellation of a durable author job including abort of the exact in-flight backend signal and rejection of late output
+- `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply` — Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

@@ -348,6 +348,92 @@
           }
         }
       }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/proposals/preview": {
+      "post": {
+        "operationId": "control_authoring_proposals_preview",
+        "summary": "Owner/editor server-authoritative validate-on-copy preview typed AuthoringProposal against its exact immutable base revision without draft mutation",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/draft/proposals/apply": {
+      "post": {
+        "operationId": "control_authoring_proposals_apply",
+        "summary": "Owner/editor CSRF/idempotency protected atomic apply of a typed AuthoringProposal only when exact base revision/hash is still current",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs": {
+      "get": {
+        "operationId": "control_author_jobs_list",
+        "summary": "Owner/editor discovery of their durable author jobs for one exact project and quest",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_author_jobs_create",
+        "summary": "Owner/editor CSRF/idempotency protected creation of a bounded durable author job pinned to the current draft snapshot",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}": {
+      "get": {
+        "operationId": "control_author_jobs_get",
+        "summary": "Owner/editor read of their persisted author job, factual checkpoints, conversation and durable proposal artifacts",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/segments": {
+      "post": {
+        "operationId": "control_author_jobs_segments_create",
+        "summary": "Owner/editor CSRF/idempotency protected bounded author segment execution with durable replay, pause/resume and no automatic draft mutation",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "control_author_jobs_cancel",
+        "summary": "Owner/editor cancellation of a durable author job including abort of the exact in-flight backend signal and rejection of late output",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply": {
+      "post": {
+        "operationId": "control_author_jobs_proposals_apply",
+        "summary": "Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
     }
   }
 }

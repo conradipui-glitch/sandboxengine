@@ -309,6 +309,8 @@ B10 is accepted when:
 - production release/backup hardening (B12);
 - B13 Builder/GitHub/deployment profile.
 
-## First bounded slice
+## Current bounded checkpoint
 
-Implement **B10.a.1–3 only** first: `AuthoringProposal` typed contract + validate-on-copy deterministic preview/diff + atomic exact-revision/idempotent apply in Control/server with Memory/SQLite regressions. No chat UI, MCP, Skills or Codex until this micro-gate is green.
+**B10.a is implemented through the persistent Studio shell and in-flight Stop semantics.** The branch now has typed proposal preview/apply, durable Memory/SQLite jobs/checkpoints/conversation/artifacts, server discovery/segment/cancel contracts, persistent Studio chat, job-scoped server-artifact Apply, stale fail-closed preview, budget pause/resume, and cancellation that aborts the active backend signal and discards late success before proposal persistence. Registry/generated-doc truth for the eight implemented B10.a HTTP operations is closed in the same change set; `control.capabilities` and `control.agent-kit` remain planned until their B10.b server contracts exist.
+
+Next bounded slice after exact-head root CI: **B10.b.9 bounded context selector only** — selected blocks + nearest typed dependencies + installed capability catalog + persisted context evidence. Do not add MCP broker, external task package, Codex adapter, shell/filesystem/repository/deployment authority, or mark B10.b endpoints available in that slice.
