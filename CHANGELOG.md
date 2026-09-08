@@ -1,6 +1,6 @@
 # Changelog
 
-Этот файл фиксирует release-facing изменения. Версия B12 пока **не тегирована**; раздел ниже остаётся Unreleased до закрытия всех обязательных release gates.
+Этот файл фиксирует release-facing изменения. Версия B12 пока **не тегирована**; раздел ниже остаётся Unreleased до финального exact-head CI, merge и проверки `main`.
 
 ## Unreleased — B12 release candidate work
 
@@ -13,7 +13,8 @@
 - permanent dependency release audit in root `npm run verify`;
 - provider HTTP 429 save-integrity regression;
 - real Chromium 360×800 Studio onboarding/focus/keyboard release smoke;
-- consolidated T01–T33/T36–T37 B12 acceptance matrix and operational runbook.
+- consolidated T01–T33/T36–T37 B12 acceptance matrix and operational runbook;
+- bounded real OpenRouter provider evaluation with release telemetry.
 
 ### Changed
 
@@ -28,11 +29,13 @@
 - current full and production npm dependency graphs report zero known vulnerabilities at the accepted B12 security gate;
 - provider rate-limit failure completes as replayable no-turn and leaves authoritative save unchanged;
 - release rollback preserves immutable release hashes and publication history;
-- temporary contents-write/browser-evidence workflows were removed after gathering bounded evidence and do not ship.
+- live provider evaluation on `deepseek/deepseek-v4-flash-0731` preserved the structural contract in 12/12 cases;
+- temporary contents-write/browser/live-eval evidence workflows were removed after gathering bounded evidence and do not ship.
 
 ### Known limitations before B12 tag
 
-- release CI has no configured `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL`; the bounded live evaluator reports `not_configured`, so real-model tokens/latency are unavailable;
+- the bounded `deepseek/deepseek-v4-flash-0731` run scored 5/12 (41.7%) on the small semantic corpus despite 12/12 structural-contract safety; this evidence does not qualify it as the recommended intent model;
+- provider token usage was incomplete across live cases, so aggregate token count is `null` rather than inferred;
 - no authenticated live Codex subscription run is claimed;
 - Florence Engine production rollout remains an explicit operational switch in the companion app;
 - Cloudflare Durable Object backup/restore is outside the standalone SQLite backup claim;
