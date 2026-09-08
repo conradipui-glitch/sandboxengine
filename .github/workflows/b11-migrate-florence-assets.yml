@@ -1,0 +1,129 @@
+name: B11 migrate Florence assets
+
+on:
+  push:
+    branches:
+      - b11-real-quests-integration
+    paths:
+      - .github/workflows/b11-migrate-florence-assets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_REPO: conradipui-glitch/sandbox
+      SOURCE_SHA: 092bcef0be5943e32bf02f08f9e9d4cde393fa95
+      TARGET_BRANCH: b11-real-quests-integration
+    steps:
+      - name: Check out B11 branch
+        uses: actions/checkout@v4
+        with:
+          ref: b11-real-quests-integration
+          fetch-depth: 1
+
+      - name: Copy and verify pinned binary assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="examples/florence/assets"
+          visuals="$root/visuals"
+          audio="$root/audio"
+          tmp="$(mktemp -d)"
+          mkdir -p "$visuals" "$audio"
+          trap 'rm -rf "$tmp"' EXIT
+
+          copy_visual() {
+            local dest="$1" source="$2" expected="$3"
+            curl -fsSL "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_SHA}/${source}" -o "$visuals/$dest"
+            local actual
+            actual="$(git hash-object "$visuals/$dest")"
+            test "$actual" = "$expected" || { echo "blob mismatch for $source: $actual != $expected" >&2; exit 1; }
+          }
+
+          copy_visual "workshop-background.webp" "src/client/assets/backgrounds/florence-workshop-1512.webp" "77d4d58bd2e3e64093b162072481a0f4ee2a7e68"
+          copy_visual "guildhall-background.webp" "src/client/assets/backgrounds/florence-guildhall-1512.webp" "479261670b59454336f6751685f4b3e6be6225ce"
+          copy_visual "piazza-background.webp" "src/client/assets/backgrounds/florence-piazza-1512.webp" "711335e4e1f6abcae99f4f49e17e689a025c6df8"
+          copy_visual "juliano-portrait.webp" "src/client/assets/characters/florence-juliano-1512.webp" "9dfd62707203c28a36837bcf526dd773198cc46a"
+          copy_visual "ricci-portrait.webp" "src/client/assets/characters/florence-guildmaster-1512.webp" "86bdd4954190b67b5b4a2929ae5e363c12811b21"
+          copy_visual "luca-portrait.webp" "src/client/assets/characters/florence-secretary-1512.webp" "87a8d2125b5e8aa39db4383bf21c52651217e6bf"
+
+          curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${SOURCE_REPO}/contents/audio-parts?ref=${SOURCE_SHA}" \
+            -o "$tmp/audio-parts.json"
+
+          assemble_audio() {
+            local dest="$1" prefix="$2"
+            : > "$audio/$dest"
+            local count=0
+            while IFS=$'\t' read -r name expected url; do
+              test -n "$name" || continue
+              local part="$tmp/$name"
+              curl -fsSL "$url" -o "$part"
+              local actual
+              actual="$(git hash-object "$part")"
+              test "$actual" = "$expected" || { echo "blob mismatch for $name: $actual != $expected" >&2; exit 1; }
+              cat "$part" >> "$audio/$dest"
+              count=$((count + 1))
+            done < <(jq -r --arg prefix "$prefix" '[.[] | select(.name | startswith($prefix))] | sort_by(.name)[] | [.name,.sha,.download_url] | @tsv' "$tmp/audio-parts.json")
+            test "$count" -gt 0 || { echo "no audio parts found for $prefix" >&2; exit 1; }
+            test -s "$audio/$dest"
+          }
+
+          assemble_audio "threshold.mp3" "music-11-florence-threshold.mp3.part-"
+          assemble_audio "workshop-night.mp3" "music-12-florence-workshop-night.mp3.part-"
+          assemble_audio "guildhall.mp3" "music-13-florence-guildhall.mp3.part-"
+          assemble_audio "deadline.mp3" "music-14-florence-deadline.mp3.part-"
+          assemble_audio "decision-reveal.mp3" "music-15-florence-decision-reveal.mp3.part-"
+          assemble_audio "dawn-finale.mp3" "music-16-florence-dawn-finale.mp3.part-"
+
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+
+          source_repo = "conradipui-glitch/sandbox"
+          source_sha = "092bcef0be5943e32bf02f08f9e9d4cde393fa95"
+          root = Path("examples/florence/assets")
+          files = []
+          for path in sorted(root.rglob("*")):
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              files.append({
+                  "path": path.as_posix(),
+                  "bytes": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+                  "gitBlobSha": __import__("subprocess").check_output(["git", "hash-object", str(path)], text=True).strip(),
+              })
+          manifest = {
+              "format": "living-history.asset-migration/1",
+              "source": {"repository": source_repo, "commit": source_sha},
+              "method": "pinned-raw-download+source-git-blob-verification+ordered-audio-part-concatenation",
+              "files": files,
+          }
+          Path("examples/florence/asset-migration-manifest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+          test "$(find "$visuals" -type f | wc -l)" -eq 6
+          test "$(find "$audio" -type f | wc -l)" -eq 6
+
+      - name: Commit verified assets to the B11 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/florence/assets examples/florence/asset-migration-manifest.json
+          if git diff --cached --quiet; then
+            echo "Verified assets are already committed."
+            exit 0
+          fi
+          git commit -m "B11.5: migrate pinned Florence binary assets"
+          git push origin "HEAD:${TARGET_BRANCH}"
