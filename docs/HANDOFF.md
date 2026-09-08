@@ -2,110 +2,87 @@
 
 Обновлено: 2026-09-08
 
-Текущий блок: **B11 — реальные квесты и интеграция**  
-База: published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637`  
-Ветка Engine: `b11-real-quests-integration` / PR #35  
-Companion integration: `conradipui-glitch/sandbox` branch `b11-engine-runtime-routing` / PR #10  
-Статус: **реализация B11 завершена; остаётся exact-head publication gate**
+Текущий блок: **B12 — выпуск и эксплуатационная передача / B12.1 release baseline + external smoke**  
+База Engine: published B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`  
+Ветка Engine: `b12-release-hardening`  
+Companion sandbox: `b12-post-deploy-smoke` / PR #11  
+Статус: **in progress**
 
-## Что уже опубликовано
+## Published baseline
 
-B01–B10 опубликованы. B10 закрыл author-assistant boundary, account/login/quota isolation и regression:
+### Engine
 
-`author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
+- B11 PR #35 final head `8d8d899e14a8d2ff56e9aac0e6ba94695738c194`;
+- exact-head CI #681 / `34237564459` — success;
+- merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
+- published main CI #682 / `34237754065` — success.
 
-B10 merge: `4e5fea2888d14440c60ad48abffbefe42abfe637`; exact main CI #650 / `34209005817` — success.
+### Sandbox production
 
-## Frozen source baseline B11
+- B11 PR #10 verified head `5480c77a59912f435c3f9d1bafc2985c23fbe531`;
+- Verify #5 / `34236822232` — success;
+- merge `3d9cc885592ec229d2083883ea38d83de9fcc199`;
+- production deploy #49 / `34238155592` — install, 49 tests, build and Wrangler deploy success;
+- deployed Worker `living-history-sandbox`;
+- Cloudflare version `573525a6-4ff5-43d9-9642-62504eabb289`;
+- deploy log confirms `HistorySession`, `ProductAnalytics`, `RuntimeRouteSession` bindings.
 
-Florence мигрируется только из exact source:
+B11 is therefore fully published. Rollout remains safe-by-default: absent/unexpected `ENGINE_FLORENCE_ROLLOUT` is `off`; existing legacy sessions are not migrated.
 
-- repo `conradipui-glitch/sandbox`;
-- merge PR #9;
-- SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
-- source production workflow #47 / run `34012448412` — install/tests/build/deploy success.
+## B12 contract
 
-Old live sessions are not converted. Existing `HistorySession` / `StoredGame` data remains on legacy runtime unless a session was explicitly created with an Engine route binding.
+Per `docs/SPECIFICATION.md`, B12 is release/operational handoff, not a new feature block. It requires:
 
-## B11 architecture contract — сохранять
+- clean install/build/full regression;
+- bounded provider live eval;
+- backup/restore including assets;
+- restart/quota/log checks;
+- measured token/attempt/latency evidence;
+- acceptance matrix T01–33/T36–37 with honest live-Codex status;
+- release candidate, README/runbook/changelog/release report;
+- tested rollback;
+- external smoke for any actual network deployment.
 
-- **No Florence-specific branch in `packages/core`.**
-- Quest-specific actors/facts/resources remain authored data.
-- Six Florence source decisions are narrative beats, not a generic turn or clock rule.
-- Free text may be interpreted by AI; Runtime/Core owns validation and mutation.
-- `executed`, `conditional` and `blocked` remain distinct semantics.
-- Blocked/no-turn paths do not advance revision/clock or partially mutate state.
-- Prepared client options are explicit authored actions, not text that AI must rediscover.
-- Browser presentation never becomes gameplay authority and performs no authoritative arithmetic.
-- Published release identity and session/runtime binding remain immutable for an in-progress session.
-- Rollback affects only future session assignment.
+B13 Builder/deployment orchestration is explicitly not part of B12 acceptance.
 
-## Реальные квесты B11
+## B12.1 implemented so far
 
-### `examples/florence`
+### Engine evidence structure
 
-Полный six-beat authored quest. Generic conditions/cases preserve source-dependent outcomes including:
+- `docs/tasks/B12-01-release-baseline-smoke.md` freezes the exact B11 publication baseline and bounded slice;
+- `docs/RELEASE-REPORT.md` is the durable release evidence ledger;
+- `docs/STATUS.md` now marks B11 published and B12 in progress.
 
-- canonical `draft → ledger → counter → pigment → public → deliver` → `Незавершённое принято`;
-- paid compromise `healer → team → advance → testimony → share-ledger → deliver` → `Чужое имя над вашей работой`;
-- refusal/authorship `close → refuse → protect → testimony → rest → sign` → `Имя без заказчика`;
-- unsupported/weak negotiation stays conditional until generic state conditions justify execution;
-- withdrawal does not conjure money that was never received.
+### Companion external smoke
 
-### `examples/transfer-desk`
+`sandbox` PR #11 adds a post-Wrangler read-only smoke probe:
 
-Отдельный three-beat quest with social request/response, item possession and resource pressure. It proves the Engine path is not Florence-shaped special casing.
+- `GET /api/health` → expected service identity;
+- `GET /api/scenarios` → both Florence and legacy Russia present;
+- `GET /` → deployed HTML app shell;
+- 8 bounded attempts, 10 s request timeout, 2 s delay;
+- no game session creation, no synthetic DAU/analytics;
+- PR Verify syntax-checks the probe.
 
-## Runtime и HTTP path
+The real network smoke is deliberately **not** called PASS until PR #11 is merged and the resulting `main` deploy executes the new step successfully.
 
-The Engine authored Runtime now:
+## Release report status
 
-- creates sessions from the current published release;
-- pins release identity to the session;
-- exposes safe `PlayerView + situation` projections;
-- accepts explicit `authored.option` actions;
-- routes free text through the current-beat intent catalog;
-- commits authoritative state only in Runtime storage;
-- returns idempotent replay for the same operation key;
-- preserves blocked/no-turn state without fake success.
+`docs/RELEASE-REPORT.md` currently records:
 
-## `sandbox` BFF integration
+- published B11 Engine and sandbox evidence;
+- production Cloudflare version;
+- B12 gate table;
+- external smoke design;
+- explicit blockers;
+- the execution-container DNS limitation as a limitation, not fake external evidence.
 
-PR #10 adds the production-facing compatibility boundary without rewriting the legacy Durable Object:
+## Exact next action
 
-- `ENGINE_FLORENCE_ROLLOUT=off|test|on` is evaluated only for **new** Florence sessions;
-- `RuntimeRouteSession` stores upstream Engine session identity and credential;
-- an Engine-bound session stays on Engine after rollout is switched back to `off`;
-- an id without Engine binding continues through legacy `HistorySession` unchanged;
-- prepared UI choices are forwarded as explicit `authored.option` + `optionId`;
-- freeform text remains a text intent request;
-- Engine `PlayerView + situation` is adapted server-side to the existing `GameState` shape, so the current React client receives authored options without calculating gameplay.
+1. require sandbox PR #11 exact-head Verify success;
+2. merge PR #11 only on that verified head;
+3. inspect the resulting production `main` workflow and require the new **Smoke deployed Worker** step to pass after Wrangler deploy;
+4. record the exact run/version in `docs/RELEASE-REPORT.md` and close B12.1;
+5. then start the backup/restore + restart drill as B12.2.
 
-The latest client/BFF exact-head verification before this handoff is green on PR #10 head `5480c77a59912f435c3f9d1bafc2985c23fbe531`, Verify #5 / run `34236822232` (tests + build success).
-
-## Florence binary assets
-
-Binary migration is complete and reproducible evidence is committed:
-
-- 6 WebP visuals under `examples/florence/assets/visuals`;
-- 6 assembled MP3 tracks under `examples/florence/assets/audio`;
-- source visual Git blobs were matched exactly against pinned source SHA;
-- every MP3 part was downloaded from the pinned source commit and its Git blob verified before ordered concatenation;
-- migration workflow run `34237111169` succeeded and produced asset commit `cd9423f719a7a4ff81e05e3c486d174caea3e62f`;
-- `asset-migration-manifest.json` records bytes/SHA-256/Git blob ids;
-- root tests re-hash all 12 checked-out binaries;
-- the temporary contents-write migration workflow was removed after the assets were committed and will not ship to `main`.
-
-## Точный следующий шаг
-
-Do **not** add another B11 feature slice.
-
-1. wait only for the normal PR CI generated by the final docs/code/assets head;
-2. require full root `npm run verify` success on that exact PR #35 head;
-3. update PR #35 description with final acceptance evidence and exact CI run;
-4. mark Engine PR #35 ready for review/publication;
-5. ensure companion `sandbox` PR #10 is still green and update its stale B11.2 description to the accepted client-compatible state;
-6. publish/merge in dependency-safe order: Engine first, then `sandbox` integration;
-7. only after both publication gates are complete, start B12 release hardening.
-
-If a later change touches Engine semantics, authored quest data, BFF compatibility or migrated binaries before merge, the exact-head CI evidence must be renewed. Do not reuse an older green run for a changed head.
+Do not activate Florence Engine rollout as part of B12.1. Do not begin B13.
