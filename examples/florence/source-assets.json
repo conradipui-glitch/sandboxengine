@@ -1,0 +1,25 @@
+{
+  "format": "living-history.source-assets/1",
+  "source": {
+    "repository": "conradipui-glitch/sandbox",
+    "commit": "092bcef0be5943e32bf02f08f9e9d4cde393fa95"
+  },
+  "visuals": [
+    { "id": "workshop-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-workshop-1512.webp", "gitBlobSha": "77d4d58bd2e3e64093b162072481a0f4ee2a7e68" },
+    { "id": "guildhall-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-guildhall-1512.webp", "gitBlobSha": "479261670b59454336f6751685f4b3e6be6225ce" },
+    { "id": "piazza-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-piazza-1512.webp", "gitBlobSha": "711335e4e1f6abcae99f4f49e17e689a025c6df8" },
+    { "id": "juliano-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-juliano-1512.webp", "gitBlobSha": "9dfd62707203c28a36837bcf526dd773198cc46a" },
+    { "id": "ricci-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-guildmaster-1512.webp", "gitBlobSha": "86bdd4954190b67b5b4a2929ae5e363c12811b21" },
+    { "id": "luca-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-secretary-1512.webp", "gitBlobSha": "87a8d2125b5e8aa39db4383bf21c52651217e6bf" }
+  ],
+  "audio": [
+    { "id": "threshold", "sourcePartPrefix": "audio-parts/music-11-florence-threshold.mp3.part-" },
+    { "id": "workshop-night", "sourcePartPrefix": "audio-parts/music-12-florence-workshop-night.mp3.part-" },
+    { "id": "guildhall", "sourcePartPrefix": "audio-parts/music-13-florence-guildhall.mp3.part-" },
+    { "id": "deadline", "sourcePartPrefix": "audio-parts/music-14-florence-deadline.mp3.part-" },
+    { "id": "decision-reveal", "sourcePartPrefix": "audio-parts/music-15-florence-decision-reveal.mp3.part-" },
+    { "id": "dawn-finale", "sourcePartPrefix": "audio-parts/music-16-florence-dawn-finale.mp3.part-" }
+  ],
+  "binaryCopyStatus": "pending-byte-safe-transfer",
+  "note": "The exact source paths and Git blob identities are frozen here. Binary files are not called migrated until a byte-safe connector path copies them and verifies content identity."
+}

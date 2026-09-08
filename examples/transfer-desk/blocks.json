@@ -1,0 +1,9 @@
+[
+  { "schemaVersion": "1.0", "id": "desk", "kind": "core.location", "title": "Стол находок", "description": "Окно выдачи потерянных вещей, где заявление сверяют с журналом и талоном.", "data": {} },
+  { "schemaVersion": "1.0", "id": "storage", "kind": "core.location", "title": "Кладовая", "description": "Закрытая кладовая с найденными вещами.", "data": {} },
+  { "schemaVersion": "1.0", "id": "visitor", "kind": "core.character", "title": "Посетитель", "description": "Игрок, который помогает провести спорную выдачу по правилам, не подменяя решение сотрудника.", "data": { "initialLocationId": "desk", "initialStatus": "active" } },
+  { "schemaVersion": "1.0", "id": "clerk", "kind": "core.character", "title": "Дежурный", "description": "Сотрудник стола находок, который может подтвердить или отклонить выдачу.", "data": { "initialLocationId": "desk", "initialStatus": "available" } },
+  { "schemaVersion": "1.0", "id": "claimant", "kind": "core.character", "title": "Заявительница", "description": "Человек, описавший потерянный синий зонт и ожидающий проверки.", "data": { "initialLocationId": "desk", "initialStatus": "waiting" } },
+  { "schemaVersion": "1.0", "id": "claim-tickets", "kind": "core.resource", "title": "Талоны выдачи", "description": "Ограниченный запас талонов, один из которых нужен для формальной выдачи вещи.", "data": { "unit": "талон", "initialValue": 1, "min": 0, "max": 3 } },
+  { "schemaVersion": "1.0", "id": "queue-patience", "kind": "core.resource", "title": "Терпение очереди", "description": "Операционный запас времени и терпения людей у окна.", "data": { "unit": "пункт", "initialValue": 2, "min": 0, "max": 4 } }
+]
