@@ -94,9 +94,10 @@ assistant_path.write_text(assistant)
 # HTTP owns controllers; cancel aborts the exact in-flight segment for this jobs store/job id.
 http_path = Path("apps/server/src/author-job-http.ts")
 http = http_path.read_text()
-http = replace_once(http, '''const CREATE_IDEMPOTENCY_PREFIX = "author-job-create";
-''', '''const CREATE_IDEMPOTENCY_PREFIX = "author-job-create";
-const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
+http = replace_once(http, '''export interface AuthorJobHttpContext {
+''', '''const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
+
+export interface AuthorJobHttpContext {
 ''', "active controller registry")
 http = replace_once(http, '''    const result = await runAuthorAssistantSegment(context.authorAssistant, {
       jobId,
@@ -215,7 +216,7 @@ function blockingBackend() {
     turnStarted,
     releaseSuccess() { releaseTurn(); },
     get turnSignal() { return turnSignal; },
-    async openSession(request) {
+    async openSession() {
       return { ok: true, session: Object.freeze({ backendId: "blocking-author", sessionRef: "blocking-session" }), backendRequestId: null };
     },
     async runTurn(request) {
