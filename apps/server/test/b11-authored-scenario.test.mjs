@@ -108,7 +108,7 @@ test("B11 Florence canonical + compromise + authorship routes execute without qu
     "pigment-jars": 1,
     "workshop-cash": 3,
     "guild-trust": 4,
-    "patron-trust": 3,
+    "patron-trust": 4,
     "fresco-progress": 3
   });
   assert.equal(compromise.state.terminal.outcome, "Незавершённое принято");
