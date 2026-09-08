@@ -202,11 +202,16 @@ export function authoredScenarioPublicSituation(
       title: beat.title ?? null,
       options: beat.options.map((option) => ({
         id: option.id,
-        status: resolveOption(option, state).ok ? resolveOption(option, state).status : "blocked",
+        status: resolvedOptionStatus(option, state),
         meaning: option.meaning ?? null
       }))
     }
   }) as JsonValue;
+}
+
+function resolvedOptionStatus(option: AuthoredScenarioOption, state: WorldState): AuthoredOptionStatus {
+  const resolved = resolveOption(option, state);
+  return resolved.ok ? resolved.status : "blocked";
 }
 
 function currentBeat(
