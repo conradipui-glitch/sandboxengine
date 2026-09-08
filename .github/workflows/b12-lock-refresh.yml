@@ -1,0 +1,49 @@
+name: B12 lock refresh
+
+on:
+  push:
+    branches: [b12-release-hardening]
+    paths:
+      - .github/workflows/b12-lock-refresh.yml
+      - package.json
+      - package-lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b12-release-hardening
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Refresh audited dev dependency lock
+        run: npm install --package-lock-only --save-dev --save-exact ajv@8.20.0
+
+      - name: Verify clean install and release audit
+        run: |
+          npm ci
+          npm run audit:release
+
+      - name: Commit lock refresh when needed
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "package metadata already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "B12.3: update AJV and audited lockfile"
+          git push origin HEAD:b12-release-hardening
