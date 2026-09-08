@@ -4,7 +4,7 @@ export function createProposal(snapshot: WorkspaceSnapshot, summary: string): Ch
   return {
     summary,
     affectedFiles: snapshot.files,
-    rationale: 'deterministic builder proposal placeholder',
-    validationPlan: ['run verify'],
+    rationale: `proposal derived from ${snapshot.detectedStack.join(', ') || 'unknown stack'} and ${snapshot.boundaries.join(', ') || 'no detected boundaries'}`,
+    validationPlan: ['run verify', 'review affected boundaries'],
   };
 }
