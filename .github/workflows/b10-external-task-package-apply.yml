@@ -25,6 +25,7 @@ jobs:
         run: |
           python scripts/b10-external-task-package-sync.py
           python scripts/b10-external-task-package-fix.py
+          python scripts/b10-external-task-package-registry-fix.py
       - name: Regenerate installed agent kit
         run: npm run docs:generate
       - name: Typecheck
@@ -38,14 +39,14 @@ jobs:
       - name: Docs gate
         run: npm run docs:check
       - name: Diff gate
-        run: git diff --check -- apps/server/src/author-task-package.ts apps/server/src/author-job-http.ts apps/server/test/author-task-package.test.mjs packages/contracts/registry/endpoints.json docs/agent docs/worklog/2026-09-08-b10-external-task-package.md
+        run: git diff --check -- apps/server/src/author-task-package.ts apps/server/src/author-job-http.ts apps/server/test/author-task-package.test.mjs packages/contracts/registry/endpoints.json packages/contracts/test/b10-registry.test.mjs docs/agent docs/worklog/2026-09-08-b10-external-task-package.md
       - name: Commit clean production tree
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f scripts/b10-external-task-package-sync.py scripts/b10-external-task-package-fix.py .github/workflows/b10-external-task-package-apply.yml
-          git add apps/server/src/author-task-package.ts apps/server/src/author-job-http.ts apps/server/test/author-task-package.test.mjs packages/contracts/registry/endpoints.json docs/agent docs/worklog/2026-09-08-b10-external-task-package.md
+          git rm -f scripts/b10-external-task-package-sync.py scripts/b10-external-task-package-fix.py scripts/b10-external-task-package-registry-fix.py .github/workflows/b10-external-task-package-apply.yml
+          git add apps/server/src/author-task-package.ts apps/server/src/author-job-http.ts apps/server/test/author-task-package.test.mjs packages/contracts/registry/endpoints.json packages/contracts/test/b10-registry.test.mjs docs/agent docs/worklog/2026-09-08-b10-external-task-package.md
           git diff --cached --check
           git diff --cached --quiet && exit 0
           git commit -m "feat(B10): export external task packages"
