@@ -54,10 +54,15 @@ jobs:
           const browser = await chromium.launch({ headless: true });
           const context = await browser.newContext({ viewport: { width: 360, height: 800 } });
           const page = await context.newPage();
-          const failures = [];
-          page.on('pageerror', (error) => failures.push(`pageerror:${error.message}`));
+          const pageErrors = [];
+          const consoleErrors = [];
+          const httpFailures = [];
+          page.on('pageerror', (error) => pageErrors.push(error.message));
           page.on('console', (message) => {
-            if (message.type() === 'error') failures.push(`console:${message.text()}`);
+            if (message.type() === 'error') consoleErrors.push(message.text());
+          });
+          page.on('response', (response) => {
+            if (response.status() >= 400) httpFailures.push({ status: response.status(), url: response.url() });
           });
 
           try {
@@ -116,7 +121,16 @@ jobs:
             await replay.waitFor({ state: 'detached' });
 
             assert.equal(await title.inputValue(), 'Mobile keyboard proof', 'tour replay changed form input');
-            assert.deepEqual(failures, [], `browser errors: ${failures.join(' | ')}`);
+            assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
+
+            const unexpectedHttp = httpFailures.filter((entry) => {
+              try { return new URL(entry.url).pathname !== '/favicon.ico'; }
+              catch { return true; }
+            });
+            assert.deepEqual(unexpectedHttp, [], `unexpected HTTP failures: ${JSON.stringify(unexpectedHttp)}`);
+
+            const nonResourceConsoleErrors = consoleErrors.filter((message) => !/^Failed to load resource: the server responded with a status of 404 \(Not Found\)$/.test(message));
+            assert.deepEqual(nonResourceConsoleErrors, [], `console errors: ${nonResourceConsoleErrors.join(' | ')}`);
 
             console.log('B12_T29_BROWSER_SMOKE=' + JSON.stringify({
               result: 'pass',
@@ -125,7 +139,9 @@ jobs:
               onboarding: ['auto-start', 'skip', 'help', 'escape-focus-return', 'replay', 'next', 'back', 'skip'],
               editableControl: 'project-title',
               keyboardInputPreserved: true,
-              browserErrors: 0
+              pageErrors: 0,
+              unexpectedHttpFailures: 0,
+              favicon404Observed: httpFailures.some((entry) => new URL(entry.url).pathname === '/favicon.ico')
             }));
           } finally {
             await browser.close();
