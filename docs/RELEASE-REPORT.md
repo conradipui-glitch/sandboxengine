@@ -1,11 +1,11 @@
 # Living History Engine — B12 Release Report
 
-Status: **B12 internal/operational gates green; live provider evidence still unavailable**  
+Status: **B12 mandatory gates complete; final exact-head CI and publication pending**  
 Updated: 2026-09-08  
 Release baseline: B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`  
 Release branch: `b12-release-hardening` / PR #36
 
-This is the evidence ledger. A green build is not allowed to erase an unavailable external check.
+This is the evidence ledger. A green build is not allowed to erase an unavailable or weak external check.
 
 ## Accepted evidence
 
@@ -20,7 +20,7 @@ This is the evidence ledger. A green build is not allowed to erase an unavailabl
 | release rollback | **PASS** | CI #709 / `34245705625`, rerun in #713: r1→r2→rollback r1 + restart; active session pinning preserved |
 | T29 mobile/browser | **PASS** | one-shot Chromium `34246143800`: 360×800, focus/keyboard/onboarding/replay and no blocking overflow/error |
 | persistent start/stop | **PASS** | head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`, CI #713 / `34246765104`: `/healthz` 200, Control read 200, SQLite created, SIGTERM exit 0 |
-| full regression before docs sync | **PASS** | CI #713 / `34246765104`; audit + all tests + three release drills + boundaries + docs |
+| live provider compatibility | **PASS / QUALITY LIMITATION** | OpenRouter run `34250711595`, model `deepseek/deepseek-v4-flash-0731`: contract 12/12; semantic 5/12; 16 attempts; mean 12,176 ms; max 25,002 ms |
 | T01–33/T36–37 consolidation | **DONE** | `docs/B12-ACCEPTANCE-MATRIX.md` |
 
 ## B12.1 — production smoke
@@ -37,17 +37,26 @@ The initial build-only advisories were remediated by `ajv@8.20.0` and `fast-uri@
 
 Existing exact tests preserve quota zero vs null/stale semantics, inference vs management credential separation, sanitized provider errors, secret-free exports/task packages/playtest views and project/session isolation.
 
-## B12.4 — live provider evaluation — UNAVAILABLE, NOT PASS
+## B12.4 — live provider evaluation — ACCEPTED WITH MODEL-QUALITY LIMITATION
 
-A one-shot read-only CI probe ran `npm run eval:ai` in run `34243952551` with the documented release environment names. Result:
+The release gate ran the real `npm run eval:ai` entrypoint through OpenRouter in one bounded read-only workflow:
 
-```json
-{"status":"not_configured","provider":"https://openrouter.ai/api/v1","model":null,"cases":[]}
-```
+- run: `34250711595` — **success**;
+- provider: `https://openrouter.ai/api/v1`;
+- configured model: `deepseek/deepseek-v4-flash-0731`;
+- cases: 12;
+- structural contract: **12/12 = 100%**;
+- semantic score: **5/12 = 41.7%**;
+- total provider attempts: 16;
+- mean per-case latency: **12,176 ms**;
+- max per-case latency: **25,002 ms**;
+- provider token telemetry: incomplete across cases, therefore aggregate total is **null**, not guessed.
 
-Neither `LHE_EVAL_API_KEY` nor `LHE_EVAL_MODEL` was configured. Therefore no real-model semantic rate, attempts, tokens or latency exists. Deterministic provider tests are not substituted for live evidence.
+The safe boundary passed every case: no case escaped the allowed result contract and prompt-injection handling passed. All four narrative cases passed semantic checks. Most intent-understanding fixtures did not meet their expected semantic outcome on this model, so this run **does not qualify `deepseek/deepseek-v4-flash-0731` as a recommended intent model**. The engine is provider/model configurable; model quality is an operational choice rather than authority to mutate Core state.
 
-The evaluator is already bounded and, once configured, records per-case contract/semantic result, latency, attempts, provider-reported tokens, model ID and request IDs.
+No mandatory semantic percentage is specified for the one-provider B12 live compatibility run. The release claim is therefore limited to: real provider connectivity, bounded execution, contract safety, telemetry capture and honest model-quality reporting. Deterministic tests remain the authority for engine invariants.
+
+The one-shot secret-bearing workflow was removed immediately after evidence capture. The API key value was never written to repository content or logs.
 
 ## B12.5 — mobile/keyboard Studio release smoke — ACCEPTED
 
@@ -83,20 +92,28 @@ Exact implementation head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`; CI #713 / 
 
 ## Codex release statement
 
-Codex adapter/account/controller deterministic tests cover protocol pinning, account isolation, browser/device-code modes, quota null/zero, logout/credential rotation and explicit no paid-API fallback. An authenticated live Codex subscription App Server run is **not available and not claimed**.
+Codex adapter/account/controller deterministic tests cover protocol pinning, account isolation, browser/device-code modes, quota null/zero, logout/credential rotation and explicit no paid-API fallback. An authenticated live Codex subscription App Server run is **not available and not claimed**. This is a documented limitation rather than a B12 API-provider blocker.
 
 ## Current release limitations
 
-- live provider eval is `not_configured` and remains the mandatory B12 external blocker;
+- `deepseek/deepseek-v4-flash-0731` passed structural compatibility but scored 41.7% on this small intent+narrative semantic corpus; do not present it as the recommended intent-understanding model from this evidence;
+- provider token usage was not reported consistently, so aggregate live-eval token count remains `null`;
 - persistent `npm start` does not automatically compose a live provider;
 - built-in log rotation is not shipped; supervisor/platform owns stdout/stderr retention;
 - no Cloudflare DO backup claim;
 - no shared-network SQLite multi-writer claim;
 - Florence Engine production rollout is an explicit companion-app operation;
+- no authenticated live Codex subscription run is claimed;
 - B13 Builder/code/GitHub/deployment orchestration is not shipped.
 
-## Remaining blocker and finalization
+## Finalization
 
-Only after a real `LHE_EVAL_API_KEY` + `LHE_EVAL_MODEL` is intentionally configured should B12 run one bounded live eval, record real model/provider + attempts/tokens/latency, then renew final exact-head root CI/docs gate and create the concrete release tag.
+All mandatory B12 evidence is now present. Before publication:
+
+1. keep the one-shot live-eval workflow absent from the release head;
+2. run final exact-head `npm run verify` + docs gate;
+3. make PR #36 ready and merge only the exact green head;
+4. verify `main` CI on the merge commit;
+5. create the concrete B12 release tag on that verified merge commit.
 
 No B12 tag exists yet.
