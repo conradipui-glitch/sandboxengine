@@ -139,6 +139,12 @@ test("B10.a author job HTTP is editor-only, CSRF protected and create is idempot
     assert.equal(created.body.job.state, "queued");
     const jobId = created.body.job.jobId;
     assert.ok(await jobs.getJob(jobId));
+    const discovered = await request(base, "/control/v1/projects/p1/quests/quest/author/jobs", {
+      headers: sessionHeaders(editorLogin)
+    });
+    assert.equal(discovered.status, 200);
+    assert.equal(discovered.body.jobs.length, 1);
+    assert.equal(discovered.body.jobs[0].jobId, jobId);
 
     const replay = await createEditorJob(base, editorLogin);
     assert.equal(replay.status, 200);

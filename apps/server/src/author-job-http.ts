@@ -32,7 +32,6 @@ export interface AuthorJobHttpContext {
 export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise<boolean> {
   const collection = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/author\/jobs$/.exec(context.url.pathname);
   if (collection) {
-    if (context.method !== "POST") { context.sendNotFound(); return true; }
     const projectId = collection[1];
     const questId = collection[2];
     if (!projectId || !questId || (context.authorAssistant === null || context.authorConversation === null)) { context.sendNotFound(); return true; }
@@ -41,6 +40,12 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       context.sendJson(400, { error: { code: "INVALID_AUTHOR_JOB_REQUEST" } });
       return true;
     }
+    if (context.method === "GET") {
+      const jobs = await context.authorAssistant.jobs.listJobs(projectId, questId, context.actorUserId);
+      context.sendJson(200, { jobs });
+      return true;
+    }
+    if (context.method !== "POST") { context.sendNotFound(); return true; }
     if (!(await context.requireMutation())) return true;
     const idempotencyKey = context.requireIdempotencyKey();
     if (idempotencyKey === null) return true;

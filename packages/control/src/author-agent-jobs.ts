@@ -158,6 +158,7 @@ export type CompleteAuthorAgentOperationResult =
 export interface AuthorAgentJobStore {
   createJob(input: CreateAuthorAgentJobInput): Promise<CreateAuthorAgentJobResult>;
   getJob(jobId: string): Promise<AuthorAgentJobRecord | null>;
+  listJobs(projectId: string, questId: string, ownerUserId: string): Promise<readonly AuthorAgentJobRecord[]>;
   listCheckpoints(jobId: string): Promise<readonly AuthorAgentCheckpoint[] | null>;
   transitionJob(jobId: string, input: TransitionAuthorAgentJobInput): Promise<TransitionAuthorAgentJobResult>;
   appendCheckpoint(jobId: string, expectedJobVersion: number, fact: AuthorAgentCheckpointFact, atMs: number): Promise<TransitionAuthorAgentJobResult>;
@@ -183,6 +184,15 @@ export class MemoryAuthorAgentJobStore implements AuthorAgentJobStore {
 
   async getJob(jobId: string): Promise<AuthorAgentJobRecord | null> {
     return this.#jobs.get(jobId) ?? null;
+  }
+
+  async listJobs(projectId: string, questId: string, ownerUserId: string): Promise<readonly AuthorAgentJobRecord[]> {
+    if (!isId(projectId) || !isId(questId) || !isId(ownerUserId)) return Object.freeze([]);
+    const values = [...this.#jobs.values()]
+      .filter((job) => job.projectId === projectId && job.questId === questId && job.ownerUserId === ownerUserId)
+      .sort(compareJobsNewestFirst)
+      .map(cloneJson);
+    return deepFreeze(values);
   }
 
   async listCheckpoints(jobId: string): Promise<readonly AuthorAgentCheckpoint[] | null> {
@@ -379,6 +389,17 @@ export class SQLiteAuthorAgentJobStore implements AuthorAgentJobStore {
     if (!isId(jobId)) return null;
     const row = this.#db.prepare("SELECT * FROM control_author_agent_jobs WHERE job_id = ?").get(jobId);
     return row ? jobFromRow(row) : null;
+  }
+
+  async listJobs(projectId: string, questId: string, ownerUserId: string): Promise<readonly AuthorAgentJobRecord[]> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId) || !isId(ownerUserId)) return Object.freeze([]);
+    const rows = this.#db.prepare(`
+      SELECT * FROM control_author_agent_jobs
+      WHERE project_id = ? AND quest_id = ? AND owner_user_id = ?
+      ORDER BY updated_at_ms DESC, created_at_ms DESC, job_id ASC
+    `).all(projectId, questId, ownerUserId);
+    return deepFreeze(rows.map((row: any) => jobFromRow(row)));
   }
 
   async listCheckpoints(jobId: string): Promise<readonly AuthorAgentCheckpoint[] | null> {
@@ -768,6 +789,12 @@ function replayOrReuse(
   return existing.status === "completed"
     ? frozen({ kind: "replay", job, operation: existing })
     : frozen({ kind: "pending", job, operation: existing });
+}
+
+function compareJobsNewestFirst(left: AuthorAgentJobRecord, right: AuthorAgentJobRecord): number {
+  if (left.updatedAtMs !== right.updatedAtMs) return right.updatedAtMs - left.updatedAtMs;
+  if (left.createdAtMs !== right.createdAtMs) return right.createdAtMs - left.createdAtMs;
+  return left.jobId.localeCompare(right.jobId);
 }
 
 function budgetExhausted(job: AuthorAgentJobRecord): boolean {
