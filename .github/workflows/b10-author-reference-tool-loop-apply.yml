@@ -27,6 +27,16 @@ jobs:
         run: npm run typecheck
       - name: Control regressions
         run: npm run test:control
+      - name: New regression - configured grant
+        run: node --test --test-name-pattern="configured author job" apps/server/test/author-tool-loop.test.mjs
+      - name: New regression - replay
+        run: node --test --test-name-pattern="journals it" apps/server/test/author-tool-loop.test.mjs
+      - name: New regression - offline
+        run: node --test --test-name-pattern="offline MCP result" apps/server/test/author-tool-loop.test.mjs
+      - name: New regression - SQLite reopen
+        run: node --test --test-name-pattern="survives SQLite reopen" apps/server/test/author-tool-loop.test.mjs
+      - name: New regression - reduced grant
+        run: node --test --test-name-pattern="without docs.reference.read" apps/server/test/author-tool-loop.test.mjs
       - name: Server regressions
         run: npm run test:server
       - name: Boundary gate
