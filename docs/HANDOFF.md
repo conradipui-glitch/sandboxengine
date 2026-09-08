@@ -4,100 +4,108 @@
 
 Текущий блок: **B11 — реальные квесты и интеграция**  
 База: published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637`  
-B10 exact main CI: #650 / run `34209005817` — success  
-Ветка: `b11-real-quests-integration`  
-Статус: **B11.0/B00 source confirmation GREEN; B11.1 real quest packages next**
+Ветка Engine: `b11-real-quests-integration` / PR #35  
+Companion integration: `conradipui-glitch/sandbox` branch `b11-engine-runtime-routing` / PR #10  
+Статус: **реализация B11 завершена; остаётся exact-head publication gate**
 
-## Published foundation
+## Что уже опубликовано
 
-B01–B10 опубликованы.
+B01–B10 опубликованы. B10 закрыл author-assistant boundary, account/login/quota isolation и regression:
 
-B10 закрыл интерактивный author-assistant цикл и его границы:
+`author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
 
-- verified PR #34 head `f03e283d5e027cb93dea7d3f149685b058724ad0`;
-- merge SHA `4e5fea2888d14440c60ad48abffbefe42abfe637`;
-- exact main CI #650 / `34209005817` success;
-- semantic audit unresolved BLOCKER 0;
-- Codex adapter boundary;
-- account/login/quota isolation;
-- regression `author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
+B10 merge: `4e5fea2888d14440c60ad48abffbefe42abfe637`; exact main CI #650 / `34209005817` — success.
 
-Do not claim a real authenticated Codex subscription run in CI: the accepted evidence is deterministic protocol evidence because CI has no configured authenticated local App Server.
+## Frozen source baseline B11
 
-## B11.0 closed
-
-The old B00 documentation debt is closed in `docs/BASELINE.md` and the migration contract is frozen in `docs/tasks/B11-01-source-migration-map.md`.
-
-Confirmed source:
+Florence мигрируется только из exact source:
 
 - repo `conradipui-glitch/sandbox`;
-- Florence merge PR #9;
-- exact source SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
-- current source main checked at `f9b0cd0d607da48d89827f0a1a882b74e9b78e50`;
-- post-baseline drift is README/docs only, gameplay baseline did not move;
-- exact source production run #47 / `34012448412` succeeded through install, tests, build and Worker deploy.
+- merge PR #9;
+- SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
+- source production workflow #47 / run `34012448412` — install/tests/build/deploy success.
 
-Mapped legacy runtime:
+Old live sessions are not converted. Existing `HistorySession` / `StoredGame` data remains on legacy runtime unless a session was explicitly created with an Engine route binding.
 
-- React/Vite client;
-- Cloudflare Worker API;
-- `HistorySession` Durable Object as authoritative game storage;
-- `StoredGame { state, processedKeys, analytics }` under storage key `game`;
-- browser localStorage is not the canonical save; it stores anonymous visitor identity;
-- gameplay routes are `POST /api/games`, `GET /api/games/:id`, `POST /api/games/:id/turn`, plus scenario/metrics/health routes;
-- retries use saved idempotency keys;
-- old sessions must stay on the old runtime instead of being silently converted.
+## B11 architecture contract — сохранять
 
-Florence source evidence:
+- **No Florence-specific branch in `packages/core`.**
+- Quest-specific actors/facts/resources remain authored data.
+- Six Florence source decisions are narrative beats, not a generic turn or clock rule.
+- Free text may be interpreted by AI; Runtime/Core owns validation and mutation.
+- `executed`, `conditional` and `blocked` remain distinct semantics.
+- Blocked/no-turn paths do not advance revision/clock or partially mutate state.
+- Prepared client options are explicit authored actions, not text that AI must rediscover.
+- Browser presentation never becomes gameplay authority and performs no authoritative arithmetic.
+- Published release identity and session/runtime binding remain immutable for an in-progress session.
+- Rollback affects only future session assignment.
 
-- six semantic decisions;
-- canonical route `draft → ledger → counter → pigment → public → deliver` reaches victory with six trace entries;
-- legacy authored tests recursively cover all 729 prepared `3^6` routes;
-- conditional vs executed behavior is explicit;
-- blocked/unknown compound actions do not partially mutate state;
-- save/restore does not double-charge;
-- a legacy save missing Florence memory is not given fabricated facts.
-
-## B11 architecture contract
-
-Preserve these boundaries:
-
-- **no Florence-specific branch in `packages/core`**;
-- no generic runtime/Core type named `FlorenceMemory`;
-- quest-specific facts/actors/resources remain authored data;
-- six source turns migrate as **narrative beats**, while elapsed world time stays on the generic clock/scheduler;
-- presentation/assets never become gameplay authority;
-- freeform AI may interpret/propose, while Core/runtime owns validation and mutation;
-- `executed`, `conditional` and blocked/precondition semantics remain distinguishable;
-- no client-side gameplay arithmetic;
-- immutable release + published-session binding remains the rollout authority.
-
-## Real quests required by B11
+## Реальные квесты B11
 
 ### `examples/florence`
 
-Move the real Florence scenario semantics from the exact source SHA into generic Engine contracts/state. Preserve causal meaning, not source implementation branches or exact prose.
+Полный six-beat authored quest. Generic conditions/cases preserve source-dependent outcomes including:
+
+- canonical `draft → ledger → counter → pigment → public → deliver` → `Незавершённое принято`;
+- paid compromise `healer → team → advance → testimony → share-ledger → deliver` → `Чужое имя над вашей работой`;
+- refusal/authorship `close → refuse → protect → testimony → rest → sign` → `Имя без заказчика`;
+- unsupported/weak negotiation stays conditional until generic state conditions justify execution;
+- withdrawal does not conjure money that was never received.
 
 ### `examples/transfer-desk`
 
-The existing `packages/contracts/fixtures/transfer-desk` is only a B01 contract fixture. B11 requires a full second example with a different causal shape: different goal, item transfer/possession, social context and resource pressure. It must not be Florence with renamed actors.
+Отдельный three-beat quest with social request/response, item possession and resource pressure. It proves the Engine path is not Florence-shaped special casing.
 
-## Rollout contract for later B11 integration
+## Runtime и HTTP path
 
-- do not modify or migrate old live `sandbox` sessions;
-- the adapter/BFF chooses legacy vs Engine only when creating a new Florence session;
-- the chosen runtime/release is pinned to the session;
-- changing a rollout flag never moves an in-progress session;
-- rollback stops routing future sessions to Engine while both kinds of existing session continue on their pinned runtime.
+The Engine authored Runtime now:
 
-## Exact next sequence
+- creates sessions from the current published release;
+- pins release identity to the session;
+- exposes safe `PlayerView + situation` projections;
+- accepts explicit `authored.option` actions;
+- routes free text through the current-beat intent catalog;
+- commits authoritative state only in Runtime storage;
+- returns idempotent replay for the same operation key;
+- preserves blocked/no-turn state without fake success.
 
-1. create `examples/florence` using only generic contracts/extensions;
-2. create `examples/transfer-desk` as a genuinely different real quest;
-3. add deterministic contract/scenario tests and verify no Florence identifiers enter `packages/core`;
-4. run root `npm run verify` on the exact B11 head;
-5. only then add the minimal `sandbox` adapter/BFF + new-session routing flag;
-6. run old/new semantic comparison using the canonical Florence route plus representative compromise/refusal routes;
-7. prove rollback/session pinning and complete B11 acceptance before B12.
+## `sandbox` BFF integration
 
-Do not begin by editing the legacy app or by introducing a Florence special case into the Engine. The next implementation surface is the two real quest packages.
+PR #10 adds the production-facing compatibility boundary without rewriting the legacy Durable Object:
+
+- `ENGINE_FLORENCE_ROLLOUT=off|test|on` is evaluated only for **new** Florence sessions;
+- `RuntimeRouteSession` stores upstream Engine session identity and credential;
+- an Engine-bound session stays on Engine after rollout is switched back to `off`;
+- an id without Engine binding continues through legacy `HistorySession` unchanged;
+- prepared UI choices are forwarded as explicit `authored.option` + `optionId`;
+- freeform text remains a text intent request;
+- Engine `PlayerView + situation` is adapted server-side to the existing `GameState` shape, so the current React client receives authored options without calculating gameplay.
+
+The latest client/BFF exact-head verification before this handoff is green on PR #10 head `5480c77a59912f435c3f9d1bafc2985c23fbe531`, Verify #5 / run `34236822232` (tests + build success).
+
+## Florence binary assets
+
+Binary migration is complete and reproducible evidence is committed:
+
+- 6 WebP visuals under `examples/florence/assets/visuals`;
+- 6 assembled MP3 tracks under `examples/florence/assets/audio`;
+- source visual Git blobs were matched exactly against pinned source SHA;
+- every MP3 part was downloaded from the pinned source commit and its Git blob verified before ordered concatenation;
+- migration workflow run `34237111169` succeeded and produced asset commit `cd9423f719a7a4ff81e05e3c486d174caea3e62f`;
+- `asset-migration-manifest.json` records bytes/SHA-256/Git blob ids;
+- root tests re-hash all 12 checked-out binaries;
+- the temporary contents-write migration workflow was removed after the assets were committed and will not ship to `main`.
+
+## Точный следующий шаг
+
+Do **not** add another B11 feature slice.
+
+1. wait only for the normal PR CI generated by the final docs/code/assets head;
+2. require full root `npm run verify` success on that exact PR #35 head;
+3. update PR #35 description with final acceptance evidence and exact CI run;
+4. mark Engine PR #35 ready for review/publication;
+5. ensure companion `sandbox` PR #10 is still green and update its stale B11.2 description to the accepted client-compatible state;
+6. publish/merge in dependency-safe order: Engine first, then `sandbox` integration;
+7. only after both publication gates are complete, start B12 release hardening.
+
+If a later change touches Engine semantics, authored quest data, BFF compatibility or migrated binaries before merge, the exact-head CI evidence must be renewed. Do not reuse an older green run for a changed head.
