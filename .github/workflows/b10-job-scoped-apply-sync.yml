@@ -1,0 +1,37 @@
+name: B10 job scoped Apply sync
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-job-scoped-apply-sync.py
+      - .github/workflows/b10-job-scoped-apply-sync.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply job-scoped proposal hardening
+        run: python3 scripts/b10-job-scoped-apply-sync.py
+      - name: Remove staging artifacts
+        run: rm scripts/b10-job-scoped-apply-sync.py .github/workflows/b10-job-scoped-apply-sync.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'AUTHOR_APPLY_AUDIT_PENDING' apps/server/src/author-job-http.ts
+          grep -q 'applyAuthorJobProposal' apps/studio/src/api.ts
+          grep -q 'applyAuthorJobProposal' apps/studio/src/app.ts
+          grep -q 'proposalOptions' apps/studio/src/author-assistant.ts
+          test -f apps/server/test/author-job-proposal-apply-http.test.mjs
+          test -f apps/studio/test/author-assistant-job-apply-api.test.mjs
+          test ! -e scripts/b10-job-scoped-apply-sync.py
+          test ! -e .github/workflows/b10-job-scoped-apply-sync.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/author-job-http.ts apps/server/test/author-job-proposal-apply-http.test.mjs apps/studio/src/api.ts apps/studio/src/app.ts apps/studio/src/author-assistant.ts apps/studio/test/author-assistant-app.test.mjs apps/studio/test/author-assistant-busy-controls.test.mjs apps/studio/test/author-assistant-job-apply-api.test.mjs scripts/b10-job-scoped-apply-sync.py .github/workflows/b10-job-scoped-apply-sync.yml
+          git commit -m "feat(B10): apply durable author proposals by server artifact"
+          git push origin HEAD:b10-author-assistant
