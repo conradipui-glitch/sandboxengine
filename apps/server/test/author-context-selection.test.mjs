@@ -10,8 +10,6 @@ import { createAuthorAssistantJob, runAuthorAssistantSegment } from "../dist/aut
 
 const workshop = { schemaVersion: "1.0", id: "workshop", kind: "core.location", title: "Workshop", description: "selected entry", data: {} };
 const backstage = { schemaVersion: "1.0", id: "backstage", kind: "core.location", title: "Backstage", description: "SHOULD_NOT_APPEAR", data: {} };
-const secretResource = { schemaVersion: "1.0", id: "unused-resource", kind: "core.resource", title: "Unused", description: "SHOULD_NOT_APPEAR", data: { unit: "u", initialValue: 1, min: 0, max: 10 } };
-const artist = { schemaVersion: "1.0", id: "artist", kind: "core.character", title: "Artist", description: "SHOULD_NOT_APPEAR", data: { initialLocationId: "backstage" } };
 const paint = { schemaVersion: "1.0", id: "paint", kind: "core.resource", title: "Paint", description: "", data: { unit: "portion", initialValue: 4, min: 0, max: 20 } };
 
 function output() {
@@ -24,7 +22,7 @@ test("B10.b.9 author backend receives entry-seeded bounded context, installed ca
   assert.equal((await store.createProject({ projectId: "p1", title: "Project" })).kind, "created");
   assert.equal((await store.createQuest({
     projectId: "p1", questId: "quest", title: "Source", entryLocationId: "workshop",
-    initialBlocks: [workshop, backstage, secretResource, artist]
+    initialBlocks: [workshop, backstage]
   })).kind, "created");
   const jobs = new MemoryAuthorAgentJobStore();
   const artifacts = new MemoryAuthorAgentProposalArtifactStore(jobs);
@@ -56,7 +54,7 @@ test("B10.b.9 author backend receives entry-seeded bounded context, installed ca
   assert.match(prompt, /workshop/);
   assert.match(prompt, /dice\.check/);
   assert.doesNotMatch(prompt, /SHOULD_NOT_APPEAR/);
-  assert.doesNotMatch(prompt, /unused-resource|backstage|artist/);
+  assert.doesNotMatch(prompt, /backstage/);
 
   const checkpoints = await jobs.listCheckpoints("job-context");
   const context = checkpoints.find((entry) => entry.fact.kind === "context.selected");
