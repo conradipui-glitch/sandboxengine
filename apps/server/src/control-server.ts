@@ -5,6 +5,7 @@ import {
   createControlOpaqueSecret,
   createControlSessionId,
   hashControlOpaqueSecret,
+  isAllowedLocalHttpRequest,
   isControlProjectRole,
   type AuthorConversationStore,
   type ControlProjectRole,
@@ -182,6 +183,10 @@ async function routeControlRequest(
   const method = String(request.method ?? "GET").toUpperCase();
   const url = new URL(String(request.url ?? "/"), "http://control.local");
 
+  if (!auth && !isAllowedLocalHttpRequest(request)) {
+    sendJson(response, 403, { error: { code: "CONTROL_LOCAL_ORIGIN_DENIED" } });
+    return;
+  }
   if (auth && !originAllowed(request, auth)) {
     sendJson(response, 403, { error: { code: "CONTROL_ORIGIN_DENIED" } });
     return;

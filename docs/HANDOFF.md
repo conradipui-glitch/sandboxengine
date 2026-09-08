@@ -1,9 +1,41 @@
 # Передача работы
 
-Обновлено: 2026-09-08
+Обновлено: 2026-09-09
 
-Текущий блок: **L00 — ревью заготовок live authoring; B12 опубликован**  
-Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Пользователь запросил план для продолжения младшей моделью; реализация остановлена на заготовках. Успешен только `npm run typecheck`; новые функциональные тесты, browser/live acceptance и Player launch ещё не сделаны. Следующий шаг — L00, затем L01/L02 по зависимостям. B13 отложен за этот маршрут.
+Текущий блок: **L03 — настройка провайдера в Studio; L00–L02 приняты; B12 опубликован**  
+Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L00 подтверждён свежими проверками; следующая bounded-карточка — L01. B13 отложен за этот маршрут.
+
+## L00 — baseline review (2026-09-09)
+
+- база: `6f2ad73fca228c60361012250b72609447edc968`;
+- HEAD: `1bc76c1facbb84ea573f7e29908dfa1d7bc5cb7b` (два commit от базы: scaffolding + L00 bookkeeping);
+- `npm ci` — exit 0, но Node `24.18.0` дал environment-only `EBADENGINE`; требуется `>=24.19.0 <25`;
+- `npm run typecheck` — exit 0;
+- `node --test apps/studio/test/b10-full-author-assistant-cycle.test.mjs` — exit 0, 1/1 pass;
+- browser, HTTP adapter, live provider и Player launch пока не доказаны.
+
+## L01 — local HTTP boundaries (2026-09-09)
+
+- shared loopback Host/port + Origin + fetch-metadata policy now guards settings, Studio proxy and direct local Control;
+- proxy and Control request bodies are bounded before mutation/upstream forwarding;
+- unknown settings fields, forbidden provider targets and unsupported methods fail closed;
+- `npm run typecheck` — exit 0;
+- `node --test apps/studio/test/live-author-boundary.test.mjs` — exit 0, 1/1;
+- `node --test apps/studio/test/proxy-auth.test.mjs apps/server/test/control-http.test.mjs` — exit 0, 7/7;
+- no upstream call and no draft mutation on rejected requests;
+- Node `24.18.0` vs required `>=24.19.0 <25` remains an environment limitation.
+
+## L02 — ModelProvider → AgentBackend (2026-09-09)
+
+- server-owned bridge now calls the existing OpenAI-compatible adapter with bounded JSON request data;
+- deadline, per-turn cancel, close, disconnect/rotation, busy and eight-session limit are explicit;
+- provider 401/403/429/timeout/abort/invalid JSON/network outcomes map to AgentBackend codes;
+- known provider usage and request IDs survive structured failures; no secret or gameplay authority is exposed;
+- `npm run typecheck` — exit 0;
+- `npm run test:ai` — exit 0, 46/46;
+- no paid API call; fetch-only stubs exercised the real HTTP adapter.
+
+Следующее: L03 — provider settings lifecycle, safe process-memory credential handling and user-visible statuses.
 
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  

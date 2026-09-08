@@ -1,0 +1,9 @@
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
