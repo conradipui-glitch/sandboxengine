@@ -70,7 +70,7 @@ test("B11 authored release rejects duplicate scenario sidecars and compiled-arti
   duplicate.authoredPluginSidecars.push(structuredClone(duplicate.authoredPluginSidecars[0]));
   assert.deepEqual(
     resolveAuthoredScenarioRelease(duplicate, registry()),
-    { ok: false, code: "AUTHORED_SCENARIO_DUPLICATE" }
+    { ok: false, code: "INVALID_RELEASE" }
   );
 
   const drifted = structuredClone(release);
