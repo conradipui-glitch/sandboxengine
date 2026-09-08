@@ -2,10 +2,10 @@
 
 Updated: 2026-09-08  
 Release branch: `b12-release-hardening` / PR #36  
-Latest full regression before docs sync: CI #713 / run `34246765104` on head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb` — **PASS**  
+Latest full regression before final live-eval sync: CI #715 / run `34247340232` on head `e19050de1f1c5516f938068f85700ffb65812cf7` — **PASS**  
 Production smoke: `sandbox` run `34239102418` — **PASS**  
 T29 real browser smoke: run `34246143800` — **PASS**  
-Live-eval availability probe: run `34243952551` — **not_configured**
+Configured live provider eval: run `34250711595` — **PASS contract / quality limitation**
 
 This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T34–T35 and Builder-specific code/deployment isolation are B13 scope and are not silently counted as B12 capability.
 
@@ -40,8 +40,8 @@ This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T
 | T27 | **PASS** | Published B11 Florence semantic routes and migrated asset provenance remain pinned. |
 | T28 | **PASS / SCOPED** | Backup/restore, restart, startup/shutdown, assets, 429 no-turn save integrity all pass for standalone SQLite Engine. No Cloudflare DO backup claim. |
 | T29 | **PASS** | One-shot real Chromium run `34246143800`: 360×800, no horizontal overflow, auto-tour/skip/help/Escape focus return/replay/next/back/skip, real project-title keyboard input preserved, 0 page errors and 0 unexpected HTTP failures. Canonical local auth-probe 404 was explicitly classified by existing access semantics. Temporary Playwright workflow was deleted afterwards. |
-| T30 | **PARTIAL / LIVE UNAVAILABLE** | Deterministic OpenRouter/custom endpoint/capability tests pass. Live probe `34243952551` found no `LHE_EVAL_API_KEY`/`LHE_EVAL_MODEL`, so no real-model success/tokens/latency claim exists. |
-| T31 | **PASS** | Quota null/0/stale semantics, management-vs-inference credentials and denied quota endpoint behavior. |
+| T30 | **PASS / LIVE QUALITY LIMITATION** | Real OpenRouter eval `34250711595` with `deepseek/deepseek-v4-flash-0731`: structural contract 12/12; semantic 5/12; 16 attempts; mean latency 12,176 ms; max 25,002 ms. Provider connectivity/capability boundary is proven; this model is not qualified as a recommended intent model by this score. |
+| T31 | **PASS** | Quota null/0/stale semantics, management-vs-inference credentials and denied quota endpoint behavior. Live provider usage was incomplete, so aggregate tokens remain `null` rather than invented. |
 | T32 | **PASS** | Author jobs persist/replay/pause/resume/cancel without duplicate mutation. |
 | T33 | **PASS for B12 author boundary; DEFERRED B13 for Builder code/deploy** | Skills/MCP broker denies secret/shell/deploy capability escalation; Builder repository/deployment authority is B13. |
 | T36 | **PASS** | Agent-kit/Skill/MCP applicability and version/permission pinning fail closed. |
@@ -53,23 +53,30 @@ This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T
 - backup/restore: 11 SQLite pages, exact restored session/release/turn and 12/12 Florence hashes;
 - rollback: publish r1 → r2 → rollback r1, restart, immutable hashes/history and session A/B/C pinning preserved;
 - persistent entrypoint: Runtime `/healthz` 200, Control safe read 200, SQLite created, SIGTERM exit code 0;
-- external production shell/API smoke: PASS on deployed companion Worker.
+- external production shell/API smoke: PASS on deployed companion Worker;
+- live provider: OpenRouter + `deepseek/deepseek-v4-flash-0731`, contract-safe 12/12 with explicit semantic-quality limitation.
 
-## Remaining B12 gap
+## B12 external provider evidence
 
-### G2 — configured live provider evidence
+Run `34250711595` executed the real opt-in evaluator with the configured repository API secret and an explicit model. Safe summary:
 
-Run `34243952551` executed the real opt-in evaluator entrypoint but the release environment supplied neither required key nor model. Result:
+- status: `completed`;
+- provider: `https://openrouter.ai/api/v1`;
+- model: `deepseek/deepseek-v4-flash-0731`;
+- cases: 12;
+- contract: 12/12 (100%);
+- semantic: 5/12 (41.7%);
+- attempts: 16;
+- mean latency: 12,176 ms;
+- max latency: 25,002 ms;
+- aggregate tokens: `null` because provider usage was incomplete across cases.
 
-- `status: not_configured`;
-- provider label `https://openrouter.ai/api/v1`;
-- model `null`;
-- no live cases, attempts, token usage or latency exists to report.
+The release does not convert a low semantic score into a model-quality PASS. T30 passes because the real compatible-provider path, safe capability boundary, error behavior and telemetry are proven. Model selection remains an operational configuration and this specific run does not establish DeepSeek V4 Flash as the recommended intent model.
 
-This is the only unresolved mandatory external B12 evidence after the autonomous gates above. It must not be converted into PASS using fake-provider tests.
+The temporary secret-bearing eval workflow was removed after the run.
 
-Authenticated live Codex subscription evidence is also unavailable and remains a release limitation, but deterministic T37 boundary behavior is covered.
+Authenticated live Codex subscription evidence remains unavailable and is documented under T37; deterministic Codex boundary behavior is covered.
 
 ## Finalization rule
 
-Do not create the B12 release tag until one intentionally configured bounded live provider eval records the real provider/model and case telemetry required by the B12 specification, followed by final exact-head `npm run verify` and docs gate.
+All mandatory B12 evidence is present. Create the B12 release tag only after the final release head has no one-shot credential-bearing workflow, passes exact-head `npm run verify` + docs gate, is merged, and the merge commit passes `main` CI.
