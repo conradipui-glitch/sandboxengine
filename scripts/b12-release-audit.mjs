@@ -78,19 +78,15 @@ const report = {
     advisories: advisorySummary(production)
   },
   policy: {
-    failOnCriticalAnywhere: true,
-    failOnProductionHighOrCritical: true,
-    devOnlyHighRequiresReleaseReportTriage: true
+    failOnModerateHighCriticalAnywhere: true,
+    productionGraphReportedSeparately: true,
+    lowAndInfoRemainVisibleButDoNotBlock: true
   }
 };
 
 console.log(JSON.stringify(report));
 
-if (allCounts.critical > 0) {
-  console.error("release audit failed: critical vulnerability exists in dependency graph");
-  process.exit(1);
-}
-if (productionCounts.high > 0 || productionCounts.critical > 0) {
-  console.error("release audit failed: high/critical vulnerability exists in production dependency graph");
+if (allCounts.moderate > 0 || allCounts.high > 0 || allCounts.critical > 0) {
+  console.error("release audit failed: moderate/high/critical vulnerability exists in dependency graph");
   process.exit(1);
 }
