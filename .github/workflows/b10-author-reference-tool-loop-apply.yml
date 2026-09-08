@@ -22,50 +22,29 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply durable reference tool-loop patch
-        run: python scripts/b10-author-tool-loop-sync.py
+        run: |
+          python scripts/b10-author-tool-loop-sync.py
+          python scripts/b10-author-tool-loop-old-tests-fix.py
       - name: Typecheck
         run: npm run typecheck
       - name: Control regressions
         run: npm run test:control
-      - name: New regression - configured grant
-        run: node --test --test-name-pattern="configured author job" apps/server/test/author-tool-loop.test.mjs
-      - name: New regression - replay
-        run: node --test --test-name-pattern="journals it" apps/server/test/author-tool-loop.test.mjs
-      - name: New regression - offline
-        run: node --test --test-name-pattern="offline MCP result" apps/server/test/author-tool-loop.test.mjs
-      - name: New regression - SQLite reopen
-        run: node --test --test-name-pattern="survives SQLite reopen" apps/server/test/author-tool-loop.test.mjs
-      - name: New regression - reduced grant
-        run: node --test --test-name-pattern="without docs.reference.read" apps/server/test/author-tool-loop.test.mjs
       - name: Server regressions
-        shell: bash
-        run: |
-          set +e
-          npm run test:server > /tmp/b10-server-test.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            tail -n 240 /tmp/b10-server-test.log > docs/.b10-server-diagnostic.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add docs/.b10-server-diagnostic.txt
-            git commit -m "chore(B10): capture server regression diagnostic"
-            git push origin HEAD:b10-author-assistant
-            exit "$status"
-          fi
+        run: npm run test:server
       - name: Boundary gate
         run: npm run check:boundaries
       - name: Docs gate
         run: npm run docs:check
       - name: Diff gate
-        run: git diff --check -- packages/control/src/author-agent-jobs.ts packages/control/src/author-tool-broker.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-tool-loop.ts apps/server/test/author-tool-loop.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-author-reference-tool-loop.md
+        run: git diff --check -- packages/control/src/author-agent-jobs.ts packages/control/src/author-tool-broker.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-tool-loop.ts apps/server/test/author-tool-loop.test.mjs apps/server/test/author-assistant.test.mjs apps/server/test/author-mcp.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-author-reference-tool-loop.md
       - name: Commit clean production tree
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f scripts/b10-author-tool-loop-sync.py .github/workflows/b10-author-reference-tool-loop-apply.yml
+          git rm -f scripts/b10-author-tool-loop-sync.py scripts/b10-author-tool-loop-old-tests-fix.py .github/workflows/b10-author-reference-tool-loop-apply.yml
           if [ -f docs/.b10-server-diagnostic.txt ]; then git rm -f docs/.b10-server-diagnostic.txt; fi
-          git add packages/control/src/author-agent-jobs.ts packages/control/src/author-tool-broker.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-tool-loop.ts apps/server/test/author-tool-loop.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-author-reference-tool-loop.md
+          git add packages/control/src/author-agent-jobs.ts packages/control/src/author-tool-broker.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-tool-loop.ts apps/server/test/author-tool-loop.test.mjs apps/server/test/author-assistant.test.mjs apps/server/test/author-mcp.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-author-reference-tool-loop.md
           git diff --cached --check
           git diff --cached --quiet && exit 0
           git commit -m "feat(B10): journal brokered reference reads"
