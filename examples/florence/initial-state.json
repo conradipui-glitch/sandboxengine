@@ -20,7 +20,9 @@
     { "id": "workshop-cash", "unit": "флорин", "value": 2, "min": 0, "max": 12 },
     { "id": "guild-trust", "unit": "пункт", "value": 2, "min": 0, "max": 8 },
     { "id": "patron-trust", "unit": "пункт", "value": 2, "min": 0, "max": 8 },
-    { "id": "fresco-progress", "unit": "этап", "value": 0, "min": 0, "max": 6 }
+    { "id": "fresco-progress", "unit": "этап", "value": 0, "min": 0, "max": 6 },
+    { "id": "contract-rights", "unit": "флаг", "value": 0, "min": 0, "max": 1 },
+    { "id": "deal-open", "unit": "флаг", "value": 1, "min": 0, "max": 1 }
   ],
   "items": [
     { "id": "contract-draft", "position": { "kind": "location", "locationId": "workshop" } },
