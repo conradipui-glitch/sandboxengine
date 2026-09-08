@@ -157,7 +157,7 @@ async function routeControlRequest(
   store: ControlStore,
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
-  authorAssistant: Omit<AuthorAssistantDependencies, "store"> | null,
+  authorAssistant: (Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore }) | null,
   auth: AuthRuntime | null,
   failures: Map<string, LoginFailureState>
 ): Promise<void> {
