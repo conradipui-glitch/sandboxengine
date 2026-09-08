@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import {
   CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG,
   applyAuthoringProposalFromStore,
+  authorizeAuthorToolBrokerRequest,
   buildAuthorContextBundle,
+  ensureAuthorToolBrokerPin,
   previewAuthoringProposalFromStore,
   type AuthorAgentJobRecord,
   type AuthorAgentJobStore,
@@ -24,6 +26,7 @@ import {
   type AgentBackendErrorCode,
   type ProviderUsage
 } from "@living-history/ai";
+import { loadInstalledAgentKit } from "./agent-kit.js";
 
 const MAX_AUTHOR_INSTRUCTION_CHARS = 20_000;
 const MAX_AUTHOR_CONTEXT_CHARS = 64_000;
@@ -93,7 +96,8 @@ export type RunAuthorAssistantSegmentResult =
   | { readonly kind: "proposal_invalid"; readonly job: AuthorAgentJobRecord; readonly details: readonly string[]; readonly usage: ProviderUsage }
   | { readonly kind: "proposal_base_conflict"; readonly job: AuthorAgentJobRecord; readonly currentRevision: number; readonly currentContentHash: string; readonly usage: ProviderUsage }
   | { readonly kind: "store_unavailable"; readonly job: AuthorAgentJobRecord; readonly usage: ProviderUsage }
-  | { readonly kind: "job_conflict"; readonly job: AuthorAgentJobRecord };
+  | { readonly kind: "job_conflict"; readonly job: AuthorAgentJobRecord }
+  | { readonly kind: "broker_failure"; readonly code: "contract_changed" | "invalid_pin" | "operation_denied"; readonly job: AuthorAgentJobRecord };
 
 export async function createAuthorAssistantJob(
   dependencies: AuthorAssistantDependencies,
@@ -151,6 +155,20 @@ export async function runAuthorAssistantSegment(
     job = transitioned.job;
   }
   if (job.state !== "running") return frozen({ kind: "job_conflict", job });
+
+  const installedDocsHash = loadInstalledAgentKit().identity.docsHash;
+  const brokerPinned = await ensureAuthorToolBrokerPin(dependencies.jobs, job, installedDocsHash, now(dependencies));
+  if (brokerPinned.kind === "job_not_found") return frozen({ kind: "job_not_found" });
+  if (brokerPinned.kind === "job_conflict") return jobConflict(dependencies, job.jobId);
+  if (brokerPinned.kind === "pinned_mismatch") return failBroker(dependencies, job, "contract_changed");
+  if (brokerPinned.kind === "invalid_pin" || brokerPinned.kind === "invalid_request") {
+    return failBroker(dependencies, job, "invalid_pin");
+  }
+  job = brokerPinned.job;
+  const brokerPin = brokerPinned.pin;
+  if (authorizeAuthorToolBrokerRequest(brokerPin, job, {
+    toolId: "author.draft.read", source: "builtin"
+  }).kind !== "allowed") return failBroker(dependencies, job, "operation_denied");
 
   const current = await dependencies.store.getDraft(job.projectId, job.questId);
   if (!current) return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable");
@@ -349,6 +367,9 @@ export async function runAuthorAssistantSegment(
     job = produced.job;
   }
 
+  if (authorizeAuthorToolBrokerRequest(brokerPin, job, {
+    toolId: "author.proposal.preview", source: "builtin"
+  }).kind !== "allowed") return failBroker(dependencies, job, "operation_denied");
   const previewOperationId = `preview-${proposal.proposalId.slice("proposal-".length)}`;
   const previewHash = sha256(canonicalStringify({ operation: "proposal.preview", proposal }));
   const previewReserved = await dependencies.jobs.reserveOperation(job.jobId, {
@@ -418,6 +439,9 @@ export async function runAuthorAssistantSegment(
     return frozen({ kind: "proposal_ready", job: waiting.job, proposal, preview, usage: usage });
   }
 
+  if (authorizeAuthorToolBrokerRequest(brokerPin, job, {
+    toolId: "author.proposal.apply", source: "builtin"
+  }).kind !== "allowed") return failBroker(dependencies, job, "operation_denied");
   const applyOperationId = `apply-${proposal.proposalId.slice("proposal-".length)}`;
   const applyHash = sha256(canonicalStringify({ operation: "proposal.apply", proposal }));
   const applyReserved = await dependencies.jobs.reserveOperation(job.jobId, {
@@ -524,6 +548,15 @@ function parseBackendProposalBody(text: string): BackendProposalBody | null {
     changes: value.changes.map(cloneJson) as DraftChange[],
     missingCapabilities: value.missingCapabilities.map(cloneJson) as MissingAuthoringCapability[]
   });
+}
+
+async function failBroker(
+  dependencies: AuthorAssistantDependencies,
+  job: AuthorAgentJobRecord,
+  code: "contract_changed" | "invalid_pin" | "operation_denied"
+): Promise<RunAuthorAssistantSegmentResult> {
+  const failed = await markFailed(dependencies, job, `broker.${code}`);
+  return frozen({ kind: "broker_failure", code, job: failed });
 }
 
 async function failBackend(

@@ -4,6 +4,8 @@ import {
   DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
   DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS,
   applyAuthoringProposalFromStore,
+  authorizeAuthorToolBrokerRequest,
+  ensureAuthorToolBrokerPin,
   type AuthorAgentJobRecord,
   type AuthorConversationStore,
   type ControlProjectRole
@@ -15,6 +17,7 @@ import {
   type AuthorAssistantDependencies,
   type RunAuthorAssistantSegmentResult
 } from "./author-assistant.js";
+import { loadInstalledAgentKit } from "./agent-kit.js";
 
 const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
 
@@ -257,7 +260,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       return true;
     }
 
-    const job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
+    let job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
     if (!job) { context.sendNotFound(); return true; }
     if (job.state !== "waiting_user" && job.state !== "paused_budget") {
       context.sendJson(409, { error: { code: "AUTHOR_JOB_NOT_WAITING", state: job.state } });
@@ -283,6 +286,9 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       return true;
     }
 
+    const brokerAuthorized = await authorizeJobApplyBroker(context, job);
+    if (brokerAuthorized === null) return true;
+    job = brokerAuthorized;
     if (!context.requireAgentKitHandshake()) return true;
     const applied = await applyAuthoringProposalFromStore(context.authorAssistant.store, proposal, idempotencyKey);
     if (applied.kind === "applied" || applied.kind === "replay") {
@@ -429,6 +435,40 @@ function abortActiveSegment(dependencies: AuthorAssistantDependencies, jobId: st
   return true;
 }
 
+async function authorizeJobApplyBroker(
+  context: AuthorJobHttpContext,
+  job: AuthorAgentJobRecord
+): Promise<AuthorAgentJobRecord | null> {
+  if (context.authorAssistant === null) return null;
+  const pinned = await ensureAuthorToolBrokerPin(
+    context.authorAssistant.jobs,
+    job,
+    loadInstalledAgentKit().identity.docsHash,
+    now(context.authorAssistant)
+  );
+  if (pinned.kind === "pinned_mismatch") {
+    context.sendJson(409, { error: { code: "AUTHOR_BROKER_CONTRACT_CHANGED" }, job });
+    return null;
+  }
+  if (pinned.kind === "job_conflict") {
+    context.sendJson(409, { error: { code: "AUTHOR_JOB_CONFLICT", currentJobVersion: pinned.currentJobVersion } });
+    return null;
+  }
+  if (pinned.kind !== "pinned") {
+    context.sendJson(409, { error: { code: "AUTHOR_BROKER_INVALID_PIN" }, job });
+    return null;
+  }
+  const decision = authorizeAuthorToolBrokerRequest(pinned.pin, pinned.job, {
+    toolId: "author.proposal.apply",
+    source: "builtin"
+  });
+  if (decision.kind !== "allowed") {
+    context.sendJson(403, { error: { code: "AUTHOR_BROKER_OPERATION_DENIED" }, job: pinned.job });
+    return null;
+  }
+  return pinned.job;
+}
+
 async function ensureAppliedCheckpoint(
   dependencies: AuthorAssistantDependencies,
   jobId: string,
@@ -506,6 +546,10 @@ function sendSegmentResult(context: AuthorJobHttpContext, result: RunAuthorAssis
   }
   if (result.kind === "invalid_backend_output" || result.kind === "proposal_invalid" || result.kind === "store_unavailable") {
     context.sendJson(422, { error: { code: `AUTHOR_${result.kind.toUpperCase()}` }, job: result.job, usage: result.usage });
+    return;
+  }
+  if (result.kind === "broker_failure") {
+    context.sendJson(409, { error: { code: `AUTHOR_BROKER_${result.code.toUpperCase()}` }, job: result.job });
     return;
   }
   if (result.kind === "cancelled" || result.kind === "terminal" || result.kind === "job_conflict") {

@@ -177,6 +177,7 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
     case "segment.requested": return "Сообщение автора сохранено";
     case "draft.read": return `Прочитан bounded authoring context: ${fact.blockCount} blocks`;
     case "context.selected": return `Context r${fact.draftRevision}: selected ${fact.selectedBlockIds.length}, included ${fact.includedBlockIds.length}`;
+    case "broker.pinned": return `Broker pinned ${fact.policyVersion}: ${fact.allowedToolIds.length} tools`;
     case "proposal.produced": return `Сформирован ${fact.proposalId}`;
     case "proposal.previewed": return `Server preview ${fact.proposalId}: stale=${fact.stale}, applyAllowed=${fact.applyAllowed}`;
     case "proposal.applied": return `Применён ${fact.proposalId} → r${fact.resultRevision}`;

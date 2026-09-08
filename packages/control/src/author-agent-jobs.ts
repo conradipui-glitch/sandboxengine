@@ -58,6 +58,14 @@ export type AuthorAgentCheckpointFact =
       readonly selectedBlockIds: readonly string[];
       readonly includedBlockIds: readonly string[];
     }
+  | {
+      readonly kind: "broker.pinned";
+      readonly policyVersion: string;
+      readonly policyHash: string;
+      readonly installedDocsHash: string;
+      readonly contractHash: string;
+      readonly allowedToolIds: readonly string[];
+    }
   | { readonly kind: "segment.requested"; readonly requestId: string; readonly requestHash: string }
   | { readonly kind: "proposal.produced"; readonly proposalId: string }
   | { readonly kind: "proposal.previewed"; readonly proposalId: string; readonly stale: boolean; readonly applyAllowed: boolean }
@@ -901,6 +909,15 @@ function isCheckpointFact(value: unknown): value is AuthorAgentCheckpointFact {
         && isBoundedIdList(value.selectedBlockIds, 32, 1)
         && isBoundedIdList(value.includedBlockIds, 64, 1)
         && value.selectedBlockIds.every((id: string) => value.includedBlockIds.includes(id));
+    case "broker.pinned":
+      return hasExactKeys(value, [
+        "kind", "policyVersion", "policyHash", "installedDocsHash", "contractHash", "allowedToolIds"
+      ])
+        && isId(value.policyVersion)
+        && isHash(value.policyHash)
+        && isHash(value.installedDocsHash)
+        && isHash(value.contractHash)
+        && isBoundedIdList(value.allowedToolIds, 16, 1);
     case "segment.requested":
       return hasExactKeys(value, ["kind", "requestId", "requestHash"])
         && isId(value.requestId) && isHash(value.requestHash);

@@ -101,6 +101,21 @@ export {
   type TransitionAuthorAgentJobResult
 } from "./author-agent-jobs.js";
 export {
+  AUTHOR_TOOL_BROKER_POLICY_HASH,
+  AUTHOR_TOOL_BROKER_POLICY_VERSION,
+  AUTHOR_TOOL_IDS,
+  authorizeAuthorToolBrokerRequest,
+  buildAuthorToolBrokerPin,
+  ensureAuthorToolBrokerPin,
+  type AuthorToolBrokerDecision,
+  type AuthorToolBrokerPin,
+  type AuthorToolBrokerRequest,
+  type AuthorToolId,
+  type AuthorToolSource,
+  type BuildAuthorToolBrokerPinResult,
+  type EnsureAuthorToolBrokerPinResult
+} from "./author-tool-broker.js";
+export {
   MemoryAuthorAgentProposalArtifactStore,
   SQLiteAuthorAgentProposalArtifactStore,
   type AuthorAgentProposalArtifact,
