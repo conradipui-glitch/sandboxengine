@@ -98,10 +98,10 @@ const control = createControlHttpServer({
   } : undefined
 });
 
-await runtime.listen(port, host);
-await control.listen(controlPort, controlHost);
-process.stdout.write(`Living History Runtime listening on http://${host}:${port}\n`);
-process.stdout.write(`Living History Control listening on http://${controlHost}:${controlPort} (${control.accessMode})\n`);
+const runtimeAddress = await runtime.listen(port, host);
+const controlAddress = await control.listen(controlPort, controlHost);
+process.stdout.write(`Living History Runtime listening on http://${runtimeAddress.host}:${runtimeAddress.port}\n`);
+process.stdout.write(`Living History Control listening on http://${controlAddress.host}:${controlAddress.port} (${control.accessMode})\n`);
 
 async function shutdown(): Promise<void> {
   await control.close();
