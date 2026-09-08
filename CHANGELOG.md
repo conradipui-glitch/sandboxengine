@@ -1,8 +1,11 @@
 # Changelog
 
-Этот файл фиксирует release-facing изменения. Версия B12 пока **не тегирована**; раздел ниже остаётся Unreleased до финального exact-head CI, merge и проверки `main`.
+Этот файл фиксирует release-facing изменения.
 
-## Unreleased — B12 release candidate work
+## v0.1.0 — 2026-09-08
+
+Release tag: `v0.1.0` → `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`.  
+Published `main` verification: CI #729 / run `34251551857` — **success**.
 
 ### Added
 
@@ -30,16 +33,16 @@
 - provider rate-limit failure completes as replayable no-turn and leaves authoritative save unchanged;
 - release rollback preserves immutable release hashes and publication history;
 - live provider evaluation on `deepseek/deepseek-v4-flash-0731` preserved the structural contract in 12/12 cases;
-- temporary contents-write/browser/live-eval evidence workflows were removed after gathering bounded evidence and do not ship.
+- temporary contents-write/browser/live-eval/tag workflows were removed after gathering bounded evidence and do not ship on `main`.
 
-### Known limitations before B12 tag
+### Known limitations in v0.1.0
 
 - the bounded `deepseek/deepseek-v4-flash-0731` run scored 5/12 (41.7%) on the small semantic corpus despite 12/12 structural-contract safety; this evidence does not qualify it as the recommended intent model;
 - provider token usage was incomplete across live cases, so aggregate token count is `null` rather than inferred;
 - no authenticated live Codex subscription run is claimed;
 - Florence Engine production rollout remains an explicit operational switch in the companion app;
 - Cloudflare Durable Object backup/restore is outside the standalone SQLite backup claim;
-- B13 Builder/code/GitHub/deployment orchestration is not shipped.
+- B13 Builder/code/GitHub/deployment orchestration is not shipped in v0.1.0.
 
 ## B11 and earlier
 
