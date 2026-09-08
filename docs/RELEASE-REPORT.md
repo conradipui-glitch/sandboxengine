@@ -1,9 +1,10 @@
 # Living History Engine — B12 Release Report
 
-Status: **B12 mandatory gates complete; final exact-head CI and publication pending**  
+Status: **B12 accepted and published as `v0.1.0`**  
 Updated: 2026-09-08  
 Release baseline: B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`  
-Release branch: `b12-release-hardening` / PR #36
+B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  
+Release tag: `v0.1.0` → `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`
 
 This is the evidence ledger. A green build is not allowed to erase an unavailable or weak external check.
 
@@ -17,10 +18,13 @@ This is the evidence ledger. A green build is not allowed to erase an unavailabl
 | backup/restore | **PASS / SCOPED** | drill in root verify: 11 pages, revision 1, pinned `release-1`, one turn, idempotent replay, 12/12 Florence hashes |
 | restart/recovery | **PASS** | T10/T12 durable suite + backup restore replay |
 | quota/rate-limit save integrity | **PASS** | two retryable provider HTTP 429 failures → replayable no-turn; save unchanged; prepared authored action still commits |
-| release rollback | **PASS** | CI #709 / `34245705625`, rerun in #713: r1→r2→rollback r1 + restart; active session pinning preserved |
+| release rollback | **PASS** | CI #709 / `34245705625`, rerun in later full verify: r1→r2→rollback r1 + restart; active session pinning preserved |
 | T29 mobile/browser | **PASS** | one-shot Chromium `34246143800`: 360×800, focus/keyboard/onboarding/replay and no blocking overflow/error |
 | persistent start/stop | **PASS** | head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`, CI #713 / `34246765104`: `/healthz` 200, Control read 200, SQLite created, SIGTERM exit 0 |
 | live provider compatibility | **PASS / QUALITY LIMITATION** | OpenRouter run `34250711595`, model `deepseek/deepseek-v4-flash-0731`: contract 12/12; semantic 5/12; 16 attempts; mean 12,176 ms; max 25,002 ms |
+| final cleaned PR head | **PASS** | head `abf23383e2e70b80aa6c029da17c6e5ab0a66361`; CI #728 / `34251382755` |
+| published `main` | **PASS** | merge `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; CI #729 / `34251551857` |
+| release tag | **PASS** | tag workflow `34251761663`; verified `refs/tags/v0.1.0` points exactly to B12 merge; cleanup workflow `34251870134` removed temporary tag branch |
 | T01–33/T36–37 consolidation | **DONE** | `docs/B12-ACCEPTANCE-MATRIX.md` |
 
 ## B12.1 — production smoke
@@ -82,13 +86,9 @@ Permanent `npm run drill:rollback` is in root verify. It proves:
 - session C after rollback gets r1;
 - immutable hashes and publication history are unchanged.
 
-First accepted CI #709 / `34245705625`; renewed in CI #713.
-
 ## B12.7 — persistent startup/shutdown — ACCEPTED
 
-`npm start` now names the compiled Node+SQLite Runtime+Control entrypoint. Permanent `npm run drill:startup-shutdown` starts it on ephemeral loopback ports and validates actual bound-port reporting, Runtime `/healthz`, a safe Control read, SQLite file creation and SIGTERM clean exit.
-
-Exact implementation head `847aa22f3e4457bccd5c4dc19ab6d27f26941afb`; CI #713 / `34246765104` — success.
+`npm start` names the compiled Node+SQLite Runtime+Control entrypoint. Permanent `npm run drill:startup-shutdown` starts it on ephemeral loopback ports and validates actual bound-port reporting, Runtime `/healthz`, a safe Control read, SQLite file creation and SIGTERM clean exit.
 
 ## Codex release statement
 
@@ -104,16 +104,16 @@ Codex adapter/account/controller deterministic tests cover protocol pinning, acc
 - no shared-network SQLite multi-writer claim;
 - Florence Engine production rollout is an explicit companion-app operation;
 - no authenticated live Codex subscription run is claimed;
-- B13 Builder/code/GitHub/deployment orchestration is not shipped.
+- B13 Builder/code/GitHub/deployment orchestration is not shipped in `v0.1.0`.
 
-## Finalization
+## Publication result
 
-All mandatory B12 evidence is now present. Before publication:
+B12 is complete and published:
 
-1. keep the one-shot live-eval workflow absent from the release head;
-2. run final exact-head `npm run verify` + docs gate;
-3. make PR #36 ready and merge only the exact green head;
-4. verify `main` CI on the merge commit;
-5. create the concrete B12 release tag on that verified merge commit.
+- PR #36 merged as `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`;
+- `main` CI #729 / `34251551857` passed on that exact merge;
+- `v0.1.0` points exactly to that merge commit;
+- temporary live/browser/write/tag workflow surfaces are absent from `main`;
+- the temporary tag branch was removed after tag verification.
 
-No B12 tag exists yet.
+B13 may now start from accepted B12. B13 remains a separate acceptance block and must not retroactively change the `v0.1.0` evidence.
