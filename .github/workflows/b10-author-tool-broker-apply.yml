@@ -1,0 +1,45 @@
+name: B10 Author Tool Broker Apply
+
+on:
+  push:
+    branches:
+      - b10-author-assistant
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Apply broker foundation patch
+        run: python scripts/b10-b11-author-tool-broker-sync.py
+      - name: Targeted broker gate
+        run: |
+          npm run typecheck
+          npm run test:control
+          npm run test:server
+          npm run test:studio
+          npm run check:boundaries
+          npm run docs:check
+          git diff --check -- packages/control/src/author-tool-broker.ts packages/control/src/author-agent-jobs.ts packages/control/src/index.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-job-http.ts apps/server/test/author-assistant.test.mjs apps/studio/src/author-assistant.ts docs/tasks/B10-author-assistant.md
+      - name: Commit clean production tree
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f scripts/b10-b11-author-tool-broker-sync.py .github/workflows/b10-author-tool-broker-apply.yml
+          git add packages/control/src/author-tool-broker.ts packages/control/src/author-agent-jobs.ts packages/control/src/index.ts packages/control/test/author-tool-broker.test.mjs apps/server/src/author-assistant.ts apps/server/src/author-job-http.ts apps/server/test/author-assistant.test.mjs apps/studio/src/author-assistant.ts docs/tasks/B10-author-assistant.md
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(B10): enforce author tool broker policy"
+          git push origin HEAD:b10-author-assistant
