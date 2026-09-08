@@ -123,12 +123,25 @@ jobs:
             assert.equal(await title.inputValue(), 'Mobile keyboard proof', 'tour replay changed form input');
             assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
 
-            const unexpectedHttp = httpFailures.filter((entry) => {
-              try { return new URL(entry.url).pathname !== '/favicon.ico'; }
-              catch { return true; }
-            });
+            const expectedLocalAuthProbe = (entry) => {
+              try {
+                const url = new URL(entry.url);
+                return entry.status === 404 && url.pathname === '/control/v1/auth/session';
+              } catch {
+                return false;
+              }
+            };
+            const expectedFavicon = (entry) => {
+              try { return entry.status === 404 && new URL(entry.url).pathname === '/favicon.ico'; }
+              catch { return false; }
+            };
+            const unexpectedHttp = httpFailures.filter((entry) => !expectedLocalAuthProbe(entry) && !expectedFavicon(entry));
             assert.deepEqual(unexpectedHttp, [], `unexpected HTTP failures: ${JSON.stringify(unexpectedHttp)}`);
+            assert.equal(httpFailures.some(expectedLocalAuthProbe), true, 'local Studio must expose the canonical 404 auth probe used to select local-owner mode');
 
+            const resource404Count = httpFailures.filter((entry) => entry.status === 404).length;
+            const generic404ConsoleCount = consoleErrors.filter((message) => /^Failed to load resource: the server responded with a status of 404 \(Not Found\)$/.test(message)).length;
+            assert.ok(generic404ConsoleCount <= resource404Count, `unmatched console 404 errors: ${JSON.stringify(consoleErrors)}`);
             const nonResourceConsoleErrors = consoleErrors.filter((message) => !/^Failed to load resource: the server responded with a status of 404 \(Not Found\)$/.test(message));
             assert.deepEqual(nonResourceConsoleErrors, [], `console errors: ${nonResourceConsoleErrors.join(' | ')}`);
 
@@ -141,7 +154,8 @@ jobs:
               keyboardInputPreserved: true,
               pageErrors: 0,
               unexpectedHttpFailures: 0,
-              favicon404Observed: httpFailures.some((entry) => new URL(entry.url).pathname === '/favicon.ico')
+              canonicalLocalAuthProbe404: true,
+              favicon404Observed: httpFailures.some(expectedFavicon)
             }));
           } finally {
             await browser.close();
