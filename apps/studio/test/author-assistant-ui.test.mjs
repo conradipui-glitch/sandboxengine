@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   loadAuthorAssistantPanel,
   renderAuthorAssistantPanel
-} from "../dist/author-assistant.js";
+} from "../dist/src/author-assistant.js";
 
 const HASH = "a".repeat(64);
 const TURN = "b".repeat(64);
