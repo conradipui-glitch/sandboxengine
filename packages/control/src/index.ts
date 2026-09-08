@@ -25,8 +25,6 @@ export {
   MAX_LHQUEST_FILE_COUNT
 } from "./zip-read.js";
 export {
-  MemoryControlStore,
-  SQLiteControlStore,
   importQuestPackageFromStore,
   type ImportCapableControlStore,
   type ImportQuestDispatchResult,
@@ -40,6 +38,31 @@ export {
   type CloneQuestInput,
   type CloneQuestResult
 } from "./quest-clone.js";
+export {
+  MAX_AUTHORING_PROPOSAL_CHANGES,
+  MAX_AUTHORING_PROPOSAL_MISSING_CAPABILITIES,
+  MAX_AUTHORING_PROPOSAL_EXPLANATION_CHARS,
+  MemoryAuthoringProposalAuthority,
+  SQLiteAuthoringProposalAuthority,
+  previewAuthoringProposal,
+  type ApplyAuthoringProposalResult,
+  type AuthoringProposal,
+  type AuthoringProposalApplication,
+  type AuthoringProposalAuthority,
+  type AuthoringProposalOrigin,
+  type AuthoringProposalPreview,
+  type MissingAuthoringCapability,
+  type PreviewAuthoringProposalResult
+} from "./authoring-proposal.js";
+export {
+  MemoryControlStore,
+  SQLiteControlStore,
+  applyAuthoringProposalFromStore,
+  previewAuthoringProposalFromStore,
+  type ApplyAuthoringProposalDispatchResult,
+  type AuthoringProposalCapableControlStore,
+  type PreviewAuthoringProposalDispatchResult
+} from "./authoring-proposal-store.js";
 export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
   type SQLiteControlStoreOptions
