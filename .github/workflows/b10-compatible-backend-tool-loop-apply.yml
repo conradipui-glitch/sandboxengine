@@ -26,7 +26,20 @@ jobs:
           python scripts/b10-compatible-backend-tool-loop-sync.py
           python scripts/b10-compatible-backend-tool-loop-fix.py
       - name: Typecheck
-        run: npm run typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck > /tmp/b10-tool-loop-tsc.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 160 /tmp/b10-tool-loop-tsc.log > docs/.b10-tool-loop-type-diagnostic.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/.b10-tool-loop-type-diagnostic.txt
+            git commit -m "chore(B10): capture backend tool-loop type diagnostic"
+            git push origin HEAD:b10-author-assistant
+            exit "$status"
+          fi
       - name: Control regressions
         run: npm run test:control
       - name: Server regressions
@@ -43,6 +56,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm -f scripts/b10-compatible-backend-tool-loop-sync.py scripts/b10-compatible-backend-tool-loop-fix.py .github/workflows/b10-compatible-backend-tool-loop-apply.yml
+          if [ -f docs/.b10-tool-loop-type-diagnostic.txt ]; then git rm -f docs/.b10-tool-loop-type-diagnostic.txt; fi
           git add packages/control/src/author-agent-jobs.ts apps/server/src/author-mcp.ts apps/server/src/author-tool-loop.ts apps/server/src/author-backend-tool-protocol.ts apps/server/src/author-assistant.ts apps/server/test/author-backend-tool-protocol.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-compatible-backend-tool-loop.md
           git diff --cached --check
           git diff --cached --quiet && exit 0
