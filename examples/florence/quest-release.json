@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "questId": "florence-workshop",
+  "releaseId": "florence-workshop-r1",
+  "title": "Флоренция: Мастерская под давлением",
+  "compatibility": {
+    "contractsSchemaVersion": "1.0"
+  },
+  "blockIds": [
+    "workshop",
+    "guildhall",
+    "piazza",
+    "master",
+    "juliano",
+    "ricci",
+    "luca",
+    "pigment-jars",
+    "workshop-cash",
+    "guild-trust",
+    "patron-trust",
+    "fresco-progress",
+    "contract-rights",
+    "deal-open"
+  ],
+  "entryLocationId": "workshop"
+}

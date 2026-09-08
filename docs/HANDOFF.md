@@ -2,73 +2,110 @@
 
 Обновлено: 2026-09-08
 
-Текущий блок: **B09-03 — version history, portability and completed Studio author cycle**  
-База: published B09-02 merge `5b4499e348432b7fb67c0294811c024250f1f634`  
-B09-02 main CI: `34149100136` — success  
-Ветка: `b09-03-version-history-studio-access`  
-PR: #33  
-Статус: **functional accepted; canonical B09 BLOCKER=0/HIGH=0; final current-head Publication Gate next**
+Текущий блок: **B11 — реальные квесты и интеграция**  
+База: published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637`  
+Ветка Engine: `b11-real-quests-integration` / PR #35  
+Companion integration: `conradipui-glitch/sandbox` branch `b11-engine-runtime-routing` / PR #10  
+Статус: **реализация B11 завершена; остаётся exact-head publication gate**
 
-## Published foundation
+## Что уже опубликовано
 
-B01–B08, B09-01 and B09-02 are published. B09-02 canonical merge/base for this branch is `5b4499e348432b7fb67c0294811c024250f1f634`, exact main push CI `34149100136` success.
+B01–B10 опубликованы. B10 закрыл author-assistant boundary, account/login/quota isolation и regression:
 
-## What B09-03 now provides
+`author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
 
-- durable draft history over immutable revision snapshots;
-- deterministic compare and visible stale-editor conflicts, with no automatic merge;
-- restore-old-as-new-revision with stale-base CAS and idempotency;
-- typed reference/deletion preflight sharing semantics with actual deletion recheck;
-- independent quest clone with deterministic authored ID/reference remap;
-- exact deterministic `.lhquest.zip` draft/release export, secret/player-state exclusion and hashes;
-- hostile-input bounded atomic/idempotent import into a new unpublished draft;
-- Studio Versions surface over real history/releases/current pointer;
-- Studio Access over B09-01 session/member/role APIs;
-- exact release build report separated from explicit owner publish/rollback receipt;
-- persisted frozen-playtest evidence from Runtime sessions/completed operations/turns, never AI/gameplay reconstruction;
-- Studio clone/export/import and dangerous deletion UX over real server contracts;
-- endpoint registry/OpenAPI/agent generated truth synchronized with implemented B09-03 routes.
+B10 merge: `4e5fea2888d14440c60ad48abffbefe42abfe637`; exact main CI #650 / `34209005817` — success.
 
-## Acceptance evidence
+## Frozen source baseline B11
 
-- Studio Restore — CI #460 success;
-- immutable release build + exact report — CI #464 success;
-- owner publish/rollback — CI #469 success;
-- persisted Runtime trace reader — CI #473 success;
-- Control playtest trace route — CI #477 success;
-- Studio playtest evidence E2E — CI #481 success;
-- Studio portability UX — CI #485 success;
-- Studio deletion/reference UX — CI #489 success;
-- T21 full author path — CI #491 success;
-- T22 stale-editor conflict — CI #492 success;
-- T25 hostile archive/exact portability is covered by canonical Control package/security/atomicity suites included in root verify;
-- playtest trace registry/generated-doc sync workflow `34166172838` — success.
+Florence мигрируется только из exact source:
 
-Canonical audit: `docs/audits/2026-09-08-b09-canonical-semantic-audit.md` → unresolved BLOCKER **0**, HIGH **0**.  
-ADR: `docs/decisions/0031-server-authoritative-author-lifecycle-portability.md`.  
-Task: `docs/tasks/B09-03-version-history-studio-access.md`.
+- repo `conradipui-glitch/sandbox`;
+- merge PR #9;
+- SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
+- source production workflow #47 / run `34012448412` — install/tests/build/deploy success.
 
-## Important boundaries to preserve
+Old live sessions are not converted. Existing `HistorySession` / `StoredGame` data remains on legacy runtime unless a session was explicitly created with an Engine route binding.
 
-- Studio/browser is never revision/reference/archive/gameplay/publication authority.
-- Restore creates a new revision; it never rewinds history.
-- A green deletion preflight is not an authorization token; mutation rechecks current server references.
-- Clone/import create new draft identity and never rewrite source releases/playtests or auto-publish.
-- `.lhquest.zip` is inert authored data, not executable content or project/session backup.
-- Frozen playtest trace is persisted evidence and is distinct from a published release.
-- Release build does not publish. Publish/rollback are explicit owner-only exact-current CAS operations.
-- Existing Runtime sessions stay pinned to exact release mechanics across publish/rollback.
-- B10 must use these Control contracts rather than adding an agent bypass around Studio/server authority.
+## B11 architecture contract — сохранять
 
-## Exact next sequence
+- **No Florence-specific branch in `packages/core`.**
+- Quest-specific actors/facts/resources remain authored data.
+- Six Florence source decisions are narrative beats, not a generic turn or clock rule.
+- Free text may be interpreted by AI; Runtime/Core owns validation and mutation.
+- `executed`, `conditional` and `blocked` remain distinct semantics.
+- Blocked/no-turn paths do not advance revision/clock or partially mutate state.
+- Prepared client options are explicit authored actions, not text that AI must rediscover.
+- Browser presentation never becomes gameplay authority and performs no authoritative arithmetic.
+- Published release identity and session/runtime binding remain immutable for an in-progress session.
+- Rollback affects only future session assignment.
 
-1. finish the B09-03 worklog/closure docs on this branch;
-2. fetch the resulting **exact current PR head** and require its ordinary root CI success (`npm run verify`, including deterministic `docs:check`);
-3. update PR #33 body with canonical audit + final CI evidence;
-4. ensure there is no unresolved blocking review state and mark PR ready;
-5. merge using the exact pinned current head SHA — do not merge a moved head;
-6. fetch the exact workflow with `event=push`, `head_branch=main`, `head_sha=<merge SHA>` and require success;
-7. only then call **B09-03 and canonical B09 published**;
-8. start **B10 — interactive author assistant, Skills/MCP broker and Codex adapter** exactly from that verified B09-03 merge SHA.
+## Реальные квесты B11
 
-Do not start B10 from the feature branch, a pre-closure SHA or an unverified main ref.
+### `examples/florence`
+
+Полный six-beat authored quest. Generic conditions/cases preserve source-dependent outcomes including:
+
+- canonical `draft → ledger → counter → pigment → public → deliver` → `Незавершённое принято`;
+- paid compromise `healer → team → advance → testimony → share-ledger → deliver` → `Чужое имя над вашей работой`;
+- refusal/authorship `close → refuse → protect → testimony → rest → sign` → `Имя без заказчика`;
+- unsupported/weak negotiation stays conditional until generic state conditions justify execution;
+- withdrawal does not conjure money that was never received.
+
+### `examples/transfer-desk`
+
+Отдельный three-beat quest with social request/response, item possession and resource pressure. It proves the Engine path is not Florence-shaped special casing.
+
+## Runtime и HTTP path
+
+The Engine authored Runtime now:
+
+- creates sessions from the current published release;
+- pins release identity to the session;
+- exposes safe `PlayerView + situation` projections;
+- accepts explicit `authored.option` actions;
+- routes free text through the current-beat intent catalog;
+- commits authoritative state only in Runtime storage;
+- returns idempotent replay for the same operation key;
+- preserves blocked/no-turn state without fake success.
+
+## `sandbox` BFF integration
+
+PR #10 adds the production-facing compatibility boundary without rewriting the legacy Durable Object:
+
+- `ENGINE_FLORENCE_ROLLOUT=off|test|on` is evaluated only for **new** Florence sessions;
+- `RuntimeRouteSession` stores upstream Engine session identity and credential;
+- an Engine-bound session stays on Engine after rollout is switched back to `off`;
+- an id without Engine binding continues through legacy `HistorySession` unchanged;
+- prepared UI choices are forwarded as explicit `authored.option` + `optionId`;
+- freeform text remains a text intent request;
+- Engine `PlayerView + situation` is adapted server-side to the existing `GameState` shape, so the current React client receives authored options without calculating gameplay.
+
+The latest client/BFF exact-head verification before this handoff is green on PR #10 head `5480c77a59912f435c3f9d1bafc2985c23fbe531`, Verify #5 / run `34236822232` (tests + build success).
+
+## Florence binary assets
+
+Binary migration is complete and reproducible evidence is committed:
+
+- 6 WebP visuals under `examples/florence/assets/visuals`;
+- 6 assembled MP3 tracks under `examples/florence/assets/audio`;
+- source visual Git blobs were matched exactly against pinned source SHA;
+- every MP3 part was downloaded from the pinned source commit and its Git blob verified before ordered concatenation;
+- migration workflow run `34237111169` succeeded and produced asset commit `cd9423f719a7a4ff81e05e3c486d174caea3e62f`;
+- `asset-migration-manifest.json` records bytes/SHA-256/Git blob ids;
+- root tests re-hash all 12 checked-out binaries;
+- the temporary contents-write migration workflow was removed after the assets were committed and will not ship to `main`.
+
+## Точный следующий шаг
+
+Do **not** add another B11 feature slice.
+
+1. wait only for the normal PR CI generated by the final docs/code/assets head;
+2. require full root `npm run verify` success on that exact PR #35 head;
+3. update PR #35 description with final acceptance evidence and exact CI run;
+4. mark Engine PR #35 ready for review/publication;
+5. ensure companion `sandbox` PR #10 is still green and update its stale B11.2 description to the accepted client-compatible state;
+6. publish/merge in dependency-safe order: Engine first, then `sandbox` integration;
+7. only after both publication gates are complete, start B12 release hardening.
+
+If a later change touches Engine semantics, authored quest data, BFF compatibility or migrated binaries before merge, the exact-head CI evidence must be renewed. Do not reuse an older green run for a changed head.

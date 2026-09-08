@@ -1,0 +1,72 @@
+{
+  "format": "living-history.example-beats/1",
+  "questId": "transfer-desk",
+  "clockPolicy": "explicit-per-option",
+  "canonicalRoute": ["ask-clerk", "verify-description", "return-umbrella"],
+  "beats": [
+    {
+      "id": "claim",
+      "title": "Просьба о выдаче",
+      "options": [
+        {
+          "id": "ask-clerk",
+          "status": "conditional",
+          "clockAdvanceSeconds": 0,
+          "effects": [],
+          "socialRequest": {
+            "schemaVersion": "1.0",
+            "type": "request",
+            "proposalId": "return-blue-umbrella",
+            "fromEntityId": "visitor",
+            "toEntityId": "clerk",
+            "subject": { "actionType": "core.item.return", "targetIds": ["blue-umbrella", "claimant"], "args": { "claim": "blue umbrella" } }
+          },
+          "meaning": "Просьба фиксируется как pending и не перемещает вещь сама."
+        },
+        { "id": "grab-item", "status": "blocked", "clockAdvanceSeconds": 0, "effects": [], "meaning": "Посетитель не может сам забрать вещь из закрытой кладовой." }
+      ]
+    },
+    {
+      "id": "verification",
+      "title": "Проверка описания",
+      "options": [
+        {
+          "id": "verify-description",
+          "status": "executed",
+          "clockAdvanceSeconds": 180,
+          "effects": [{ "schemaVersion": "1.0", "type": "resource.change", "sourceId": "verify-description", "resourceId": "queue-patience", "delta": -1 }],
+          "socialResponse": { "schemaVersion": "1.0", "type": "response", "responseId": "return-blue-umbrella.accept", "proposalId": "return-blue-umbrella", "responderId": "clerk", "decision": "accept" },
+          "meaning": "Сотрудник принимает решение после проверки; согласие всё ещё отдельно от физической передачи."
+        },
+        { "id": "skip-verification", "status": "blocked", "clockAdvanceSeconds": 0, "effects": [], "meaning": "Нельзя считать заявление доказанным без ответа сотрудника." }
+      ]
+    },
+    {
+      "id": "handoff",
+      "title": "Формальная выдача",
+      "options": [
+        {
+          "id": "return-umbrella",
+          "status": "executed",
+          "clockAdvanceSeconds": 60,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "return-umbrella", "resourceId": "claim-tickets", "delta": -1 },
+            { "schemaVersion": "1.0", "type": "item.transfer", "sourceId": "return-umbrella", "itemId": "blue-umbrella", "destination": { "kind": "holder", "holderId": "claimant" } }
+          ],
+          "terminal": { "reason": "claim-resolved", "outcome": "Зонт выдан подтверждённой заявительнице" },
+          "meaning": "Талон списывается и вещь передаётся только после принятого решения."
+        },
+        {
+          "id": "double-ticket-return",
+          "status": "blocked",
+          "clockAdvanceSeconds": 0,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "double-ticket-return", "resourceId": "claim-tickets", "delta": -2 },
+            { "schemaVersion": "1.0", "type": "item.transfer", "sourceId": "double-ticket-return", "itemId": "blue-umbrella", "destination": { "kind": "holder", "holderId": "claimant" } }
+          ],
+          "meaning": "Недостаток талонов делает весь batch неисполняемым: вещь не должна переместиться частично."
+        }
+      ]
+    }
+  ]
+}

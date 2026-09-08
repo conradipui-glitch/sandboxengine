@@ -1,0 +1,31 @@
+{
+  "format": "living-history.source-assets/1",
+  "source": {
+    "repository": "conradipui-glitch/sandbox",
+    "commit": "092bcef0be5943e32bf02f08f9e9d4cde393fa95"
+  },
+  "visuals": [
+    { "id": "workshop-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-workshop-1512.webp", "targetPath": "assets/visuals/workshop-background.webp", "gitBlobSha": "77d4d58bd2e3e64093b162072481a0f4ee2a7e68" },
+    { "id": "guildhall-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-guildhall-1512.webp", "targetPath": "assets/visuals/guildhall-background.webp", "gitBlobSha": "479261670b59454336f6751685f4b3e6be6225ce" },
+    { "id": "piazza-background", "kind": "background", "sourcePath": "src/client/assets/backgrounds/florence-piazza-1512.webp", "targetPath": "assets/visuals/piazza-background.webp", "gitBlobSha": "711335e4e1f6abcae99f4f49e17e689a025c6df8" },
+    { "id": "juliano-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-juliano-1512.webp", "targetPath": "assets/visuals/juliano-portrait.webp", "gitBlobSha": "9dfd62707203c28a36837bcf526dd773198cc46a" },
+    { "id": "ricci-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-guildmaster-1512.webp", "targetPath": "assets/visuals/ricci-portrait.webp", "gitBlobSha": "86bdd4954190b67b5b4a2929ae5e363c12811b21" },
+    { "id": "luca-portrait", "kind": "character", "sourcePath": "src/client/assets/characters/florence-secretary-1512.webp", "targetPath": "assets/visuals/luca-portrait.webp", "gitBlobSha": "87a8d2125b5e8aa39db4383bf21c52651217e6bf" }
+  ],
+  "audio": [
+    { "id": "threshold", "sourcePartPrefix": "audio-parts/music-11-florence-threshold.mp3.part-", "targetPath": "assets/audio/threshold.mp3" },
+    { "id": "workshop-night", "sourcePartPrefix": "audio-parts/music-12-florence-workshop-night.mp3.part-", "targetPath": "assets/audio/workshop-night.mp3" },
+    { "id": "guildhall", "sourcePartPrefix": "audio-parts/music-13-florence-guildhall.mp3.part-", "targetPath": "assets/audio/guildhall.mp3" },
+    { "id": "deadline", "sourcePartPrefix": "audio-parts/music-14-florence-deadline.mp3.part-", "targetPath": "assets/audio/deadline.mp3" },
+    { "id": "decision-reveal", "sourcePartPrefix": "audio-parts/music-15-florence-decision-reveal.mp3.part-", "targetPath": "assets/audio/decision-reveal.mp3" },
+    { "id": "dawn-finale", "sourcePartPrefix": "audio-parts/music-16-florence-dawn-finale.mp3.part-", "targetPath": "assets/audio/dawn-finale.mp3" }
+  ],
+  "binaryCopyStatus": "verified-in-repository",
+  "assetMigrationManifest": "asset-migration-manifest.json",
+  "verification": {
+    "method": "pinned raw download; source Git blob verification for each WebP and each ordered MP3 part; assembled-file SHA-256 manifest",
+    "workflowRunId": 34237111169,
+    "assetCommit": "cd9423f719a7a4ff81e05e3c486d174caea3e62f"
+  },
+  "note": "The six WebP files and six assembled MP3 files are committed under examples/florence/assets. The migration manifest records byte counts, SHA-256 values and target Git blob identities."
+}

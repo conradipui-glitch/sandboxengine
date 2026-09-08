@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1.0",
+  "revision": 0,
+  "clock": {
+    "elapsedSeconds": 0
+  },
+  "locations": [
+    { "id": "workshop" },
+    { "id": "guildhall" },
+    { "id": "piazza" }
+  ],
+  "entities": [
+    { "id": "master", "type": "character", "status": "active", "locationId": "workshop" },
+    { "id": "juliano", "type": "character", "status": "ill", "locationId": "workshop" },
+    { "id": "ricci", "type": "character", "status": "available", "locationId": "guildhall" },
+    { "id": "luca", "type": "character", "status": "negotiating", "locationId": "workshop" }
+  ],
+  "resources": [
+    { "id": "pigment-jars", "unit": "банка", "value": 2, "min": 0, "max": 8 },
+    { "id": "workshop-cash", "unit": "флорин", "value": 2, "min": 0, "max": 12 },
+    { "id": "guild-trust", "unit": "пункт", "value": 2, "min": 0, "max": 8 },
+    { "id": "patron-trust", "unit": "пункт", "value": 2, "min": 0, "max": 8 },
+    { "id": "fresco-progress", "unit": "этап", "value": 0, "min": 0, "max": 6 },
+    { "id": "contract-rights", "unit": "флаг", "value": 0, "min": 0, "max": 1 },
+    { "id": "deal-open", "unit": "флаг", "value": 1, "min": 0, "max": 1 }
+  ],
+  "items": [
+    { "id": "contract-draft", "position": { "kind": "location", "locationId": "workshop" } },
+    { "id": "pigment-crate", "position": { "kind": "location", "locationId": "workshop" } }
+  ],
+  "terminal": null
+}

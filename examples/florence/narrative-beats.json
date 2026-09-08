@@ -1,0 +1,346 @@
+{
+  "format": "living-history.example-beats/1",
+  "questId": "florence-workshop",
+  "source": {
+    "repository": "conradipui-glitch/sandbox",
+    "commit": "092bcef0be5943e32bf02f08f9e9d4cde393fa95",
+    "scenarioId": "florence-workshop"
+  },
+  "clockPolicy": "explicit-per-option",
+  "canonicalRoute": ["draft", "ledger", "counter", "pigment", "public", "deliver"],
+  "comparisonRoutes": [
+    ["healer", "team", "advance", "testimony", "share-ledger", "deliver"],
+    ["close", "refuse", "protect", "testimony", "rest", "sign"]
+  ],
+  "beats": [
+    {
+      "id": "contract-pressure",
+      "sourceTurn": 1,
+      "title": "Срок и условие заказчика",
+      "options": [
+        {
+          "id": "draft",
+          "status": "conditional",
+          "clockAdvanceSeconds": 900,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "draft", "resourceId": "patron-trust", "delta": 1 }
+          ],
+          "meaning": "Предложить письменные условия и создать проверяемую переговорную опору, не выдавая просьбу за уже достигнутое согласие."
+        },
+        {
+          "id": "healer",
+          "status": "executed",
+          "clockAdvanceSeconds": 1800,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "healer", "resourceId": "workshop-cash", "delta": -1 }
+          ],
+          "meaning": "Отправить Джулиано к лекарю и принять реальную стоимость решения."
+        },
+        {
+          "id": "close",
+          "status": "executed",
+          "clockAdvanceSeconds": 300,
+          "effects": [],
+          "meaning": "Остановить работу на ночь и не делать вид, что работа продолжается."
+        }
+      ]
+    },
+    {
+      "id": "evidence-and-team",
+      "sourceTurn": 2,
+      "title": "Люди и доказательства",
+      "options": [
+        {
+          "id": "ledger",
+          "status": "executed",
+          "clockAdvanceSeconds": 1200,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "ledger", "resourceId": "guild-trust", "delta": 1 }
+          ],
+          "meaning": "Сверить запись поставки и получить проверяемую опору для разговора."
+        },
+        {
+          "id": "team",
+          "status": "executed",
+          "clockAdvanceSeconds": 900,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "team", "resourceId": "fresco-progress", "delta": 1 }
+          ],
+          "meaning": "Перераспределить работу между людьми без магического появления ресурсов."
+        },
+        {
+          "id": "refuse",
+          "status": "executed",
+          "clockAdvanceSeconds": 120,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "refuse", "resourceId": "patron-trust", "delta": -1 }
+          ],
+          "meaning": "Прямо отказаться от условия об исчезновении имени автора."
+        }
+      ]
+    },
+    {
+      "id": "negotiation-position",
+      "sourceTurn": 3,
+      "title": "Цена договорённости",
+      "options": [
+        {
+          "id": "counter",
+          "status": "conditional",
+          "clockAdvanceSeconds": 600,
+          "effects": [],
+          "cases": [
+            {
+              "when": {
+                "schemaVersion": "1.0",
+                "type": "all",
+                "conditions": [
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "patron-trust", "value": 3 },
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "guild-trust", "value": 3 },
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "deal-open", "value": 1 }
+                ]
+              },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "counter", "resourceId": "contract-rights", "delta": 1 }
+              ]
+            }
+          ],
+          "meaning": "Встречное условие становится соглашением только если к этому моменту есть и показанный объём, и проверенная запись; иначе оно остаётся запросом."
+        },
+        {
+          "id": "advance",
+          "status": "executed",
+          "clockAdvanceSeconds": 300,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "advance", "resourceId": "workshop-cash", "delta": 2 },
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "advance", "resourceId": "patron-trust", "delta": 1 }
+          ],
+          "meaning": "Принять аванс как реально полученный ресурс вместе с последствиями договора без закреплённого права на подпись."
+        },
+        {
+          "id": "protect",
+          "status": "executed",
+          "clockAdvanceSeconds": 600,
+          "effects": [],
+          "meaning": "Зафиксировать личную ответственность за задержку, не превращая это само по себе в доказательство поставки или согласие заказчика."
+        }
+      ]
+    },
+    {
+      "id": "material-proof",
+      "sourceTurn": 4,
+      "title": "Материал и свидетельство",
+      "options": [
+        {
+          "id": "pigment",
+          "status": "executed",
+          "clockAdvanceSeconds": 1800,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "pigment", "resourceId": "pigment-jars", "delta": 1 },
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "pigment", "resourceId": "fresco-progress", "delta": 1 }
+          ],
+          "meaning": "Проверить пигмент и превратить подозрение о материале в проверяемое доказательство."
+        },
+        {
+          "id": "testimony",
+          "status": "executed",
+          "clockAdvanceSeconds": 900,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "testimony", "resourceId": "guild-trust", "delta": 1 }
+          ],
+          "meaning": "Получить свидетельство о вскрытой поставке вместо домысла о виновнике."
+        },
+        {
+          "id": "withdraw",
+          "status": "executed",
+          "clockAdvanceSeconds": 180,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "patron-trust", "delta": -1 },
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "deal-open", "delta": -1 }
+          ],
+          "cases": [
+            {
+              "when": { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "contract-rights", "value": 1 },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "contract-rights", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "patron-trust", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "deal-open", "delta": -1 }
+              ]
+            },
+            {
+              "when": { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "workshop-cash", "value": 3 },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "workshop-cash", "delta": -2 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "patron-trust", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "withdraw", "resourceId": "deal-open", "delta": -1 }
+              ]
+            }
+          ],
+          "meaning": "Прекратить сделку. Если аванс реально был получен, вернуть именно полученную сумму; если нет — не выдумывать возврат денег."
+        }
+      ]
+    },
+    {
+      "id": "public-or-rest",
+      "sourceTurn": 5,
+      "title": "Перед финальным показом",
+      "options": [
+        {
+          "id": "public",
+          "status": "executed",
+          "clockAdvanceSeconds": 900,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "guild-trust", "delta": 1 }
+          ],
+          "cases": [
+            {
+              "when": {
+                "schemaVersion": "1.0",
+                "type": "all",
+                "conditions": [
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "deal-open", "value": 1 },
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "contract-rights", "value": 1 }
+                ]
+              },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "guild-trust", "delta": 1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "patron-trust", "delta": 1 }
+              ]
+            },
+            {
+              "when": {
+                "schemaVersion": "1.0",
+                "type": "all",
+                "conditions": [
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "deal-open", "value": 1 },
+                  {
+                    "schemaVersion": "1.0",
+                    "type": "any",
+                    "conditions": [
+                      { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "pigment-jars", "value": 3 },
+                      { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "guild-trust", "value": 4 }
+                    ]
+                  }
+                ]
+              },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "guild-trust", "delta": 1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "patron-trust", "delta": 1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "public", "resourceId": "contract-rights", "delta": 1 }
+              ]
+            }
+          ],
+          "meaning": "Публичный разговор может закрепить право на подпись только при действующей сделке и уже собранном доказательстве; сам факт публичности ничего не выдумывает."
+        },
+        {
+          "id": "share-ledger",
+          "status": "executed",
+          "clockAdvanceSeconds": 600,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "share-ledger", "resourceId": "guild-trust", "delta": 1 },
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "share-ledger", "resourceId": "patron-trust", "delta": 1 }
+          ],
+          "meaning": "Показать проверенные записи обеим сторонам, не превращая прозрачность сама по себе в новое договорное право."
+        },
+        {
+          "id": "rest",
+          "status": "executed",
+          "clockAdvanceSeconds": 3600,
+          "effects": [],
+          "meaning": "Дать людям время на отдых; narrative beat и world clock здесь явно различаются."
+        }
+      ]
+    },
+    {
+      "id": "final-delivery",
+      "sourceTurn": 6,
+      "title": "Что именно предъявить утром",
+      "options": [
+        {
+          "id": "deliver",
+          "status": "executed",
+          "clockAdvanceSeconds": 2400,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "pigment-jars", "delta": -1 },
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "fresco-progress", "delta": 2 }
+          ],
+          "terminal": { "reason": "fragment-unsealed", "outcome": "Фрагмент без печати" },
+          "cases": [
+            {
+              "when": { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "contract-rights", "value": 1 },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "pigment-jars", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "fresco-progress", "delta": 2 }
+              ],
+              "terminal": { "reason": "source-route-complete", "outcome": "Незавершённое принято" }
+            },
+            {
+              "when": {
+                "schemaVersion": "1.0",
+                "type": "all",
+                "conditions": [
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "deal-open", "value": 1 },
+                  { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "workshop-cash", "value": 3 }
+                ]
+              },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "pigment-jars", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "fresco-progress", "delta": 2 }
+              ],
+              "terminal": { "reason": "paid-compromise", "outcome": "Чужое имя над вашей работой" }
+            },
+            {
+              "when": {
+                "schemaVersion": "1.0",
+                "type": "not",
+                "condition": { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "deal-open", "value": 1 }
+              },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "pigment-jars", "delta": -1 },
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "deliver", "resourceId": "fresco-progress", "delta": 2 }
+              ],
+              "terminal": { "reason": "deal-withdrawn", "outcome": "Фрагмент без печати" }
+            }
+          ],
+          "meaning": "Предъявить реально подготовленный фрагмент; приёмка, чужое имя или отсутствие печати выводятся из накопленного договорного состояния."
+        },
+        {
+          "id": "sign",
+          "status": "executed",
+          "clockAdvanceSeconds": 1200,
+          "effects": [
+            { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "sign", "resourceId": "fresco-progress", "delta": 1 }
+          ],
+          "terminal": { "reason": "authorship-preserved", "outcome": "Имя без заказчика" },
+          "cases": [
+            {
+              "when": { "schemaVersion": "1.0", "type": "resource.atLeast", "resourceId": "contract-rights", "value": 1 },
+              "status": "executed",
+              "effects": [
+                { "schemaVersion": "1.0", "type": "resource.change", "sourceId": "sign", "resourceId": "fresco-progress", "delta": 1 }
+              ],
+              "terminal": { "reason": "authorship-recognized", "outcome": "Имя, прочитанное вслух" }
+            }
+          ],
+          "meaning": "Оставить имя на стене; признано оно договором или сохранено ценой отказа заказчика — определяется накопленным состоянием."
+        },
+        {
+          "id": "workshop",
+          "status": "executed",
+          "clockAdvanceSeconds": 600,
+          "effects": [],
+          "terminal": { "reason": "workshop-retained", "outcome": "Ключ остаётся у мастера" },
+          "meaning": "Сохранить контроль над мастерской вместо выдуманного идеального завершения."
+        }
+      ]
+    }
+  ]
+}

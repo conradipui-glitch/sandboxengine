@@ -1,0 +1,82 @@
+{
+  "format": "living-history.asset-migration/1",
+  "source": {
+    "repository": "conradipui-glitch/sandbox",
+    "commit": "092bcef0be5943e32bf02f08f9e9d4cde393fa95"
+  },
+  "method": "pinned-raw-download+source-git-blob-verification+ordered-audio-part-concatenation",
+  "files": [
+    {
+      "path": "examples/florence/assets/audio/dawn-finale.mp3",
+      "bytes": 4137603,
+      "sha256": "ad73b0ee54970a151355eb8a5cbc7f725a22431e03108ef1746ba58989e8ed26",
+      "gitBlobSha": "0e3f11bb7cefecd8d4b204d3e821ab5ed30ceac2"
+    },
+    {
+      "path": "examples/florence/assets/audio/deadline.mp3",
+      "bytes": 4311892,
+      "sha256": "0da018600d576c3cab7963ccbf419115046f72605ae83c1011f0f99844eeb802",
+      "gitBlobSha": "3fe54625b2dac698b089d09c8da02f0f9d4e462f"
+    },
+    {
+      "path": "examples/florence/assets/audio/decision-reveal.mp3",
+      "bytes": 1412300,
+      "sha256": "8b98f67290f0d866da1dd8e442f181993ed0df27bfc83d7cd11bddbe5cd06500",
+      "gitBlobSha": "1d2b8bbff325507db6734d34de25b0155d24360c"
+    },
+    {
+      "path": "examples/florence/assets/audio/guildhall.mp3",
+      "bytes": 4312519,
+      "sha256": "d1023d84708f59228896aec3807cb8a00aab10d5e5431bb133beba60f89107f5",
+      "gitBlobSha": "06449048b4a8cffd077eaf2f0b5e9ab606e05a57"
+    },
+    {
+      "path": "examples/florence/assets/audio/threshold.mp3",
+      "bytes": 3166475,
+      "sha256": "a0f6d972c55d487ef49969c21caac7e41dd06d2b53a3ba2590083fa9fb59409f",
+      "gitBlobSha": "748c47ea7dbe11d02b04d9b07353dc34e4aaa260"
+    },
+    {
+      "path": "examples/florence/assets/audio/workshop-night.mp3",
+      "bytes": 4197162,
+      "sha256": "e4e31ba7a498a034534b27c4d0a58100d56092aa3dcf55e77e2900196f172a73",
+      "gitBlobSha": "77a7f73edd117c4cc27d435f409b2c839b66b967"
+    },
+    {
+      "path": "examples/florence/assets/visuals/guildhall-background.webp",
+      "bytes": 158586,
+      "sha256": "753195865e1357f665afde0709f4b27ff2141374d5c61df01b0caf217c6a361c",
+      "gitBlobSha": "479261670b59454336f6751685f4b3e6be6225ce"
+    },
+    {
+      "path": "examples/florence/assets/visuals/juliano-portrait.webp",
+      "bytes": 91112,
+      "sha256": "e011c1683e76028c5ef8452a6294b4e28d500d0006d80785278f285afbce8340",
+      "gitBlobSha": "9dfd62707203c28a36837bcf526dd773198cc46a"
+    },
+    {
+      "path": "examples/florence/assets/visuals/luca-portrait.webp",
+      "bytes": 85232,
+      "sha256": "ebe7ddb836ad575de29d59a486621cd5f539e3e9c693d17d0fd1f859d496aa04",
+      "gitBlobSha": "87a8d2125b5e8aa39db4383bf21c52651217e6bf"
+    },
+    {
+      "path": "examples/florence/assets/visuals/piazza-background.webp",
+      "bytes": 137698,
+      "sha256": "b63f228a3e8c9a7f73a18ac32dd92c96f3a8b444442150125e2f9293edc21198",
+      "gitBlobSha": "711335e4e1f6abcae99f4f49e17e689a025c6df8"
+    },
+    {
+      "path": "examples/florence/assets/visuals/ricci-portrait.webp",
+      "bytes": 84108,
+      "sha256": "67103d234536ccbcd6902f02dff19093da97073f1e03af63f3d90fe327a6cde6",
+      "gitBlobSha": "86bdd4954190b67b5b4a2929ae5e363c12811b21"
+    },
+    {
+      "path": "examples/florence/assets/visuals/workshop-background.webp",
+      "bytes": 145334,
+      "sha256": "6c321f860516d2926691e352405ad2a331a3b20e28c9f8b578f9b9c6736fa17e",
+      "gitBlobSha": "77d4d58bd2e3e64093b162072481a0f4ee2a7e68"
+    }
+  ]
+}

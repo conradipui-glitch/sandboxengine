@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "revision": 0,
+  "clock": { "elapsedSeconds": 0 },
+  "locations": [{ "id": "desk" }, { "id": "storage" }],
+  "entities": [
+    { "id": "visitor", "type": "character", "status": "active", "locationId": "desk" },
+    { "id": "clerk", "type": "character", "status": "available", "locationId": "desk" },
+    { "id": "claimant", "type": "character", "status": "waiting", "locationId": "desk" }
+  ],
+  "resources": [
+    { "id": "claim-tickets", "unit": "талон", "value": 1, "min": 0, "max": 3 },
+    { "id": "queue-patience", "unit": "пункт", "value": 2, "min": 0, "max": 4 }
+  ],
+  "items": [
+    { "id": "blue-umbrella", "position": { "kind": "location", "locationId": "storage" } }
+  ],
+  "terminal": null
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "questId": "transfer-desk",
+  "releaseId": "transfer-desk-real-r1",
+  "title": "Стол находок: Синий зонт",
+  "compatibility": { "contractsSchemaVersion": "1.0" },
+  "blockIds": ["desk", "storage", "visitor", "clerk", "claimant", "claim-tickets", "queue-patience"],
+  "entryLocationId": "desk"
+}

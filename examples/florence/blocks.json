@@ -1,0 +1,161 @@
+[
+  {
+    "schemaVersion": "1.0",
+    "id": "workshop",
+    "kind": "core.location",
+    "title": "Мастерская",
+    "description": "Флорентийская мастерская, где художник и ученики заканчивают фреску.",
+    "data": {}
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "guildhall",
+    "kind": "core.location",
+    "title": "Зал гильдии",
+    "description": "Место, где Риччи сверяет поставки, долги и свидетельства мастеров.",
+    "data": {}
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "piazza",
+    "kind": "core.location",
+    "title": "Площадь",
+    "description": "Публичное пространство, где спор о заказе может стать известен городу.",
+    "data": {}
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "master",
+    "kind": "core.character",
+    "title": "Хозяин мастерской",
+    "description": "Игрок: художник, отвечающий за работу, учеников и условия заказа.",
+    "data": {
+      "initialLocationId": "workshop",
+      "initialStatus": "active"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "juliano",
+    "kind": "core.character",
+    "title": "Джулиано Белли",
+    "description": "Заболевший ученик, который работал над небом фрески и зависит от заработка.",
+    "data": {
+      "initialLocationId": "workshop",
+      "initialStatus": "ill"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "ricci",
+    "kind": "core.character",
+    "title": "Бартоломео Риччи",
+    "description": "Старшина гильдии, заинтересованный в доказуемой поставке пигмента и честном расчёте.",
+    "data": {
+      "initialLocationId": "guildhall",
+      "initialStatus": "available"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "luca",
+    "kind": "core.character",
+    "title": "Лука Орсини",
+    "description": "Секретарь кардинала, ведущий переговоры об оплате, сроке и подписи художника.",
+    "data": {
+      "initialLocationId": "workshop",
+      "initialStatus": "negotiating"
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "pigment-jars",
+    "kind": "core.resource",
+    "title": "Синий пигмент",
+    "description": "Доступный запас синего пигмента для завершения фрески.",
+    "data": {
+      "unit": "банка",
+      "initialValue": 2,
+      "min": 0,
+      "max": 8
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "workshop-cash",
+    "kind": "core.resource",
+    "title": "Деньги мастерской",
+    "description": "Наличные, которыми можно оплатить людей, лечение и срочные материалы.",
+    "data": {
+      "unit": "флорин",
+      "initialValue": 2,
+      "min": 0,
+      "max": 12
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "guild-trust",
+    "kind": "core.resource",
+    "title": "Доверие гильдии",
+    "description": "Насколько гильдия считает действия мастерской доказуемыми и добросовестными.",
+    "data": {
+      "unit": "пункт",
+      "initialValue": 2,
+      "min": 0,
+      "max": 8
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "patron-trust",
+    "kind": "core.resource",
+    "title": "Доверие заказчика",
+    "description": "Насколько сторона кардинала готова продолжать договорённость на новых условиях.",
+    "data": {
+      "unit": "пункт",
+      "initialValue": 2,
+      "min": 0,
+      "max": 8
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "fresco-progress",
+    "kind": "core.resource",
+    "title": "Готовность фрески",
+    "description": "Объём реально завершённой критической работы по фреске.",
+    "data": {
+      "unit": "этап",
+      "initialValue": 0,
+      "min": 0,
+      "max": 6
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "contract-rights",
+    "kind": "core.resource",
+    "title": "Право на авторскую подпись",
+    "description": "Закреплено ли в действующей договорённости право мастерской оставить имя автора на работе.",
+    "data": {
+      "unit": "флаг",
+      "initialValue": 0,
+      "min": 0,
+      "max": 1
+    }
+  },
+  {
+    "schemaVersion": "1.0",
+    "id": "deal-open",
+    "kind": "core.resource",
+    "title": "Договор действует",
+    "description": "Единица означает, что переговоры или договор ещё действуют; ноль — сделка отозвана и требует нового соглашения.",
+    "data": {
+      "unit": "флаг",
+      "initialValue": 1,
+      "min": 0,
+      "max": 1
+    }
+  }
+]
