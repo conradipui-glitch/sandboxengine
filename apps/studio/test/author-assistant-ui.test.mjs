@@ -7,6 +7,7 @@ import {
 
 const HASH = "a".repeat(64);
 const TURN = "b".repeat(64);
+const CONTEXT_HASH = "1".repeat(64);
 
 function job(overrides = {}) {
   return Object.freeze({
@@ -96,12 +97,13 @@ function read(jobValue = job(), proposalValue = proposal()) {
       Object.freeze({ jobId: "job-1", ordinal: 0, fact: Object.freeze({ kind: "job.created" }), createdAtMs: 1 }),
       Object.freeze({ jobId: "job-1", ordinal: 1, fact: Object.freeze({ kind: "segment.requested", requestId: "segment-1", requestHash: "d".repeat(64) }), createdAtMs: 2 }),
       Object.freeze({ jobId: "job-1", ordinal: 2, fact: Object.freeze({ kind: "draft.read", blockCount: 3 }), createdAtMs: 3 }),
-      Object.freeze({ jobId: "job-1", ordinal: 3, fact: Object.freeze({ kind: "proposal.produced", proposalId: "proposal-1" }), createdAtMs: 4 }),
-      Object.freeze({ jobId: "job-1", ordinal: 4, fact: Object.freeze({ kind: "proposal.previewed", proposalId: "proposal-1", stale: false, applyAllowed: true }), createdAtMs: 5 })
+      Object.freeze({ jobId: "job-1", ordinal: 3, fact: Object.freeze({ kind: "context.selected", draftRevision: 0, draftContentHash: HASH, contextHash: CONTEXT_HASH, selectedBlockIds: Object.freeze(["workshop"]), includedBlockIds: Object.freeze(["workshop"]) }), createdAtMs: 4 }),
+      Object.freeze({ jobId: "job-1", ordinal: 4, fact: Object.freeze({ kind: "proposal.produced", proposalId: "proposal-1" }), createdAtMs: 5 }),
+      Object.freeze({ jobId: "job-1", ordinal: 5, fact: Object.freeze({ kind: "proposal.previewed", proposalId: "proposal-1", stale: false, applyAllowed: true }), createdAtMs: 6 })
     ]),
     messages: Object.freeze([
       Object.freeze({ jobId: "job-1", ordinal: 0, messageId: "m1", role: "author", text: "Добавь краску", proposalId: null, proposalTurnKey: null, payloadHash: "e".repeat(64), createdAtMs: 2 }),
-      Object.freeze({ jobId: "job-1", ordinal: 1, messageId: "m2", role: "assistant", text: "Подготовил proposal", proposalId: "proposal-1", proposalTurnKey: TURN, payloadHash: "f".repeat(64), createdAtMs: 6 })
+      Object.freeze({ jobId: "job-1", ordinal: 1, messageId: "m2", role: "assistant", text: "Подготовил proposal", proposalId: "proposal-1", proposalTurnKey: TURN, payloadHash: "f".repeat(64), createdAtMs: 7 })
     ]),
     proposalArtifacts: Object.freeze([artifact(proposalValue)])
   });
@@ -147,7 +149,8 @@ test("B10.a Studio renderer shows factual checkpoints and fresh Apply without in
   const html = renderAuthorAssistantPanel(state, { canMutate: true, hasMutationProof: true });
   assert.match(html, /mode <strong>author<\/strong>/);
   assert.match(html, /backend <code>scripted-author<\/code>/);
-  assert.match(html, /Прочитан authoritative draft: 3 blocks/);
+  assert.match(html, /Прочитан bounded authoring context: 3 blocks/);
+  assert.match(html, /Context r0: selected 1, included 1/);
   assert.match(html, /Server preview proposal-1: stale=false, applyAllowed=true/);
   assert.match(html, /data-action="author-apply"/);
   assert.match(html, /data-action="author-stop"/);
