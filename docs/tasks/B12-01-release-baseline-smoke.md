@@ -1,77 +1,66 @@
 # B12.1 — Release baseline and external smoke gate
 
-Status: **in progress**  
+Status: **ACCEPTED / GREEN**  
 Base Engine commit: `5b438214f1d709dd43244f107f883f6b2fc5f6ac`  
-Companion sandbox production commit: `3d9cc885592ec229d2083883ea38d83de9fcc199`
+Companion sandbox B11 production commit: `3d9cc885592ec229d2083883ea38d83de9fcc199`  
+Accepted sandbox B12.1 merge: `a6d5db944960ab7c8672349e329e6ff9ba4ff649`
 
 ## Purpose
 
 Start B12 from the exact published B11 state and close the first release-hardening gap without adding product functionality.
 
-B12 is the release and operational-handoff block defined in `docs/SPECIFICATION.md`. It must prove clean installation/build/regression, bounded provider evaluation, backup/restore, restart/quota/log behavior, release documentation, rollback and an external smoke of any network deployment. B13 Builder/deployment orchestration is explicitly out of scope.
-
-This slice covers only:
-
-1. frozen published B11 baseline;
-2. durable release-report structure for later B12 evidence;
-3. an external **read-only** smoke gate for the already deployed `sandbox` production Worker.
+B12 is the release and operational-handoff block defined in `docs/SPECIFICATION.md`. This slice freezes the baseline, creates the durable release evidence ledger and adds an external read-only smoke gate for the already deployed companion `sandbox` Worker.
 
 ## Frozen B11 publication baseline
 
 ### Engine
 
-- B11 PR: `conradipui-glitch/sandboxengine#35`;
-- final PR head: `8d8d899e14a8d2ff56e9aac0e6ba94695738c194`;
+- B11 PR #35 final head: `8d8d899e14a8d2ff56e9aac0e6ba94695738c194`;
 - exact-head PR CI #681 / run `34237564459`: success;
-- merge SHA: `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
+- merge: `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
 - published `main` CI #682 / run `34237754065`: success.
 
 ### Sandbox integration / production
 
-- B11 PR: `conradipui-glitch/sandbox#10`;
-- verified PR head: `5480c77a59912f435c3f9d1bafc2985c23fbe531`;
-- Verify #5 / run `34236822232`: tests + build success;
-- merge SHA: `3d9cc885592ec229d2083883ea38d83de9fcc199`;
+- B11 integration merge: `3d9cc885592ec229d2083883ea38d83de9fcc199`;
 - production deploy #49 / run `34238155592`: install, 49 tests, build and Wrangler deploy success;
-- deployed Worker: `living-history-sandbox`;
-- deployed Cloudflare version: `573525a6-4ff5-43d9-9642-62504eabb289`;
-- deployment output includes `HistorySession`, `ProductAnalytics` and `RuntimeRouteSession` Durable Object bindings.
+- B11 Cloudflare version: `573525a6-4ff5-43d9-9642-62504eabb289`;
+- rollout remained safe-by-default: missing/unexpected `ENGINE_FLORENCE_ROLLOUT` means `off`, and publication does not convert existing legacy sessions.
 
-B11 rollout remains safe-by-default: missing or unexpected `ENGINE_FLORENCE_ROLLOUT` is `off`; no existing legacy session is converted by the B11 publication.
+## Accepted external smoke
 
-## External smoke design
+Companion `conradipui-glitch/sandbox` PR #11 added a bounded post-Wrangler read-only probe.
 
-Companion branch/PR in `conradipui-glitch/sandbox` adds a post-Wrangler smoke probe.
+Exact accepted evidence:
 
-The probe is intentionally read-only so deploys do not create artificial sessions or contaminate product analytics:
+- PR head: `401043e2a815e9ff4991bbaccb00c9c84b3bb399`;
+- PR Verify #6 / run `34238768580`: success;
+- merge: `a6d5db944960ab7c8672349e329e6ff9ba4ff649`;
+- production deploy #50 / run `34239102418`: success;
+- deployed Cloudflare version: `cd0d8948-86d3-4a56-9b5f-c97bbec79771`;
+- `GET /api/health`: PASS, attempt 1;
+- `GET /api/scenarios`: PASS, attempt 1;
+- `GET /`: PASS, attempt 1.
 
-- `GET /api/health` must identify a healthy `living-history-sandbox` service;
-- `GET /api/scenarios` must contain both `florence-workshop` and `russia-1917`;
-- `GET /` must return the expected deployed HTML application shell.
+The smoke is intentionally read-only: it creates no game session and no synthetic product-analytics event. Exhausting bounded retries/timeouts fails deployment rather than converting unavailability into success.
 
-Each request has bounded retries and a bounded request timeout. Exhausting attempts fails the deploy workflow rather than converting an unavailable deployment into success.
+## Acceptance
 
-## Acceptance for this slice
-
-B12.1 is accepted only when all are true:
-
-- [x] Engine branch starts exactly from published B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
-- [x] sandbox smoke branch starts exactly from published B11 production merge `3d9cc885592ec229d2083883ea38d83de9fcc199`;
+- [x] Engine B12 branch started exactly from published B11 merge `5b438214f1d709dd43244f107f883f6b2fc5f6ac`;
+- [x] sandbox smoke work started from published B11 production state;
 - [x] smoke is read-only and bounded;
-- [x] PR verification syntax-checks the smoke probe;
-- [ ] companion sandbox PR exact-head Verify is green;
-- [ ] companion PR is merged;
-- [ ] the resulting `main` deployment executes the smoke step after Wrangler deploy and succeeds against the deployed address;
-- [ ] `docs/RELEASE-REPORT.md` records that exact run and Cloudflare version.
+- [x] PR verification syntax-checks and executes the probe contract;
+- [x] companion sandbox PR exact-head Verify is green;
+- [x] companion PR is merged;
+- [x] resulting `main` deployment runs smoke after Wrangler deploy and succeeds against deployed address;
+- [x] `docs/RELEASE-REPORT.md` records the exact run/version.
 
-## Explicit non-goals
+## Non-goals retained
 
-- backup/restore drill — next B12 slice;
-- provider live eval — later bounded B12 slice with explicit budget and provider status;
-- full T01–33/T36–37 evidence audit — assembled after the independent release checks are complete;
-- Builder, repository agent execution or deployment orchestration — B13;
-- enabling Florence Engine rollout in production — separate release decision, not implied by this smoke gate.
+- this slice does not claim backup/restore, provider live eval or full acceptance-matrix completion by itself; those are separate B12 gates;
+- it does not implement B13 Builder/repository/deployment orchestration;
+- it does not enable Florence Engine rollout in production.
 
-## Next step after acceptance
+## Result
 
-Run the B12 backup/restore + restart drill from a clean checkout and record immutable evidence in `docs/RELEASE-REPORT.md`. Do not begin B13.
+B12.1 is closed. Subsequent B12 evidence is tracked in `docs/RELEASE-REPORT.md`, `docs/B12-ACCEPTANCE-MATRIX.md` and `docs/RUNBOOK.md`.
