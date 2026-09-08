@@ -1,11 +1,14 @@
 // @ts-ignore — Node 24.19.0 provides node:crypto; repository intentionally has no @types/node dependency yet.
 import { createHash } from "node:crypto";
 import {
+  CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG,
   applyAuthoringProposalFromStore,
+  buildAuthorContextBundle,
   previewAuthoringProposalFromStore,
   type AuthorAgentJobRecord,
   type AuthorAgentJobStore,
   type AuthorAgentProposalArtifactStore,
+  type AuthorContextCapabilityCatalog,
   type AuthoringProposal,
   type AuthoringProposalApplication,
   type AuthoringProposalPreview,
@@ -34,6 +37,7 @@ export interface AuthorAssistantDependencies {
   readonly artifacts: AuthorAgentProposalArtifactStore;
   readonly backend: AgentBackend;
   readonly profileId: string;
+  readonly capabilityCatalog?: AuthorContextCapabilityCatalog;
   readonly nowMs?: () => number;
   readonly backendDeadlineMs?: number;
 }
@@ -186,14 +190,24 @@ export async function runAuthorAssistantSegment(
   if (!snapshot || snapshot.contentHash !== current.contentHash) {
     return failWithoutUsage(dependencies, job, "starting_snapshot_unavailable");
   }
-  const contextJson = canonicalStringify(snapshot);
+  const contextResult = buildAuthorContextBundle(
+    snapshot,
+    [snapshot.entryLocationId],
+    dependencies.capabilityCatalog ?? CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG
+  );
+  if (contextResult.kind !== "built") {
+    return failInvalidOutput(dependencies, job, EMPTY_USAGE, `context_${contextResult.code}`);
+  }
+  const contextBundle = contextResult.bundle;
+  const contextJson = canonicalStringify(contextBundle);
+  const contextHash = sha256(contextJson);
   if (contextJson.length > MAX_AUTHOR_CONTEXT_CHARS) return failInvalidOutput(dependencies, job, EMPTY_USAGE, "context_too_large");
 
   if (readReserved.kind !== "replay") {
     const completed = await dependencies.jobs.completeOperation(job.jobId, {
       operationId: readOperationId,
       requestHash: readRequestHash,
-      result: { kind: "read_blocks", blockCount: snapshot.blocks.length },
+      result: { kind: "read_blocks", blockCount: contextBundle.blocks.length },
       activeTimeMs: 0,
       atMs: now(dependencies)
     });
@@ -202,11 +216,27 @@ export async function runAuthorAssistantSegment(
     if (completed.kind === "completed") {
       const checkpointed = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
         kind: "draft.read",
-        blockCount: snapshot.blocks.length
+        blockCount: contextBundle.blocks.length
       }, now(dependencies));
       if (checkpointed.kind !== "updated") return jobConflict(dependencies, job.jobId);
       job = checkpointed.job;
     }
+  }
+  const contextCheckpoints = await dependencies.jobs.listCheckpoints(job.jobId);
+  if (!contextCheckpoints) return frozen({ kind: "job_not_found" });
+  if (!contextCheckpoints.some((entry) => entry.fact.kind === "context.selected"
+    && entry.fact.draftRevision === snapshot.draftRevision
+    && entry.fact.contextHash === contextHash)) {
+    const contextCheckpointed = await dependencies.jobs.appendCheckpoint(job.jobId, job.jobVersion, {
+      kind: "context.selected",
+      draftRevision: snapshot.draftRevision,
+      draftContentHash: snapshot.contentHash,
+      contextHash,
+      selectedBlockIds: contextBundle.selectedBlockIds,
+      includedBlockIds: contextBundle.includedBlockIds
+    }, now(dependencies));
+    if (contextCheckpointed.kind !== "updated") return jobConflict(dependencies, job.jobId);
+    job = contextCheckpointed.job;
   }
   if (job.state === "paused_budget") return frozen({ kind: "paused_budget", job });
 
@@ -243,11 +273,11 @@ export async function runAuthorAssistantSegment(
       messages: [
         {
           role: "system",
-          content: "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. If a mechanic is not representable, put it in missingCapabilities and do not fake a block."
+          content: "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. The supplied authoring context is intentionally bounded; omitted blocks may still exist, so never infer their absence. If a mechanic is not representable by the supplied installed capability catalog, put it in missingCapabilities and do not fake a block."
         },
         {
           role: "user",
-          content: `Instruction:\\n${input.instruction}\\n\\nExact quest draft snapshot:\\n${contextJson}`
+          content: `Instruction:\\n${input.instruction}\\n\\nBounded quest authoring context:\\n${contextJson}`
         }
       ],
       maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,

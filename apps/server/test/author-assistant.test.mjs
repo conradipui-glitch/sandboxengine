@@ -127,7 +127,7 @@ test("B10.a scripted author produces server-bound proposal without mutating draf
   assert.equal(backend.safeView.capabilities.externalToolCalls, false);
   assert.equal(backend.capturedTurnRequests.length, 1);
   assert.equal(backend.capturedTurnRequests[0].messages[0].role, "system");
-  assert.match(backend.capturedTurnRequests[0].messages[1].content, /Exact quest draft snapshot/);
+  assert.match(backend.capturedTurnRequests[0].messages[1].content, /Bounded quest authoring context/);
   assert.doesNotMatch(backend.capturedTurnRequests[0].messages[1].content, /password|csrf|cookie|api[_-]?key/i);
 });
 

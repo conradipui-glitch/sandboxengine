@@ -64,6 +64,17 @@ export {
   type PreviewAuthoringProposalDispatchResult
 } from "./authoring-proposal-store.js";
 export {
+  CORE_AUTHOR_CONTEXT_BLOCK_KINDS,
+  CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG,
+  MAX_AUTHOR_CONTEXT_CAPABILITY_IDS,
+  MAX_AUTHOR_CONTEXT_INCLUDED_BLOCKS,
+  MAX_AUTHOR_CONTEXT_SELECTED_BLOCKS,
+  buildAuthorContextBundle,
+  type AuthorContextBundle,
+  type AuthorContextCapabilityCatalog,
+  type BuildAuthorContextBundleResult
+} from "./author-context.js";
+export {
   AUTHOR_AGENT_JOB_STATES,
   DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
   DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS,

@@ -50,6 +50,14 @@ export type AuthorAgentCheckpointFact =
   | { readonly kind: "job.created" }
   | { readonly kind: "job.started" }
   | { readonly kind: "draft.read"; readonly blockCount: number }
+  | {
+      readonly kind: "context.selected";
+      readonly draftRevision: number;
+      readonly draftContentHash: string;
+      readonly contextHash: string;
+      readonly selectedBlockIds: readonly string[];
+      readonly includedBlockIds: readonly string[];
+    }
   | { readonly kind: "segment.requested"; readonly requestId: string; readonly requestHash: string }
   | { readonly kind: "proposal.produced"; readonly proposalId: string }
   | { readonly kind: "proposal.previewed"; readonly proposalId: string; readonly stale: boolean; readonly applyAllowed: boolean }
@@ -883,6 +891,16 @@ function isCheckpointFact(value: unknown): value is AuthorAgentCheckpointFact {
       return hasExactKeys(value, ["kind"]);
     case "draft.read":
       return hasExactKeys(value, ["kind", "blockCount"]) && isNonNegativeSafeInteger(value.blockCount);
+    case "context.selected":
+      return hasExactKeys(value, [
+        "kind", "draftRevision", "draftContentHash", "contextHash", "selectedBlockIds", "includedBlockIds"
+      ])
+        && isNonNegativeSafeInteger(value.draftRevision)
+        && isHash(value.draftContentHash)
+        && isHash(value.contextHash)
+        && isBoundedIdList(value.selectedBlockIds, 32, 1)
+        && isBoundedIdList(value.includedBlockIds, 64, 1)
+        && value.selectedBlockIds.every((id: string) => value.includedBlockIds.includes(id));
     case "segment.requested":
       return hasExactKeys(value, ["kind", "requestId", "requestHash"])
         && isId(value.requestId) && isHash(value.requestHash);
@@ -930,6 +948,14 @@ function isTerminal(state: AuthorAgentJobState): boolean {
 
 function isOperationKind(value: unknown): value is AuthorAgentOperationKind {
   return value === "draft.read" || value === "proposal.preview" || value === "proposal.apply";
+}
+
+function isBoundedIdList(value: unknown, max: number, min = 0): value is string[] {
+  return Array.isArray(value)
+    && value.length >= min
+    && value.length <= max
+    && value.every(isId)
+    && new Set(value).size === value.length;
 }
 
 function isId(value: unknown): value is string {

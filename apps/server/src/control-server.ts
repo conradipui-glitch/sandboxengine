@@ -25,6 +25,7 @@ import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 import { routeDraftVersionHttp } from "./draft-version-http.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
+import { buildInstalledAuthorContextCapabilityCatalog } from "./author-context-catalog.js";
 
 const MAX_CONTROL_BODY_CHARS = 262_144;
 const MAX_CONTROL_IMPORT_BODY_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4 + 1_024;
@@ -92,6 +93,12 @@ interface LoginFailureState {
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
+  const authorAssistant = dependencies.authorAssistant
+    ? Object.freeze({
+        ...dependencies.authorAssistant,
+        capabilityCatalog: buildInstalledAuthorContextCapabilityCatalog(releases?.pluginRegistry ?? null)
+      })
+    : null;
   const failures = new Map<string, LoginFailureState>();
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -101,7 +108,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         dependencies.store,
         releases,
         dependencies.playtestTrace ?? null,
-        dependencies.authorAssistant ?? null,
+        authorAssistant,
         auth,
         failures
       );
