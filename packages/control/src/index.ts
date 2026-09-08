@@ -90,6 +90,15 @@ export {
   type TransitionAuthorAgentJobResult
 } from "./author-agent-jobs.js";
 export {
+  MemoryAuthorAgentProposalArtifactStore,
+  SQLiteAuthorAgentProposalArtifactStore,
+  type AuthorAgentProposalArtifact,
+  type AuthorAgentProposalArtifactStore,
+  type AuthorAgentProposalUsage,
+  type SaveAuthorAgentProposalArtifactInput,
+  type SaveAuthorAgentProposalArtifactResult
+} from "./author-agent-artifacts.js";
+export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
@@ -119,7 +128,6 @@ export {
   createControlSessionId,
   createPasswordVerifier,
   hashControlOpaqueSecret,
-  isControlPassword,
   isControlProjectRole,
   isControlSecretHash,
   isControlUserId,
