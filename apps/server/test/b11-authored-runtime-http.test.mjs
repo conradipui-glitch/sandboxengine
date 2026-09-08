@@ -144,6 +144,8 @@ test("B11 Florence published authored Runtime commits canonical route once and r
   assert.equal(created.response.status, 201);
   assert.equal(created.body.playerView.release.releaseId, release.releaseId);
   assert.equal(created.body.playerView.revision, 0);
+  assert.equal(created.body.situation.beat.id, "contract-pressure");
+  assert.deepEqual(created.body.situation.beat.options.map((entry) => entry.id), ["draft", "healer", "close"]);
   assert.equal((await f.bindings.getBinding(created.body.sessionId)).release.contentHash, release.compiledContentHash);
 
   const first = await option(f.baseUrl, created.body, 0, "route-1", "draft");
@@ -152,6 +154,7 @@ test("B11 Florence published authored Runtime commits canonical route once and r
   assert.equal(first.body.action.optionId, "draft");
   assert.equal(first.body.playerView.revision, 1);
   assert.equal(first.body.playerView.clock.elapsedSeconds, 900);
+  assert.equal(first.body.situation.beat.id, "evidence-and-team");
 
   const replay = await option(f.baseUrl, created.body, 0, "route-1", "draft");
   assert.equal(replay.response.status, 200);
@@ -167,9 +170,11 @@ test("B11 Florence published authored Runtime commits canonical route once and r
   for (let index = 0; index < route.length; index += 1) {
     latest = await option(f.baseUrl, created.body, index + 1, `route-${index + 2}`, route[index]);
     assert.equal(latest.response.status, 200, route[index]);
+    if (route[index] === "counter") assert.equal(latest.body.action.status, "executed");
   }
   assert.equal(latest.body.playerView.revision, 6);
   assert.equal(latest.body.playerView.clock.elapsedSeconds, 7800);
+  assert.equal(latest.body.situation.beat, null);
   assert.deepEqual(latest.body.playerView.terminal, {
     reason: "source-route-complete",
     outcome: "Незавершённое принято"
@@ -180,23 +185,45 @@ test("B11 Florence published authored Runtime commits canonical route once and r
   assert.equal(finalSession.state.resources.find((resource) => resource.id === "fresco-progress").value, 3);
 });
 
+test("B11 Florence published Runtime keeps paid compromise distinct from canonical acceptance", async (t) => {
+  const f = await fixture(t);
+  const release = await authoredRelease("florence", "living-history");
+  await storeAndPublish(f.releaseStore, release, "florence-paid");
+  const created = await createSession(f.baseUrl, "living-history", "florence-workshop");
+
+  const route = ["healer", "team", "advance", "testimony", "share-ledger", "deliver"];
+  let latest = created;
+  for (let index = 0; index < route.length; index += 1) {
+    latest = await option(f.baseUrl, created.body, index, `paid-${index + 1}`, route[index]);
+    assert.equal(latest.response.status, 200, route[index]);
+  }
+  assert.deepEqual(latest.body.playerView.terminal, {
+    reason: "paid-compromise",
+    outcome: "Чужое имя над вашей работой"
+  });
+  assert.equal(latest.body.situation.beat, null);
+});
+
 test("B11 Transfer Desk published Runtime preserves blocked/no-turn then conditional then item handoff", async (t) => {
   const f = await fixture(t);
   const release = await authoredRelease("transfer-desk", "living-history");
   await storeAndPublish(f.releaseStore, release, "desk-r1");
   const created = await createSession(f.baseUrl, "living-history", "transfer-desk");
   assert.equal(created.response.status, 201);
+  assert.equal(created.body.situation.beat.id, "claim");
 
   const blocked = await option(f.baseUrl, created.body, 0, "desk-block", "grab-item");
   assert.equal(blocked.response.status, 200);
   assert.equal(blocked.body.action.status, "blocked");
   assert.equal(blocked.body.playerView.revision, 0);
   assert.equal(blocked.body.playerView.clock.elapsedSeconds, 0);
+  assert.equal(blocked.body.situation.beat.id, "claim");
   assert.equal((await f.storage.loadSession(created.body.sessionId)).revision, 0);
 
   const ask = await option(f.baseUrl, created.body, 0, "desk-1", "ask-clerk");
   assert.equal(ask.body.action.status, "conditional");
   assert.equal(ask.body.playerView.revision, 1);
+  assert.equal(ask.body.situation.beat.id, "verification");
   const verify = await option(f.baseUrl, created.body, 1, "desk-2", "verify-description");
   assert.equal(verify.body.action.status, "executed");
 
@@ -211,6 +238,7 @@ test("B11 Transfer Desk published Runtime preserves blocked/no-turn then conditi
   assert.equal(returned.body.playerView.clock.elapsedSeconds, 240);
   assert.equal(returned.body.playerView.items.find((item) => item.id === "blue-umbrella").position.holderId, "claimant");
   assert.equal(returned.body.playerView.resources.find((resource) => resource.id === "claim-tickets").value, 0);
+  assert.equal(returned.body.situation.beat, null);
 });
 
 test("B11 free text receives the current beat catalog and executes through the same authored resolver", async (t) => {
@@ -251,6 +279,7 @@ test("B11 free text receives the current beat catalog and executes through the s
   assert.equal(response.status, 200);
   assert.equal(body.action.optionId, "draft");
   assert.equal(body.action.status, "conditional");
+  assert.equal(body.situation.beat.id, "evidence-and-team");
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].actionCatalog[0].args.optionId.enum, ["draft", "healer", "close"]);
   assert.equal(calls[0].publicSituation.beat.id, "contract-pressure");
