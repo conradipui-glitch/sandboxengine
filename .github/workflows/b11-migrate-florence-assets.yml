@@ -53,7 +53,6 @@ jobs:
 
           curl -fsSL \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             "https://api.github.com/repos/${SOURCE_REPO}/contents/audio-parts?ref=${SOURCE_SHA}" \
             -o "$tmp/audio-parts.json"
 
@@ -83,7 +82,7 @@ jobs:
           assemble_audio "dawn-finale.mp3" "music-16-florence-dawn-finale.mp3.part-"
 
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, subprocess
           from pathlib import Path
 
           source_repo = "conradipui-glitch/sandbox"
@@ -98,7 +97,7 @@ jobs:
                   "path": path.as_posix(),
                   "bytes": len(data),
                   "sha256": hashlib.sha256(data).hexdigest(),
-                  "gitBlobSha": __import__("subprocess").check_output(["git", "hash-object", str(path)], text=True).strip(),
+                  "gitBlobSha": subprocess.check_output(["git", "hash-object", str(path)], text=True).strip(),
               })
           manifest = {
               "format": "living-history.asset-migration/1",
