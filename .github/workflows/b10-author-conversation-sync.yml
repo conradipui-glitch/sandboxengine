@@ -1,0 +1,35 @@
+name: B10 author conversation sync
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-author-conversation-sync.mjs
+      - .github/workflows/b10-author-conversation-sync.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply bounded conversation integration
+        run: node scripts/b10-author-conversation-sync.mjs
+      - name: Remove staging artifacts
+        run: rm scripts/b10-author-conversation-sync.mjs .github/workflows/b10-author-conversation-sync.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'MemoryAuthorConversationStore' packages/control/src/index.ts
+          grep -q 'authorConversation' apps/server/src/draft-version-http.ts
+          grep -q 'conversation: AuthorConversationStore' apps/server/src/control-server.ts
+          grep -q 'proposalArtifacts' apps/server/src/author-job-http.ts
+          test ! -e scripts/b10-author-conversation-sync.mjs
+          test ! -e .github/workflows/b10-author-conversation-sync.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/control/src/index.ts apps/server/src/draft-version-http.ts apps/server/src/control-server.ts apps/server/src/author-job-http.ts apps/server/test/author-job-http.test.mjs scripts/b10-author-conversation-sync.mjs .github/workflows/b10-author-conversation-sync.yml
+          git commit -m "feat(B10): persist author conversation and proposal references"
+          git push origin HEAD:b10-author-assistant
