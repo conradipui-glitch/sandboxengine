@@ -1,0 +1,14 @@
+# B10.b.11 — compatible backend tool-loop protocol
+
+Bounded goal: allow a compatible author backend to ask the host for at most one `docs.reference.read` during a segment without giving the backend a tool handle or widening `AgentBackend`.
+
+Required evidence before GREEN:
+
+- old `AgentBackend` safe view remains `toolPolicy: none` with shell/filesystem/code/repository/external tools false;
+- strict in-band request accepts only `docs.reference.read`; unknown/second requests fail closed;
+- host executes the request through the durable brokered bridge and feeds bounded `tool_result` task material into the same session;
+- call accounting combines both backend turns honestly;
+- tool operation consumes segment budget and resume replays the MCP result without a second transport call;
+- shared deadline produces typed MCP timeout rather than hidden fallback;
+- parent cancellation aborts MCP and prevents the second backend turn;
+- targeted AI/Control/Server/boundary/docs gates and final exact-head root `npm run verify` are GREEN.

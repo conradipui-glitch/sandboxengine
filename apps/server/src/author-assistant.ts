@@ -29,6 +29,7 @@ import {
 } from "@living-history/ai";
 import { loadInstalledAgentKit } from "./agent-kit.js";
 import type { AuthorMcpClient } from "./author-mcp.js";
+import { AUTHOR_REFERENCE_TOOL_PROTOCOL_INSTRUCTION, runAuthorBackendToolProtocol } from "./author-backend-tool-protocol.js";
 
 const MAX_AUTHOR_INSTRUCTION_CHARS = 20_000;
 const MAX_AUTHOR_CONTEXT_CHARS = 64_000;
@@ -292,30 +293,41 @@ export async function runAuthorAssistantSegment(
       return failBackend(dependencies, job, opened.error.code, EMPTY_USAGE);
     }
 
-    const turn = await dependencies.backend.runTurn({
+    const systemInstruction = "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. The supplied authoring context is intentionally bounded; omitted blocks may still exist, so never infer their absence. If a mechanic is not representable by the supplied installed capability catalog, put it in missingCapabilities and do not fake a block."
+      + (dependencies.referenceMcpClient ? ` ${AUTHOR_REFERENCE_TOOL_PROTOCOL_INSTRUCTION}` : "");
+    const backendLoop = await runAuthorBackendToolProtocol({
+      backend: dependencies.backend,
       session: opened.session,
-      messages: [
-        {
-          role: "system",
-          content: "You are an authoring proposal generator. Return ONLY one JSON object with exact keys explanation, changes, missingCapabilities. Never include project/quest/revision/origin, never publish, never change access, never invent unsupported mechanics. The supplied authoring context is intentionally bounded; omitted blocks may still exist, so never infer their absence. If a mechanic is not representable by the supplied installed capability catalog, put it in missingCapabilities and do not fake a block."
-        },
-        {
-          role: "user",
+      messages: Object.freeze([
+        Object.freeze({ role: "system" as const, content: systemInstruction }),
+        Object.freeze({
+          role: "user" as const,
           content: `Instruction:\\n${input.instruction}\\n\\nBounded quest authoring context:\\n${contextJson}`
-        }
-      ],
+        })
+      ]),
       maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,
       deadlineAtMs: sessionDeadline,
-      ...(input.signal ? { signal: input.signal } : {})
+      job,
+      jobs: dependencies.jobs,
+      turnKey,
+      referenceMcpClient: dependencies.referenceMcpClient ?? null,
+      ...(input.signal ? { signal: input.signal } : {}),
+      ...(dependencies.nowMs ? { nowMs: dependencies.nowMs } : {})
     });
-    if (!turn.ok) {
+    if (backendLoop.kind !== "completed") {
       await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
-      if (turn.error.code === "aborted") {
-        const cancelled = await cancelledJob(dependencies, job.jobId);
+      if (backendLoop.kind === "paused_budget") return frozen({ kind: "paused_budget", job: backendLoop.job });
+      if (backendLoop.kind === "cancelled") return frozen({ kind: "cancelled", job: backendLoop.job });
+      if (backendLoop.kind === "broker_failure") return failBroker(dependencies, backendLoop.job, "operation_denied");
+      if (backendLoop.kind === "invalid_output") return failInvalidOutput(dependencies, backendLoop.job, backendLoop.usage, backendLoop.code);
+      if (backendLoop.code === "aborted") {
+        const cancelled = await cancelledJob(dependencies, backendLoop.job.jobId);
         if (cancelled) return frozen({ kind: "cancelled", job: cancelled });
       }
-      return failBackend(dependencies, job, turn.error.code, turn.usage);
+      return failBackend(dependencies, backendLoop.job, backendLoop.code, backendLoop.usage);
     }
+    job = backendLoop.job;
+    const turn = { outputText: backendLoop.outputText, usage: backendLoop.usage };
     const closed = await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
     if (!closed.ok) return failBackend(dependencies, job, closed.error.code, turn.usage);
     if (input.signal?.aborted) {

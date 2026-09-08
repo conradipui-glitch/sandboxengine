@@ -97,7 +97,7 @@ export type AuthorAgentOperationResult =
       readonly queryHash: string;
       readonly outputJson: string | null;
       readonly outputHash: string | null;
-      readonly errorCode: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "invalid_response" | null;
+      readonly errorCode: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "mcp_aborted" | "invalid_response" | null;
     };
 
 export interface AuthorAgentOperationRecord {
@@ -978,7 +978,7 @@ function isOperationResult(value: unknown): value is AuthorAgentOperationResult 
     }
     if (value.outcome === "unavailable") {
       return value.outputJson === null && value.outputHash === null
-        && (value.errorCode === "mcp_offline" || value.errorCode === "mcp_timeout" || value.errorCode === "mcp_transport_error");
+        && (value.errorCode === "mcp_offline" || value.errorCode === "mcp_timeout" || value.errorCode === "mcp_transport_error" || value.errorCode === "mcp_aborted");
     }
     return value.outcome === "invalid_response"
       && value.outputJson === null && value.outputHash === null && value.errorCode === "invalid_response";

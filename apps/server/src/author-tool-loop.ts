@@ -33,6 +33,7 @@ export interface AuthorReferenceToolBridgeInput {
   readonly query: string;
   readonly targetVersion: string | null;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type AuthorReferenceToolBridgeResult =
@@ -49,7 +50,7 @@ export type AuthorReferenceToolBridgeResult =
       readonly kind: "unavailable";
       readonly job: AuthorAgentJobRecord;
       readonly replay: boolean;
-      readonly code: "mcp_offline" | "mcp_timeout" | "mcp_transport_error";
+      readonly code: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "mcp_aborted";
     }
   | { readonly kind: "invalid_response"; readonly job: AuthorAgentJobRecord; readonly replay: boolean }
   | { readonly kind: "pending"; readonly job: AuthorAgentJobRecord }
@@ -154,7 +155,8 @@ export async function invokeBrokeredAuthorReferenceRead(
     const invoked = await invokeAuthorMcpReferenceRead(pinned.pin, job, dependencies.client, {
       query: input.query,
       targetVersion: input.targetVersion,
-      timeoutMs
+      timeoutMs,
+      ...(input.signal ? { signal: input.signal } : {})
     }, () => atMs);
     if (invoked.kind === "completed") {
       const outputJson = canonicalStringify(invoked.output);
@@ -184,7 +186,7 @@ function referenceResult(
   client: AuthorMcpClient,
   input: AuthorReferenceToolBridgeInput,
   outcome: "completed" | "unavailable" | "invalid_response",
-  errorCode: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "invalid_response" | null,
+  errorCode: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "mcp_aborted" | "invalid_response" | null,
   outputJson: string | null
 ): Extract<AuthorAgentOperationResult, { kind: "reference_read" }> {
   return deepFreeze({
@@ -230,7 +232,7 @@ function replayResult(
       kind: "unavailable",
       job,
       replay,
-      code: result.errorCode as "mcp_offline" | "mcp_timeout" | "mcp_transport_error"
+      code: result.errorCode as "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "mcp_aborted"
     });
   }
   return frozen({ kind: "invalid_response", job, replay });
@@ -238,15 +240,14 @@ function replayResult(
 
 function isInput(value: unknown): value is AuthorReferenceToolBridgeInput {
   if (!isRecord(value)) return false;
-  const keys = value.timeoutMs === undefined
-    ? ["operationId", "query", "targetVersion"]
-    : ["operationId", "query", "targetVersion", "timeoutMs"];
+  const keys = ["operationId", "query", "targetVersion", ...(value.timeoutMs === undefined ? [] : ["timeoutMs"]), ...(value.signal === undefined ? [] : ["signal"])];
   return hasExactKeys(value, keys)
     && isId(value.operationId)
     && typeof value.query === "string" && value.query.length >= 1 && value.query.length <= MAX_AUTHOR_MCP_QUERY_CHARS
     && (value.targetVersion === null || isVersion(value.targetVersion))
     && (value.timeoutMs === undefined || (Number.isSafeInteger(value.timeoutMs)
-      && value.timeoutMs >= 1 && value.timeoutMs <= MAX_AUTHOR_MCP_TIMEOUT_MS));
+      && value.timeoutMs >= 1 && value.timeoutMs <= MAX_AUTHOR_MCP_TIMEOUT_MS))
+    && (value.signal === undefined || isAbortSignal(value.signal));
 }
 
 function now(dependencies: AuthorReferenceToolBridgeDependencies): number | null {
@@ -271,6 +272,13 @@ function isId(value: unknown): value is string {
 function isVersion(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 100
     && /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/.test(value);
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return value !== null && typeof value === "object"
+    && typeof (value as AbortSignal).aborted === "boolean"
+    && typeof (value as AbortSignal).addEventListener === "function"
+    && typeof (value as AbortSignal).removeEventListener === "function";
 }
 
 function sha256(value: string): string {

@@ -37,7 +37,7 @@ export interface AuthorMcpCallRequest {
 
 export type AuthorMcpCallResult =
   | { readonly ok: true; readonly output: unknown }
-  | { readonly ok: false; readonly error: { readonly code: "offline" | "timeout" | "transport_error" } };
+  | { readonly ok: false; readonly error: { readonly code: "offline" | "timeout" | "transport_error" | "aborted" } };
 
 export interface AuthorMcpClient {
   readonly safeView: AuthorMcpClientSafeView;
@@ -48,6 +48,7 @@ export interface InvokeAuthorMcpReferenceReadInput {
   readonly query: string;
   readonly targetVersion: string | null;
   readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
 }
 
 export type InvokeAuthorMcpReferenceReadResult =
@@ -61,7 +62,7 @@ export type InvokeAuthorMcpReferenceReadResult =
     }
   | {
       readonly kind: "unavailable";
-      readonly code: "mcp_offline" | "mcp_timeout" | "mcp_transport_error";
+      readonly code: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "mcp_aborted";
       readonly fallback: { readonly source: "builtin"; readonly toolId: string } | null;
     }
   | {
@@ -99,11 +100,24 @@ export async function invokeAuthorMcpReferenceRead(
   if (!Number.isSafeInteger(startedAtMs) || startedAtMs < 0) return frozen({ kind: "denied", code: "invalid_request" });
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let removeParentAbort: (() => void) | null = null;
   const timeoutResult = new Promise<AuthorMcpCallResult>((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
       resolve({ ok: false, error: { code: "timeout" } });
     }, timeoutMs);
+  });
+  const abortResult = new Promise<AuthorMcpCallResult>((resolve) => {
+    if (!input.signal) return;
+    const onAbort = () => {
+      controller.abort();
+      resolve({ ok: false, error: { code: "aborted" } });
+    };
+    if (input.signal.aborted) onAbort();
+    else {
+      input.signal.addEventListener("abort", onAbort, { once: true });
+      removeParentAbort = () => input.signal?.removeEventListener("abort", onAbort);
+    }
   });
   let callResult: AuthorMcpCallResult;
   try {
@@ -114,12 +128,15 @@ export async function invokeAuthorMcpReferenceRead(
         deadlineAtMs: startedAtMs + timeoutMs,
         signal: controller.signal
       }),
-      timeoutResult
+      timeoutResult,
+      abortResult
     ]);
   } catch {
     callResult = { ok: false, error: { code: "transport_error" } };
   } finally {
     if (timer !== null) clearTimeout(timer);
+    const cleanupParentAbort = removeParentAbort as (() => void) | null;
+    cleanupParentAbort?.();
   }
 
   if (!callResult || typeof callResult !== "object" || typeof callResult.ok !== "boolean") {
@@ -129,6 +146,7 @@ export async function invokeAuthorMcpReferenceRead(
     const code = callResult.error?.code;
     if (code === "offline") return deepFreeze({ kind: "unavailable" as const, code: "mcp_offline" as const, fallback: null });
     if (code === "timeout") return deepFreeze({ kind: "unavailable" as const, code: "mcp_timeout" as const, fallback: null });
+    if (code === "aborted") return deepFreeze({ kind: "unavailable" as const, code: "mcp_aborted" as const, fallback: null });
     return deepFreeze({ kind: "unavailable" as const, code: "mcp_transport_error" as const, fallback: null });
   }
 
@@ -167,11 +185,19 @@ function isSafeView(value: unknown): value is AuthorMcpClientSafeView {
 
 function isInput(value: unknown): value is InvokeAuthorMcpReferenceReadInput {
   if (!isRecord(value)) return false;
-  const allowed = value.timeoutMs === undefined ? ["query", "targetVersion"] : ["query", "targetVersion", "timeoutMs"];
+  const allowed = ["query", "targetVersion", ...(value.timeoutMs === undefined ? [] : ["timeoutMs"]), ...(value.signal === undefined ? [] : ["signal"])];
   return hasExactKeys(value, allowed)
     && typeof value.query === "string" && value.query.length >= 1 && value.query.length <= MAX_AUTHOR_MCP_QUERY_CHARS
     && (value.targetVersion === null || isVersion(value.targetVersion))
-    && (value.timeoutMs === undefined || Number.isSafeInteger(value.timeoutMs));
+    && (value.timeoutMs === undefined || Number.isSafeInteger(value.timeoutMs))
+    && (value.signal === undefined || isAbortSignal(value.signal));
+}
+
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return value !== null && typeof value === "object"
+    && typeof (value as AbortSignal).aborted === "boolean"
+    && typeof (value as AbortSignal).addEventListener === "function"
+    && typeof (value as AbortSignal).removeEventListener === "function";
 }
 
 function normalizeOutput(value: unknown): unknown | null {
