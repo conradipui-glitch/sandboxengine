@@ -1,0 +1,32 @@
+name: B10 Studio author UI test fix
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-studio-author-ui-test-fix.mjs
+      - .github/workflows/b10-studio-author-ui-test-fix.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply immutable fixture fix
+        run: node scripts/b10-studio-author-ui-test-fix.mjs
+      - name: Remove staging artifacts
+        run: rm scripts/b10-studio-author-ui-test-fix.mjs .github/workflows/b10-studio-author-ui-test-fix.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'baseUnsafeRead' apps/studio/test/author-assistant-ui.test.mjs
+          test ! -e scripts/b10-studio-author-ui-test-fix.mjs
+          test ! -e .github/workflows/b10-studio-author-ui-test-fix.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/test/author-assistant-ui.test.mjs scripts/b10-studio-author-ui-test-fix.mjs .github/workflows/b10-studio-author-ui-test-fix.yml
+          git commit -m "fix(B10): keep Studio author UI test fixtures immutable"
+          git push origin HEAD:b10-author-assistant
