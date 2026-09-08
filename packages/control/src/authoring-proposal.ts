@@ -211,14 +211,14 @@ export class MemoryAuthoringProposalAuthority implements AuthoringProposalAuthor
     const key = reservationKey(proposal?.projectId, proposal?.questId, idempotencyKey);
     const access: ReservationAccess = Object.freeze({
       get: () => this.#reservations.get(key) ?? null,
-      reserve: (reservation) => {
+      reserve: (reservation: ProposalReservation): ProposalReservation => {
         const existing = this.#reservations.get(key);
         if (existing) return existing;
         const stored = deepFreeze({ ...reservation });
         this.#reservations.set(key, stored);
         return stored;
       },
-      complete: (application) => {
+      complete: (application: AuthoringProposalApplication): void => {
         const current = this.#reservations.get(key);
         if (!current) throw new Error("missing proposal reservation");
         const storedApplication = deepFreeze({ ...application, origin: { ...application.origin } });
@@ -284,7 +284,7 @@ export class SQLiteAuthoringProposalAuthority implements AuthoringProposalAuthor
     this.#assertOpen();
     const access: ReservationAccess = Object.freeze({
       get: () => this.#readReservation(proposal?.projectId, proposal?.questId, idempotencyKey),
-      reserve: (reservation) => {
+      reserve: (reservation: ProposalReservation): ProposalReservation => {
         this.#db.prepare(`
           INSERT OR IGNORE INTO control_authoring_proposal_idempotency
             (project_id, quest_id, idempotency_key, request_hash, proposal_id, base_revision,
@@ -306,7 +306,7 @@ export class SQLiteAuthoringProposalAuthority implements AuthoringProposalAuthor
         if (!stored) throw new Error("failed to reserve authoring proposal idempotency key");
         return stored;
       },
-      complete: (application) => {
+      complete: (application: AuthoringProposalApplication): void => {
         const result = this.#db.prepare(`
           UPDATE control_authoring_proposal_idempotency
           SET status = 'completed', application_json = ?
