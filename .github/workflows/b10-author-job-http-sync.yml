@@ -1,0 +1,34 @@
+name: B10 author job HTTP sync
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-author-job-http-sync.mjs
+      - .github/workflows/b10-author-job-http-sync.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply bounded HTTP integration
+        run: node scripts/b10-author-job-http-sync.mjs
+      - name: Remove staging artifacts
+        run: rm scripts/b10-author-job-http-sync.mjs .github/workflows/b10-author-job-http-sync.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'segment.requested' packages/control/src/author-agent-jobs.ts
+          grep -q 'routeAuthorJobHttp' apps/server/src/draft-version-http.ts
+          grep -q 'authorAssistant' apps/server/src/control-server.ts
+          test ! -e scripts/b10-author-job-http-sync.mjs
+          test ! -e .github/workflows/b10-author-job-http-sync.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/control/src/author-agent-jobs.ts apps/server/src/draft-version-http.ts apps/server/src/control-server.ts scripts/b10-author-job-http-sync.mjs .github/workflows/b10-author-job-http-sync.yml
+          git commit -m "feat(B10): wire author job lifecycle into Control HTTP"
+          git push origin HEAD:b10-author-assistant
