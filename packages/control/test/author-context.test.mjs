@@ -38,11 +38,12 @@ test("B10.b.9 selected character includes its initial location only", () => {
   assert.deepEqual(result.bundle.includedBlockIds, ["artist", "backstage"]);
 });
 
-test("B10.b.9 selector fails closed for bad selection, duplicate stored ids and missing typed targets", () => {
+test("B10.b.9 selector fails closed for bad selection, duplicate stored ids, missing typed targets and selection overflow", () => {
   const valid = snapshot([location("workshop"), resource("paint"), action("paint-wall", "paint")]);
   assert.equal(buildAuthorContextBundle(valid, []).code, "invalid_selection");
   assert.equal(buildAuthorContextBundle(valid, ["paint", "paint"]).code, "invalid_selection");
   assert.equal(buildAuthorContextBundle(valid, ["missing"]).code, "selected_block_not_found");
+  assert.equal(buildAuthorContextBundle(valid, Array.from({ length: 33 }, (_, index) => `block-${index}`)).code, "invalid_selection");
 
   const duplicate = snapshot([location("workshop"), location("workshop")]);
   assert.equal(buildAuthorContextBundle(duplicate, ["workshop"]).code, "duplicate_stored_block_id");
@@ -68,4 +69,10 @@ test("B10.b.9 capability catalog is deterministic, bounded and deeply immutable"
   const core = buildAuthorContextBundle(snapshot([location("workshop")]), ["workshop"], CORE_ONLY_AUTHOR_CONTEXT_CAPABILITY_CATALOG);
   assert.equal(core.kind, "built");
   assert.deepEqual(core.bundle.capabilities.pluginCapabilityIds, []);
+
+  const widenedCore = buildAuthorContextBundle(snapshot([location("workshop")]), ["workshop"], {
+    ...catalog,
+    coreBlockKinds: [...catalog.coreBlockKinds, "core.fake"]
+  });
+  assert.equal(widenedCore.code, "invalid_capability_catalog");
 });
