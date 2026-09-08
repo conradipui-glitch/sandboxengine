@@ -29,11 +29,12 @@ test("B10.a registry advertises exactly the implemented author HTTP surface and 
     assert.equal(operation.successStatus, successStatus);
   }
 
-  assert.equal(registry.operations.filter((operation) => operation.readiness === "available").length, 40);
+  const available = registry.operations.filter((operation) => operation.readiness === "available");
+  assert.equal(available.length, 40);
+  assert.equal(available.filter((operation) => /^control\.author(?:ing)?\./.test(operation.id)).length, EXPECTED_B10_A.length);
   assert.equal(byId.get("control.capabilities")?.readiness, "planned");
   assert.equal(byId.get("control.agent-kit")?.readiness, "planned");
 
-  const available = registry.operations.filter((operation) => operation.readiness === "available");
   for (const operation of available) {
     assert.doesNotMatch(operation.id, /(?:builder|repository|github|deploy)/i);
     assert.doesNotMatch(operation.path, /(?:builder|repository|github|deploy)/i);
