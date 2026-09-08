@@ -58,6 +58,7 @@ export interface RunAuthorAssistantSegmentInput {
   readonly instruction: string;
   readonly autoApply: boolean;
   readonly resumeBudget?: boolean;
+  readonly signal?: AbortSignal;
 }
 
 export type RunAuthorAssistantSegmentResult =
@@ -224,8 +225,18 @@ export async function runAuthorAssistantSegment(
     usage = persistedArtifact.usage;
   } else {
     const sessionDeadline = now(dependencies) + deadlineMs;
-    const opened = await dependencies.backend.openSession({ profileId: dependencies.profileId, deadlineAtMs: sessionDeadline });
-    if (!opened.ok) return failBackend(dependencies, job, opened.error.code, EMPTY_USAGE);
+    const opened = await dependencies.backend.openSession({
+      profileId: dependencies.profileId,
+      deadlineAtMs: sessionDeadline,
+      ...(input.signal ? { signal: input.signal } : {})
+    });
+    if (!opened.ok) {
+      if (opened.error.code === "aborted") {
+        const cancelled = await cancelledJob(dependencies, job.jobId);
+        if (cancelled) return frozen({ kind: "cancelled", job: cancelled });
+      }
+      return failBackend(dependencies, job, opened.error.code, EMPTY_USAGE);
+    }
 
     const turn = await dependencies.backend.runTurn({
       session: opened.session,
@@ -240,14 +251,26 @@ export async function runAuthorAssistantSegment(
         }
       ],
       maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,
-      deadlineAtMs: sessionDeadline
+      deadlineAtMs: sessionDeadline,
+      ...(input.signal ? { signal: input.signal } : {})
     });
     if (!turn.ok) {
       await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
+      if (turn.error.code === "aborted") {
+        const cancelled = await cancelledJob(dependencies, job.jobId);
+        if (cancelled) return frozen({ kind: "cancelled", job: cancelled });
+      }
       return failBackend(dependencies, job, turn.error.code, turn.usage);
     }
     const closed = await dependencies.backend.closeSession({ session: opened.session, deadlineAtMs: now(dependencies) + deadlineMs });
     if (!closed.ok) return failBackend(dependencies, job, closed.error.code, turn.usage);
+    if (input.signal?.aborted) {
+      const cancelled = await cancelledJob(dependencies, job.jobId);
+      if (cancelled) return frozen({ kind: "cancelled", job: cancelled });
+      return failBackend(dependencies, job, "aborted", turn.usage);
+    }
+    const cancelledAfterTurn = await cancelledJob(dependencies, job.jobId);
+    if (cancelledAfterTurn) return frozen({ kind: "cancelled", job: cancelledAfterTurn });
 
     const parsed = parseBackendProposalBody(turn.outputText);
     if (!parsed) return failInvalidOutput(dependencies, job, turn.usage, "backend_output_invalid");
@@ -531,6 +554,14 @@ async function failWithoutUsage(
 ): Promise<RunAuthorAssistantSegmentResult> {
   const failed = await markFailed(dependencies, job, kind);
   return frozen({ kind, job: failed });
+}
+
+async function cancelledJob(
+  dependencies: AuthorAssistantDependencies,
+  jobId: string
+): Promise<AuthorAgentJobRecord | null> {
+  const latest = await dependencies.jobs.getJob(jobId);
+  return latest?.state === "cancelled" ? latest : null;
 }
 
 async function markFailed(

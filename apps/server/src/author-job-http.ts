@@ -16,6 +16,8 @@ import {
   type RunAuthorAssistantSegmentResult
 } from "./author-assistant.js";
 
+const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
+
 export interface AuthorJobHttpContext {
   readonly method: string;
   readonly url: URL;
@@ -183,12 +185,23 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       return true;
     }
 
-    const result = await runAuthorAssistantSegment(context.authorAssistant, {
-      jobId,
-      instruction: body.instruction,
-      autoApply: false,
-      ...(body.resumeBudget === true ? { resumeBudget: true } : {})
-    });
+    const controller = beginActiveSegment(context.authorAssistant, jobId);
+    if (!controller) {
+      context.sendJson(409, { error: { code: "AUTHOR_SEGMENT_IN_PROGRESS" } });
+      return true;
+    }
+    let result: RunAuthorAssistantSegmentResult;
+    try {
+      result = await runAuthorAssistantSegment(context.authorAssistant, {
+        jobId,
+        instruction: body.instruction,
+        autoApply: false,
+        ...(body.resumeBudget === true ? { resumeBudget: true } : {}),
+        signal: controller.signal
+      });
+    } finally {
+      endActiveSegment(context.authorAssistant, jobId, controller);
+    }
     if (result.kind === "proposal_ready") {
       const proposalTurnKey = sha256(canonicalStringify({
         jobId,
@@ -359,6 +372,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     const job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
     if (!job) { context.sendNotFound(); return true; }
     if (job.state === "cancelled") {
+      abortActiveSegment(context.authorAssistant, jobId);
       context.sendJson(200, { job, replay: true });
       return true;
     }
@@ -371,14 +385,46 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       to: "cancelled",
       atMs: now(context.authorAssistant)
     });
-    if (result.kind === "updated") context.sendJson(200, { job: result.job });
-    else if (result.kind === "job_version_conflict") {
+    if (result.kind === "updated") {
+      abortActiveSegment(context.authorAssistant, jobId);
+      context.sendJson(200, { job: result.job });
+    } else if (result.kind === "job_version_conflict") {
       context.sendJson(409, { error: { code: "AUTHOR_JOB_CONFLICT", currentJobVersion: result.currentJobVersion } });
     } else context.sendJson(409, { error: { code: "AUTHOR_JOB_NOT_RUNNABLE" } });
     return true;
   }
 
   return false;
+}
+
+function activeSegments(dependencies: AuthorAssistantDependencies): Map<string, AbortController> {
+  const key = dependencies.jobs as object;
+  let values = ACTIVE_AUTHOR_SEGMENTS.get(key);
+  if (!values) {
+    values = new Map<string, AbortController>();
+    ACTIVE_AUTHOR_SEGMENTS.set(key, values);
+  }
+  return values;
+}
+
+function beginActiveSegment(dependencies: AuthorAssistantDependencies, jobId: string): AbortController | null {
+  const values = activeSegments(dependencies);
+  if (values.has(jobId)) return null;
+  const controller = new AbortController();
+  values.set(jobId, controller);
+  return controller;
+}
+
+function endActiveSegment(dependencies: AuthorAssistantDependencies, jobId: string, controller: AbortController): void {
+  const values = activeSegments(dependencies);
+  if (values.get(jobId) === controller) values.delete(jobId);
+}
+
+function abortActiveSegment(dependencies: AuthorAssistantDependencies, jobId: string): boolean {
+  const controller = activeSegments(dependencies).get(jobId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
 }
 
 async function ensureAppliedCheckpoint(
