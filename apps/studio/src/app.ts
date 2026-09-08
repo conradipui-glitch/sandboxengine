@@ -51,6 +51,11 @@ import {
   portabilityErrorMessage,
   renderPortabilityPanel
 } from "./portability.js";
+import {
+  loadAuthorAssistantPanel,
+  renderAuthorAssistantPanel,
+  type AuthorAssistantPanelState
+} from "./author-assistant.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -64,13 +69,14 @@ interface StudioState {
   playtestTraceError: string | null;
   versions: VersionsReadModel | null;
   versionsError: string | null;
+  authorAssistant: AuthorAssistantPanelState;
   access: StudioAccessState;
   restoreIntent: RestoreIntent | null;
   releaseBuildIntent: ReleaseBuildIntent | null;
   publishReport: PublishReportIntent | null;
   publicationReceipt: PublicationReceipt | null;
   deletionIntent: DeletionIntent | null;
-  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "conflict" | "error";
+  phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "assistant-starting" | "assistant-running" | "assistant-applying" | "assistant-stopping" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
 }
@@ -88,6 +94,7 @@ export class StudioApp {
     playtestTraceError: null,
     versions: null,
     versionsError: null,
+    authorAssistant: Object.freeze({ kind: "empty" }),
     access: initialAccessState(),
     restoreIntent: null,
     releaseBuildIntent: null,
@@ -133,6 +140,20 @@ export class StudioApp {
     if (!target) return;
     const action = target.dataset.action;
 
+    if (action === "author-start") {
+      await this.startAuthorAssistant();
+      return;
+    }
+    if (action === "author-stop") {
+      const jobId = target.dataset.jobId;
+      if (jobId) await this.stopAuthorAssistant(jobId);
+      return;
+    }
+    if (action === "author-apply") {
+      const proposalId = target.dataset.proposalId;
+      if (proposalId) await this.applyAuthorProposal(proposalId);
+      return;
+    }
     if (action === "prepare-delete-block") {
       const blockId = target.dataset.blockId;
       if (blockId) await this.prepareDeleteBlock(blockId);
@@ -255,6 +276,15 @@ export class StudioApp {
     const data = new FormData(form);
 
     try {
+      if (kind === "author-message") {
+        await this.sendAuthorMessage(
+          text(data, "jobId"),
+          text(data, "instruction"),
+          data.get("resumeBudget") === "true"
+        );
+        return;
+      }
+
       if (kind === "login") {
         const auth = await this.api.login(text(data, "username"), rawText(data, "password"));
         this.state.access = authenticatedAccessState(this.api, auth);
@@ -328,8 +358,10 @@ export class StudioApp {
         this.state.playtestTraceError = null;
         this.state.versions = null;
         this.state.versionsError = null;
+        this.state.authorAssistant = Object.freeze({ kind: "empty" });
         this.state.deletionIntent = null;
         await this.refreshVersions(projectId, questId);
+        await this.refreshAuthorAssistant(projectId, questId);
         this.state.phase = "saved";
         this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
         this.render();
@@ -568,6 +600,7 @@ export class StudioApp {
       this.state.conflict = null;
       this.state.quests = await this.api.listQuests(projectId);
       await this.refreshVersions(projectId, questId);
+      await this.refreshAuthorAssistant(projectId, questId);
       this.state.phase = "saved";
       this.state.message = `r${intent.sourceRevision} восстановлена как новая r${restored.draftRevision}. Immutable releases не менялись.`;
     } catch (error) {
@@ -578,6 +611,7 @@ export class StudioApp {
         this.state.releaseBuildIntent = null;
         this.state.publishReport = null;
         await this.refreshVersions(projectId, questId);
+        await this.refreshAuthorAssistant(projectId, questId);
         this.state.phase = "conflict";
         this.state.message = `Restore не выполнен: сервер уже на r${fresh.draftRevision}. Ничего не перезаписано.`;
       } else {
@@ -616,6 +650,7 @@ export class StudioApp {
       this.state.playtestTraceError = null;
       this.state.versions = null;
       this.state.versionsError = null;
+      this.state.authorAssistant = Object.freeze({ kind: "empty" });
       this.state.conflict = null;
       this.state.restoreIntent = null;
       this.state.releaseBuildIntent = null;
@@ -640,6 +675,7 @@ export class StudioApp {
     this.state.playtest = null;
     this.state.versions = null;
     this.state.versionsError = null;
+    this.state.authorAssistant = Object.freeze({ kind: "empty" });
     this.state.conflict = null;
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
@@ -667,6 +703,7 @@ export class StudioApp {
     this.state.playtest = null;
     this.state.versions = null;
     this.state.versionsError = null;
+    this.state.authorAssistant = Object.freeze({ kind: "empty" });
     this.state.conflict = null;
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
@@ -676,10 +713,11 @@ export class StudioApp {
     try {
       this.state.draft = await this.api.getDraft(projectId, questId);
       await this.refreshVersions(projectId, questId);
+      await this.refreshAuthorAssistant(projectId, questId);
       this.state.phase = "idle";
       this.state.message = this.state.versionsError === null
-        ? "Draft и Versions загружены с Control API."
-        : "Draft загружен; Versions временно недоступны.";
+        ? "Draft, Versions и Author Assistant перечитаны с Control API."
+        : "Draft и Author Assistant загружены; Versions временно недоступны.";
     } catch (error) {
       this.setError(error);
     }
@@ -706,11 +744,13 @@ export class StudioApp {
       this.state.releaseBuildIntent = null;
       this.state.publishReport = null;
       await this.refreshVersions(projectId, questId);
+      await this.refreshAuthorAssistant(projectId, questId);
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
         await this.refreshVersions(projectId, questId);
+        await this.refreshAuthorAssistant(projectId, questId);
         this.state.restoreIntent = null;
         this.state.phase = "conflict";
         this.state.message = `Draft изменился на сервере: ${draft.draftRevision} → ${fresh.draftRevision}. Ничего не перезаписано.`;
@@ -734,6 +774,138 @@ export class StudioApp {
     if (!conflict) return;
     this.state.conflict = null;
     await this.saveChanges(conflict.changes);
+  }
+
+  private async refreshAuthorAssistant(projectId: string, questId: string): Promise<void> {
+    this.state.authorAssistant = await loadAuthorAssistantPanel(this.api, projectId, questId);
+  }
+
+  private async startAuthorAssistant(): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    requireDraft(this.state.draft);
+    this.state.phase = "assistant-starting";
+    this.state.message = "Создаём durable Author job…";
+    this.render();
+    try {
+      const job = await this.api.createAuthorJob(projectId, questId, {}, mutationKey("author-job"));
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.state.phase = "idle";
+      this.state.message = `Author job ${job.jobId} создан. Draft не изменён.`;
+    } catch (error) {
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.setError(error);
+    }
+    this.render();
+  }
+
+  private async sendAuthorMessage(jobId: string, instruction: string, resumeBudget: boolean): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const state = this.state.authorAssistant;
+    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте квест.");
+    this.state.phase = "assistant-running";
+    this.state.message = "Author Assistant читает authoritative draft и формирует bounded proposal…";
+    this.render();
+    try {
+      const result = await this.api.runAuthorSegment(
+        projectId,
+        questId,
+        jobId,
+        instruction,
+        resumeBudget,
+        mutationKey("author-segment")
+      );
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.state.phase = "idle";
+      this.state.message = result.preview.applyAllowed && !result.preview.stale
+        ? `Proposal ${result.proposal.proposalId} готов к отдельному Apply. Draft пока не изменён.`
+        : `Proposal ${result.proposal.proposalId} сохранён, но server preview запрещает Apply.`;
+    } catch (error) {
+      await this.refreshAuthorAssistant(projectId, questId);
+      if (this.state.authorAssistant.kind === "ready" && this.state.authorAssistant.model.job.state === "cancelled") {
+        this.state.phase = "idle";
+        this.state.message = "Author job остановлен. Поздний model result не получил draft authority.";
+      } else {
+        this.setError(error);
+      }
+    }
+    this.render();
+  }
+
+  private async stopAuthorAssistant(jobId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const state = this.state.authorAssistant;
+    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте квест.");
+    this.state.phase = "assistant-stopping";
+    this.state.message = "Останавливаем Author job…";
+    this.render();
+    try {
+      const job = await this.api.cancelAuthorJob(projectId, questId, jobId, mutationKey("author-cancel"));
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.state.phase = "idle";
+      this.state.message = `Author job ${job.jobId} остановлен. Draft authority не передавалась backend.`;
+    } catch (error) {
+      await this.refreshAuthorAssistant(projectId, questId);
+      if (this.state.authorAssistant.kind === "ready" && this.state.authorAssistant.model.job.state === "cancelled") {
+        this.state.phase = "idle";
+        this.state.message = "Author job уже остановлен сервером.";
+      } else {
+        this.setError(error);
+      }
+    }
+    this.render();
+  }
+
+  private async applyAuthorProposal(proposalId: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const state = this.state.authorAssistant;
+    if (state.kind !== "ready") throw new Error("Author Assistant state недоступен.");
+    const card = state.model.proposalCards.find((item) => item.artifact.proposal.proposalId === proposalId) ?? null;
+    if (!card?.preview || card.preview.stale || !card.preview.applyAllowed) {
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.state.phase = "conflict";
+      this.state.message = "Apply не отправлен: proposal preview уже не разрешает mutation.";
+      this.render();
+      return;
+    }
+    this.state.phase = "assistant-applying";
+    this.state.message = `Применяем ${proposalId} через server proposal authority…`;
+    this.render();
+    try {
+      const applied = await this.api.applyAuthoringProposal(
+        projectId,
+        questId,
+        card.artifact.proposal,
+        mutationKey("author-apply")
+      );
+      this.state.draft = applied.draft;
+      this.state.quests = await this.api.listQuests(projectId);
+      this.state.conflict = null;
+      this.state.restoreIntent = null;
+      this.state.releaseBuildIntent = null;
+      this.state.publishReport = null;
+      this.state.deletionIntent = null;
+      await this.refreshVersions(projectId, questId);
+      await this.refreshAuthorAssistant(projectId, questId);
+      this.state.phase = "saved";
+      this.state.message = `Proposal ${proposalId} применён сервером → r${applied.draft.draftRevision}. Publication не менялась.`;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 409) {
+        this.state.draft = await this.api.getDraft(projectId, questId);
+        this.state.quests = await this.api.listQuests(projectId);
+        await this.refreshVersions(projectId, questId);
+        await this.refreshAuthorAssistant(projectId, questId);
+        this.state.phase = "conflict";
+        this.state.message = "Proposal Apply отклонён как stale/conflicting. Server draft сохранён; автоматического merge/retry нет.";
+      } else {
+        await this.refreshAuthorAssistant(projectId, questId);
+        this.setError(error);
+      }
+    }
+    this.render();
   }
 
   private async refreshVersions(projectId: string, questId: string): Promise<void> {
@@ -1013,6 +1185,12 @@ export class StudioApp {
 
             ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
 
+            ${renderAuthorAssistantPanel(this.state.authorAssistant, {
+              canMutate: allowEdit,
+              hasMutationProof: this.state.access.mutationProof,
+              busy: isAuthorAssistantBusy(this.state.phase)
+            })}
+
             ${renderVersionsPanel(
               this.state.versions,
               draft,
@@ -1078,6 +1256,13 @@ export class StudioApp {
       element?.focus();
     }
   }
+}
+
+function isAuthorAssistantBusy(phase: StudioState["phase"]): boolean {
+  return phase === "assistant-starting"
+    || phase === "assistant-running"
+    || phase === "assistant-applying"
+    || phase === "assistant-stopping";
 }
 
 function saveStateLabel(phase: StudioState["phase"]): string {

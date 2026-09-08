@@ -72,15 +72,21 @@ async function buildModel(
   });
 }
 
+export interface AuthorAssistantRenderOptions {
+  readonly canMutate: boolean;
+  readonly hasMutationProof: boolean;
+  readonly busy?: boolean;
+}
+
 export function renderAuthorAssistantPanel(
   state: AuthorAssistantPanelState,
-  options: { readonly canMutate: boolean; readonly hasMutationProof: boolean }
+  options: AuthorAssistantRenderOptions
 ): string {
   if (state.kind === "unavailable") {
     return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Server contract недоступен.</p></div></div><div class="assistant-empty">${escapeHtml(state.reason)}</div></section>`;
   }
   if (state.kind === "empty") {
-    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Persistent author chat · server authority</p></div></div>${options.canMutate && options.hasMutationProof
+    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Persistent author chat · server authority</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
       ? `<button class="primary" data-action="author-start">Начать диалог</button>`
       : `<div class="assistant-empty">Для нового диалога нужна editor/owner роль и свежий CSRF proof.</div>`}</section>`;
   }
@@ -88,7 +94,8 @@ export function renderAuthorAssistantPanel(
   const { model } = state;
   const job = model.job;
   const terminal = job.state === "succeeded" || job.state === "failed" || job.state === "cancelled";
-  const canSend = options.canMutate && options.hasMutationProof && !terminal && job.state !== "running" && job.state !== "validating";
+  const busy = options.busy === true;
+  const canSend = options.canMutate && options.hasMutationProof && !busy && !terminal && job.state !== "running" && job.state !== "validating";
   const canStop = options.canMutate && options.hasMutationProof && !terminal;
   const cardByProposal = new Map(model.proposalCards.map((card) => [card.artifact.proposal.proposalId, card]));
 
@@ -119,7 +126,7 @@ export function renderAuthorAssistantPanel(
       ${job.state === "paused_budget" ? `<input type="hidden" name="resumeBudget" value="true">` : ""}
       <button class="primary" type="submit">Отправить</button>
     </form>` : terminal
-      ? `<div class="assistant-empty">Job завершён. Создайте новый диалог для следующей задачи.</div>`
+      ? `<div class="assistant-empty">Job завершён. ${options.canMutate && options.hasMutationProof && !busy ? `<button class="primary" data-action="author-start">Новый диалог</button>` : ""}</div>`
       : `<div class="assistant-empty">Assistant сейчас занят или mutation proof недоступен.</div>`}
   </section>`;
 }
@@ -127,7 +134,7 @@ export function renderAuthorAssistantPanel(
 function renderMessage(
   message: AuthorConversationMessage,
   card: AuthorProposalCardView | null,
-  options: { readonly canMutate: boolean; readonly hasMutationProof: boolean }
+  options: AuthorAssistantRenderOptions
 ): string {
   const label = message.role === "author" ? "Вы" : "Assistant";
   return `<article class="assistant-message ${escapeAttr(message.role)}">
@@ -139,7 +146,7 @@ function renderMessage(
 
 function renderProposalCard(
   card: AuthorProposalCardView | null,
-  options: { readonly canMutate: boolean; readonly hasMutationProof: boolean }
+  options: AuthorAssistantRenderOptions
 ): string {
   if (!card) return `<div class="assistant-proposal blocked"><strong>Proposal artifact недоступен</strong><p>Apply запрещён.</p></div>`;
   const proposal = card.artifact.proposal;
@@ -149,7 +156,7 @@ function renderProposalCard(
   const preview = card.preview;
   const comparison = preview.comparison;
   const missing = proposal.missingCapabilities;
-  const applyAllowed = options.canMutate && options.hasMutationProof && preview.applyAllowed && !preview.stale;
+  const applyAllowed = options.canMutate && options.hasMutationProof && options.busy !== true && preview.applyAllowed && !preview.stale;
   return `<div class="assistant-proposal ${applyAllowed ? "ready" : "blocked"}" data-proposal-id="${escapeAttr(proposal.proposalId)}">
     <div class="assistant-proposal-head"><strong>${escapeHtml(proposal.proposalId)}</strong><span>base r${proposal.baseRevision} · ${escapeHtml(shortHash(proposal.baseContentHash))}</span></div>
     ${comparison ? `<p class="assistant-diff">diff: +${comparison.addedBlockIds.length} / −${comparison.removedBlockIds.length} / ~${comparison.replacedBlockIds.length}${comparison.titleChanged ? " · title" : ""}${comparison.entryLocationChanged ? " · entry" : ""}</p>` : `<p class="assistant-diff">Изменений draft нет.</p>`}

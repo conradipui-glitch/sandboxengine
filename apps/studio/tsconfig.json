@@ -4,21 +4,53 @@
     "composite": true,
     "rootDir": ".",
     "outDir": "dist",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "paths": {
-      "@living-history/contracts": ["../../packages/contracts/src/index.ts"],
-      "@living-history/core": ["../../packages/core/src/index.ts"],
-      "@living-history/control": ["../../packages/control/src/index.ts"],
-      "@living-history/plugins": ["../../packages/plugins/src/index.ts"],
-      "@living-history/plugins/dice-check": ["../../packages/plugins/src/dice-check.ts"]
+      "@living-history/contracts": [
+        "../../packages/contracts/src/index.ts"
+      ],
+      "@living-history/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@living-history/control": [
+        "../../packages/control/src/index.ts"
+      ],
+      "@living-history/plugins": [
+        "../../packages/plugins/src/index.ts"
+      ],
+      "@living-history/plugins/dice-check": [
+        "../../packages/plugins/src/dice-check.ts"
+      ],
+      "@living-history/ai": [
+        "../../packages/ai/src/index.ts"
+      ]
     }
   },
   "references": [
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/core" },
-    { "path": "../../packages/control" },
-    { "path": "../../packages/plugins" },
-    { "path": "../server" }
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/control"
+    },
+    {
+      "path": "../../packages/plugins"
+    },
+    {
+      "path": "../../packages/ai"
+    },
+    {
+      "path": "../server"
+    }
   ],
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }
