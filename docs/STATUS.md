@@ -4,62 +4,69 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B08 + B09-01 + B09-02 published; B09-03 functionally accepted, Publication Gate next** | B09-02 merge `5b4499e348432b7fb67c0294811c024250f1f634`, exact main push CI `34149100136` success; B09 canonical audit BLOCKER=0 |
-| Контракты/Core | **B01–B03 published** | deterministic gameplay authority |
-| Runtime storage/API | **B04 published + B09-02 pinned publication + B09-03 persisted playtest evidence accepted** | Runtime sessions stay pinned to exact release/playtest identity; historical evidence is read from persisted operations/turns |
-| Authoring / Control | **B05 published + B09 accepted through B09-03 functional gate** | durable history/compare/restore/reference safety + clone/export/import + immutable release/publication authority |
-| AI foundation | **B06 published** | provider/intent/narrator/AgentBackend boundary; canonical BLOCKER=0 |
-| Presentation/assets/Player | **B07 published** | immutable assets + executor + Runtime/browser integration |
-| Plugins | **B08 published** | trusted manifest/registry/execution + artifact-bound `dice-check`; canonical BLOCKER=0 |
-| Auth/publish/Studio | **B09-01/02 published; B09-03 accepted, not yet published** | final current-head root CI → PR #33 ready → pinned merge → exact main push CI |
-| Author AI helper | не начато | B10 after verified B09-03 publication |
-| Florence migration | не начато | B11 |
-| Release hardening | не начато | B12 |
+| Репозиторий | **B01–B10 published; B11 active** | B10 PR #34 merged as `4e5fea2888d14440c60ad48abffbefe42abfe637`; exact main CI #650 / run `34209005817` success |
+| Контракты/Core | **B01–B03 published** | deterministic gameplay authority; B11 must add no Florence-specific branch to Core |
+| Runtime storage/API | **B04 + publication/session pinning published** | immutable release identity and server-authoritative pinned sessions already available for B11 rollout |
+| Authoring / Control | **B05 + B09 published** | durable history/compare/restore/reference safety + portability + immutable release/publication authority |
+| AI foundation | **B06 + B10 author-assistant boundary published** | provider/intent/narrator boundary plus author request/apply/correction loop; Codex protocol evidence is deterministic, not a claimed authenticated CI subscription run |
+| Presentation/assets/Player | **B07 published** | immutable assets + presentation executor + Runtime/browser integration |
+| Plugins | **B08 published** | trusted manifest/registry/execution + artifact-bound plugin evidence |
+| Auth/publish/Studio | **B09 published** | account/login/quota isolation, frozen playtest evidence, version/restore/portability and owner publication flow |
+| Author AI helper | **B10 published** | PR #34; semantic audit unresolved BLOCKER 0; full regression author request → linked blocks → Apply → correction → Apply → validation → frozen playtest |
+| Florence migration | **B11 active; B11.0 GREEN** | `docs/BASELINE.md` confirmed; `docs/tasks/B11-01-source-migration-map.md`; next B11.1 = real quest packages |
+| Release hardening | не начато | B12 after accepted B11 real-quest integration |
 
-## B09-03 accepted behavior
+## Published B10 checkpoint
 
-- existing immutable draft snapshots are the canonical durable version history;
-- deterministic history/compare/reference reads are server-authoritative and non-mutating;
-- restore copies an old snapshot into a **new** revision, is idempotent and rejects stale `baseRevision` without overwrite;
-- T22 proves a real stale Studio client receives `409`, sees authoritative server diff and only an explicit retry against current revision creates a new revision;
-- deletion preflight reports concrete typed references and actual `block.remove` always rechecks current server truth, so stale green preflight cannot authorize deletion;
-- clone creates an independent new quest, deterministically remaps authored IDs/references and preserves source state;
-- exact draft/release `.lhquest.zip` export is deterministic, hash-addressed and excludes Control/provider/Runtime/player secrets/state;
-- import treats archives as hostile input, enforces traversal/path/compression/size/file-count/hash/schema/plugin/reference/executable/secret bounds, is atomic/idempotent and creates only a new unpublished draft;
-- Studio portability is a thin client over those server contracts and does not implement a second ZIP parser;
-- persisted playtest evidence reads exact frozen Runtime sessions/completed operations/turn boundaries without replaying gameplay/AI and without exposing guest credentials/idempotency/fencing material;
-- Studio Versions shows real draft history/releases/current pointer, restore, release build, owner publication report and receipt-gated publish/rollback state;
-- Studio Access consumes B09-01 session/member APIs; browser role state is presentation only;
-- T21 proves the full Studio author path project → quest → edit → validation → frozen playtest → immutable release build → explicit owner publish without manual JSON;
-- owner publication remains a separate exact CAS mutation and no restore/clone/import/release-build operation auto-publishes;
-- endpoint registry/OpenAPI/generated agent docs now include every implemented B09-03 server operation, including persisted playtest trace, and do not advertise B10 operations.
+B10 is closed and published.
 
-Canonical audit: `docs/audits/2026-09-08-b09-canonical-semantic-audit.md` → unresolved BLOCKER **0**, HIGH **0**.  
-ADR: `docs/decisions/0031-server-authoritative-author-lifecycle-portability.md`.
+- PR: #34
+- verified PR head: `f03e283d5e027cb93dea7d3f149685b058724ad0`
+- merge SHA: `4e5fea2888d14440c60ad48abffbefe42abfe637`
+- exact `main` CI: #650 / run `34209005817` — `success`
+- canonical semantic audit: unresolved BLOCKER **0**
 
-## Key B09-03 verification checkpoints
+B10 acceptance includes the Codex adapter boundary, account/login/quota isolation and the single regression path:
 
-- Studio Restore — CI #460 success;
-- release build/exact report — CI #464 success;
-- owner publish/rollback — CI #469 success;
-- Runtime persisted playtest trace — CI #473 success;
-- Control trace HTTP — CI #477 success;
-- Studio playtest evidence E2E — CI #481 success;
-- Studio portability UX — CI #485 success;
-- deletion/reference UX — CI #489 success;
-- T21 full author cycle — CI #491 success;
-- T22 stale editor conflict — CI #492 success;
-- trace registry/generated docs synchronization workflow `34166172838` — success.
+`author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
 
-## B09-03 Publication Gate
+A real authenticated Codex subscription/App Server run is **not** claimed because CI has no configured authenticated local App Server. B10 evidence for that boundary is deterministic protocol evidence.
 
-B09-03 is **functionally accepted but not yet called published**. Remaining sequence:
+## B11.0 — source confirmation gate
 
-1. complete closure ADR/audit/worklog/STATUS/HANDOFF and require root `npm run verify` on the exact final PR head;
-2. update PR #33 with the final evidence and ensure no unresolved blocking review state;
-3. mark PR ready;
-4. merge pinned to that exact head SHA;
-5. find the exact `event=push`, `head_branch=main` CI whose `head_sha` is the merge SHA and require success;
-6. only then call B09-03/B09 published and start B10 from the verified main merge SHA.
+B11 starts from the exact published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637` on branch `b11-real-quests-integration`.
 
-B12 remains the first-release hardening/operational closure; B10 is the next implementation card after verified B09 publication.
+B00 is now confirmed for B11 entry:
+
+- source repo: `conradipui-glitch/sandbox`;
+- Florence source merge: PR #9;
+- exact source SHA: `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
+- source current main checked at `f9b0cd0d607da48d89827f0a1a882b74e9b78e50` and differs after the baseline only by README/docs;
+- exact source production workflow #47 / run `34012448412` succeeded through `npm ci`, tests, build and deploy;
+- runtime routes, Durable Object save shape, idempotency and legacy-session boundary are mapped;
+- legacy Florence tests prove all 729 prepared six-decision routes terminate with six trace entries and also cover conditional/blocked behavior, save/restore and legacy-save incompatibility;
+- technical migration is explicitly separated from design changes;
+- standalone Engine remains separate; `sandbox` gets only the later adapter/BFF rollout surface;
+- only newly created Florence sessions may be routed to the Engine; old sessions remain on their pinned legacy runtime and are never silently converted.
+
+Canonical evidence:
+
+- `docs/BASELINE.md`
+- `docs/tasks/B11-01-source-migration-map.md`
+
+## B11 next slice
+
+**B11.1 — real quest packages**
+
+Create and validate:
+
+- `examples/florence`
+- `examples/transfer-desk`
+
+Constraints:
+
+- six Florence source decisions are narrative beats, not a generic turn/clock rule;
+- Florence state must use generic authored/runtime state rather than a `FlorenceMemory` Core type;
+- no Florence-specific identifiers/branches in `packages/core`;
+- the real Transfer Desk example must differ in goal, items/resources and social causality rather than being Florence with renamed actors;
+- old/new semantic comparison and new-session-only `sandbox` routing remain later B11 slices after the real quest packages exist.
