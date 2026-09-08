@@ -4,6 +4,7 @@ on:
     branches: [b10-author-assistant]
     paths:
       - scripts/b10-studio-author-app-sync.mjs
+      - scripts/b10-studio-author-app-sync.py
       - .github/workflows/b10-studio-author-app-sync.yml
 permissions:
   contents: write
@@ -15,9 +16,9 @@ jobs:
         with:
           ref: b10-author-assistant
       - name: Apply bounded Studio assistant integration
-        run: node scripts/b10-studio-author-app-sync.mjs
+        run: python3 scripts/b10-studio-author-app-sync.py
       - name: Remove staging artifacts
-        run: rm scripts/b10-studio-author-app-sync.mjs .github/workflows/b10-studio-author-app-sync.yml
+        run: rm scripts/b10-studio-author-app-sync.mjs scripts/b10-studio-author-app-sync.py .github/workflows/b10-studio-author-app-sync.yml
       - name: Verify patch hygiene
         run: |
           grep -q 'renderAuthorAssistantPanel(this.state.authorAssistant' apps/studio/src/app.ts
@@ -26,11 +27,12 @@ jobs:
           grep -q 'B10.a Author Assistant' apps/studio/styles.css
           test -f apps/studio/test/author-assistant-app.test.mjs
           test ! -e scripts/b10-studio-author-app-sync.mjs
+          test ! -e scripts/b10-studio-author-app-sync.py
           test ! -e .github/workflows/b10-studio-author-app-sync.yml
       - name: Commit production diff
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/studio/src/app.ts apps/studio/src/author-assistant.ts apps/studio/src/main.ts apps/studio/styles.css apps/studio/tsconfig.json apps/studio/test/author-assistant-app.test.mjs scripts/b10-studio-author-app-sync.mjs .github/workflows/b10-studio-author-app-sync.yml
+          git add apps/studio/src/app.ts apps/studio/src/author-assistant.ts apps/studio/src/main.ts apps/studio/styles.css apps/studio/tsconfig.json apps/studio/test/author-assistant-app.test.mjs scripts/b10-studio-author-app-sync.mjs scripts/b10-studio-author-app-sync.py .github/workflows/b10-studio-author-app-sync.yml
           git commit -m "feat(B10): wire persistent Author Assistant into Studio"
           git push origin HEAD:b10-author-assistant
