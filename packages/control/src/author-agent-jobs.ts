@@ -48,6 +48,7 @@ export interface AuthorAgentJobRecord {
 
 export type AuthorAgentCheckpointFact =
   | { readonly kind: "job.created" }
+  | { readonly kind: "job.started" }
   | { readonly kind: "draft.read"; readonly blockCount: number }
   | { readonly kind: "proposal.produced"; readonly proposalId: string }
   | { readonly kind: "proposal.previewed"; readonly proposalId: string; readonly stale: boolean; readonly applyAllowed: boolean }
@@ -199,7 +200,7 @@ export class MemoryAuthorAgentJobStore implements AuthorAgentJobStore {
     if (!transitionAllowed(current.state, input.to)) return frozen({ kind: "invalid_transition", state: current.state });
     const updated = withState(current, input.to, input.atMs);
     this.#jobs.set(jobId, updated);
-    const fact = transitionFact(input.to, input.failureCode, updated);
+    const fact = transitionFact(current.state, input.to, input.failureCode, updated);
     if (fact) this.#appendCheckpoint(jobId, fact, input.atMs);
     return frozen({ kind: "updated", job: updated });
   }
@@ -408,7 +409,7 @@ export class SQLiteAuthorAgentJobStore implements AuthorAgentJobStore {
       }
       const updated = withState(current, input.to, input.atMs);
       this.#updateJob(updated);
-      const fact = transitionFact(input.to, input.failureCode, updated);
+      const fact = transitionFact(current.state, input.to, input.failureCode, updated);
       if (fact) this.#insertCheckpoint(this.#nextCheckpoint(updated.jobId, fact, input.atMs));
       this.#db.exec("COMMIT");
       return frozen({ kind: "updated", job: updated });
@@ -680,15 +681,28 @@ function transitionAllowed(from: AuthorAgentJobState, to: AuthorAgentJobState): 
 }
 
 function withState(job: AuthorAgentJobRecord, state: AuthorAgentJobState, atMs: number): AuthorAgentJobRecord {
-  return deepFreeze({ ...job, state, jobVersion: job.jobVersion + 1, updatedAtMs: atMs });
+  const resetSegmentBudget = job.state === "paused_budget" && state === "running";
+  return deepFreeze({
+    ...job,
+    state,
+    jobVersion: job.jobVersion + 1,
+    toolCallsUsed: resetSegmentBudget ? 0 : job.toolCallsUsed,
+    activeTimeMsUsed: resetSegmentBudget ? 0 : job.activeTimeMsUsed,
+    updatedAtMs: atMs
+  });
 }
 
 function transitionFact(
+  from: AuthorAgentJobState,
   state: AuthorAgentJobState,
   failureCode: string | undefined,
   job: AuthorAgentJobRecord
 ): AuthorAgentCheckpointFact | null {
-  if (state === "running") return { kind: "job.resumed" };
+  if (state === "running") {
+    if (from === "queued") return { kind: "job.started" };
+    if (from === "paused_budget" || from === "waiting_user") return { kind: "job.resumed" };
+    return null;
+  }
   if (state === "paused_budget") return { kind: "budget.paused", toolCallsUsed: job.toolCallsUsed, activeTimeMsUsed: job.activeTimeMsUsed };
   if (state === "cancelled") return { kind: "job.cancelled" };
   if (state === "failed") return { kind: "job.failed", code: failureCode! };
@@ -834,6 +848,7 @@ function isCheckpointFact(value: unknown): value is AuthorAgentCheckpointFact {
   if (!isRecord(value) || typeof value.kind !== "string") return false;
   switch (value.kind) {
     case "job.created":
+    case "job.started":
     case "job.resumed":
     case "job.cancelled":
     case "job.succeeded":
