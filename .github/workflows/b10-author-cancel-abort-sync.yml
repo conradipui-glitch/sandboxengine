@@ -1,0 +1,35 @@
+name: B10 author cancel abort sync
+on:
+  push:
+    branches: [b10-author-assistant]
+    paths:
+      - scripts/b10-author-cancel-abort-sync.py
+      - .github/workflows/b10-author-cancel-abort-sync.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b10-author-assistant
+      - name: Apply in-flight cancellation
+        run: python3 scripts/b10-author-cancel-abort-sync.py
+      - name: Remove staging artifacts
+        run: rm scripts/b10-author-cancel-abort-sync.py .github/workflows/b10-author-cancel-abort-sync.yml
+      - name: Verify patch hygiene
+        run: |
+          grep -q 'signal?: AbortSignal' apps/server/src/author-assistant.ts
+          grep -q 'ACTIVE_AUTHOR_SEGMENTS' apps/server/src/author-job-http.ts
+          grep -q 'abortActiveSegment' apps/server/src/author-job-http.ts
+          test -f apps/server/test/author-job-cancel-abort-http.test.mjs
+          test ! -e scripts/b10-author-cancel-abort-sync.py
+          test ! -e .github/workflows/b10-author-cancel-abort-sync.yml
+      - name: Commit production diff
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/author-assistant.ts apps/server/src/author-job-http.ts apps/server/test/author-job-cancel-abort-http.test.mjs scripts/b10-author-cancel-abort-sync.py .github/workflows/b10-author-cancel-abort-sync.yml
+          git commit -m "feat(B10): abort in-flight author backend on Stop"
+          git push origin HEAD:b10-author-assistant
