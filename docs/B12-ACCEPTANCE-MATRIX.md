@@ -1,8 +1,9 @@
 # B12 mandatory acceptance matrix
 
 Updated: 2026-09-08  
-Release branch: `b12-release-hardening` / PR #36  
-Latest full regression before final live-eval sync: CI #715 / run `34247340232` on head `e19050de1f1c5516f938068f85700ffb65812cf7` — **PASS**  
+Published release: `v0.1.0` → `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  
+Final cleaned PR CI: #728 / run `34251382755` — **PASS**  
+Published `main` CI: #729 / run `34251551857` — **PASS**  
 Production smoke: `sandbox` run `34239102418` — **PASS**  
 T29 real browser smoke: run `34246143800` — **PASS**  
 Configured live provider eval: run `34250711595` — **PASS contract / quality limitation**
@@ -28,7 +29,7 @@ This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T
 | T15 | **PASS** | Guest/project/session isolation and deny-by-default Player projection. |
 | T16 | **PASS** | Prompt injection cannot widen action/effect authority. |
 | T17 | **PASS** | Compile/plugin/publication validation fails closed on incompatible data. |
-| T18 | **PASS** | B12 permanent rollback drill proves immutable current-pointer rollback, restart persistence and old/new session pinning. CI #713. |
+| T18 | **PASS** | B12 permanent rollback drill proves immutable current-pointer rollback, restart persistence and old/new session pinning. |
 | T19 | **PASS** | Presentation sequence/parallel/skip/failure fallback leaves gameplay authoritative state unchanged. |
 | T20 | **PASS** | Reload/retry restores committed frame and never replays obsolete presentation effects. |
 | T21 | **PASS** | Human Studio author cycle reaches validation/playtest/publication without manual quest JSON editing. |
@@ -39,7 +40,7 @@ This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T
 | T26 | **PASS** | Transfer Desk proves a second causal/item/social quest through generic Core/Runtime. |
 | T27 | **PASS** | Published B11 Florence semantic routes and migrated asset provenance remain pinned. |
 | T28 | **PASS / SCOPED** | Backup/restore, restart, startup/shutdown, assets, 429 no-turn save integrity all pass for standalone SQLite Engine. No Cloudflare DO backup claim. |
-| T29 | **PASS** | One-shot real Chromium run `34246143800`: 360×800, no horizontal overflow, auto-tour/skip/help/Escape focus return/replay/next/back/skip, real project-title keyboard input preserved, 0 page errors and 0 unexpected HTTP failures. Canonical local auth-probe 404 was explicitly classified by existing access semantics. Temporary Playwright workflow was deleted afterwards. |
+| T29 | **PASS** | One-shot real Chromium run `34246143800`: 360×800, no horizontal overflow, auto-tour/skip/help/Escape focus return/replay/next/back/skip, real project-title keyboard input preserved, 0 page errors and 0 unexpected HTTP failures. |
 | T30 | **PASS / LIVE QUALITY LIMITATION** | Real OpenRouter eval `34250711595` with `deepseek/deepseek-v4-flash-0731`: structural contract 12/12; semantic 5/12; 16 attempts; mean latency 12,176 ms; max 25,002 ms. Provider connectivity/capability boundary is proven; this model is not qualified as a recommended intent model by this score. |
 | T31 | **PASS** | Quota null/0/stale semantics, management-vs-inference credentials and denied quota endpoint behavior. Live provider usage was incomplete, so aggregate tokens remain `null` rather than invented. |
 | T32 | **PASS** | Author jobs persist/replay/pause/resume/cancel without duplicate mutation. |
@@ -54,7 +55,9 @@ This matrix consolidates T01–T33 and T36–T37 from `docs/SPECIFICATION.md`. T
 - rollback: publish r1 → r2 → rollback r1, restart, immutable hashes/history and session A/B/C pinning preserved;
 - persistent entrypoint: Runtime `/healthz` 200, Control safe read 200, SQLite created, SIGTERM exit code 0;
 - external production shell/API smoke: PASS on deployed companion Worker;
-- live provider: OpenRouter + `deepseek/deepseek-v4-flash-0731`, contract-safe 12/12 with explicit semantic-quality limitation.
+- live provider: OpenRouter + `deepseek/deepseek-v4-flash-0731`, contract-safe 12/12 with explicit semantic-quality limitation;
+- final published Engine merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`, main CI #729 success;
+- release tag: `v0.1.0` verified on that exact merge SHA.
 
 ## B12 external provider evidence
 
@@ -73,10 +76,10 @@ Run `34250711595` executed the real opt-in evaluator with the configured reposit
 
 The release does not convert a low semantic score into a model-quality PASS. T30 passes because the real compatible-provider path, safe capability boundary, error behavior and telemetry are proven. Model selection remains an operational configuration and this specific run does not establish DeepSeek V4 Flash as the recommended intent model.
 
-The temporary secret-bearing eval workflow was removed after the run.
+The temporary secret-bearing eval workflow was removed after the run. Authenticated live Codex subscription evidence remains unavailable and is documented under T37; deterministic Codex boundary behavior is covered.
 
-Authenticated live Codex subscription evidence remains unavailable and is documented under T37; deterministic Codex boundary behavior is covered.
+## Publication result
 
-## Finalization rule
+B12 is complete. PR #36 was merged as `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`, `main` CI #729 passed on that exact commit, and tag `v0.1.0` resolves to the same SHA. Temporary tag infrastructure was removed after verification.
 
-All mandatory B12 evidence is present. Create the B12 release tag only after the final release head has no one-shot credential-bearing workflow, passes exact-head `npm run verify` + docs gate, is merged, and the merge commit passes `main` CI.
+B13 may now start as a separate acceptance block.
