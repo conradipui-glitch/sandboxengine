@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
   DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS,
+  applyAuthoringProposalFromStore,
   type AuthorAgentJobRecord,
   type AuthorConversationStore,
   type ControlProjectRole
@@ -216,6 +217,125 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     return true;
   }
 
+  const proposalApply = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/author\/jobs\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/proposals\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/apply$/.exec(context.url.pathname);
+  if (proposalApply) {
+    if (context.method !== "POST") { context.sendNotFound(); return true; }
+    const projectId = proposalApply[1];
+    const questId = proposalApply[2];
+    const jobId = proposalApply[3];
+    const proposalId = proposalApply[4];
+    if (!projectId || !questId || !jobId || !proposalId || (context.authorAssistant === null || context.authorConversation === null)) {
+      context.sendNotFound();
+      return true;
+    }
+    if (!(await context.requireRole(projectId, "editor"))) return true;
+    if (!hasExactQuery(context.url.searchParams, [])) {
+      context.sendJson(400, { error: { code: "INVALID_AUTHOR_PROPOSAL_APPLY_REQUEST" } });
+      return true;
+    }
+    if (!(await context.requireMutation())) return true;
+    const idempotencyKey = context.requireIdempotencyKey();
+    if (idempotencyKey === null) return true;
+    const body = await context.requireJsonObject();
+    if (body === null) return true;
+    if (!hasExactKeys(body, [])) {
+      context.sendJson(400, { error: { code: "INVALID_AUTHOR_PROPOSAL_APPLY_REQUEST" } });
+      return true;
+    }
+
+    const job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
+    if (!job) { context.sendNotFound(); return true; }
+    if (job.state !== "waiting_user" && job.state !== "paused_budget") {
+      context.sendJson(409, { error: { code: "AUTHOR_JOB_NOT_WAITING", state: job.state } });
+      return true;
+    }
+
+    const messages = await context.authorConversation.listMessages(jobId);
+    if (!messages) { context.sendNotFound(); return true; }
+    const proposalMessage = [...messages].reverse().find((message) =>
+      message.role === "assistant" && message.proposalId === proposalId && message.proposalTurnKey !== null
+    );
+    if (!proposalMessage || proposalMessage.proposalTurnKey === null) { context.sendNotFound(); return true; }
+    const artifact = await context.authorAssistant.artifacts.getProposalArtifact(jobId, proposalMessage.proposalTurnKey);
+    const proposal = artifact?.proposal;
+    if (!artifact || !proposal
+      || proposal.proposalId !== proposalId
+      || proposal.projectId !== projectId
+      || proposal.questId !== questId
+      || proposal.origin.kind !== "assistant"
+      || proposal.origin.jobId !== jobId
+      || proposal.origin.backendId !== job.backendId) {
+      context.sendJson(409, { error: { code: "AUTHOR_PROPOSAL_ARTIFACT_MISMATCH" } });
+      return true;
+    }
+
+    const applied = await applyAuthoringProposalFromStore(context.authorAssistant.store, proposal, idempotencyKey);
+    if (applied.kind === "applied" || applied.kind === "replay") {
+      const checkpointed = await ensureAppliedCheckpoint(
+        context.authorAssistant,
+        jobId,
+        proposalId,
+        applied.draft.draftRevision
+      );
+      if (!checkpointed) {
+        context.sendJson(503, {
+          error: { code: "AUTHOR_APPLY_AUDIT_PENDING", committed: true },
+          draft: applied.draft,
+          application: applied.application,
+          ...(applied.kind === "replay" ? { replay: true } : {})
+        });
+        return true;
+      }
+      context.sendJson(applied.kind === "applied" ? 201 : 200, {
+        draft: applied.draft,
+        application: applied.application,
+        ...(applied.kind === "replay" ? { replay: true } : {})
+      });
+      return true;
+    }
+    if (applied.kind === "project_not_found" || applied.kind === "quest_not_found") { context.sendNotFound(); return true; }
+    if (applied.kind === "revision_not_found") {
+      context.sendJson(404, { error: { code: "DRAFT_REVISION_NOT_FOUND", revision: applied.revision } });
+      return true;
+    }
+    if (applied.kind === "base_snapshot_mismatch") {
+      context.sendJson(409, {
+        error: {
+          code: "AUTHORING_PROPOSAL_BASE_SNAPSHOT_MISMATCH",
+          revision: applied.revision,
+          actualContentHash: applied.actualContentHash
+        }
+      });
+      return true;
+    }
+    if (applied.kind === "revision_conflict") {
+      context.sendJson(409, {
+        error: { code: "DRAFT_REVISION_CONFLICT", currentRevision: applied.currentRevision, currentContentHash: applied.currentContentHash }
+      });
+      return true;
+    }
+    if (applied.kind === "missing_capability") {
+      context.sendJson(422, {
+        error: { code: "AUTHORING_PROPOSAL_MISSING_CAPABILITY", missingCapabilities: applied.missingCapabilities }
+      });
+      return true;
+    }
+    if (applied.kind === "idempotency_key_reused") {
+      context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+      return true;
+    }
+    if (applied.kind === "unsupported_store") {
+      context.sendJson(500, { error: { code: "CONTROL_AUTHORING_PROPOSAL_STORE_UNAVAILABLE" } });
+      return true;
+    }
+    if (applied.kind === "invalid_request") {
+      context.sendJson(400, { error: { code: "INVALID_AUTHOR_PROPOSAL_APPLY_REQUEST" } });
+      return true;
+    }
+    context.sendJson(422, { error: { code: "INVALID_AUTHORING_PROPOSAL", details: applied.errors } });
+    return true;
+  }
+
   const cancel = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/author\/jobs\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/cancel$/.exec(context.url.pathname);
   if (cancel) {
     if (context.method !== "POST") { context.sendNotFound(); return true; }
@@ -258,6 +378,33 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     return true;
   }
 
+  return false;
+}
+
+async function ensureAppliedCheckpoint(
+  dependencies: AuthorAssistantDependencies,
+  jobId: string,
+  proposalId: string,
+  resultRevision: number
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const [job, checkpoints] = await Promise.all([
+      dependencies.jobs.getJob(jobId),
+      dependencies.jobs.listCheckpoints(jobId)
+    ]);
+    if (!job || !checkpoints) return false;
+    if (checkpoints.some((entry) => entry.fact.kind === "proposal.applied"
+      && entry.fact.proposalId === proposalId
+      && entry.fact.resultRevision === resultRevision)) return true;
+    if (job.state === "succeeded" || job.state === "failed" || job.state === "cancelled") return false;
+    const appended = await dependencies.jobs.appendCheckpoint(jobId, job.jobVersion, {
+      kind: "proposal.applied",
+      proposalId,
+      resultRevision
+    }, now(dependencies));
+    if (appended.kind === "updated") return true;
+    if (appended.kind !== "job_version_conflict") return false;
+  }
   return false;
 }
 

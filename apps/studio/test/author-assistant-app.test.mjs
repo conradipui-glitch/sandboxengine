@@ -9,7 +9,8 @@ test("B10.a real StudioApp mounts persistent assistant and routes server mutatio
   assert.match(app, /createAuthorJob/);
   assert.match(app, /runAuthorSegment/);
   assert.match(app, /cancelAuthorJob/);
-  assert.match(app, /applyAuthoringProposal/);
+  assert.match(app, /applyAuthorJobProposal/);
+  assert.doesNotMatch(app, /this\.api\.applyAuthoringProposal\(/);
   assert.match(app, /refreshAuthorAssistant\(projectId, questId\)/);
   assert.match(app, /Proposal Apply отклонён как stale\/conflicting/);
   assert.doesNotMatch(app, /localStorage|sessionStorage/);

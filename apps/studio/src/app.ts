@@ -875,10 +875,11 @@ export class StudioApp {
     this.state.message = `Применяем ${proposalId} через server proposal authority…`;
     this.render();
     try {
-      const applied = await this.api.applyAuthoringProposal(
+      const applied = await this.api.applyAuthorJobProposal(
         projectId,
         questId,
-        card.artifact.proposal,
+        state.model.job.jobId,
+        proposalId,
         mutationKey("author-apply")
       );
       this.state.draft = applied.draft;
@@ -893,7 +894,14 @@ export class StudioApp {
       this.state.phase = "saved";
       this.state.message = `Proposal ${proposalId} применён сервером → r${applied.draft.draftRevision}. Publication не менялась.`;
     } catch (error) {
-      if (error instanceof ControlApiError && error.status === 409) {
+      if (error instanceof ControlApiError && error.status === 503 && error.code === "AUTHOR_APPLY_AUDIT_PENDING") {
+        this.state.draft = await this.api.getDraft(projectId, questId);
+        this.state.quests = await this.api.listQuests(projectId);
+        await this.refreshVersions(projectId, questId);
+        await this.refreshAuthorAssistant(projectId, questId);
+        this.state.phase = "error";
+        this.state.message = "Proposal mutation уже committed, но audit checkpoint ещё не подтверждён. Повторите Apply с тем же server artifact после reload.";
+      } else if (error instanceof ControlApiError && error.status === 409) {
         this.state.draft = await this.api.getDraft(projectId, questId);
         this.state.quests = await this.api.listQuests(projectId);
         await this.refreshVersions(projectId, questId);

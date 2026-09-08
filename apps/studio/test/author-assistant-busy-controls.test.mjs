@@ -96,6 +96,7 @@ test("B10.a terminal job cannot continue but can start a fresh server conversati
   );
   assert.doesNotMatch(html, /data-action="author-stop"/);
   assert.doesNotMatch(html, /data-form="author-message"/);
+  assert.doesNotMatch(html, /data-action="author-apply"/);
   assert.match(html, /data-action="author-start"/);
   assert.match(html, /Новый диалог/);
 });

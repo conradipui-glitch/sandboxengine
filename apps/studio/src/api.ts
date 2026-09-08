@@ -417,6 +417,21 @@ export class ControlApiClient {
     return body.job;
   }
 
+  async applyAuthorJobProposal(
+    projectId: string,
+    questId: string,
+    jobId: string,
+    proposalId: string,
+    idempotencyKey: string
+  ): Promise<AuthorProposalApplyView> {
+    return this.request<AuthorProposalApplyView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
+      {},
+      { idempotencyKey }
+    );
+  }
+
   async previewAuthoringProposal(projectId: string, questId: string, proposal: AuthoringProposal): Promise<AuthoringProposalPreview> {
     const body = await this.request<{ readonly preview: AuthoringProposalPreview }>(
       "POST",

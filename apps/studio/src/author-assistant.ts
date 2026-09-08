@@ -97,6 +97,9 @@ export function renderAuthorAssistantPanel(
   const busy = options.busy === true;
   const canSend = options.canMutate && options.hasMutationProof && !busy && !terminal && job.state !== "running" && job.state !== "validating";
   const canStop = options.canMutate && options.hasMutationProof && !terminal;
+  const proposalOptions: AuthorAssistantRenderOptions = terminal
+    ? { ...options, canMutate: false }
+    : options;
   const cardByProposal = new Map(model.proposalCards.map((card) => [card.artifact.proposal.proposalId, card]));
 
   return `<section class="author-assistant" data-author-assistant>
@@ -116,7 +119,7 @@ export function renderAuthorAssistantPanel(
     </details>
 
     <div class="assistant-messages" aria-live="polite">
-      ${model.messages.map((message) => renderMessage(message, cardByProposal.get(message.proposalId ?? "") ?? null, options)).join("") || `<div class="assistant-empty">Сообщений пока нет.</div>`}
+      ${model.messages.map((message) => renderMessage(message, cardByProposal.get(message.proposalId ?? "") ?? null, proposalOptions)).join("") || `<div class="assistant-empty">Сообщений пока нет.</div>`}
     </div>
 
     ${job.state === "paused_budget" ? `<div class="assistant-budget-note">Segment budget исчерпан. Следующее сообщение может явно открыть новый bounded segment.</div>` : ""}
