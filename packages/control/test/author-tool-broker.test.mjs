@@ -26,7 +26,7 @@ function createInput(jobId = "job-broker") {
     startingDraftRevision: 2,
     startingDraftContentHash: HASH_A,
     backendId: "scripted-author",
-    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply"],
+    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply", "docs.reference.read"],
     maxToolCalls: 12,
     maxActiveTimeMs: 120000,
     createdAtMs: 1000
@@ -148,10 +148,15 @@ test("B10.b.11 broker never widens a reduced job grant", async () => {
   assert.equal(started.kind, "updated");
   const pinned = await ensureAuthorToolBrokerPin(store, started.job, HASH_A, 1002);
   assert.equal(pinned.kind, "pinned");
-  assert.deepEqual(pinned.pin.allowedToolIds, ["author.draft.read", "docs.agent-kit.read", "docs.reference.read"]);
+  assert.deepEqual(pinned.pin.allowedToolIds, ["author.draft.read", "docs.agent-kit.read"]);
   const deniedApply = authorizeAuthorToolBrokerRequest(pinned.pin, pinned.job, {
     toolId: "author.proposal.apply", source: "skill"
   });
   assert.equal(deniedApply.kind, "denied");
   assert.equal(deniedApply.code, "job_grant_required");
+  const deniedReference = authorizeAuthorToolBrokerRequest(pinned.pin, pinned.job, {
+    toolId: "docs.reference.read", source: "mcp", transportAvailable: true
+  });
+  assert.equal(deniedReference.kind, "denied");
+  assert.equal(deniedReference.code, "job_grant_required");
 });

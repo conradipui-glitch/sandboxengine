@@ -9,6 +9,7 @@ import {
   previewAuthoringProposalFromStore,
   type AuthorAgentJobRecord,
   type AuthorAgentJobStore,
+  type AuthorAgentOperationKind,
   type AuthorAgentProposalArtifactStore,
   type AuthorContextCapabilityCatalog,
   type AuthoringProposal,
@@ -27,6 +28,7 @@ import {
   type ProviderUsage
 } from "@living-history/ai";
 import { loadInstalledAgentKit } from "./agent-kit.js";
+import type { AuthorMcpClient } from "./author-mcp.js";
 
 const MAX_AUTHOR_INSTRUCTION_CHARS = 20_000;
 const MAX_AUTHOR_CONTEXT_CHARS = 64_000;
@@ -41,6 +43,7 @@ export interface AuthorAssistantDependencies {
   readonly backend: AgentBackend;
   readonly profileId: string;
   readonly capabilityCatalog?: AuthorContextCapabilityCatalog;
+  readonly referenceMcpClient?: AuthorMcpClient;
   readonly nowMs?: () => number;
   readonly backendDeadlineMs?: number;
 }
@@ -109,6 +112,9 @@ export async function createAuthorAssistantJob(
   }
   const draft = await dependencies.store.getDraft(input.projectId, input.questId);
   if (!draft) return frozen({ kind: "project_or_quest_not_found" });
+  const allowedOperations: readonly AuthorAgentOperationKind[] = dependencies.referenceMcpClient
+    ? Object.freeze(["draft.read", "proposal.preview", "proposal.apply", "docs.reference.read"] as const)
+    : Object.freeze(["draft.read", "proposal.preview", "proposal.apply"] as const);
   const result = await dependencies.jobs.createJob({
     jobId: input.jobId,
     projectId: input.projectId,
@@ -117,7 +123,7 @@ export async function createAuthorAssistantJob(
     startingDraftRevision: draft.draftRevision,
     startingDraftContentHash: draft.contentHash,
     backendId: dependencies.backend.safeView.backendId,
-    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply"],
+    allowedOperations,
     ...(input.maxToolCalls === undefined ? {} : { maxToolCalls: input.maxToolCalls }),
     ...(input.maxActiveTimeMs === undefined ? {} : { maxActiveTimeMs: input.maxActiveTimeMs }),
     createdAtMs: now(dependencies)

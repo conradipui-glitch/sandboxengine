@@ -21,7 +21,7 @@ async function brokerFixture() {
     startingDraftRevision: 0,
     startingDraftContentHash: HASH,
     backendId: "scripted-author",
-    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply"],
+    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply", "docs.reference.read"],
     maxToolCalls: 12,
     maxActiveTimeMs: 120000,
     createdAtMs: 1000

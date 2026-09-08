@@ -14,7 +14,7 @@ export const AUTHOR_AGENT_JOB_STATES = Object.freeze([
 ] as const);
 
 export type AuthorAgentJobState = (typeof AUTHOR_AGENT_JOB_STATES)[number];
-export type AuthorAgentOperationKind = "draft.read" | "proposal.preview" | "proposal.apply";
+export type AuthorAgentOperationKind = "draft.read" | "proposal.preview" | "proposal.apply" | "docs.reference.read";
 export const DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS = 12;
 export const DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS = 120_000;
 export const MAX_AUTHOR_AGENT_MAX_TOOL_CALLS = 100;
@@ -86,7 +86,19 @@ export interface AuthorAgentCheckpoint {
 export type AuthorAgentOperationResult =
   | { readonly kind: "read_blocks"; readonly blockCount: number }
   | { readonly kind: "proposal_previewed"; readonly proposalId: string; readonly stale: boolean; readonly applyAllowed: boolean }
-  | { readonly kind: "proposal_applied"; readonly proposalId: string; readonly resultRevision: number; readonly resultContentHash: string };
+  | { readonly kind: "proposal_applied"; readonly proposalId: string; readonly resultRevision: number; readonly resultContentHash: string }
+  | {
+      readonly kind: "reference_read";
+      readonly outcome: "completed" | "unavailable" | "invalid_response";
+      readonly connectionId: string;
+      readonly serverId: string;
+      readonly version: string;
+      readonly targetVersion: string | null;
+      readonly queryHash: string;
+      readonly outputJson: string | null;
+      readonly outputHash: string | null;
+      readonly errorCode: "mcp_offline" | "mcp_timeout" | "mcp_transport_error" | "invalid_response" | null;
+    };
 
 export interface AuthorAgentOperationRecord {
   readonly jobId: string;
@@ -952,6 +964,25 @@ function isOperationResult(value: unknown): value is AuthorAgentOperationResult 
     return hasExactKeys(value, ["kind", "proposalId", "resultRevision", "resultContentHash"])
       && isId(value.proposalId) && isNonNegativeSafeInteger(value.resultRevision) && isHash(value.resultContentHash);
   }
+  if (value.kind === "reference_read") {
+    if (!hasExactKeys(value, [
+      "kind", "outcome", "connectionId", "serverId", "version", "targetVersion", "queryHash",
+      "outputJson", "outputHash", "errorCode"
+    ])
+      || !isId(value.connectionId) || !isId(value.serverId) || !isVersion(value.version)
+      || (value.targetVersion !== null && !isVersion(value.targetVersion)) || !isHash(value.queryHash)) return false;
+    if (value.outcome === "completed") {
+      return typeof value.outputJson === "string"
+        && value.outputJson.length >= 1 && value.outputJson.length <= 64_000
+        && isJsonString(value.outputJson) && isHash(value.outputHash) && value.errorCode === null;
+    }
+    if (value.outcome === "unavailable") {
+      return value.outputJson === null && value.outputHash === null
+        && (value.errorCode === "mcp_offline" || value.errorCode === "mcp_timeout" || value.errorCode === "mcp_transport_error");
+    }
+    return value.outcome === "invalid_response"
+      && value.outputJson === null && value.outputHash === null && value.errorCode === "invalid_response";
+  }
   return false;
 }
 
@@ -964,7 +995,16 @@ function isTerminal(state: AuthorAgentJobState): boolean {
 }
 
 function isOperationKind(value: unknown): value is AuthorAgentOperationKind {
-  return value === "draft.read" || value === "proposal.preview" || value === "proposal.apply";
+  return value === "draft.read" || value === "proposal.preview" || value === "proposal.apply" || value === "docs.reference.read";
+}
+
+function isVersion(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 100
+    && /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/.test(value);
+}
+
+function isJsonString(value: string): boolean {
+  try { JSON.parse(value); return true; } catch { return false; }
 }
 
 function isBoundedIdList(value: unknown, max: number, min = 0): value is string[] {

@@ -30,7 +30,7 @@ const TRUSTED_AUTHOR_TOOLS: readonly TrustedAuthorToolDescriptor[] = Object.free
   Object.freeze({ toolId: "author.proposal.preview", operationKind: "proposal.preview", builtinFallback: true }),
   Object.freeze({ toolId: "author.proposal.apply", operationKind: "proposal.apply", builtinFallback: true }),
   Object.freeze({ toolId: "docs.agent-kit.read", operationKind: null, builtinFallback: true }),
-  Object.freeze({ toolId: "docs.reference.read", operationKind: null, builtinFallback: false })
+  Object.freeze({ toolId: "docs.reference.read", operationKind: "docs.reference.read", builtinFallback: false })
 ]);
 
 export const AUTHOR_TOOL_BROKER_POLICY_HASH = sha256(canonicalStringify({
@@ -100,7 +100,7 @@ export function buildAuthorToolBrokerPin(
   installedDocsHash: string
 ): BuildAuthorToolBrokerPinResult {
   if (!isHash(installedDocsHash) || !job || typeof job !== "object") return frozen({ kind: "invalid_request" });
-  const allowed = new Set<AuthorToolId>(["docs.agent-kit.read", "docs.reference.read"]);
+  const allowed = new Set<AuthorToolId>(["docs.agent-kit.read"]);
   for (const operationKind of job.grant.allowedOperations) {
     const toolId = toolIdForOperation(operationKind);
     if (toolId === null) return frozen({ kind: "invalid_request" });
@@ -253,6 +253,7 @@ function toolIdForOperation(operationKind: AuthorAgentOperationKind): AuthorTool
   if (operationKind === "draft.read") return "author.draft.read";
   if (operationKind === "proposal.preview") return "author.proposal.preview";
   if (operationKind === "proposal.apply") return "author.proposal.apply";
+  if (operationKind === "docs.reference.read") return "docs.reference.read";
   return null;
 }
 
