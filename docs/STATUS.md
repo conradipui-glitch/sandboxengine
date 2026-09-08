@@ -4,17 +4,18 @@
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
-| Репозиторий | **B01–B10 published; B11 active** | B10 PR #34 merged as `4e5fea2888d14440c60ad48abffbefe42abfe637`; exact main CI #650 / run `34209005817` success |
-| Контракты/Core | **B01–B03 published** | deterministic gameplay authority; B11 must add no Florence-specific branch to Core |
-| Runtime storage/API | **B04 + publication/session pinning published** | immutable release identity and server-authoritative pinned sessions already available for B11 rollout |
+| Репозиторий | **B01–B10 published; B11 implementation complete, publication gate active** | B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637`; B11 PR #35 contains real quests, authored Runtime, semantic acceptance and verified source assets |
+| Контракты/Core | **B01–B03 published; B11 generic authored cases added without quest branches** | Core conditions/effects remain generic; source test rejects Florence/Transfer Desk identities in `packages/core` |
+| Runtime storage/API | **B04 published; B11 authored Runtime integrated** | published release/session pinning, explicit authored options, free-text intent boundary, blocked/no-turn and idempotent replay proved |
 | Authoring / Control | **B05 + B09 published** | durable history/compare/restore/reference safety + portability + immutable release/publication authority |
-| AI foundation | **B06 + B10 author-assistant boundary published** | provider/intent/narrator boundary plus author request/apply/correction loop; Codex protocol evidence is deterministic, not a claimed authenticated CI subscription run |
-| Presentation/assets/Player | **B07 published** | immutable assets + presentation executor + Runtime/browser integration |
+| AI foundation | **B06 + B10 published; B11 intent boundary reused** | free text receives current authored catalog; AI interprets, Runtime/Core validates and mutates |
+| Presentation/assets/Player | **B07 published; B11 compatibility projection complete** | Engine exposes safe `situation`; `sandbox` BFF projects Engine state to existing `GameState` without client-side gameplay arithmetic |
 | Plugins | **B08 published** | trusted manifest/registry/execution + artifact-bound plugin evidence |
 | Auth/publish/Studio | **B09 published** | account/login/quota isolation, frozen playtest evidence, version/restore/portability and owner publication flow |
-| Author AI helper | **B10 published** | PR #34; semantic audit unresolved BLOCKER 0; full regression author request → linked blocks → Apply → correction → Apply → validation → frozen playtest |
-| Florence migration | **B11 active; B11.0 GREEN** | `docs/BASELINE.md` confirmed; `docs/tasks/B11-01-source-migration-map.md`; next B11.1 = real quest packages |
-| Release hardening | не начато | B12 after accepted B11 real-quest integration |
+| Author AI helper | **B10 published** | PR #34; semantic audit unresolved BLOCKER 0; full author request → Apply → correction → validation → frozen playtest regression |
+| Florence migration | **B11 implementation complete** | exact source SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`; canonical + compromise + authorship + withdrawal semantics; 6 WebP + 6 MP3 byte-verified and committed |
+| Cross-repo rollout | **B11 implementation complete** | `sandbox` PR #10: new-session-only Engine routing, durable route pinning, rollback, prepared/freeform split, client-compatible facade; legacy sessions remain untouched |
+| Release hardening | **next after B11 publication** | B12 starts only after exact-head B11 CI and publication/merge gate |
 
 ## Published B10 checkpoint
 
@@ -26,47 +27,65 @@ B10 is closed and published.
 - exact `main` CI: #650 / run `34209005817` — `success`
 - canonical semantic audit: unresolved BLOCKER **0**
 
-B10 acceptance includes the Codex adapter boundary, account/login/quota isolation and the single regression path:
+## B11 source and migration boundary
 
-`author request → linked blocks → Apply → correction → Apply → validation → frozen playtest`.
+B11 starts from the exact published B10 merge and migrates Florence from:
 
-A real authenticated Codex subscription/App Server run is **not** claimed because CI has no configured authenticated local App Server. B10 evidence for that boundary is deterministic protocol evidence.
+- source repo `conradipui-glitch/sandbox`;
+- source merge PR #9;
+- exact source SHA `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
+- exact source production workflow #47 / run `34012448412`, successful through install, tests, build and deploy.
 
-## B11.0 — source confirmation gate
+The migration preserves causal semantics rather than copying legacy implementation branches. The six source decisions are authored narrative beats; elapsed time remains a generic Runtime clock concern. There is no `FlorenceMemory` or `scenarioId === "florence-workshop"` branch in Core.
 
-B11 starts from the exact published B10 merge `4e5fea2888d14440c60ad48abffbefe42abfe637` on branch `b11-real-quests-integration`.
+## B11 implemented acceptance
 
-B00 is now confirmed for B11 entry:
+### Real quests
 
-- source repo: `conradipui-glitch/sandbox`;
-- Florence source merge: PR #9;
-- exact source SHA: `092bcef0be5943e32bf02f08f9e9d4cde393fa95`;
-- source current main checked at `f9b0cd0d607da48d89827f0a1a882b74e9b78e50` and differs after the baseline only by README/docs;
-- exact source production workflow #47 / run `34012448412` succeeded through `npm ci`, tests, build and deploy;
-- runtime routes, Durable Object save shape, idempotency and legacy-session boundary are mapped;
-- legacy Florence tests prove all 729 prepared six-decision routes terminate with six trace entries and also cover conditional/blocked behavior, save/restore and legacy-save incompatibility;
-- technical migration is explicitly separated from design changes;
-- standalone Engine remains separate; `sandbox` gets only the later adapter/BFF rollout surface;
-- only newly created Florence sessions may be routed to the Engine; old sessions remain on their pinned legacy runtime and are never silently converted.
+- `examples/florence` is a full six-beat quest using generic resources, conditions, effects and state-dependent authored cases.
+- `examples/transfer-desk` is a genuinely different three-beat social/item-transfer quest, not a Florence rename.
 
-Canonical evidence:
+### Florence semantic comparison
 
-- `docs/BASELINE.md`
-- `docs/tasks/B11-01-source-migration-map.md`
+Accepted routes include:
 
-## B11 next slice
+- canonical `draft → ledger → counter → pigment → public → deliver` → `Незавершённое принято`;
+- paid compromise `healer → team → advance → testimony → share-ledger → deliver` → `Чужое имя над вашей работой`;
+- authorship/refusal `close → refuse → protect → testimony → rest → sign` → `Имя без заказчика`;
+- conditional counter remains conditional without sufficient prior support and becomes executed through generic state conditions when support exists;
+- withdrawal does not invent a refund when no advance was received;
+- blocked actions do not advance revision/clock or partially apply effects;
+- retries remain idempotent at the Runtime/storage boundary.
 
-**B11.1 — real quest packages**
+### Engine ↔ sandbox integration
 
-Create and validate:
+The companion `conradipui-glitch/sandbox` PR #10 provides the rollout boundary:
 
-- `examples/florence`
-- `examples/transfer-desk`
+- rollout decision occurs only when a new Florence session is created;
+- the chosen Engine route is stored in `RuntimeRouteSession` and stays pinned;
+- switching rollout to `off` stops future assignment but does not migrate in-progress Engine sessions;
+- ids without Engine bindings stay on legacy `HistorySession` unchanged;
+- prepared client choices are forwarded as explicit `authored.option` actions;
+- free text stays on the intent-interpreter boundary;
+- Engine `PlayerView + situation` is projected server-side into the existing client-compatible `GameState`;
+- the browser displays authored options and never computes authoritative gameplay consequences.
 
-Constraints:
+### Binary source assets
 
-- six Florence source decisions are narrative beats, not a generic turn/clock rule;
-- Florence state must use generic authored/runtime state rather than a `FlorenceMemory` Core type;
-- no Florence-specific identifiers/branches in `packages/core`;
-- the real Transfer Desk example must differ in goal, items/resources and social causality rather than being Florence with renamed actors;
-- old/new semantic comparison and new-session-only `sandbox` routing remain later B11 slices after the real quest packages exist.
+Florence source assets are now real repository content rather than placeholders:
+
+- 6 WebP visuals copied from pinned source paths with exact source Git blob verification;
+- 6 MP3 tracks assembled from ordered pinned `audio-parts`, with every source part Git blob verified before concatenation;
+- `examples/florence/asset-migration-manifest.json` records byte counts, SHA-256 and resulting Git blob identities;
+- root tests re-read all 12 committed binaries and verify SHA-256 against the migration manifest;
+- `examples/florence/source-assets.json` records `binaryCopyStatus: verified-in-repository`.
+
+## Publication gate
+
+B11 implementation work is complete. The only remaining B11 step is publication hygiene:
+
+1. require a full root `npm run verify` success on the exact final PR #35 head containing code, docs and binary assets;
+2. record the exact successful run in PR #35;
+3. ensure `sandbox` PR #10 remains green on its exact client/BFF head;
+4. merge/publish in dependency-safe order;
+5. begin B12 only after those merges are published.
