@@ -45,7 +45,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -u
+          git add apps/server/src/agent-kit.ts
           git diff --cached --check
           git diff --cached --quiet && exit 0
           git commit -m "feat(B10): bind agent writes to installed kit"
