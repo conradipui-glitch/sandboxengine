@@ -22,7 +22,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply Codex account isolation patch
-        run: python scripts/b10-codex-account-isolation-sync.py
+        run: |
+          python scripts/b10-codex-account-isolation-sync.py
+          python scripts/b10-codex-account-isolation-fix.py
       - name: Typecheck
         run: npm run typecheck
       - name: AI regressions
@@ -40,7 +42,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f scripts/b10-codex-account-isolation-sync.py .github/workflows/b10-codex-account-isolation-apply.yml
+          git rm -f scripts/b10-codex-account-isolation-sync.py scripts/b10-codex-account-isolation-fix.py .github/workflows/b10-codex-account-isolation-apply.yml
           git add packages/ai/src/codex-app-server-account.ts packages/ai/src/codex-app-server-backend.ts packages/ai/src/index.ts packages/ai/test/codex-app-server-account.test.mjs docs/tasks/B10-author-assistant.md docs/worklog/2026-09-08-b10-codex-account-isolation.md
           git diff --cached --check
           git diff --cached --quiet && exit 0
