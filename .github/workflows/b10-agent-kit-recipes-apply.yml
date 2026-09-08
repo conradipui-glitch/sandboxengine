@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: b10-author-assistant
-      - uses: actions/setup-node@1e60f620b9541d7c2439c3534a7b226e2b1b6db0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version-file: .nvmrc
           cache: npm
