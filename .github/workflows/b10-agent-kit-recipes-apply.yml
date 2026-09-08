@@ -38,7 +38,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm scripts/b10-b10-agent-kit-recipes-sync.py scripts/b10-agent-kit-recipes-test-fix.py .github/workflows/b10-agent-kit-recipes-apply.yml
+          git rm -f scripts/b10-b10-agent-kit-recipes-sync.py scripts/b10-agent-kit-recipes-test-fix.py .github/workflows/b10-agent-kit-recipes-apply.yml
           git add scripts/generated-docs.mjs apps/server/src/agent-kit.ts packages/contracts/test/generated-docs.test.mjs apps/server/test/authoring-proposal-http.test.mjs docs/agent
           git diff --cached --check
           git diff --cached --quiet && exit 0
