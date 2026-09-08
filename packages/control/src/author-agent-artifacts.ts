@@ -117,7 +117,7 @@ export class SQLiteAuthorAgentProposalArtifactStore implements AuthorAgentPropos
     const artifact = buildArtifact(jobId, input);
     if (!artifact) return frozen({ kind: "invalid_request" });
     if (!(await this.jobs.getJob(jobId))) return frozen({ kind: "job_not_found" });
-    this.#db.prepare(`
+    const inserted = this.#db.prepare(`
       INSERT OR IGNORE INTO control_author_agent_proposal_artifacts
         (job_id, turn_key, artifact_hash, proposal_json, usage_json, created_at_ms)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -132,7 +132,7 @@ export class SQLiteAuthorAgentProposalArtifactStore implements AuthorAgentPropos
     const stored = await this.getProposalArtifact(jobId, input.turnKey);
     if (!stored) throw new Error("failed to persist author proposal artifact");
     return stored.artifactHash === artifact.artifactHash
-      ? frozen({ kind: stored.createdAtMs === artifact.createdAtMs ? "stored" as const : "replay" as const, artifact: stored })
+      ? frozen({ kind: Number(inserted.changes) === 1 ? "stored" as const : "replay" as const, artifact: stored })
       : frozen({ kind: "turn_key_reused" });
   }
 

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   MemoryAuthorAgentJobStore,
+  MemoryAuthorAgentProposalArtifactStore,
   MemoryControlStore
 } from "../../../packages/control/dist/index.js";
 import { ScriptedAgentBackend } from "../../../packages/ai/dist/index.js";
@@ -83,8 +84,8 @@ function clock(start = 1000) {
   return () => value++;
 }
 
-function deps(store, jobs, backend, nowMs = clock()) {
-  return { store, jobs, backend, profileId: "author-profile", nowMs, backendDeadlineMs: 30_000 };
+function deps(store, jobs, backend, nowMs = clock(), artifacts = new MemoryAuthorAgentProposalArtifactStore(jobs)) {
+  return { store, jobs, artifacts, backend, profileId: "author-profile", nowMs, backendDeadlineMs: 30_000 };
 }
 
 test("B10.a scripted author produces server-bound proposal without mutating draft until explicit apply", async () => {

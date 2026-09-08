@@ -253,7 +253,7 @@ export async function runAuthorAssistantSegment(
     if (!parsed) return failInvalidOutput(dependencies, job, turn.usage, "backend_output_invalid");
     const proposalId = `proposal-${sha256(canonicalStringify({ jobId: job.jobId, turnKey, body: parsed })).slice(0, 40)}`;
     const generatedProposal: AuthoringProposal = deepFreeze({
-      proposalId: proposal.proposalId,
+      proposalId,
       projectId: job.projectId,
       questId: job.questId,
       baseRevision: snapshot.draftRevision,
