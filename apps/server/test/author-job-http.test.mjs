@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MemoryAuthorAgentJobStore,
   MemoryAuthorAgentProposalArtifactStore,
+  MemoryAuthorConversationStore,
   MemoryControlSecurityStore,
   MemoryControlStore
 } from "../../../packages/control/dist/index.js";
@@ -80,6 +81,7 @@ async function setup({ composeAuthorAssistant = true } = {}) {
 
   const jobs = new MemoryAuthorAgentJobStore();
   const artifacts = new MemoryAuthorAgentProposalArtifactStore(jobs);
+  const conversation = new MemoryAuthorConversationStore(jobs);
   const backend = new ScriptedAgentBackend({
     backendId: "scripted-author",
     turnSteps: [
@@ -93,11 +95,11 @@ async function setup({ composeAuthorAssistant = true } = {}) {
     store,
     auth: { security, allowedOrigins: [ORIGIN], secureCookies: true },
     ...(composeAuthorAssistant ? {
-      authorAssistant: { jobs, artifacts, backend, profileId: "author-profile", nowMs, backendDeadlineMs: 30_000 }
+      authorAssistant: { jobs, artifacts, conversation, backend, profileId: "author-profile", nowMs, backendDeadlineMs: 30_000 }
     } : {})
   });
   const address = await control.listen();
-  return { store, jobs, artifacts, backend, control, base: `http://${address.host}:${address.port}` };
+  return { store, jobs, artifacts, conversation, backend, control, base: `http://${address.host}:${address.port}` };
 }
 
 async function createEditorJob(base, editorLogin, key = "job-create") {
@@ -212,6 +214,13 @@ test("B10.a author segment replays durable proposal and rejects changed instruct
     assert.ok(kinds.includes("proposal.previewed"));
     assert.equal(kinds.filter((kind) => kind === "segment.requested").length, 1);
     assert.equal(kinds.filter((kind) => kind === "proposal.produced").length, 1);
+    assert.equal(read.body.messages.length, 2);
+    assert.equal(read.body.messages[0].role, "author");
+    assert.equal(read.body.messages[0].text, "Add paint");
+    assert.equal(read.body.messages[1].role, "assistant");
+    assert.equal(read.body.messages[1].proposalId, first.body.proposal.proposalId);
+    assert.equal(read.body.proposalArtifacts.length, 1);
+    assert.deepEqual(read.body.proposalArtifacts[0].proposal, first.body.proposal);
     assert.ok(await jobs.getJob(jobId));
   } finally {
     await control.close();

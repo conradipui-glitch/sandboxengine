@@ -99,6 +99,17 @@ export {
   type SaveAuthorAgentProposalArtifactResult
 } from "./author-agent-artifacts.js";
 export {
+  MAX_AUTHOR_CONVERSATION_MESSAGES,
+  MAX_AUTHOR_CONVERSATION_TEXT_CHARS,
+  MemoryAuthorConversationStore,
+  SQLiteAuthorConversationStore,
+  type AppendAuthorConversationMessageInput,
+  type AppendAuthorConversationMessageResult,
+  type AuthorConversationMessage,
+  type AuthorConversationRole,
+  type AuthorConversationStore
+} from "./author-conversation.js";
+export {
   DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS,
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";

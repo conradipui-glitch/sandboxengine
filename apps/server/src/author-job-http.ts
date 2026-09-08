@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTHOR_AGENT_MAX_ACTIVE_TIME_MS,
   DEFAULT_AUTHOR_AGENT_MAX_TOOL_CALLS,
   type AuthorAgentJobRecord,
+  type AuthorConversationStore,
   type ControlProjectRole
 } from "@living-history/control";
 import { canonicalStringify } from "@living-history/core";
@@ -18,6 +19,7 @@ export interface AuthorJobHttpContext {
   readonly method: string;
   readonly url: URL;
   readonly authorAssistant: AuthorAssistantDependencies | null;
+  readonly authorConversation: AuthorConversationStore | null;
   readonly actorUserId: string;
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
@@ -33,7 +35,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     if (context.method !== "POST") { context.sendNotFound(); return true; }
     const projectId = collection[1];
     const questId = collection[2];
-    if (!projectId || !questId || context.authorAssistant === null) { context.sendNotFound(); return true; }
+    if (!projectId || !questId || (context.authorAssistant === null || context.authorConversation === null)) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
     if (!hasExactQuery(context.url.searchParams, [])) {
       context.sendJson(400, { error: { code: "INVALID_AUTHOR_JOB_REQUEST" } });
@@ -81,7 +83,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     const projectId = item[1];
     const questId = item[2];
     const jobId = item[3];
-    if (!projectId || !questId || !jobId || context.authorAssistant === null) { context.sendNotFound(); return true; }
+    if (!projectId || !questId || !jobId || (context.authorAssistant === null || context.authorConversation === null)) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
     if (!hasExactQuery(context.url.searchParams, [])) {
       context.sendJson(400, { error: { code: "INVALID_AUTHOR_JOB_REQUEST" } });
@@ -90,8 +92,21 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     const job = await ownedJob(context.authorAssistant, projectId, questId, jobId, context.actorUserId);
     if (!job) { context.sendNotFound(); return true; }
     const checkpoints = await context.authorAssistant.jobs.listCheckpoints(jobId);
-    if (!checkpoints) { context.sendNotFound(); return true; }
-    context.sendJson(200, { job, checkpoints });
+    const messages = await context.authorConversation.listMessages(jobId);
+    if (!checkpoints || !messages) { context.sendNotFound(); return true; }
+    const proposalArtifacts = [];
+    const seenTurnKeys = new Set();
+    for (const message of messages) {
+      if (message.proposalTurnKey === null || seenTurnKeys.has(message.proposalTurnKey)) continue;
+      const artifact = await context.authorAssistant.artifacts.getProposalArtifact(jobId, message.proposalTurnKey);
+      if (!artifact || artifact.proposal.proposalId !== message.proposalId) {
+        context.sendJson(500, { error: { code: "AUTHOR_CONVERSATION_ARTIFACT_MISSING" } });
+        return true;
+      }
+      seenTurnKeys.add(message.proposalTurnKey);
+      proposalArtifacts.push(artifact);
+    }
+    context.sendJson(200, { job, checkpoints, messages, proposalArtifacts });
     return true;
   }
 
@@ -101,7 +116,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     const projectId = segment[1];
     const questId = segment[2];
     const jobId = segment[3];
-    if (!projectId || !questId || !jobId || context.authorAssistant === null) { context.sendNotFound(); return true; }
+    if (!projectId || !questId || !jobId || (context.authorAssistant === null || context.authorConversation === null)) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
     if (!hasExactQuery(context.url.searchParams, [])) {
       context.sendJson(400, { error: { code: "INVALID_AUTHOR_SEGMENT_REQUEST" } });
@@ -145,12 +160,53 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
       job = checkpointed.job;
     }
 
+    const authorMessage = await context.authorConversation.appendMessage(jobId, {
+      messageId: `author-msg-${requestId.slice("segment-".length)}`,
+      role: "author",
+      text: body.instruction,
+      proposalId: null,
+      proposalTurnKey: null,
+      createdAtMs: now(context.authorAssistant)
+    });
+    if (authorMessage.kind === "message_id_reused") {
+      context.sendJson(409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+      return true;
+    }
+    if (authorMessage.kind !== "appended" && authorMessage.kind !== "replay") {
+      context.sendJson(409, { error: { code: "AUTHOR_CONVERSATION_UNAVAILABLE" } });
+      return true;
+    }
+
     const result = await runAuthorAssistantSegment(context.authorAssistant, {
       jobId,
       instruction: body.instruction,
       autoApply: false,
       ...(body.resumeBudget === true ? { resumeBudget: true } : {})
     });
+    if (result.kind === "proposal_ready") {
+      const proposalTurnKey = sha256(canonicalStringify({
+        jobId,
+        instruction: body.instruction,
+        draftRevision: result.proposal.baseRevision,
+        draftContentHash: result.proposal.baseContentHash
+      }));
+      const assistantMessage = await context.authorConversation.appendMessage(jobId, {
+        messageId: `assistant-msg-${requestId.slice("segment-".length)}`,
+        role: "assistant",
+        text: result.proposal.explanation,
+        proposalId: result.proposal.proposalId,
+        proposalTurnKey,
+        createdAtMs: now(context.authorAssistant)
+      });
+      if (assistantMessage.kind === "message_id_reused") {
+        context.sendJson(409, { error: { code: "AUTHOR_CONVERSATION_CONFLICT" } });
+        return true;
+      }
+      if (assistantMessage.kind !== "appended" && assistantMessage.kind !== "replay") {
+        context.sendJson(409, { error: { code: "AUTHOR_CONVERSATION_UNAVAILABLE" } });
+        return true;
+      }
+    }
     sendSegmentResult(context, result);
     return true;
   }
@@ -161,7 +217,7 @@ export async function routeAuthorJobHttp(context: AuthorJobHttpContext): Promise
     const projectId = cancel[1];
     const questId = cancel[2];
     const jobId = cancel[3];
-    if (!projectId || !questId || !jobId || context.authorAssistant === null) { context.sendNotFound(); return true; }
+    if (!projectId || !questId || !jobId || (context.authorAssistant === null || context.authorConversation === null)) { context.sendNotFound(); return true; }
     if (!(await context.requireRole(projectId, "editor"))) return true;
     if (!hasExactQuery(context.url.searchParams, [])) {
       context.sendJson(400, { error: { code: "INVALID_AUTHOR_CANCEL_REQUEST" } });

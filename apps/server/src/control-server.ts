@@ -6,6 +6,7 @@ import {
   createControlSessionId,
   hashControlOpaqueSecret,
   isControlProjectRole,
+  type AuthorConversationStore,
   type ControlProjectRole,
   type ControlReleaseRecord,
   type ControlReleaseStore,
@@ -55,7 +56,7 @@ export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly releases?: ControlReleaseModeOptions;
   readonly playtestTrace?: PlaytestTraceReader;
-  readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store">;
+  readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore };
   readonly auth?: ControlAuthenticatedModeOptions;
 }
 
@@ -370,6 +371,7 @@ async function routeControlRequest(
     store,
     releaseStore: releases?.store ?? null,
     authorAssistant: authorAssistant ? { ...authorAssistant, store } : null,
+    authorConversation: authorAssistant?.conversation ?? null,
     actorUserId: identity?.user.userId ?? "local-owner",
     requireRole: (projectId, role) => requireProjectRole(response, auth, identity, projectId, role),
     requireMutation: () => auth ? requireMutationProof(request, response, auth, identity!) : Promise.resolve(true),

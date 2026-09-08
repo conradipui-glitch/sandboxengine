@@ -8,6 +8,7 @@ import {
   compareDraftRevisions,
   importQuestPackageFromStore,
   listDraftHistory,
+  type AuthorConversationStore,
   type ControlProjectRole,
   type ControlReleaseStore,
   type ControlStore,
@@ -26,6 +27,7 @@ export interface DraftVersionHttpContext {
   readonly store: ControlStore;
   readonly releaseStore: Pick<ControlReleaseStore, "getRelease"> | null;
   readonly authorAssistant: AuthorAssistantDependencies | null;
+  readonly authorConversation: AuthorConversationStore | null;
   readonly actorUserId: string;
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
