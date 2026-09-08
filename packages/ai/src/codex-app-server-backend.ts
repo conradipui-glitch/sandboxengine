@@ -49,6 +49,16 @@ export interface CodexAppServerProtocolPin {
   readonly schemaHash: string;
 }
 
+export interface CodexAccountLeaseView {
+  readonly generation: number;
+  readonly authenticated: boolean;
+  readonly accountKey: string | null;
+}
+
+export interface CodexAccountLeaseReader {
+  snapshot(): CodexAccountLeaseView;
+}
+
 export interface CodexAuthorToolIsolationView {
   readonly shell: false;
   readonly filesystem: false;
@@ -163,12 +173,15 @@ export interface CodexAppServerAgentBackendOptions {
   readonly clientVersion: string;
   readonly expectedProtocol: CodexAppServerProtocolPin;
   readonly transport: CodexAppServerAuthorTransport;
+  readonly accountLease?: CodexAccountLeaseReader;
   readonly nowMs?: () => number;
 }
 
 interface OpenCodexSession {
   readonly handle: AgentSessionHandle;
   readonly threadId: string;
+  readonly accountGeneration: number | null;
+  readonly accountKey: string | null;
   activeTurnId: string | null;
 }
 
@@ -197,6 +210,7 @@ export class CodexAppServerAgentBackend implements AgentBackend {
   readonly #clientVersion: string;
   readonly #expectedProtocol: CodexAppServerProtocolPin;
   readonly #transport: CodexAppServerAuthorTransport;
+  readonly #accountLease: CodexAccountLeaseReader | null;
   readonly #nowMs: () => number;
   readonly #sessions = new Map<string, OpenCodexSession>();
   #initializePromise: Promise<AgentBackendError | null> | null = null;
@@ -213,6 +227,7 @@ export class CodexAppServerAgentBackend implements AgentBackend {
     this.#clientVersion = options.clientVersion;
     this.#expectedProtocol = deepFreeze({ ...options.expectedProtocol });
     this.#transport = options.transport;
+    this.#accountLease = options.accountLease ?? null;
     this.#nowMs = options.nowMs ?? (() => Date.now());
     this.safeView = deepFreeze({
       backendId,
@@ -226,6 +241,10 @@ export class CodexAppServerAgentBackend implements AgentBackend {
     if (preflight) return frozen({ ok: false, error: preflight });
     if (request.profileId !== this.#profileId) {
       return frozen({ ok: false, error: backendError("invalid_response", false, "unknown Codex author profile") });
+    }
+    const accountLease = this.#accountLease?.snapshot() ?? null;
+    if (accountLease !== null && (!accountLease.authenticated || accountLease.accountKey === null)) {
+      return frozen({ ok: false, error: backendError("auth_required", false, "ChatGPT subscription login required") });
     }
     const initialized = await this.#ensureInitialized(request);
     if (initialized) return frozen({ ok: false, error: initialized });
@@ -246,7 +265,13 @@ export class CodexAppServerAgentBackend implements AgentBackend {
     }
     const sessionRef = `codex-author-session-${++this.#sessionOrdinal}`;
     const handle = frozen({ backendId: this.safeView.backendId, sessionRef });
-    this.#sessions.set(sessionRef, { handle, threadId: started.threadId, activeTurnId: null });
+    this.#sessions.set(sessionRef, {
+      handle,
+      threadId: started.threadId,
+      accountGeneration: accountLease?.generation ?? null,
+      accountKey: accountLease?.accountKey ?? null,
+      activeTurnId: null
+    });
     return frozen({ ok: true, session: handle, backendRequestId: requestId(started.requestId) });
   }
 
@@ -332,7 +357,12 @@ export class CodexAppServerAgentBackend implements AgentBackend {
 
   #ownedSession(handle: AgentSessionHandle): OpenCodexSession | null {
     if (handle.backendId !== this.safeView.backendId || !isId(handle.sessionRef)) return null;
-    return this.#sessions.get(handle.sessionRef) ?? null;
+    const session = this.#sessions.get(handle.sessionRef) ?? null;
+    if (session === null || session.accountGeneration === null) return session;
+    const lease = this.#accountLease?.snapshot() ?? null;
+    if (lease === null || !lease.authenticated || lease.accountKey === null
+      || lease.generation !== session.accountGeneration || lease.accountKey !== session.accountKey) return null;
+    return session;
   }
 
   async #interruptBestEffort(session: OpenCodexSession, request: CodexTransportRequestContext): Promise<void> {
