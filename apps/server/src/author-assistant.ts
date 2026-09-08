@@ -309,7 +309,7 @@ export async function runAuthorAssistantSegment(
         Object.freeze({ role: "system" as const, content: systemInstruction }),
         Object.freeze({
           role: "user" as const,
-          content: `Instruction:\\n${input.instruction}\\n\\nBounded quest authoring context:\\n${contextJson}`
+          content: `Instruction:\n${input.instruction}\n\nBounded quest authoring context:\n${contextJson}`
         })
       ]),
       maxOutputTokens: AUTHOR_MAX_OUTPUT_TOKENS,
