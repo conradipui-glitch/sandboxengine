@@ -1,5 +1,16 @@
 import type { Block, JsonValue } from "@living-history/contracts";
-import type { ControlProjectRole, DraftChangeSet } from "@living-history/control";
+import type {
+  AuthorAgentCheckpoint,
+  AuthorAgentJobRecord,
+  AuthorAgentProposalArtifact,
+  AuthorAgentProposalUsage,
+  AuthorConversationMessage,
+  AuthoringProposal,
+  AuthoringProposalApplication,
+  AuthoringProposalPreview,
+  ControlProjectRole,
+  DraftChangeSet
+} from "@living-history/control";
 
 export interface ProjectView {
   readonly projectId: string;
@@ -211,6 +222,26 @@ export interface QuestImportResultView {
   readonly replay?: true;
 }
 
+export interface AuthorJobReadView {
+  readonly job: AuthorAgentJobRecord;
+  readonly checkpoints: readonly AuthorAgentCheckpoint[];
+  readonly messages: readonly AuthorConversationMessage[];
+  readonly proposalArtifacts: readonly AuthorAgentProposalArtifact[];
+}
+
+export interface AuthorSegmentView {
+  readonly job: AuthorAgentJobRecord;
+  readonly proposal: AuthoringProposal;
+  readonly preview: AuthoringProposalPreview;
+  readonly usage: AuthorAgentProposalUsage;
+}
+
+export interface AuthorProposalApplyView {
+  readonly draft: DraftView;
+  readonly application: AuthoringProposalApplication;
+  readonly replay?: true;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -328,6 +359,85 @@ export class ControlApiClient {
       }
     );
     return body.draft;
+  }
+
+  async listAuthorJobs(projectId: string, questId: string): Promise<readonly AuthorAgentJobRecord[]> {
+    const body = await this.request<{ readonly jobs: readonly AuthorAgentJobRecord[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs`
+    );
+    return body.jobs;
+  }
+
+  async createAuthorJob(
+    projectId: string,
+    questId: string,
+    input: { readonly maxToolCalls?: number; readonly maxActiveTimeMs?: number },
+    idempotencyKey: string
+  ): Promise<AuthorAgentJobRecord> {
+    const body = await this.request<{ readonly job: AuthorAgentJobRecord }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs`,
+      input,
+      { idempotencyKey }
+    );
+    return body.job;
+  }
+
+  async getAuthorJob(projectId: string, questId: string, jobId: string): Promise<AuthorJobReadView> {
+    return this.request<AuthorJobReadView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}`
+    );
+  }
+
+  async runAuthorSegment(
+    projectId: string,
+    questId: string,
+    jobId: string,
+    instruction: string,
+    resumeBudget: boolean,
+    idempotencyKey: string
+  ): Promise<AuthorSegmentView> {
+    return this.request<AuthorSegmentView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/segments`,
+      resumeBudget ? { instruction, resumeBudget: true } : { instruction },
+      { idempotencyKey }
+    );
+  }
+
+  async cancelAuthorJob(projectId: string, questId: string, jobId: string, idempotencyKey: string): Promise<AuthorAgentJobRecord> {
+    const body = await this.request<{ readonly job: AuthorAgentJobRecord }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/cancel`,
+      {},
+      { idempotencyKey }
+    );
+    return body.job;
+  }
+
+  async previewAuthoringProposal(projectId: string, questId: string, proposal: AuthoringProposal): Promise<AuthoringProposalPreview> {
+    const body = await this.request<{ readonly preview: AuthoringProposalPreview }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/proposals/preview`,
+      { proposal }
+    );
+    return body.preview;
+  }
+
+  async applyAuthoringProposal(
+    projectId: string,
+    questId: string,
+    proposal: AuthoringProposal,
+    idempotencyKey: string
+  ): Promise<AuthorProposalApplyView> {
+    return this.request<AuthorProposalApplyView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/proposals/apply`,
+      { proposal },
+      { idempotencyKey }
+    );
   }
 
   async getDraft(projectId: string, questId: string): Promise<DraftView> {
