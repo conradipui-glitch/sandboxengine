@@ -8,12 +8,16 @@ import {
   compareDraftRevisions,
   importQuestPackageFromStore,
   listDraftHistory,
+  type AuthorConversationStore,
   type ControlProjectRole,
   type ControlReleaseStore,
   type ControlStore,
   type DraftHistoryPageOptions
 } from "@living-history/control";
 import { restoreControlDraft } from "./draft-version-authority.js";
+import { routeAuthoringProposalHttp } from "./authoring-proposal-http.js";
+import { routeAuthorJobHttp } from "./author-job-http.js";
+import type { AuthorAssistantDependencies } from "./author-assistant.js";
 
 const MAX_IMPORT_BASE64_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4;
 
@@ -22,9 +26,13 @@ export interface DraftVersionHttpContext {
   readonly url: URL;
   readonly store: ControlStore;
   readonly releaseStore: Pick<ControlReleaseStore, "getRelease"> | null;
+  readonly authorAssistant: AuthorAssistantDependencies | null;
+  readonly authorConversation: AuthorConversationStore | null;
+  readonly actorUserId: string;
   readonly requireRole: (projectId: string, role: ControlProjectRole) => Promise<boolean>;
   readonly requireMutation: () => Promise<boolean>;
   readonly requireIdempotencyKey: () => string | null;
+  readonly requireAgentKitHandshake: () => boolean;
   readonly requireJsonObject: () => Promise<Record<string, any> | null>;
   readonly sendJson: (status: number, body: unknown) => void;
   readonly sendNotFound: () => void;
@@ -36,6 +44,9 @@ export interface DraftVersionHttpContext {
  * already-bounded policy callbacks.
  */
 export async function routeDraftVersionHttp(context: DraftVersionHttpContext): Promise<boolean> {
+  if (await routeAuthorJobHttp(context)) return true;
+  if (await routeAuthoringProposalHttp(context)) return true;
+
   const history = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/draft\/history$/.exec(context.url.pathname);
   if (history) {
     if (context.method !== "GET") { context.sendNotFound(); return true; }

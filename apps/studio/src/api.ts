@@ -1,5 +1,16 @@
 import type { Block, JsonValue } from "@living-history/contracts";
-import type { ControlProjectRole, DraftChangeSet } from "@living-history/control";
+import type {
+  AuthorAgentCheckpoint,
+  AuthorAgentJobRecord,
+  AuthorAgentProposalArtifact,
+  AuthorAgentProposalUsage,
+  AuthorConversationMessage,
+  AuthoringProposal,
+  AuthoringProposalApplication,
+  AuthoringProposalPreview,
+  ControlProjectRole,
+  DraftChangeSet
+} from "@living-history/control";
 
 export interface ProjectView {
   readonly projectId: string;
@@ -211,6 +222,50 @@ export interface QuestImportResultView {
   readonly replay?: true;
 }
 
+export interface AuthorJobReadView {
+  readonly job: AuthorAgentJobRecord;
+  readonly checkpoints: readonly AuthorAgentCheckpoint[];
+  readonly messages: readonly AuthorConversationMessage[];
+  readonly proposalArtifacts: readonly AuthorAgentProposalArtifact[];
+}
+
+export interface AuthorSegmentView {
+  readonly job: AuthorAgentJobRecord;
+  readonly proposal: AuthoringProposal;
+  readonly preview: AuthoringProposalPreview;
+  readonly usage: AuthorAgentProposalUsage;
+}
+
+export interface AuthorProposalApplyView {
+  readonly draft: DraftView;
+  readonly application: AuthoringProposalApplication;
+  readonly replay?: true;
+}
+
+export interface AgentKitIdentityView {
+  readonly engineVersion: string;
+  readonly contractsSchemaVersion: string;
+  readonly presentationSchemaVersion: string;
+  readonly pluginManifestSchemaVersion: string;
+  readonly enginePluginApiVersion: string;
+  readonly registryVersion: string;
+  readonly registryHash: string;
+  readonly pluginRegistryVersion: string;
+  readonly pluginRegistryHash: string;
+  readonly apiHash: string;
+  readonly docsHash: string;
+}
+
+export interface AgentKitView {
+  readonly identity: AgentKitIdentityView;
+  readonly files: readonly {
+    readonly path: string;
+    readonly mediaType: string;
+    readonly sha256: string;
+    readonly content: string;
+  }[];
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -227,6 +282,7 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 interface RequestOptions {
   readonly csrf?: "if-present" | "omit";
   readonly idempotencyKey?: string;
+  readonly agentKitIdentity?: AgentKitIdentityView;
 }
 
 export class ControlApiClient {
@@ -262,6 +318,10 @@ export class ControlApiClient {
   async logout(): Promise<void> {
     await this.request<unknown>("POST", "/auth/logout");
     this.csrfToken = null;
+  }
+
+  async getAgentKit(): Promise<AgentKitView> {
+    return this.request<AgentKitView>("GET", "/agent-kit");
   }
 
   async listProjects(): Promise<readonly ProjectView[]> {
@@ -328,6 +388,102 @@ export class ControlApiClient {
       }
     );
     return body.draft;
+  }
+
+  async listAuthorJobs(projectId: string, questId: string): Promise<readonly AuthorAgentJobRecord[]> {
+    const body = await this.request<{ readonly jobs: readonly AuthorAgentJobRecord[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs`
+    );
+    return body.jobs;
+  }
+
+  async createAuthorJob(
+    projectId: string,
+    questId: string,
+    input: { readonly maxToolCalls?: number; readonly maxActiveTimeMs?: number },
+    idempotencyKey: string
+  ): Promise<AuthorAgentJobRecord> {
+    const body = await this.request<{ readonly job: AuthorAgentJobRecord }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs`,
+      input,
+      { idempotencyKey }
+    );
+    return body.job;
+  }
+
+  async getAuthorJob(projectId: string, questId: string, jobId: string): Promise<AuthorJobReadView> {
+    return this.request<AuthorJobReadView>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}`
+    );
+  }
+
+  async runAuthorSegment(
+    projectId: string,
+    questId: string,
+    jobId: string,
+    instruction: string,
+    resumeBudget: boolean,
+    idempotencyKey: string
+  ): Promise<AuthorSegmentView> {
+    return this.request<AuthorSegmentView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/segments`,
+      resumeBudget ? { instruction, resumeBudget: true } : { instruction },
+      { idempotencyKey }
+    );
+  }
+
+  async cancelAuthorJob(projectId: string, questId: string, jobId: string, idempotencyKey: string): Promise<AuthorAgentJobRecord> {
+    const body = await this.request<{ readonly job: AuthorAgentJobRecord }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/cancel`,
+      {},
+      { idempotencyKey }
+    );
+    return body.job;
+  }
+
+  async applyAuthorJobProposal(
+    projectId: string,
+    questId: string,
+    jobId: string,
+    proposalId: string,
+    idempotencyKey: string
+  ): Promise<AuthorProposalApplyView> {
+    const agentKit = await this.getAgentKit();
+    return this.request<AuthorProposalApplyView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/author/jobs/${encodeURIComponent(jobId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
+      {},
+      { idempotencyKey, agentKitIdentity: agentKit.identity }
+    );
+  }
+
+  async previewAuthoringProposal(projectId: string, questId: string, proposal: AuthoringProposal): Promise<AuthoringProposalPreview> {
+    const body = await this.request<{ readonly preview: AuthoringProposalPreview }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/proposals/preview`,
+      { proposal }
+    );
+    return body.preview;
+  }
+
+  async applyAuthoringProposal(
+    projectId: string,
+    questId: string,
+    proposal: AuthoringProposal,
+    idempotencyKey: string
+  ): Promise<AuthorProposalApplyView> {
+    const agentKit = await this.getAgentKit();
+    return this.request<AuthorProposalApplyView>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/draft/proposals/apply`,
+      { proposal },
+      { idempotencyKey, agentKitIdentity: agentKit.identity }
+    );
   }
 
   async getDraft(projectId: string, questId: string): Promise<DraftView> {
@@ -546,6 +702,11 @@ export class ControlApiClient {
       headers["x-csrf-token"] = this.csrfToken;
     }
     if (options.idempotencyKey !== undefined) headers["idempotency-key"] = options.idempotencyKey;
+    if (options.agentKitIdentity !== undefined) {
+      headers["x-lh-engine-version"] = options.agentKitIdentity.engineVersion;
+      headers["x-lh-registry-hash"] = options.agentKitIdentity.registryHash;
+      headers["x-lh-docs-hash"] = options.agentKitIdentity.docsHash;
+    }
 
     let response: Response;
     try {
