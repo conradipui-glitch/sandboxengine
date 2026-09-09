@@ -15,7 +15,7 @@ Builder работает отдельным процессом от Core/Runtime
 |---|---|---|
 | B13.0 | Точный repository snapshot, канонические read/write paths и argv проверок; fail-closed policy без файлового исполнения | GREEN (2026-09-09) |
 | B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
-| B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | GREEN (2026-09-09) |
+| B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | PARTIAL (2026-09-09): policy-граница + CI-runner изоляция; локальная процессная изоляция отсутствует (нет Docker/WSL) — [worklog](../worklog/2026-09-09-B13-acceptance-environment.md) |
 | B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | GREEN (2026-09-09) |
 | B13.b2 | Один preview deployment adapter с artifact identity и smoke | GREEN (2026-09-09, adapter; живой dispatch — отдельный шаг) |
 | B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | GREEN (2026-09-09, adapter; живой production dispatch — по разрешению оператора) |
