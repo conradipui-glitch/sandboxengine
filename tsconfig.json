@@ -11,6 +11,7 @@
     { "path": "./packages/player" },
     { "path": "./apps/server" },
     { "path": "./apps/studio" },
-    { "path": "./apps/player" }
+    { "path": "./apps/player" },
+    { "path": "./apps/builder-runner" }
   ]
 }

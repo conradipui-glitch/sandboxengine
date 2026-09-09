@@ -19,7 +19,7 @@
 | Live provider evidence | **GREEN / model-quality limitation** | OpenRouter run `34250711595`, `deepseek/deepseek-v4-flash-0731`: contract 12/12, semantic 5/12, 16 attempts, mean 12.176 s, max 25.002 s |
 | Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | Release | **`v0.1.0` published** | tag resolves exactly to `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; main CI #729 success |
-| B13 Builder/deployment | **next block / not started** | starts only from accepted B12; separate acceptance |
+| B13 Builder/deployment | **B13.0 GREEN / B13.a1 next** | exact repository snapshot + fail-closed path policy; no filesystem executor, push or deployment yet |
 
 ## Published B12 result
 
@@ -40,4 +40,4 @@ Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `do
 
 ## Next block
 
-Начать B13 с отдельной baseline-карточки: зафиксировать разрешённый repository/workspace contract и тестируемую изоляцию до подключения push или deployment. B13 не меняет опубликованные доказательства `v0.1.0`.
+Продолжить [B13.a1](tasks/B13-BUILDER.md): изолированный workspace adapter, exact-HEAD и realpath/symlink boundary на fixture repository. Push и deployment остаются последующими карточками. B13 не меняет опубликованные доказательства `v0.1.0`.
