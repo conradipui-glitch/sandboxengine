@@ -10,4 +10,5 @@ export type { BoundedAgentJobResult, BuilderVerificationRunner } from "./bounded
 export { createBuilderWorkspacePolicy, authorizeBuilderPath } from "./workspace-policy.js";
 export type { BuilderWorkspacePolicy } from "./workspace-policy.js";
 
-export { createReadonlyWorkspace } from "./readonly-workspace.js";
+export { createReadonlyBuilderWorkspace } from "./readonly-workspace.js";
+export type { ReadonlyBuilderWorkspace } from "./readonly-workspace.js";
