@@ -67,6 +67,6 @@ engine-режим в приложении отдаёт `ENGINE_ROUTE_NOT_CONFIGU
 |---|---|
 | 1. Изоляция a2 | PARTIAL (policy-allowlist + CI runner как изолированная среда; host-режим hygiene-only) |
 | 2. Живой деплой через адаптер + operation ID + lost-response reconcile | PROVEN (деплой, квитанция, живой reconcile без dispatch) |
-| 3. Версии в preview | Задокументированы; движок отдельным сервисом не размещён (нужен endpoint + secrets) |
+| 3. Версии в preview | sandbox@f8bbd69 (app 0.1.0 + ENGINE_* vars) → engine VPS @ 6e01c0b (live-author-studio feat/b13-acceptance-closure) |
 | 4. Игровой smoke | PROVEN (create/turns/resume/idempotency) |
 | 5. Rollback preview | PROVEN (только зелёные артефакты; ref-move оператором) |
