@@ -1,13 +1,15 @@
 # Статус движка
 
-Последнее обновление: 2026-09-08.
+Последнее обновление: 2026-09-09.
+
+Ветка `feat/live-author-studio` завершила [L00–L09 — live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L07 и L09 приняты; L08 — `UNVERIFIED: нет доступа к провайдеру`. Сквозной цикл через HTTP adapter, запуск frozen Player и браузерная приёмка пройдены; живой прогон реальной модели не заявляется. Следующий отдельный блок — B13 Builder.
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
 | Репозиторий | **B01–B12 published** | B12 merge `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; tag `v0.1.0` |
 | Core/Runtime | **GREEN** | full deterministic suite + durable restart/replay/fencing |
 | Storage/assets | **B12 GREEN / scoped** | online backup/restore + 12/12 Florence hashes; no Cloudflare DO claim |
-| Studio/Player | **GREEN** | author/playtest/publication paths + T29 real 360×800 keyboard/focus smoke `34246143800` |
+| Studio/Player | **GREEN / live-authoring L00–L09 closed** | L00–L07 + L09 accepted; PR CI `34302849541` on reviewed code; L08 live model run UNVERIFIED |
 | Releases/rollback | **GREEN** | permanent `drill:rollback`; exact B12 `main` CI #729 / `34251551857` |
 | Persistent operations | **GREEN** | `npm start` + `/healthz` + SQLite + graceful SIGTERM |
 | Security/quota | **GREEN** | permanent release audit 0/0 + 429 no-turn save integrity |
@@ -17,7 +19,7 @@
 | Live provider evidence | **GREEN / model-quality limitation** | OpenRouter run `34250711595`, `deepseek/deepseek-v4-flash-0731`: contract 12/12, semantic 5/12, 16 attempts, mean 12.176 s, max 25.002 s |
 | Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | Release | **`v0.1.0` published** | tag resolves exactly to `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; main CI #729 success |
-| B13 Builder/deployment | **next block / not started** | starts only from accepted B12; separate acceptance |
+| B13 Builder/deployment | **B13.0–B13.c1 GREEN (adapters) / приёмка живых dispatch отдельно** | policy + read-only clone + bounded patch executor + authorized change set w/ exact-SHA CI check + preview adapter + production policy/lost-response reconciliation/verified rollback; live dispatches pending operator |
 
 ## Published B12 result
 
@@ -38,4 +40,4 @@ Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `do
 
 ## Next block
 
-B13 — Builder/code/GitHub/deployment orchestration — may now start as a separate acceptance block. It must not rewrite or weaken the published `v0.1.0` evidence.
+[B13](tasks/B13-BUILDER.md) принят на уровне адаптеров (B13.0–B13.c1): живые preview/production dispatch — отдельные шаги приёмки по разрешению оператора. B13 не меняет опубликованные доказательства `v0.1.0`.

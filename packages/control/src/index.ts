@@ -187,6 +187,11 @@ export {
   type SQLiteControlSecurityStoreOptions
 } from "./security-stores.js";
 export {
+  isAllowedLocalHttpRequest,
+  type LocalHttpPolicyOptions,
+  type LocalHttpRequestLike
+} from "./local-http-policy.js";
+export {
   cloneAndFreezeRelease,
   isControlReleaseHash,
   isControlReleaseId,

@@ -148,9 +148,14 @@ test("B05-03 dev:player process boots from a real durable frozen playtest and se
   const directory = await mkdtemp(join(tmpdir(), "sandboxengine-player-process-"));
   const databasePath = join(directory, "living-history.sqlite");
   const store = new SQLiteControlStore({ path: databasePath });
+  let child = null;
   t.after(async () => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+      await once(child, "exit");
+    }
     store.close();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
   });
 
   const project = await store.createProject({ projectId: "project", title: "Проект" });
@@ -185,7 +190,7 @@ test("B05-03 dev:player process boots from a real durable frozen playtest and se
   store.close();
 
   const mainPath = fileURLToPath(new URL("../dist/src/main.js", import.meta.url));
-  const child = spawn(process.execPath, [mainPath], {
+  child = spawn(process.execPath, [mainPath], {
     env: {
       ...process.env,
       LH_DATABASE_PATH: databasePath,
@@ -198,11 +203,6 @@ test("B05-03 dev:player process boots from a real durable frozen playtest and se
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-
-  t.after(async () => {
-    if (child.exitCode === null) child.kill("SIGTERM");
-    if (child.exitCode === null) await once(child, "exit");
-  });
 
   const baseUrl = await waitForPlayerUrl(child, stderr);
   const meta = await (await fetch(`${baseUrl}/player-meta.json`)).json();

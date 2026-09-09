@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
+import { isLocalOperatorRequest, isLocalProxyRequest, LocalAuthorProviderRequestError, readLocalJson, type LocalAuthorProvider } from "./local-author-provider.js";
 
 const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
 const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
@@ -25,15 +26,33 @@ const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
   "access-control-allow-credentials",
   "vary"
 ] as const);
+const STUDIO_PROXY_BODY_LIMIT_BYTES = 262_144;
+const STUDIO_PROXY_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]);
+
+export type PlayerLaunchOutcome =
+  | { readonly ok: true; readonly url: string; readonly playtestId: string }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+export type PlayerLauncher = (playtestId: string) => Promise<PlayerLaunchOutcome>;
 
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
+  readonly authorProvider?: LocalAuthorProvider;
+  readonly playerLauncher?: PlayerLauncher;
 }
 
 export interface StudioDevServer {
   readonly server: any;
   listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }>;
   close(): Promise<void>;
+}
+
+let playerLaunchChain: Promise<unknown> = Promise.resolve();
+
+function launchPlayerSerialized(launcher: PlayerLauncher, playtestId: string): Promise<PlayerLaunchOutcome> {
+  const next = playerLaunchChain.then(() => launcher(playtestId));
+  playerLaunchChain = next.catch(() => undefined);
+  return next;
 }
 
 export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
@@ -43,7 +62,50 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   const server = createServer(async (request: any, response: any) => {
     try {
       const url = new URL(String(request.url ?? "/"), "http://studio.local");
+      if (url.pathname === "/local/launch-player" && options.playerLauncher) {
+        if (url.searchParams.size !== 0) { sendJson(response, 400, { error: { code: "INVALID_LAUNCH_REQUEST" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        if (request.method !== "POST") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
+        try {
+          const body = await readLocalJson(request) as { playtestId?: unknown };
+          if (!body || typeof body !== "object" || Array.isArray(body)
+            || Object.keys(body).length !== 1 || !("playtestId" in body)) {
+            sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } });
+            return;
+          }
+          const playtestId = typeof body?.playtestId === "string" ? body.playtestId.trim() : "";
+          if (!playtestId || playtestId.length > 200) { sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } }); return; }
+          const outcome = await launchPlayerSerialized(options.playerLauncher, playtestId);
+          if (outcome.ok) sendJson(response, 200, { ok: true, url: outcome.url, playtestId: outcome.playtestId });
+          else sendJson(response, outcome.code === "playtest_not_found" ? 404 : 409, { error: { code: outcome.code, message: outcome.message } });
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) {
+            sendJson(response, error.status, { error: { code: error.code } });
+          } else {
+            sendJson(response, 400, { error: { code: "INVALID_LAUNCH_REQUEST" } });
+          }
+        }
+        return;
+      }
+      if (url.pathname === "/local/author-provider" && options.authorProvider) {
+        if (url.searchParams.size !== 0) { sendJson(response, 400, { error: { code: "INVALID_SETTINGS_REQUEST" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          if (request.method === "POST") options.authorProvider.configure(await readLocalJson(request));
+          else if (request.method === "DELETE") options.authorProvider.disconnect();
+          else if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
+          sendJson(response, 200, options.authorProvider.status());
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) {
+            sendJson(response, error.status, { error: { code: error.code } });
+          } else {
+            sendJson(response, 400, { error: { code: "INVALID_SETTINGS" } });
+          }
+        }
+        return;
+      }
       if (url.pathname.startsWith("/control/")) {
+        if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
         await proxyControl(request, response, control, url);
         return;
       }
@@ -88,7 +150,18 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
 async function proxyControl(request: any, response: any, control: URL, url: URL): Promise<void> {
   const target = new URL(url.pathname + url.search, control);
   const method = String(request.method ?? "GET").toUpperCase();
-  const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+  if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+  let body: ArrayBuffer | undefined;
+  try {
+    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+  } catch (error) {
+    if (error instanceof StudioProxyRequestError) {
+      sendJson(response, error.status, { error: { code: error.code } });
+      return;
+    }
+    sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
+    return;
+  }
   const headers: Record<string, string> = {};
   for (const name of CONTROL_REQUEST_HEADER_ALLOWLIST) {
     const value = request.headers?.[name];
@@ -116,7 +189,7 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
 
 async function serveStatic(response: any, pathname: string): Promise<void> {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "");
+  const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "").replace(/\\/g, "/");
   const allowed = normalized === "index.html"
     || normalized === "styles.css"
     || normalized.startsWith("dist/");
@@ -126,6 +199,11 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
 
   const filePath = join(studioRoot, normalized);
+  const resolved = normalize(filePath);
+  if (!resolved.startsWith(normalize(studioRoot))) {
+    sendText(response, 404, "Not found");
+    return;
+  }
   try {
     const bytes = await readFile(filePath);
     response.statusCode = 200;
@@ -140,10 +218,15 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
 async function readRequestBody(request: any): Promise<ArrayBuffer> {
   const chunks: Uint8Array[] = [];
   let total = 0;
+  const contentLength = Number(request.headers?.["content-length"] ?? "");
+  if (Number.isSafeInteger(contentLength) && contentLength > STUDIO_PROXY_BODY_LIMIT_BYTES) {
+    throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
+  }
   for await (const chunk of request) {
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
     chunks.push(bytes);
     total += bytes.byteLength;
+    if (total > STUDIO_PROXY_BODY_LIMIT_BYTES) throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
   }
   const result = new Uint8Array(total);
   let offset = 0;
@@ -152,6 +235,12 @@ async function readRequestBody(request: any): Promise<ArrayBuffer> {
     offset += chunk.byteLength;
   }
   return result.buffer;
+}
+
+class StudioProxyRequestError extends Error {
+  constructor(readonly code: "BODY_TOO_LARGE", readonly status: 413) {
+    super(code);
+  }
 }
 
 function mimeType(path: string): string {

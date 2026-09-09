@@ -184,9 +184,21 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
     case "budget.paused": return `Segment budget paused: ${fact.toolCallsUsed} tools, ${fact.activeTimeMsUsed}ms`;
     case "job.resumed": return "Открыт новый bounded segment";
     case "job.cancelled": return "Job остановлен пользователем";
-    case "job.failed": return `Job failed: ${fact.code}`;
+    case "job.failed": return `Job failed: ${fact.code}${jobFailedHint(fact.code)}`;
     case "job.succeeded": return "Job completed";
   }
+}
+
+function jobFailedHint(code: string): string {
+  if (code === "context_too_large") return " — контекст кампании превышает локальный лимит; сократите квест до 32 блоков или уменьшите объём текста.";
+  if (code === "backend.auth_required") return " — ИИ не подключён или ключ отклонён: укажите провайдера, модель и ключ в форме «Подключение ИИ-помощника» выше.";
+  if (code === "backend.rate_limited") return " — провайдер отвечает 429 (лимит запросов); повторите позже.";
+  if (code === "backend.timeout") return " — провайдер не ответил за отведённое время; повторите запрос.";
+  if (code === "backend.invalid_response") return " — провайдер вернул нечитаемый ответ; проверьте модель и её поддержку JSON-ответов.";
+  if (code === "backend.session_expired") return " — сессия истекла; отправьте сообщение заново.";
+  if (code === "backend.aborted") return " — запрос был прерван; отправьте сообщение заново.";
+  if (code === "backend.backend_error") return " — провайдер вернул ошибку; проверьте адрес API и модель, затем повторите.";
+  return "";
 }
 
 function shortHash(value: string): string {

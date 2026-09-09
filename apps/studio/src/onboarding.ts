@@ -119,7 +119,7 @@ export const TOUR_STEPS: readonly TourStep[] = Object.freeze([
     id: "player",
     anchor: ".launch-commands",
     title: "Запустите локальный Player",
-    body: "После freeze Studio показывает LH_PLAYTEST_ID и команду npm run dev:player. Reset создаёт новую session из этой же frozen версии.",
+    body: "После freeze откройте Player кнопкой «Открыть в Player» в панели playtest; ссылка появится там же. Команда npm run dev:player осталась запасным способом. Reset создаёт новую session из этой же frozen версии.",
     prerequisite: NEED_VALIDATION
   }),
   Object.freeze({

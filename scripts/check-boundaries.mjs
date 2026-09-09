@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 const checks = [
@@ -71,7 +72,7 @@ for (const check of checks) {
   const entries = await readdir(check.root, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
-    const path = join(check.root.pathname, entry.name);
+    const path = join(fileURLToPath(check.root), entry.name);
     const contents = await readFile(path, "utf8");
     for (const pattern of check.forbidden) {
       if (pattern.test(contents)) violations.push(`${check.label}/${entry.name}: ${pattern}`);
