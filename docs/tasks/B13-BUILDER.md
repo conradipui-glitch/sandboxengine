@@ -16,8 +16,8 @@ Builder работает отдельным процессом от Core/Runtime
 | B13.0 | Точный repository snapshot, канонические read/write paths и argv проверок; fail-closed policy без файлового исполнения | GREEN (2026-09-09) |
 | B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
 | B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | GREEN (2026-09-09) |
-| B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | NEXT |
-| B13.b2 | Один preview deployment adapter с artifact identity и smoke | NOT STARTED |
+| B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | GREEN (2026-09-09) |
+| B13.b2 | Один preview deployment adapter с artifact identity и smoke | NEXT |
 | B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | NOT STARTED |
 
 ## B13.0 — policy baseline
@@ -36,9 +36,18 @@ Builder работает отдельным процессом от Core/Runtime
 
 **Доказательство:** [worklog B13.a1](../worklog/2026-09-09-B13-a1-readonly-workspace.md).
 
-## B13.b1 — разрешённые repo-операции
+## B13.b1 — разрешённые repo-операции (2026-09-09, GREEN)
 
-Добавить разрешённый commit/push change set с внешним operation ID и сверкой CI-результата с нужным SHA.
+`BoundedChangeSetApplier`: bounded external operationId, grant строго равен policy (repo + branch),
+identity/subject валидированы, коммит и push из isolated clone (fixed argv, чистое environment),
+пустой change set отклоняется; `reconcileWithCi` требует ран с headSha === pushed SHA. Push в
+локальный bare-remote доказан e2e-фикстурой; source checkout не меняется. Аутентификация remote —
+ответственность среды, модуль токенов не получает.
+
+**Проверить:** `npm run test:builder` — 16/16; verify exit 0; CI success `9f17250`
+(run `34315990935`).
+
+**Доказательство:** [worklog b1](../worklog/2026-09-09-B13-b1-changeset-operations.md).
 
 ## B13.a2 — bounded agent job (2026-09-09, GREEN)
 
