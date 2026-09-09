@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Living History — вход</title>
+<script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="living_history_gate_bot" data-size="large" data-userpic="false" data-radius="8" data-onauth="onTelegramAuth(user)" data-request-access="write"></script>
+</head>
+<body style="font-family:system-ui;background:#12110f;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0">
+<div style="text-align:center;max-width:480px;padding:24px">
+<h2 style="font-weight:600">Вход в Living History Studio</h2>
+<p style="opacity:.75">Подтвердите вход через Telegram</p>
+<div id="tg" style="min-height:44px;margin:12px 0;display:flex;justify-content:center"></div>
+<div id="invite-block" style="margin:12px 0">
+<input id="invite" placeholder="Код приглашения" autocomplete="off"
+  style="background:#1c1b18;color:#eee;border:1px solid #3a382f;border-radius:8px;padding:10px 14px;font-size:15px;width:220px;text-align:center">
+<div style="font-size:12px;opacity:.55;margin-top:6px">Код из ссылки-приглашения (попросите у владельца)</div>
+</div>
+<p id="status" style="min-height:22px;font-size:14px;color:#e8a"></p>
+<a id="tg-fallback" href="#" style="display:none;color:#7ab8ff;text-decoration:underline;font-size:15px">Войти через Telegram (прямая ссылка)</a>
+<p id="tg-note" style="display:none;opacity:.6;font-size:13px">Откроется Telegram — подтвердите вход.</p>
+<noscript><p style="color:#e88">Для входа включите JavaScript.</p></noscript>
+</div>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var fromUrl = params.get("invite") || "";
+  var stored = "";
+  try { stored = localStorage.getItem("lhc_invite") || ""; } catch (e) {}
+  var input = document.getElementById("invite");
+  input.value = fromUrl || stored;
+  if (fromUrl) { try { localStorage.setItem("lhc_invite", fromUrl); } catch (e) {} }
+  input.addEventListener("input", function () {
+    try { localStorage.setItem("lhc_invite", input.value.trim()); } catch (e) {}
+  });
+})();
+function inviteCode() {
+  var v = (document.getElementById("invite").value || "").trim();
+  if (!v) { try { v = localStorage.getItem("lhc_invite") || ""; } catch (e) {} }
+  return v.trim();
+}
+function setStatus(text, bad) {
+  var el = document.getElementById("status");
+  el.textContent = text;
+  el.style.color = bad ? "#e88" : "#8e8";
+}
+window.onTelegramAuth = onTelegramAuth;
+function onTelegramAuth(u) {
+  var invite = inviteCode();
+  if (!invite) {
+    setStatus("Нет кода приглашения — вставьте его в поле выше и нажмите кнопку ещё раз.", true);
+    return;
+  }
+  setStatus("Проверяем вход…", false);
+  fetch("/gate/callback", {
+    method: "POST",
+    headers: {"content-type": "application/json"},
+    body: JSON.stringify(Object.assign({}, u, { invite: invite }))
+  }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+    if (res.ok && res.j.setCookie) {
+      document.cookie = res.j.setCookie;
+      try { localStorage.removeItem("lhc_invite"); } catch (e) {}
+      location.href = "/";
+    } else {
+      setStatus("Вход не принят: " + (res.j.error || "неизвестная ошибка") +
+        ". Проверьте код приглашения (он одноразовый, попросите свежий).", true);
+    }
+  }).catch(function () { setStatus("Сеть: не удалось связаться с гейтом.", true); });
+}
+(function () {
+  var m = /#tgAuthResult=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (m) {
+    try {
+      var payload = JSON.parse(atob(m[1].replace(/-/g, "+").replace(/_/g, "/")));
+      onTelegramAuth(payload);
+    } catch (e) { setStatus("Не удалось прочитать ответ Telegram.", true); }
+    return;
+  }
+  setTimeout(function () {
+    if (!document.querySelector("#tg iframe")) {
+      var link = document.getElementById("tg-fallback");
+      link.href = "https://oauth.telegram.org/auth?bot_id=8870491798&origin=" +
+        encodeURIComponent(location.origin) + "&request_access=write&return_to=" +
+        encodeURIComponent(location.origin + "/");
+      link.style.display = "inline";
+      document.getElementById("tg-note").style.display = "block";
+    }
+  }, 3000);
+})();
+</script>
+</body>
+</html>
