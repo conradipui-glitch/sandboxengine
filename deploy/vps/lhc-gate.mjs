@@ -133,10 +133,23 @@ const server = createServer((req, res) => {
       const fields = JSON.parse(body || "{}");
       const { invite, ...auth } = fields;
       const inviteRecord = invite ? state.invites[invite] : null;
-      if (!inviteRecord || inviteRecord.used || inviteRecord.expiresAt < Date.now()) {
-        return json(res, 403, { error: "invitation invalid or expired" });
+      const fail = (code, message) => {
+        console.log(`callback reject: ${code} invite=${String(invite || "").slice(0, 6)}`);
+        return json(res, 403, { error: message, code });
+      };
+      if (!inviteRecord) {
+        return fail("invite_not_found", "invitation invalid or expired");
       }
-      if (!verifyTelegramAuth(auth)) return json(res, 403, { error: "telegram signature invalid" });
+      if (inviteRecord.used) {
+        return fail("invite_used", "invitation already used — ask the owner for a fresh code");
+      }
+      if (inviteRecord.expiresAt < Date.now()) {
+        return fail("invite_expired", "invitation expired — ask the owner for a fresh code");
+      }
+      if (!verifyTelegramAuth(auth)) {
+        console.log(`callback reject: bad_signature`);
+        return json(res, 403, { error: "telegram signature invalid", code: "bad_signature" });
+      }
       if (String(auth.id) !== inviteRecord.telegramId) {
         return json(res, 403, { error: "this invitation was issued to another telegram account" });
       }

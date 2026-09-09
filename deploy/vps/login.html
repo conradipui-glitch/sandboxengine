@@ -62,8 +62,14 @@ function onTelegramAuth(u) {
       try { localStorage.removeItem("lhc_invite"); } catch (e) {}
       location.href = "/";
     } else {
-      setStatus("Вход не принят: " + (res.j.error || "неизвестная ошибка") +
-        ". Проверьте код приглашения (он одноразовый, попросите свежий).", true);
+      var hints = {
+        invite_not_found: "Такого кода нет — проверьте, что код введён целиком.",
+        invite_used: "Этот код уже использован (он одноразовый) — попросите свежий.",
+        invite_expired: "Срок кода истёк (15 минут) — попросите свежий.",
+        bad_signature: "Подпись Telegram не сошлась — попробуйте нажать кнопку ещё раз.",
+        wrong_account: "Приглашение выписано на другой Telegram-аккаунт."
+      };
+      setStatus("Вход не принят: " + (hints[res.j.code] || res.j.error || "неизвестная ошибка"), true);
     }
   }).catch(function () { setStatus("Сеть: не удалось связаться с гейтом.", true); });
 }
