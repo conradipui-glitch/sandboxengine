@@ -19,7 +19,7 @@
 | Live provider evidence | **GREEN / model-quality limitation** | OpenRouter run `34250711595`, `deepseek/deepseek-v4-flash-0731`: contract 12/12, semantic 5/12, 16 attempts, mean 12.176 s, max 25.002 s |
 | Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | Release | **`v0.1.0` published** | tag resolves exactly to `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; main CI #729 success |
-| B13 Builder/deployment | **B13.0–B13.a1 GREEN / B13.a2 next** | exact snapshot + read-only isolated clone with HEAD and symlink boundary; no patch executor, push or deployment yet |
+| B13 Builder/deployment | **B13.0–B13.b2 GREEN / B13.c1 next** | policy + read-only clone + bounded patch executor + authorized change set w/ exact-SHA CI check + preview deployment adapter; no live dispatch yet |
 
 ## Published B12 result
 
@@ -40,4 +40,4 @@ Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `do
 
 ## Next block
 
-Продолжить [B13.a2](tasks/B13-BUILDER.md): bounded agent patch, diff/tree identity и разрешённые проверки в isolated workspace. Push и deployment остаются последующими карточками. B13 не меняет опубликованные доказательства `v0.1.0`.
+Продолжить [B13.c1](tasks/B13-BUILDER.md): production policy, reconciliation потерянного ответа и проверенный rollback. B13 не меняет опубликованные доказательства `v0.1.0`.
