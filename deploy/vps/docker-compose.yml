@@ -8,9 +8,12 @@ services:
     ports:
       - "127.0.0.1:8742:8742"
     environment:
-      - LH_HOST=0.0.0.0
-      - LH_PORT=8742
-      - LH_DATABASE_PATH=/data/living-history.sqlite
+      - HOST=0.0.0.0
+      - PORT=8742
+      - CONTROL_PORT=8788
+      - CONTROL_AUTH_MODE=authenticated
+      - CONTROL_SECURE_COOKIES=true
+      - RUNTIME_DB_PATH=/data/living-history.sqlite
     volumes:
       - engine-data:/data
     healthcheck:
