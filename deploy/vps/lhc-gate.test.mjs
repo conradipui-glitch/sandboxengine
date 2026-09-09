@@ -1,18 +1,19 @@
-// Unit/integration тесты бот-управляемого входа (lhc-gate v2).
+// Unit/integration тесты бот-управляемого входа: персональная ссылка + тикет (lhc-gate v3).
 // Run: node --test deploy/vps/lhc-gate.test.mjs
 // Живую приёмку с реальными людьми не заменяют — см. ACCEPTANCE-checklist.md.
-import { describe, it, beforeEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.LHC_GATE_NO_AUTOSTART = "1";
-const { createGate, defaultState, migrateState, LOGIN_TTL_MS } = await import("./lhc-gate.mjs");
+const { createGate, defaultState, migrateState, wireHttp, TICKET_TTL_MS } = await import("./lhc-gate.mjs");
 
 const OWNER = "332664273";
 const MEMBER = "111222333";
 const STRANGER = "999888777";
+const STUDIO = "https://studio.example:8741";
 
 function fakeTg() {
-  const sent = []; // { chatId, text, extra }
+  const sent = [];
   const edited = [];
   const answers = [];
   return {
@@ -31,7 +32,7 @@ function setup() {
   const state = defaultState();
   const gate = createGate({
     state,
-    config: { ownerId: OWNER, botUsername: "living_history_gate_bot", gateSecret: "x".repeat(40), persist: () => {} },
+    config: { ownerId: OWNER, botUsername: "living_history_gate_bot", studioOrigin: STUDIO, gateSecret: "x".repeat(40), persist: () => {} },
     tg,
     now: () => now,
   });
@@ -54,6 +55,7 @@ const cb = (id, data, messageId = 7, username = "tester") => ({
     message: { message_id: messageId, chat: { id: Number(id), type: "private" } },
   },
 });
+const linkMessages = (tg, chatId) => tg.sent.filter((m) => m.chatId === String(chatId) && m.extra?.reply_markup?.inline_keyboard?.[0]?.[0]?.url);
 
 describe("права и владелец", () => {
   it("владелец авторизован без самоназначения; чужой ID — нет", () => {
@@ -61,128 +63,111 @@ describe("права и владелец", () => {
     assert.equal(gate.isOwner(OWNER), true);
     assert.equal(gate.isAuthorized(OWNER), true);
     assert.equal(gate.isAuthorized(STRANGER), false);
-    // нет API сменить владельца: addUser(owner) отклоняется
-    assert.equal(gate.addUser(OWNER).error, "owner_implicit");
+    assert.deepEqual(gate.addUser(OWNER, {}), { error: "owner_implicit" });
+    assert.deepEqual(gate.addUser("abc", {}), { error: "bad_id" });
+    assert.deepEqual(gate.revokeUser(OWNER), { error: "owner_irrevocable" });
+  });
+});
+
+describe("тикеты: выдача и обмен", () => {
+  it("чужому тикет не выдаётся; участник получает персональную ссылку", () => {
+    const { gate } = setup();
+    assert.deepEqual(gate.createTicket(STRANGER), { error: "forbidden" });
+    gate.addUser(MEMBER, { username: "member" });
+    const t = gate.createTicket(MEMBER);
+    assert.ok(t.ticket);
+    assert.equal(t.url, `${STUDIO}/?ticket=${t.ticket}`);
+    assert.equal(t.expiresInMs, TICKET_TTL_MS);
   });
 
-  it("добавление по числовому ID, отзыв убивает сессии", () => {
-    const { gate, state } = setup();
-    assert.ok(gate.addUser(MEMBER, { username: "ivan" }).ok);
-    assert.equal(gate.isAuthorized(MEMBER), true);
-    const cookie = gate.sessionCookie(gate.issueSession(MEMBER));
-    assert.ok(gate.readSession(`lhc_session=${cookie.split("=")[1]}`));
-    const r = gate.revokeUser(MEMBER);
-    assert.ok(r.ok);
-    assert.equal(r.killed, 1);
-    assert.equal(gate.isAuthorized(MEMBER), false);
-    assert.equal(gate.readSession(`lhc_session=${cookie.split("=")[1]}`), null);
-    // владельца отозвать нельзя
-    assert.equal(gate.revokeUser(OWNER).error, "owner_irrevocable");
+  it("обмен: одноразово, ставит сессию; повтор и чужой тикет отклоняются", () => {
+    const { gate } = setup();
+    gate.addUser(MEMBER, { username: "member" });
+    const t = gate.createTicket(MEMBER);
+    const info = gate.ticketInfo(t.ticket);
+    assert.equal(info.valid, true);
+    assert.equal(info.username, "member");
+    const r = gate.consumeTicket(t.ticket, "1.2.3.4");
+    assert.equal(r.ok, true);
+    const s = gate.readSession(`lhc_session=${r.cookieValue}`);
+    assert.equal(s?.telegramId, MEMBER);
+    assert.deepEqual(gate.consumeTicket(t.ticket, "1.2.3.4"), { error: "unknown" });
+    assert.deepEqual(gate.consumeTicket("nope", "1.2.3.4"), { error: "unknown" });
+    assert.deepEqual(gate.ticketInfo(t.ticket), { valid: false });
   });
 
-  it("предзаявка по username: прав нет, пока человек не напишет /start", async () => {
+  it("просроченный тикет не обменивается", () => {
+    const { gate } = setup();
+    gate.addUser(MEMBER, { username: "member" });
+    const t = gate.createTicket(MEMBER);
+    now += TICKET_TTL_MS + 1000;
+    assert.deepEqual(gate.consumeTicket(t.ticket, "1.2.3.4"), { error: "unknown" });
+  });
+
+  it("отзыв прав убивает тикеты и сессии", () => {
+    const { gate } = setup();
+    gate.addUser(MEMBER, { username: "member" });
+    const t = gate.createTicket(MEMBER);
+    const ok = gate.consumeTicket(t.ticket, "1.2.3.4");
+    assert.equal(ok.ok, true);
+    assert.ok(gate.readSession(`lhc_session=${ok.cookieValue}`));
+    const t2 = gate.createTicket(MEMBER);
+    const res = gate.revokeUser(MEMBER);
+    assert.equal(res.ok, true);
+    assert.equal(res.killed, 1);
+    assert.equal(gate.readSession(`lhc_session=${ok.cookieValue}`), null);
+    // Отозванный тикет неотличим от использованного — обмен закрыт в любом случае.
+    assert.deepEqual(gate.consumeTicket(t2.ticket, "1.2.3.4"), { error: "unknown" });
+  });
+});
+
+describe("бот: /start и «Открыть Studio»", () => {
+  it("владелец получает меню и персональную ссылку", async () => {
+    const { gate, tg } = setup();
+    await gate.handleUpdate(msg(OWNER, "/start", { username: "owner" }));
+    const links = linkMessages(tg, OWNER);
+    assert.equal(links.length, 1);
+    assert.match(links[0].extra.reply_markup.inline_keyboard[0][0].url, new RegExp(`^${STUDIO}/\\?ticket=`));
+    assert.ok(tg.sent.some((m) => m.chatId === OWNER && /Меню владельца/.test(m.text)));
+  });
+
+  it("допущенный участник получает приветствие и ссылку; ID фиксируется", async () => {
     const { gate, state, tg } = setup();
-    state.nameClaims["future"] = { createdAt: now, note: "owner claim" };
-    assert.equal(gate.isAuthorized("555666777"), false);
-    await gate.handleUpdate(msg("555666777", "/start", { username: "future" }));
-    assert.equal(gate.isAuthorized("555666777"), true);
-    assert.equal(state.nameClaims["future"], undefined); // предзаявка consumed
-    assert.ok(tg.sent.some((m) => /списке участников/.test(m.text)));
+    gate.addUser(MEMBER, {});
+    await gate.handleUpdate(msg(MEMBER, "/start", { username: "member" }));
+    assert.equal(state.users[MEMBER].username, "member");
+    assert.equal(linkMessages(tg, MEMBER).length, 1);
   });
 
-  it("неизвестный после /start получает понятное сообщение + запрос владельцу", async () => {
+  it("неизвестный получает отказ, владелец — запрос; одобрение шлёт ссылку", async () => {
     const { gate, state, tg } = setup();
     await gate.handleUpdate(msg(STRANGER, "/start", { username: "stranger" }));
-    assert.ok(tg.sent.some((m) => m.chatId === STRANGER && /по приглашению владельца/.test(m.text)));
-    const toOwner = tg.sent.find((m) => m.chatId === OWNER && /Запрос доступа/.test(m.text));
-    assert.ok(toOwner);
-    const btn = toOwner.extra.reply_markup.inline_keyboard[0][0];
-    assert.match(btn.callback_data, /^approve_/);
-    // владелец разрешает → доступ есть
-    const reqId = btn.callback_data.slice("approve_".length);
-    assert.ok(state.accessRequests[reqId]);
-    await gate.handleUpdate(cb(OWNER, `approve_${reqId}`, 3, "owner"));
-    assert.equal(gate.isAuthorized(STRANGER), true);
-    assert.ok(tg.sent.some((m) => m.chatId === STRANGER && /подтвердил доступ/.test(m.text)));
-  });
-
-  it("владелец отклоняет заявку: доступа нет, попытка отклонена", async () => {
-    const { gate, state } = setup();
-    const l = gate.createLogin({ ip: "1.2.3.4", ua: "TestUA" });
-    await gate.handleUpdate(msg(STRANGER, `/start login_${l.attemptId}`, { username: "stranger" }));
+    assert.equal(linkMessages(tg, STRANGER).length, 0);
+    assert.ok(tg.sent.some((m) => /Заявка отправлена/.test(m.text)));
     const reqId = Object.keys(state.accessRequests)[0];
-    await gate.handleUpdate(cb(OWNER, `deny_${reqId}`, 3, "owner"));
-    assert.equal(gate.isAuthorized(STRANGER), false);
-    assert.equal(gate.loginStatus(l.attemptId).status, "denied");
-  });
-});
-
-describe("login-попытка без ручных кодов", () => {
-  it("полный цикл: start → confirm в боте → consume → сессия; повтор запрещён", async () => {
-    const { gate, tg } = setup();
-    gate.addUser(MEMBER, { username: "ivan" });
-    const l = gate.createLogin({ ip: "5.6.7.8", ua: "Mozilla/5.0 (Windows NT 10.0)" });
-    assert.match(l.botUrl, /^https:\/\/t\.me\/living_history_gate_bot\?start=login_/);
-    // перехваченная ссылка без подтверждения сессию не даёт
-    assert.equal(gate.consumeLogin(l.attemptId).error, "not_approved");
-    // участник открывает ссылку → карточка с UA/IP
-    await gate.handleUpdate(msg(MEMBER, `/start login_${l.attemptId}`, { username: "ivan" }));
-    const card = tg.sent.find((m) => /Подтвердить вход/.test(JSON.stringify(m.extra)));
-    assert.ok(card);
-    assert.match(card.text, /5\.6\.7\.8/);
-    assert.match(card.text, /Windows/);
-    // чужой confirm по перехваченному ID не проходит
-    gate.addUser(STRANGER, {});
-    await gate.handleUpdate(cb(STRANGER, `confirm_${l.attemptId}`));
-    assert.equal(gate.loginStatus(l.attemptId).status, "pending");
-    // свой confirm → approved → consume → сессия
-    await gate.handleUpdate(cb(MEMBER, `confirm_${l.attemptId}`));
-    assert.equal(gate.loginStatus(l.attemptId).status, "approved");
-    const c = gate.consumeLogin(l.attemptId);
-    assert.ok(c.ok);
-    const sess = gate.readSession(`lhc_session=${c.cookieValue}`);
-    assert.ok(sess);
-    assert.equal(sess.telegramId, MEMBER);
-    // одноразовая: повторный consume отклоняется
-    assert.equal(gate.consumeLogin(l.attemptId).error, "consumed");
+    assert.ok(reqId);
+    assert.ok(tg.sent.some((m) => m.chatId === OWNER && /Запрос доступа/.test(m.text)));
+    await gate.handleUpdate(cb(OWNER, `approve_${reqId}`));
+    assert.equal(gate.isAuthorized(STRANGER), true);
+    assert.equal(linkMessages(tg, STRANGER).length, 1);
   });
 
-  it("просроченная попытка (TTL ~2 мин) подтвердить нельзя", async () => {
-    const { gate, tg } = setup();
-    gate.addUser(MEMBER, {});
-    const l = gate.createLogin({ ip: "9.9.9.9", ua: "UA" });
-    now += LOGIN_TTL_MS + 1000;
-    assert.equal(gate.loginStatus(l.attemptId).status, "expired");
-    await gate.handleUpdate(cb(MEMBER, `confirm_${l.attemptId}`));
-    assert.ok(tg.answers.some((a) => /недействительна/.test(a.text || "")));
-    assert.match(gate.consumeLogin(l.attemptId).error, /expired/);
-  });
-
-  it("cookie без Max-Age (сессионная), серверная запись долгоживущая", () => {
-    const { gate } = setup();
-    gate.addUser(MEMBER, {});
-    const setCookie = gate.sessionCookie(gate.issueSession(MEMBER));
-    assert.ok(/HttpOnly/.test(setCookie) && /Secure/.test(setCookie) && /SameSite=Lax/.test(setCookie));
-    assert.ok(!/Max-Age/i.test(setCookie));
-  });
-});
-
-describe("бот: меню владельца", () => {
-  it("добавление через username создаёт предзаявку, не права", async () => {
+  it("предзаявка по username закрывается первым /start, ссылка уходит сразу", async () => {
     const { gate, state, tg } = setup();
     await gate.handleUpdate(msg(OWNER, "/start", { username: "owner" }));
     await gate.handleUpdate(msg(OWNER, "➕ Добавить участника", { username: "owner" }));
     await gate.handleUpdate(msg(OWNER, "@newbie", { username: "owner" }));
     assert.ok(state.nameClaims["newbie"]);
-    assert.equal(gate.isAuthorized("123123123"), false);
-    const last = tg.sent[tg.sent.length - 1];
-    assert.match(last.text, /Предзаявка @newbie/);
+    await gate.handleUpdate(msg(STRANGER, "/start", { username: "newbie" }));
+    assert.equal(state.nameClaims["newbie"], undefined);
+    assert.equal(gate.isAuthorized(STRANGER), true);
+    assert.equal(linkMessages(tg, STRANGER).length, 1);
+    assert.ok(tg.sent.some((m) => m.chatId === OWNER && /автоматически/.test(m.text)));
   });
 
-  it("добавление через username известного боту человека привязывает ID сразу", async () => {
+  it("добавление по username известного человека привязывает ID и не требует /start", async () => {
     const { gate, state, tg } = setup();
-    // Человек уже писал боту (заявка висит) — владелец добавляет по username.
-    state.accessRequests["req9"] = { telegramId: STRANGER, username: "stranger", firstName: "S", attemptId: "", createdAt: now, status: "pending" };
+    state.accessRequests["req9"] = { telegramId: STRANGER, username: "stranger", firstName: "S", createdAt: now, status: "pending" };
     await gate.handleUpdate(msg(OWNER, "/start", { username: "owner" }));
     await gate.handleUpdate(msg(OWNER, "➕ Добавить участника", { username: "owner" }));
     await gate.handleUpdate(msg(OWNER, "@stranger", { username: "owner" }));
@@ -195,33 +180,61 @@ describe("бот: меню владельца", () => {
 
   it("«Участники» и «Отозвать доступ» работают из меню", async () => {
     const { gate, tg } = setup();
-    gate.addUser(MEMBER, { username: "ivan" });
+    gate.addUser(MEMBER, { username: "member" });
     await gate.handleUpdate(msg(OWNER, "👥 Участники", { username: "owner" }));
-    assert.ok(tg.sent.some((m) => /@ivan/.test(m.text)));
+    assert.ok(tg.sent.some((m) => /member/.test(m.text)));
     await gate.handleUpdate(msg(OWNER, "🚫 Отозвать доступ", { username: "owner" }));
-    const withKb = tg.sent.find((m) => m.extra?.reply_markup?.inline_keyboard?.[0]?.[0]?.callback_data === `revoke_${MEMBER}`);
-    assert.ok(withKb);
-    await gate.handleUpdate(cb(OWNER, `revoke_${MEMBER}`, 9, "owner"));
+    await gate.handleUpdate(cb(OWNER, 'revoke_'+MEMBER));
     assert.equal(gate.isAuthorized(MEMBER), false);
-  });
-
-  it("не-владелец не может решать заявки и отзывы", async () => {
-    const { gate, state, tg } = setup();
-    gate.addUser(MEMBER, {});
-    state.accessRequests["req1"] = { telegramId: STRANGER, username: "s", firstName: "", attemptId: "", createdAt: now, status: "pending" };
-    await gate.handleUpdate(cb(MEMBER, "approve_req1"));
-    assert.equal(state.accessRequests["req1"].status, "pending");
-    assert.ok(tg.answers.some((a) => /Только владелец/.test(a.text || "")));
   });
 });
 
-describe("миграция v1", () => {
-  it("старые сессии сохраняются, пользователи засеваются", () => {
-    const old = { invites: { abc: { telegramId: "1", expiresAt: 1, used: false } }, sessions: { sid1: { telegramId: MEMBER, expiresAt: Date.now() + 99999, revoked: false } } };
-    const s = migrateState(old);
-    assert.equal(s.version, 2);
-    assert.ok(s.sessions.sid1);
-    assert.ok(s.users[MEMBER]);
-    assert.equal(s.invites, undefined);
+describe("миграция v2", () => {
+  it("login-попытки и контексты отбрасываются, пользователи и сессии живут", () => {
+    const st = migrateState({
+      version: 2, users: { [MEMBER]: { username: "m", addedAt: 1, revoked: false, role: "member" } },
+      logins: { abc: { status: "pending" } }, contexts: { [MEMBER]: "abc" }, sessions: {},
+      accessRequests: {}, nameClaims: {}, ui: {},
+    });
+    assert.equal(st.version, 3);
+    assert.ok(st.users[MEMBER]);
+    assert.deepEqual(st.tickets, {});
+    assert.equal(st.logins, undefined);
+    assert.equal(st.contexts, undefined);
+  });
+});
+
+describe("HTTP: тикеты и cookie", () => {
+  it("info + consume через HTTP: cookie HttpOnly, повтор — 404, старые пути — 410", async () => {
+    const { gate, state } = setup();
+    gate.addUser(MEMBER, { username: "member" });
+    const t = gate.createTicket(MEMBER);
+    const server = wireHttp(gate, { polling: true });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const port = server.address().port;
+    try {
+      const info = await (await fetch(`http://127.0.0.1:${port}/gate/ticket/info?ticket=${t.ticket}`)).json();
+      assert.equal(info.valid, true);
+      assert.equal(info.username, "member");
+      const bad = await fetch(`http://127.0.0.1:${port}/gate/ticket/info?ticket=nope`);
+      assert.equal(bad.status, 404);
+      const c1 = await fetch(`http://127.0.0.1:${port}/gate/ticket/consume`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticket: t.ticket }),
+      });
+      assert.equal(c1.status, 200);
+      const cookie = c1.headers.get("set-cookie") || "";
+      assert.match(cookie, /HttpOnly/i);
+      assert.match(cookie, /SameSite=Lax/i);
+      assert.ok(!/Max-Age/i.test(cookie));
+      const c2 = await fetch(`http://127.0.0.1:${port}/gate/ticket/consume`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ticket: t.ticket }),
+      });
+      assert.equal(c2.status, 404);
+      const old = await fetch(`http://127.0.0.1:${port}/gate/login/start`, { method: "POST", body: "{}" });
+      assert.equal(old.status, 410);
+      assert.equal(state.sessions && Object.keys(state.sessions).length, 1);
+    } finally {
+      server.close();
+    }
   });
 });

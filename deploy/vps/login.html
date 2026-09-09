@@ -3,199 +3,147 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Living History — вход в мастерскую</title>
+<title>Living History — творческая мастерская · вход</title>
 <style>
-  :root {
-    --bg: #14120e; --card: #1e1b15; --line: #38332a;
-    --ink: #f0e9d8; --muted: #a89e86; --accent: #d9a441; --accent-ink: #221a08;
-    --tg: #2aabee; --bad: #e88; --ok: #8e8;
-  }
+  :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: radial-gradient(1200px 600px at 50% -10%, #26211a 0%, var(--bg) 60%);
-    color: var(--ink); margin: 0; min-height: 100vh;
-    display: grid; place-items: center; padding: 20px;
+    margin: 0; min-height: 100vh; color: #f3e9d7;
+    font-family: Georgia, "Times New Roman", serif;
+    background: radial-gradient(1200px 700px at 20% -10%, #4a2c6b 0%, transparent 60%),
+                radial-gradient(1000px 600px at 110% 110%, #0e4a4a 0%, transparent 55%),
+                linear-gradient(160deg, #17101f 0%, #1e1428 50%, #121a1e 100%);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
   }
   .card {
-    width: 100%; max-width: 560px; background: var(--card);
-    border: 1px solid var(--line); border-radius: 16px;
-    padding: 28px 28px 24px; text-align: center;
-    box-shadow: 0 12px 48px rgba(0,0,0,.45);
+    width: min(560px, 100%); text-align: center;
+    background: rgba(255, 244, 224, 0.05);
+    border: 1px solid rgba(243, 233, 215, 0.22);
+    border-radius: 20px; padding: 36px 32px 30px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
   }
-  .art { width: 120px; height: 120px; margin: 0 auto 8px; display: block; }
-  h1 { font-size: 24px; margin: 8px 0 4px; font-weight: 700; letter-spacing: .2px; }
-  .sub { color: var(--accent); font-size: 14px; margin: 0 0 12px; letter-spacing: 1.5px; text-transform: uppercase; }
-  .desc { color: var(--muted); font-size: 15px; line-height: 1.55; margin: 0 0 18px; }
-  .desc ol { text-align: left; display: inline-block; margin: 8px 0 0; padding-left: 22px; }
-  .desc li { margin: 4px 0; }
+  .art { width: 148px; height: 148px; margin: 0 auto 10px; display: block; }
+  h1 { font-size: 30px; margin: 10px 0 4px; letter-spacing: 0.5px; }
+  .sub { color: #d9c9a8; font-size: 15px; margin: 0 0 18px; font-style: italic; }
+  .steps { text-align: left; margin: 0 auto 20px; max-width: 430px; font-size: 15px; line-height: 1.65; color: #efe3cb; }
+  .steps b { color: #ffd98a; }
   .btn {
-    display: inline-flex; align-items: center; gap: 10px;
-    background: var(--tg); color: #fff; border: 0; border-radius: 12px;
-    font-size: 18px; font-weight: 700; padding: 15px 30px; cursor: pointer;
-    min-height: 56px; text-decoration: none;
+    display: inline-block; font-family: inherit; cursor: pointer; text-decoration: none;
+    font-size: 19px; padding: 14px 34px; border-radius: 999px; border: 0;
+    background: linear-gradient(135deg, #ffcf6e, #ff9d5c); color: #3a1f0d; font-weight: bold;
+    box-shadow: 0 8px 28px rgba(255, 170, 80, 0.35);
   }
-  .btn:active { transform: translateY(1px); }
-  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); font-size: 15px; padding: 11px 20px; min-height: 46px; }
-  .btn.accent { background: var(--accent); color: var(--accent-ink); }
-  .btnrow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
-  #status { min-height: 24px; font-size: 15px; margin: 14px 0 0; }
-  #status.bad { color: var(--bad); } #status.ok { color: var(--ok); } #status.dim { color: var(--muted); }
-  .spinner {
-    width: 44px; height: 44px; margin: 6px auto 0; border-radius: 50%;
-    border: 4px solid var(--line); border-top-color: var(--accent);
-    animation: spin 1s linear infinite; display: none;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .meta { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .btn:disabled { opacity: 0.55; cursor: wait; }
+  .btn.ghost { background: transparent; color: #ffd98a; border: 1px solid rgba(255, 217, 138, 0.5); box-shadow: none; font-size: 16px; padding: 10px 24px; }
+  .note { margin-top: 16px; font-size: 13.5px; color: #bfae8b; line-height: 1.6; }
+  .who { font-size: 17px; margin: 6px 0 16px; }
+  .who b { color: #ffd98a; }
+  .err { color: #ff9d9d; }
   .hidden { display: none !important; }
-  .foot { margin-top: 18px; font-size: 12.5px; color: var(--muted); opacity: .8; }
-  @media (max-width: 480px) {
-    .card { padding: 22px 18px 20px; }
-    h1 { font-size: 21px; }
-    .btn { width: 100%; justify-content: center; font-size: 17px; }
+  .spinner { width: 34px; height: 34px; margin: 10px auto; border-radius: 50%;
+    border: 3px solid rgba(255,217,138,.25); border-top-color: #ffd98a; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 520px) {
+    .card { padding: 26px 20px; }
+    h1 { font-size: 24px; }
+    .btn { width: 100%; padding: 14px 10px; }
+    .art { width: 112px; height: 112px; }
   }
 </style>
 </head>
 <body>
 <main class="card">
   <svg class="art" viewBox="0 0 120 120" aria-hidden="true">
-    <circle cx="60" cy="60" r="56" fill="#26211a" stroke="#d9a441" stroke-width="3"/>
-    <circle cx="60" cy="60" r="47" fill="none" stroke="#38332a" stroke-width="1.5"/>
-    <path d="M38 78 V46 h7 v26 h12 v6 z" fill="#d9a441"/>
-    <path d="M58 78 V46 h7 v12 l9 -12 h8 l-11 14 11 18 h-8 l-7 -12 -2 3 v9 z" fill="#f0e9d8"/>
-    <path d="M30 88 h60" stroke="#d9a441" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="30" cy="88" r="3.5" fill="#d9a441"/><circle cx="90" cy="88" r="3.5" fill="#d9a441"/>
-    <path d="M42 32 q6 -8 12 0 M66 32 q6 -8 12 0" stroke="#a89e86" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="38%" r="65%">
+        <stop offset="0%" stop-color="#ffd98a" stop-opacity="0.9"/>
+        <stop offset="55%" stop-color="#b4762e" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <circle cx="60" cy="52" r="46" fill="url(#glow)"/>
+    <ellipse cx="60" cy="52" rx="30" ry="34" fill="none" stroke="#f3e9d7" stroke-width="3"/>
+    <ellipse cx="60" cy="52" rx="15" ry="22" fill="none" stroke="#f3e9d7" stroke-width="2" opacity="0.7"/>
+    <path d="M38 96 Q60 84 82 96" stroke="#ffd98a" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="48" cy="40" r="3" fill="#ffd98a"/>
+    <circle cx="72" cy="40" r="3" fill="#ffd98a"/>
+    <circle cx="60" cy="68" r="3" fill="#ffd98a"/>
   </svg>
-  <p class="sub">Творческая мастерская</p>
-  <h1>Living History Studio</h1>
-  <p class="desc" id="intro">
-    Здесь оживают истории: авторы собирают квесты и сцены из прошлого.<br>
-    Вход — без паролей, через Telegram-бота мастерской:
-    <ol>
-      <li>нажмите кнопку ниже — откроется бот;</li>
-      <li>подтвердите вход <b>именно с этого устройства</b>;</li>
-      <li>страница сама откроет Studio.</li>
-    </ol>
-  </p>
-  <div id="stage-idle">
-    <button class="btn" id="go">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M21.9 4.6 2.7 12.1c-.8.3-.8 1.4.1 1.6l4.6 1.4 1.7 5.3c.3.8 1.3.9 1.8.2l2.5-3 4.7 3.5c.6.4 1.5.1 1.7-.6l3.1-14.1c.2-.9-.6-1.7-1-1.8zM8.4 13.4l9.5-6.7c.2-.1.4.1.2.3l-7.8 7.5-.3 3-1.6-4.1z"/></svg>
-      Войти через Telegram
-    </button>
-  </div>
-  <div id="stage-wait" class="hidden">
-    <div class="spinner" id="spin" style="display:block"></div>
-    <p id="status" class="dim">Ждём подтверждения в боте…</p>
-    <p class="meta" id="attempt-meta"></p>
-    <div class="btnrow">
-      <a class="btn" id="open-bot" href="#" target="_blank" rel="noopener">Открыть бота</a>
-      <button class="btn ghost" id="cancel">Отмена</button>
+  <h1>Living History</h1>
+  <p class="sub">творческая мастерская · вход участников</p>
+
+  <div id="loading"><div class="spinner"></div><p class="note">Проверяем приглашение…</p></div>
+
+  <!-- Вход по персональной ссылке из бота -->
+  <section id="ticket-ok" class="hidden">
+    <p class="who">Персональное приглашение для <b id="who-name">участника</b>.</p>
+    <p class="note" style="margin-top:0">Остался один шаг — подтвердите вход этим браузером:</p>
+    <p><button class="btn" id="enter-btn">Войти в мастерскую</button></p>
+    <p class="note" id="ticket-note">Ссылка одноразовая и действует 90 секунд.</p>
+  </section>
+
+  <!-- Тикет недействителен -->
+  <section id="ticket-bad" class="hidden">
+    <p class="who err">Эта ссылка уже недействительна.</p>
+    <p class="note">Ссылка одноразовая и живёт 90 секунд. Откройте бота и нажмите <b>«🎭 Открыть Studio»</b> — придёт свежая.</p>
+    <p><a class="btn" href="https://t.me/living_history_gate_bot">Открыть бота</a></p>
+  </section>
+
+  <!-- Обычный заход без ссылки: отправляем в бота -->
+  <section id="no-ticket" class="hidden">
+    <div class="steps">
+      <div><b>1.</b> Откройте бота и нажмите <b>/start</b> — он узнает вас по Telegram.</div>
+      <div><b>2.</b> Нажмите <b>«🎭 Открыть Studio»</b> — бот пришлёт персональную ссылку.</div>
+      <div><b>3.</b> Откройте ссылку и нажмите <b>«Войти»</b> — мастерская откроется.</div>
     </div>
-  </div>
-  <div id="stage-done" class="hidden">
-    <p id="final" class="dim"></p>
-    <div class="btnrow"><button class="btn accent" id="retry">Попробовать снова</button></div>
-  </div>
-  <p class="foot">Никаких кодов вводить не нужно. Если доступ ещё не открыт — бот примет заявку владельцу мастерской.</p>
+    <p><a class="btn" href="https://t.me/living_history_gate_bot">Открыть бота в Telegram</a></p>
+    <p class="note">Никаких кодов вводить не нужно. Если доступа ещё нет — бот отправит заявку владельцу.</p>
+  </section>
+
+  <p class="note hidden" id="fatal"></p>
 </main>
-<noscript><p style="color:#e88;text-align:center">Для входа включите JavaScript.</p></noscript>
 <script>
 (function () {
-  "use strict";
-  var idle = document.getElementById("stage-idle"),
-      wait = document.getElementById("stage-wait"),
-      done = document.getElementById("stage-done"),
-      status = document.getElementById("status"),
-      meta = document.getElementById("attempt-meta"),
-      final = document.getElementById("final"),
-      openBot = document.getElementById("open-bot");
-  var attemptId = "", expiresAt = 0, timer = null, stopped = false;
-
-  function show(el) { [idle, wait, done].forEach(function (s) { s.classList.add("hidden"); }); el.classList.remove("hidden"); }
-  function setStatus(t, cls) { status.textContent = t; status.className = cls || ""; }
-
-  // Уже есть действующая сессия — сразу в Studio.
-  fetch("/gate/check", { credentials: "same-origin" }).then(function (r) {
-    if (r.ok) location.href = "/";
-  }).catch(function () {});
-
-  function poll() {
-    if (stopped) return;
-    var left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
-    if (left <= 0) return finish(false, "Время ожидания вышло (2 минуты). Создайте новую попытку.");
-    fetch("/gate/login/status?id=" + encodeURIComponent(attemptId), { credentials: "same-origin" })
-      .then(function (r) { return r.json().then(function (j) { return { code: r.status, j: j }; }); })
-      .then(function (res) {
-        if (stopped) return;
-        if (res.j.status === "approved") return consume();
-        if (res.j.status === "denied") return finish(false, "Вход отклонён в боте. Если это были не вы — всё в порядке, просто попробуйте снова.");
-        if (res.j.status === "expired" || res.j.status === "unknown" || res.code === 404) {
-          return finish(false, "Попытка больше недействительна. Создайте новую.");
-        }
-        setStatus("Ждём подтверждения в боте… осталось ~" + left + " с", "dim");
-        timer = setTimeout(poll, 2000);
-      })
-      .catch(function () {
-        if (stopped) return;
-        setStatus("Нет связи с сервером, повторяем…", "dim");
-        timer = setTimeout(poll, 3000);
+  var params = new URLSearchParams(location.search);
+  var ticket = params.get("ticket") || "";
+  var $ = function (id) { return document.getElementById(id); };
+  function show(id) {
+    ["loading", "ticket-ok", "ticket-bad", "no-ticket"].forEach(function (x) {
+      $(x).classList.toggle("hidden", x !== id);
+    });
+  }
+  function fatal(text) {
+    show("ticket-bad");
+    var f = $("fatal");
+    f.textContent = text;
+    f.classList.remove("hidden");
+  }
+  if (!ticket) { show("no-ticket"); return; }
+  fetch("/gate/ticket/info?ticket=" + encodeURIComponent(ticket))
+    .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+    .then(function (res) {
+      if (res.status !== 200 || !res.body.valid) { show("ticket-bad"); return; }
+      var name = res.body.username ? "@" + res.body.username : "участника";
+      $("who-name").textContent = name;
+      var secs = Math.round((res.body.expiresInMs || 0) / 1000);
+      if (secs > 0) $("ticket-note").textContent = "Ссылка одноразовая, осталось около " + secs + " сек.";
+      show("ticket-ok");
+      $("enter-btn").addEventListener("click", function () {
+        var btn = $("enter-btn");
+        btn.disabled = true;
+        btn.textContent = "Входим…";
+        fetch("/gate/ticket/consume", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ticket: ticket }),
+        }).then(function (r) {
+          if (r.ok) { location.href = "/"; return; }
+          show("ticket-bad");
+        }).catch(function () { fatal("Нет связи с сервером. Проверьте соединение и попробуйте ещё раз."); });
       });
-  }
-
-  function consume() {
-    setStatus("Подтверждено! Открываем Studio…", "ok");
-    fetch("/gate/login/consume", {
-      method: "POST", credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: attemptId })
-    }).then(function (r) {
-      if (r.ok) { location.href = "/"; return; }
-      return r.json().then(function (j) {
-        finish(false, j.error === "not_approved" ? "Подтверждение ещё не дошло — попробуйте снова." : "Не удалось завершить вход (" + (j.error || r.status) + ").");
-      });
-    }).catch(function () { finish(false, "Сеть: не удалось завершить вход."); });
-  }
-
-  function finish(ok, text) {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    attemptId = "";
-    show(done);
-    final.textContent = text;
-    final.className = ok ? "ok" : "bad";
-  }
-
-  document.getElementById("go").addEventListener("click", function () {
-    show(wait);
-    setStatus("Создаём заявку на вход…", "dim");
-    fetch("/gate/login/start", { method: "POST", credentials: "same-origin" })
-      .then(function (r) { return r.json().then(function (j) { return { code: r.status, j: j }; }); })
-      .then(function (res) {
-        if (!res.j.attemptId) {
-          finish(false, res.j.error === "rate_limited" ? "Слишком много попыток — подождите 10 минут." : "Не удалось создать заявку. Попробуйте позже.");
-          return;
-        }
-        stopped = false;
-        attemptId = res.j.attemptId;
-        expiresAt = Date.now() + (res.j.expiresInMs || 120000);
-        openBot.href = res.j.botUrl;
-        meta.textContent = "Заявка создана только что с этого устройства. В боте сверьте устройство и время — подтверждайте только свою.";
-        setStatus("Заявка создана. Откройте бота и подтвердите вход.", "dim");
-        // На мобильных сразу предлагаем бота; десктоп тоже может кликнуть.
-        poll();
-      })
-      .catch(function () { finish(false, "Сеть: не удалось связаться с сервером."); });
-  });
-
-  document.getElementById("cancel").addEventListener("click", function () {
-    stopped = true; if (timer) clearTimeout(timer); attemptId = "";
-    show(idle);
-  });
-  document.getElementById("retry").addEventListener("click", function () {
-    show(idle);
-  });
+    })
+    .catch(function () { fatal("Нет связи с сервером. Проверьте соединение и попробуйте ещё раз."); });
 })();
 </script>
 </body>

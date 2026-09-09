@@ -1,14 +1,23 @@
 // lhc-gate — бот-управляемый вход в Living History Studio (без паролей и ручных кодов).
 //
 // Поток:
-//   1. Страница входа создаёт login-попытку: POST /gate/login/start → { attemptId, botUrl }.
-//      Попытка server-side pending, TTL 2 мин, одноразовая. Сама по себе сессию не даёт.
-//   2. Участник открывает бота @living_history_gate_bot по ссылке со страницы
-//      (start=login_<attemptId>) и подтверждает КОНКРЕТНУЮ попытку (видны UA/IP/время).
-//   3. Браузер опрашивает GET /gate/login/status?id=… и после подтверждения вызывает
-//      POST /gate/login/consume → сервер ставит HttpOnly+Secure cookie, редирект в Studio.
-//   4. Сессии серверные: cookie без Max-Age (живёт до закрытия браузера),
-//      серверная запись — до отзыва. Отзыв убивает все активные сессии пользователя.
+//   1. Владелец вносит @username (предзаявка) или одобряет заявку из /start.
+//      Права всегда привязываются к числовому Telegram ID, ник — только для поиска.
+//   2. Человек открывает бота, жмёт /start: ID фиксируется, предзаявка закрывается
+//      автоматически, бот присылает кнопку «Открыть Studio» с персональной ссылкой.
+//   3. Кнопка «Открыть Studio» создаёт одноразовый тикет (TTL 90 с, привязан к ID)
+//      и отдаёт ссылку https://studio/?ticket=….
+//   4. Браузер по ссылке показывает «Войти как @username», один клик —
+//      POST /gate/ticket/consume → сервер ставит HttpOnly+Secure cookie.
+//      Без обмена тикета сессии нет; тикет одноразовый, повтор не проходит,
+//      отзыв прав убивает и тикеты, и активные сессии.
+//   5. Сессии серверные: cookie без Max-Age (живёт до закрытия браузера),
+//      серверная запись — до отзыва.
+//
+// Тикет доставляется личным сообщением Telegram проверенному аккаунту —
+// это и есть аутентификация. Окно перехвата: 90 секунд одноразового тикета.
+// Владелец задан серверной настройкой LHC_OWNER_TELEGRAM_ID, самоназначение
+// невозможно (нет такого API/команды).
 //
 // Права — только по числовому Telegram ID. Владелец задан серверной настройкой
 // LHC_OWNER_TELEGRAM_ID, самоназначение невозможно (нет такого API/команды).
@@ -27,11 +36,10 @@ import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
-export const LOGIN_TTL_MS = 2 * 60 * 1000;
+export const TICKET_TTL_MS = 90 * 1000;
 export const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-const CONSUME_GRACE_MS = 60 * 1000;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX_STARTS = 20;
+const RATE_MAX_CONSUME = 20;
 
 function loadEnvFile(path) {
   if (!path || !existsSync(path)) return {};
@@ -45,24 +53,30 @@ function loadEnvFile(path) {
 
 export function defaultState() {
   return {
-    version: 2,
+    version: 3,
     users: {}, // tgId -> { username, firstName, addedAt, revoked, role }
     nameClaims: {}, // lower(username) -> { createdAt, note }
-    accessRequests: {}, // reqId -> { telegramId, username, firstName, attemptId, createdAt, status }
-    logins: {}, // attemptId -> { createdAt, expiresAt, ip, ua, status, telegramId?, decidedAt? }
+    accessRequests: {}, // reqId -> { telegramId, username, firstName, createdAt, status }
+    tickets: {}, // ticket -> { telegramId, username, createdAt, expiresAt, used, usedAt? }
     sessions: {}, // sid -> { telegramId, createdAt, expiresAt, revoked }
-    contexts: {}, // tgId -> last attemptId (из start-параметра)
     ui: {}, // tgId -> { action }
     updateOffset: 0,
   };
 }
 
-// Мягкая миграция со старого формата (invites/sessions v1): сессии сохраняем,
-// пользователей засеваем из действующих сессий (роль уточнится ботом/владельцем).
+// Мягкая миграция: v1 (invites/sessions) и v2 (login-попытки) → v3 (тикеты).
+// Действующие сессии сохраняем, пользователей засеваем из них.
 export function migrateState(raw) {
   const next = defaultState();
   if (!raw || typeof raw !== "object") return next;
-  if (raw.version === 2) return Object.assign(next, raw);
+  if (raw.version === 3) return Object.assign(next, raw);
+  if (raw.version === 2 && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw)) {
+      if (k === "logins" || k === "contexts" || k === "version") continue;
+      next[k] = v;
+    }
+    return next;
+  }
   if (raw.sessions && typeof raw.sessions === "object") {
     for (const [sid, s] of Object.entries(raw.sessions)) {
       if (!s || s.revoked || (s.expiresAt ?? 0) < Date.now()) continue;
@@ -87,6 +101,7 @@ const rid = (n = 16) => randomBytes(n).toString("base64url");
 export function createGate({ state, config, tg, now = () => Date.now() }) {
   const ownerId = String(config.ownerId);
   const botUsername = String(config.botUsername || "living_history_gate_bot");
+  const studioOrigin = String(config.studioOrigin || "https://85.137.95.104.sslip.io:8741").replace(/\/+$/, "");
 
   const save = () => config.persist?.();
 
@@ -126,8 +141,8 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
     for (const s of Object.values(state.sessions)) {
       if (s.telegramId === id && !s.revoked) { s.revoked = true; killed++; }
     }
-    for (const l of Object.values(state.logins)) {
-      if (l.telegramId === id && l.status === "pending") l.status = "denied";
+    for (const tk of Object.values(state.tickets)) {
+      if (tk.telegramId === id && !tk.used) { tk.used = true; tk.usedReason = "revoked"; }
     }
     save();
     return { ok: true, killed };
@@ -173,12 +188,12 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
     return { sid, ...s };
   }
 
-  // --- login-попытки ---
+  // --- входные тикеты (персональная ссылка из бота) ---
   const rate = new Map(); // ip -> timestamps
   function checkRate(ip) {
     const t = now();
     const arr = (rate.get(ip) ?? []).filter((x) => t - x < RATE_WINDOW_MS);
-    if (arr.length >= RATE_MAX_STARTS) return false;
+    if (arr.length >= RATE_MAX_CONSUME) return false;
     arr.push(t);
     rate.set(ip, arr);
     return true;
@@ -186,63 +201,59 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
   function sweep() {
     const t = now();
     let dirty = false;
-    for (const [id, l] of Object.entries(state.logins)) {
-      if (l.status === "pending" && l.expiresAt < t) { l.status = "expired"; dirty = true; }
-      if ((l.status === "consumed" || l.status === "expired" || l.status === "denied") && (l.decidedAt ?? l.expiresAt) + 10 * 60 * 1000 < t) {
-        delete state.logins[id]; dirty = true;
-      }
+    for (const [id, tk] of Object.entries(state.tickets)) {
+      if (!tk.used && tk.expiresAt < t) { tk.used = true; tk.usedReason = "expired"; dirty = true; }
+      if (tk.used && tk.expiresAt + 10 * 60 * 1000 < t) { delete state.tickets[id]; dirty = true; }
     }
     for (const [reqId, r] of Object.entries(state.accessRequests)) {
       if (r.status === "pending" && r.createdAt + 24 * 60 * 60 * 1000 < t) { r.status = "expired"; dirty = true; }
     }
     if (dirty) save();
   }
-  function createLogin({ ip, ua }) {
+  // Тикет создаёт только бот для проверенного пользователя; браузер лишь обменивает.
+  function createTicket(tgId) {
     sweep();
-    if (!checkRate(ip)) return { error: "rate_limited" };
-    const id = rid(16);
-    state.logins[id] = {
+    const id = String(tgId);
+    if (!isAuthorized(id)) return { error: "forbidden" };
+    const ticket = rid(16);
+    state.tickets[ticket] = {
+      telegramId: id,
+      username: String(state.users[id]?.username || ""),
       createdAt: now(),
-      expiresAt: now() + LOGIN_TTL_MS,
-      ip: String(ip || "").slice(0, 64),
-      ua: String(ua || "").slice(0, 160),
-      status: "pending",
+      expiresAt: now() + TICKET_TTL_MS,
+      used: false,
     };
     save();
-    return { attemptId: id, botUrl: `https://t.me/${botUsername}?start=login_${id}`, expiresInMs: LOGIN_TTL_MS };
+    return { ticket, url: `${studioOrigin}/?ticket=${ticket}`, expiresInMs: TICKET_TTL_MS };
   }
-  function loginStatus(id) {
+  function ticketInfo(ticket) {
     sweep();
-    const l = state.logins[String(id)];
-    if (!l) return { status: "unknown" };
-    return { status: l.status };
+    const tk = state.tickets[String(ticket)];
+    if (!tk || tk.used) return { valid: false };
+    const u = state.users[tk.telegramId];
+    return {
+      valid: true,
+      username: String(tk.username || u?.username || ""),
+      expiresInMs: Math.max(0, tk.expiresAt - now()),
+    };
   }
-  // Перехваченная ссылка без подтверждения сессию не даёт: consume работает
-  // только после approve через бота и только один раз.
-  function consumeLogin(id) {
+  // Обмен тикета на сессию: одноразово, только для привязанного ID,
+  // только пока права действуют. Перехваченный тикет без open-сессии Telegram
+  // бесполезен после первого обмена; окно — 90 секунд.
+  function consumeTicket(ticket, ip) {
     sweep();
-    const lid = String(id);
-    const l = state.logins[lid];
-    if (!l) return { error: "unknown" };
-    if (l.status !== "approved") return { error: l.status === "pending" ? "not_approved" : l.status };
-    if (!isAuthorized(l.telegramId)) return { error: "access_revoked" };
-    l.status = "consumed";
-    l.decidedAt = now();
-    const cookieValue = issueSession(l.telegramId);
+    if (!checkRate(String(ip || ""))) return { error: "rate_limited" };
+    const tk = state.tickets[String(ticket)];
+    if (!tk || tk.used) return { error: "unknown" };
+    if (!isAuthorized(tk.telegramId)) return { error: "access_revoked" };
+    tk.used = true;
+    tk.usedAt = now();
+    const cookieValue = issueSession(tk.telegramId);
     save();
     return { ok: true, cookieValue };
   }
 
   // --- бот: тексты ---
-  const SHORT_UA = (ua) => {
-    const s = String(ua || "");
-    const m = /(Windows|Android|iPhone|iPad|Macintosh|Linux)[^;)]*/.exec(s);
-    return (m ? m[0] : s.slice(0, 40)).slice(0, 48) || "неизвестное устройство";
-  };
-  const fmtTime = (ts) => new Date(ts).toLocaleString("ru-RU", { hour12: false });
-  function attemptCard(l, id) {
-    return `Вход в Living History Studio\n\nУстройство: ${SHORT_UA(l.ua)}\nIP: ${l.ip || "?"}\nЗапрошено: ${fmtTime(l.createdAt)}\n\nЕсли это вы — подтвердите. Иначе отклоните.`;
-  }
 
   async function ownerNotify(text, extra) {
     try { await tg.sendMessage(ownerId, text, extra); } catch (e) { console.log("owner notify failed:", e?.message ?? e); }
@@ -252,63 +263,44 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
   const OWNER_KB = () => kb([[ "➕ Добавить участника" ], [ "👥 Участники", "🚫 Отозвать доступ" ], [ "🎭 Открыть Studio" ]]);
   const USER_KB = () => kb([[ "🎭 Открыть Studio" ]]);
 
-  async function showAttemptCard(chatId, attemptId, intro = "") {
-    const l = state.logins[attemptId];
-    if (!l || l.status !== "pending" || l.expiresAt < now()) {
-      await tg.sendMessage(chatId, `${intro}Эта попытка входа уже недействительна (истекла или использована). Откройте страницу входа заново.`.trim());
+  // Персональная ссылка в Studio: тикет одноразовый, 90 секунд, привязан к ID.
+  // Тикет доставляется личным сообщением Telegram проверенному аккаунту —
+  // это и есть аутентификация.
+  async function sendStudioLink(chatId, tgId) {
+    const t = createTicket(tgId);
+    if (t.error) {
+      await tg.sendMessage(chatId, "Нет доступа в Studio.");
       return;
     }
-    await tg.sendMessage(chatId, `${intro}${attemptCard(l, attemptId)}`.trim(), {
-      reply_markup: {
-        inline_keyboard: [[
-          { text: "✅ Подтвердить вход", callback_data: `confirm_${attemptId}` },
-          { text: "❌ Отклонить", callback_data: `reject_${attemptId}` },
-        ]],
-      },
+    await tg.sendMessage(chatId, "Ваша персональная ссылка в Studio (одноразовая, действует 90 секунд):", {
+      reply_markup: { inline_keyboard: [[ { text: "🎭 Открыть Studio", url: t.url } ]] },
     });
   }
 
-  async function sendRoleHome(chatId, tgId, attemptId) {
+
+  async function sendRoleHome(chatId, tgId) {
     if (isOwner(String(tgId))) {
-      if (attemptId) await showAttemptCard(chatId, attemptId, "Заявка на вход из браузера.\n\n");
-      else {
-        await tg.sendMessage(chatId, "Меню владельца Living History Studio.", { reply_markup: OWNER_KB() });
-      }
+      await tg.sendMessage(chatId, "Меню владельца Living History Studio.", { reply_markup: OWNER_KB() });
       return;
     }
     if (!isAuthorized(tgId)) return; // недопущенным отвечает ветка заявок
-    if (attemptId) await showAttemptCard(chatId, attemptId, "");
-    else {
-      const ctx = state.contexts[String(tgId)];
-      const l = ctx && state.logins[ctx];
-      if (l && l.status === "pending" && l.expiresAt >= now()) await showAttemptCard(chatId, ctx, "");
-      else {
-        await tg.sendMessage(chatId, "Чтобы войти в Studio: откройте страницу входа в браузере, нажмите «Войти через Telegram» и вернитесь сюда по ссылке со страницы — здесь появится подтверждение.", { reply_markup: USER_KB() });
-      }
-    }
+    await tg.sendMessage(chatId, "Чтобы войти в Studio: нажмите «🎭 Открыть Studio» — бот пришлёт персональную ссылку. В браузере останется только нажать «Войти».", { reply_markup: USER_KB() });
   }
 
-  async function handleStart(msg, param) {
+
+  async function handleStart(msg) {
     const from = msg.from;
     const tgId = String(from.id);
     const chatId = msg.chat.id;
     const username = String(from.username || "");
-    let attemptId = "";
-    if (param && param.startsWith("login_")) {
-      const cand = param.slice("login_".length);
-      if (/^[A-Za-z0-9_-]{16,}$/.test(cand) && state.logins[cand]) {
-        attemptId = cand;
-        state.contexts[tgId] = cand;
-        save();
-      }
-    }
     // Владелец: всегда свой дом, самоназначение исключено (ветка только для ownerId).
     if (isOwner(tgId)) {
       if (username && !state.users[tgId]) {
         state.users[tgId] = { username, firstName: String(from.first_name || ""), addedAt: now(), revoked: false, role: "owner" };
         save();
       }
-      await sendRoleHome(chatId, tgId, attemptId);
+      await sendRoleHome(chatId, tgId);
+      await sendStudioLink(chatId, tgId);
       return;
     }
     // Допущенный участник.
@@ -316,7 +308,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       const u = state.users[tgId];
       if (u && username && u.username !== username) { u.username = username; save(); }
       await tg.sendMessage(chatId, "С возвращением в мастерскую Living History.", { reply_markup: USER_KB() });
-      await sendRoleHome(chatId, tgId, attemptId);
+      await sendStudioLink(chatId, tgId);
       return;
     }
     // Предзаявка по username: права только по числовому ID — фиксируем его сейчас.
@@ -326,7 +318,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       addUser(tgId, { username, firstName: String(from.first_name || "") });
       await ownerNotify(`Предзаявка @${username} подтверждена автоматически: пользователь написал боту (ID ${tgId}).`);
       await tg.sendMessage(chatId, "Вы в списке участников Living History — добро пожаловать.", { reply_markup: USER_KB() });
-      await sendRoleHome(chatId, tgId, attemptId);
+      await sendStudioLink(chatId, tgId);
       return;
     }
     // Неизвестный: понятное сообщение + запрос владельцу.
@@ -335,7 +327,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       const reqId = rid(8);
       state.accessRequests[reqId] = {
         telegramId: tgId, username, firstName: String(from.first_name || ""),
-        attemptId: attemptId || state.contexts[tgId] || "", createdAt: now(), status: "pending",
+        createdAt: now(), status: "pending",
       };
       save();
       await ownerNotify(
@@ -382,10 +374,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       return true;
     }
     if (text === "🎭 Открыть Studio") {
-      const ctx = state.contexts[String(tgId)];
-      const l = ctx && state.logins[ctx];
-      if (l && l.status === "pending" && l.expiresAt >= now()) await showAttemptCard(chatId, ctx, "");
-      else await tg.sendMessage(chatId, "Откройте страницу входа в браузере и перейдите по ссылке со страницы — здесь появится подтверждение.", { reply_markup: OWNER_KB() });
+      await sendStudioLink(chatId, String(tgId));
       return true;
     }
     if (pending?.action === "await_add") {
@@ -444,7 +433,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       state.nameClaims[want] = { createdAt: now(), note: "owner username claim" };
       delete state.ui[ownerId];
       save();
-      await tg.sendMessage(chatId, `Предзаявка @${m[1]} записана. Права появятся, когда этот человек напишет боту /start (права привяжутся к его числовому ID). Одну ссылку на бота можно дать сразу: https://t.me/${botUsername}`, { reply_markup: OWNER_KB() });
+      await tg.sendMessage(chatId, `Предзаявка @${m[1]} записана. Пусть человек один раз откроет бота и нажмёт /start — доступ привяжется к его числовому ID, а персональную ссылку в Studio бот пришлёт сам. Ссылка на бота: https://t.me/${botUsername}`, { reply_markup: OWNER_KB() });
       return;
     }
     await tg.sendMessage(chatId, "Не похоже на @username или числовой ID. Пришлите ещё раз или нажмите «◀️ Отмена».");
@@ -459,28 +448,6 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
     const answer = (text) => tg.answerCallbackQuery(q.id, text).catch(() => {});
     const [verb, arg] = [data.split("_")[0], data.slice(data.indexOf("_") + 1)];
 
-    if (verb === "confirm" || verb === "reject") {
-      const l = state.logins[arg];
-      if (!l) { await answer("Попытка не найдена."); return; }
-      if (!isAuthorized(tgId)) { await answer("Нет доступа."); return; }
-      if (l.status !== "pending" || l.expiresAt < now()) { await answer("Попытка уже недействительна."); return; }
-      // Подтверждать можно только попытку, привязанную к этому пользователю
-      // через его ссылку (контекст), — чужой confirm по перехваченному ID не пройдёт.
-      if (state.contexts[tgId] !== arg && !isOwner(tgId)) { await answer("Это не ваша попытка входа."); return; }
-      l.status = verb === "confirm" ? "approved" : "denied";
-      l.telegramId = tgId;
-      l.decidedAt = now();
-      save();
-      try {
-        await tg.editMessageText(chatId, messageId,
-          verb === "confirm"
-            ? "Вход подтверждён — вернитесь в браузер, Studio откроется само."
-            : "Попытка отклонена. Если это были не вы — ничего делать не нужно.");
-      } catch { /* сообщение могли удалить */ }
-      await answer(verb === "confirm" ? "Подтверждено." : "Отклонено.");
-      return;
-    }
-
     // Решения владельца по заявкам и отзывам — только ownerId.
     if (!isOwner(tgId)) { await answer("Только владелец."); return; }
     if (verb === "approve" || verb === "deny") {
@@ -491,15 +458,8 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       if (verb === "approve") {
         addUser(r.telegramId, { username: r.username, firstName: r.firstName });
         try { await tg.sendMessage(r.telegramId, "Владелец подтвердил доступ — добро пожаловать в Living History.", { reply_markup: USER_KB() }); } catch {}
-        if (r.attemptId && state.logins[r.attemptId]?.status === "pending") {
-          state.contexts[r.telegramId] = r.attemptId;
-          save();
-          try { await tg.sendMessage(r.telegramId, "Осталось подтвердить вход в браузере:"); } catch {}
-          // Карточку покажет сам пользователь кнопкой «Открыть Studio» (контекст сохранён).
-        }
+        try { await sendStudioLink(r.telegramId, r.telegramId); } catch {}
       } else {
-        const l = r.attemptId && state.logins[r.attemptId];
-        if (l && l.status === "pending") { l.status = "denied"; l.decidedAt = now(); save(); }
         try { await tg.sendMessage(r.telegramId, "Владелец отклонил заявку на доступ в Studio."); } catch {}
       }
       try { await tg.editMessageText(chatId, messageId, `${verb === "approve" ? "Разрешено" : "Отклонено"}: ${r.username ? "@" + r.username + " " : ""}(ID ${r.telegramId}).`); } catch {}
@@ -538,8 +498,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
     }
     const text = String(msg.text || "").trim();
     if (text.startsWith("/start")) {
-      const param = text.split(/\s+/)[1] || "";
-      await handleStart(msg, param);
+      await handleStart(msg);
       return;
     }
     if (isOwner(tgId)) {
@@ -548,22 +507,21 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
       return;
     }
     if (text === "🎭 Открыть Studio") {
-      await sendRoleHome(chatId, tgId, "");
+      await sendStudioLink(chatId, tgId);
       return;
     }
     if (!isAuthorized(tgId)) {
       await tg.sendMessage(chatId, "Доступ в Living History Studio — по приглашению владельца. Ваша заявка уже у него; ждите подтверждения.");
       return;
     }
-    await sendRoleHome(chatId, tgId, "");
+    await sendStudioLink(chatId, tgId);
   }
 
   return {
     isOwner, isAuthorized, addUser, revokeUser, listUsers,
     issueSession, sessionCookie, readSession,
-    createLogin, loginStatus, consumeLogin, sweep,
+    createTicket, ticketInfo, consumeTicket, sweep,
     handleUpdate, handleCallback, handleStart,
-    attemptTextForTest: (id) => { const l = state.logins[id]; return l ? attemptCard(l, id) : ""; },
   };
 }
 
@@ -622,28 +580,26 @@ export function wireHttp(gate, config) {
     const url = new URL(req.url, "http://gate.local");
     try {
       if (url.pathname === "/gate/healthz") {
-        return json(res, 200, { ok: true, bot: config.polling ? "polling" : "disabled", version: 2 });
+        return json(res, 200, { ok: true, bot: config.polling ? "polling" : "disabled", version: 3 });
       }
-      if (url.pathname === "/gate/login/start" && req.method === "POST") {
-        await readBody(req).catch(() => ({}));
-        const r = gate.createLogin({ ip: clientIp(req), ua: req.headers["user-agent"] });
-        if (r.error) return json(res, 429, { error: r.error });
-        return json(res, 201, r);
+      if (url.pathname === "/gate/ticket/info" && req.method === "GET") {
+        const t = gate.ticketInfo(url.searchParams.get("ticket") || "");
+        if (!t.valid) return json(res, 404, t);
+        return json(res, 200, t);
       }
-      if (url.pathname === "/gate/login/status" && req.method === "GET") {
-        const s = gate.loginStatus(url.searchParams.get("id") || "");
-        if (s.status === "unknown") return json(res, 404, s);
-        return json(res, 200, s);
-      }
-      if (url.pathname === "/gate/login/consume" && req.method === "POST") {
+      if (url.pathname === "/gate/ticket/consume" && req.method === "POST") {
         const body = await readBody(req).catch(() => null);
-        if (!body) return json(res, 400, { error: "bad json" });
-        const r = gate.consumeLogin(body.id);
+        if (!body || typeof body.ticket !== "string") return json(res, 400, { error: "bad request" });
+        const r = gate.consumeTicket(body.ticket, clientIp(req));
         if (!r.ok) {
-          const code = r.error === "not_approved" ? 403 : r.error === "unknown" ? 404 : 410;
+          const code = r.error === "unknown" ? 404 : r.error === "rate_limited" ? 429 : 410;
           return json(res, code, { error: r.error });
         }
         return json(res, 200, { ok: true }, { "set-cookie": gate.sessionCookie(r.cookieValue) });
+      }
+      // Старые пути входа удалены: страница и бот используют тикеты.
+      if (url.pathname === "/gate/login/start" || url.pathname === "/gate/login/status" || url.pathname === "/gate/login/consume") {
+        return json(res, 410, { error: "gone", hint: "войдите через бота: кнопка «Открыть Studio» пришлёт персональную ссылку" });
       }
       if (url.pathname === "/gate/check") {
         const s = gate.readSession(req.headers.cookie);
@@ -674,6 +630,7 @@ if (!process.env.LHC_GATE_NO_AUTOSTART && (isMain || process.env.LHC_GATE_FORCE_
   const STORE_PATH = String(process.env.LHC_STORE ?? "./lhc-gate-state.json");
   const OWNER_ID = String(process.env.LHC_OWNER_TELEGRAM_ID ?? "332664273");
   const BOT_USERNAME = String(process.env.LHC_BOT_USERNAME ?? "living_history_gate_bot");
+  const STUDIO_ORIGIN = String(process.env.LHC_STUDIO_ORIGIN ?? "https://85.137.95.104.sslip.io:8741");
   const POLLING = process.env.LHC_BOT_POLLING !== "0";
 
   const state = migrateState(readJson(STORE_PATH, null) ?? defaultState());
@@ -682,11 +639,11 @@ if (!process.env.LHC_GATE_NO_AUTOSTART && (isMain || process.env.LHC_GATE_FORCE_
     catch (e) { console.log("persist failed:", e?.message ?? e); }
   };
   const tg = realTelegram(BOT_TOKEN);
-  const gate = createGate({ state, config: { ownerId: OWNER_ID, botUsername: BOT_USERNAME, gateSecret: GATE_SECRET, persist }, tg });
+  const gate = createGate({ state, config: { ownerId: OWNER_ID, botUsername: BOT_USERNAME, studioOrigin: STUDIO_ORIGIN, gateSecret: GATE_SECRET, persist }, tg });
   persist();
 
   const server = wireHttp(gate, { polling: POLLING });
-  server.listen(PORT, "127.0.0.1", () => console.log(`lhc-gate v2 listening on 127.0.0.1:${PORT}`));
+  server.listen(PORT, "127.0.0.1", () => console.log(`lhc-gate v3 listening on 127.0.0.1:${PORT}`));
   setInterval(() => gate.sweep(), 30_000).unref?.();
 
   if (POLLING) {
