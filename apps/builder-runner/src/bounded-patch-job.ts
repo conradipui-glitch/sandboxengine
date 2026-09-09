@@ -2,6 +2,7 @@
 // This module deliberately stops at isolated workspace mutation/evidence.
 // It does not push, create PRs, start workflows or deploy.
 
+// @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createHash } from "node:crypto";
 import { authorizeBuilderPath, type BuilderWorkspacePolicy } from "./workspace-policy.js";
 
