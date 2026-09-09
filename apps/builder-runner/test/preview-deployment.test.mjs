@@ -82,6 +82,32 @@ test("B13.b2 refuses artifact drift, failed runs and failed smoke", async () => 
   );
 });
 
+test("B13.b2 reconcileLostResponse restores an existing successful run without a new dispatch", async () => {
+  const dispatches = [];
+  const g = fakeGateway({
+    async dispatchWorkflow(target, commitSha) { dispatches.push(commitSha); return "run-x"; }
+  });
+  const adapter = new PreviewDeploymentAdapter(policy(), g);
+
+  const receipt = await adapter.reconcileLostResponse(async (sha) => {
+    assert.equal(sha, SHA);
+    return "run-existing";
+  });
+  assert.equal(receipt.deploymentId, "preview-run-existing");
+  assert.equal(receipt.artifactCommitSha, SHA);
+  assert.equal(receipt.smokePassed, true);
+  assert.deepEqual(dispatches, []);
+
+  const none = await adapter.reconcileLostResponse(async () => null);
+  assert.equal(none, null);
+
+  const failedRun = new PreviewDeploymentAdapter(policy(), fakeGateway({
+    async waitForRunConclusion() { return "failure"; }
+  }));
+  const stillNone = await failedRun.reconcileLostResponse(async () => "run-y");
+  assert.equal(stillNone, null);
+});
+
 test("B13.b2 policy rejects malformed targets and smoke expectations", () => {
   assert.throws(
     () => createPreviewDeploymentPolicy({

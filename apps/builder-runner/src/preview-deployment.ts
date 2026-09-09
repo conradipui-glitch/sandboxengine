@@ -105,6 +105,42 @@ export class PreviewDeploymentAdapter {
     }
   }
 
+  /**
+   * Reconciles a lost deployment response without dispatching: resolves an existing
+   * successful run for the required commit SHA through the gateway's run lookup and
+   * confirms it with smoke. Returns the same receipt a deploy would produce.
+   */
+  async reconcileLostResponse(
+    findRunForSha: (sha: string) => Promise<string | null>
+  ): Promise<PreviewDeploymentReceipt | null> {
+    const existingRunId = await findRunForSha(this.policy.requiredCommitSha);
+    if (!existingRunId) return null;
+    let conclusion: "success" | "failure";
+    try {
+      conclusion = await this.gateway.waitForRunConclusion(existingRunId, this.policy.requiredCommitSha, 300_000);
+    } catch {
+      return null;
+    }
+    if (conclusion !== "success") return null;
+    let body: string;
+    try {
+      body = await this.gateway.fetchText(this.policy.smokeUrl, 30_000);
+    } catch {
+      throw new PreviewDeploymentError("smoke_failed", "smoke probe failed during reconciliation", { runId: existingRunId });
+    }
+    if (body.length > MAX_SMOKE_BYTES) body = body.slice(0, MAX_SMOKE_BYTES);
+    if (!body.includes(this.policy.smokeExpectSubstring)) {
+      throw new PreviewDeploymentError("smoke_failed", "smoke response does not contain the expected substring", { runId: existingRunId });
+    }
+    return Object.freeze({
+      deploymentId: `preview-${existingRunId}`,
+      runId: existingRunId,
+      artifactCommitSha: this.policy.requiredCommitSha,
+      smokeUrl: this.policy.smokeUrl,
+      smokePassed: true as const
+    });
+  }
+
   /** Dispatches the fixed preview workflow pinned to the required commit SHA. */
   async deploy(policy2?: PreviewDeploymentPolicy): Promise<PreviewDeploymentReceipt> {
     const active = policy2 ?? this.policy;

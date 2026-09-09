@@ -20,8 +20,11 @@ production-профиля Builder. Локальный режим остаётс�
   `createGhPreviewDeploymentGateway` (не сырой gh-вызов);
 - operationId `b13-b2-live-acceptance-20260909` записан в квитанции
   (`docs/worklog/b13-b2-live-receipt.json`): `preview-34324006071`, SHA `ffba7c8…`, smokePassed true;
-- `reconcileLostResponse` покрыт unit-тестами (возвращает существующий ран без нового dispatch);
-  для живого рана повторный вызов вернул бы тот же `runId` — механизм идентичен.
+- восстановление потерянного ответа доказано ЖИВЬЁМ через сам адаптер:
+  `reconcileLostResponse` добавлен в preview-адаптер (метод + unit-тест, 25/25) и выполнен
+  против существующего рана — найден `preview-34325106273`, smoke пройден, НОВЫЙ dispatch
+  не выполнялся; квитанция `docs/worklog/b13-reconcile-lost-response-receipt.json`
+  (operationId `b13-reconcile-lost-response-20260909`).
 
 ### 3. Версии в preview — **FIXED (расхождение найдено и задокументировано)**
 
@@ -63,7 +66,7 @@ engine-режим в приложении отдаёт `ENGINE_ROUTE_NOT_CONFIGU
 | Пункт | Статус |
 |---|---|
 | 1. Изоляция a2 | PARTIAL (policy-allowlist + CI runner как изолированная среда; host-режим hygiene-only) |
-| 2. Живой деплой через адаптер + operation ID | PROVEN |
+| 2. Живой деплой через адаптер + operation ID + lost-response reconcile | PROVEN (деплой, квитанция, живой reconcile без dispatch) |
 | 3. Версии в preview | Задокументированы; движок отдельным сервисом не размещён (нужен endpoint + secrets) |
 | 4. Игровой smoke | PROVEN (create/turns/resume/idempotency) |
 | 5. Rollback preview | PROVEN (только зелёные артефакты; ref-move оператором) |

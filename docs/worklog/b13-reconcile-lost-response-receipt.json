@@ -1,0 +1,11 @@
+{
+  "operationId": "b13-reconcile-lost-response-20260909",
+  "method": "PreviewDeploymentAdapter.reconcileLostResponse over gh gateway; no dispatch performed",
+  "receipt": {
+    "deploymentId": "preview-34325106273",
+    "runId": "34325106273",
+    "artifactCommitSha": "ffba7c896bc9a02ab2485cce55ee1445f455f942",
+    "smokeUrl": "https://living-history-florence-preview.conradipui.workers.dev/",
+    "smokePassed": true
+  }
+}
