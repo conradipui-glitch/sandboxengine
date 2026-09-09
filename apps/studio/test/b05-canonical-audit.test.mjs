@@ -142,9 +142,9 @@ test("B05 canonical audit — fresh Studio author path reaches frozen P1/P2 Runt
     const studioResponse = await fetch(`${origin}/`);
     assert.equal(studioResponse.status, 200);
     const studioHtml = await studioResponse.text();
-    assert.match(studioHtml, /dist\/src\/onboarding\.js/);
+    assert.match(studioHtml, /studio-assets\/dist\/src\/onboarding\.js/);
 
-    const onboardingResponse = await fetch(`${origin}/dist/src/onboarding.js`);
+    const onboardingResponse = await fetch(`${origin}/studio-assets/dist/src/onboarding.js`);
     assert.equal(onboardingResponse.status, 200);
     const onboardingBundle = await onboardingResponse.text();
     assert.match(onboardingBundle, /Справка/);

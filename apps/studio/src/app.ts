@@ -83,6 +83,13 @@ interface StudioState {
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "assistant-starting" | "assistant-running" | "assistant-applying" | "assistant-stopping" | "conflict" | "error";
   message: string;
   conflict: ConflictState | null;
+  view: "projects" | "editor";
+  projectSearch: string;
+  projectModal: boolean;
+  projectModalError: string | null;
+  questCounts: Readonly<Record<string, number>>;
+  libraryCollapsed: boolean;
+  inspectorTab: "props" | "coauthor";
 }
 
 export class StudioApp {
@@ -111,7 +118,14 @@ export class StudioApp {
     playerLaunching: false,
     phase: "loading",
     message: "Загружаем проекты…",
-    conflict: null
+    conflict: null,
+    view: "projects",
+    projectSearch: "",
+    projectModal: false,
+    projectModalError: null,
+    questCounts: Object.freeze({}),
+    libraryCollapsed: false,
+    inspectorTab: "props"
   };
 
   constructor(
@@ -120,6 +134,7 @@ export class StudioApp {
   ) {
     root.addEventListener("click", (event) => void this.onClick(event));
     root.addEventListener("submit", (event) => void this.onSubmit(event));
+    root.addEventListener("input", (event) => this.onInput(event));
   }
 
   async start(): Promise<void> {
@@ -136,10 +151,26 @@ export class StudioApp {
       this.state.phase = "idle";
       this.state.message = this.state.projects.length === 0
         ? "Создайте первый проект, чтобы начать."
-        : "Выберите проект слева.";
+        : "Выберите проект, чтобы открыть редактор.";
+      this.render();
+      await this.refreshQuestCounts();
     } catch (error) {
       this.setError(error);
     }
+    this.render();
+  }
+
+  private async refreshQuestCounts(): Promise<void> {
+    const counts: Record<string, number> = {};
+    for (const project of this.state.projects) {
+      try {
+        const quests = await this.api.listQuests(project.projectId);
+        counts[project.projectId] = quests.length;
+      } catch {
+        counts[project.projectId] = this.state.questCounts[project.projectId] ?? 0;
+      }
+    }
+    this.state.questCounts = Object.freeze(counts);
     this.render();
   }
 
@@ -251,6 +282,54 @@ export class StudioApp {
       if (projectId) await this.selectProject(projectId);
       return;
     }
+    if (action === "open-project") {
+      const projectId = target.dataset.projectId;
+      if (projectId) await this.openProject(projectId);
+      return;
+    }
+    if (action === "back-projects") {
+      this.state.view = "projects";
+      this.state.selectedProjectId = null;
+      this.state.selectedQuestId = null;
+      this.state.draft = null;
+      this.state.message = "Выберите проект, чтобы открыть редактор.";
+      this.render();
+      return;
+    }
+    if (action === "new-project") {
+      this.state.projectModal = true;
+      this.state.projectModalError = null;
+      this.render();
+      return;
+    }
+    if (action === "close-project-modal") {
+      this.state.projectModal = false;
+      this.state.projectModalError = null;
+      this.render();
+      return;
+    }
+    if (action === "toggle-library") {
+      this.state.libraryCollapsed = !this.state.libraryCollapsed;
+      this.render();
+      return;
+    }
+    if (action === "inspector-tab") {
+      const tab = target.dataset.tab;
+      if (tab === "props" || tab === "coauthor") {
+        this.state.inspectorTab = tab;
+        this.render();
+      }
+      return;
+    }
+    if (action === "play-quest") {
+      await this.playCurrentQuest();
+      return;
+    }
+    if (action === "help-projects") {
+      this.state.message = "Нажмите «Новый проект» или выберите карточку, чтобы открыть редактор. ID создаются автоматически.";
+      this.render();
+      return;
+    }
     if (action === "select-quest") {
       const questId = target.dataset.questId;
       if (questId) await this.selectQuest(questId);
@@ -340,26 +419,64 @@ export class StudioApp {
         return;
       }
 
-      if (kind === "project") {
+      if (kind === "project" || kind === "project-new") {
+        const title = text(data, "title");
         const project = await this.api.createProject({
-          projectId: text(data, "projectId"),
-          title: text(data, "title")
+          projectId: generateTechnicalId(title),
+          title
         });
         this.state.projects = await this.api.listProjects();
-        await this.selectProject(project.projectId);
+        this.state.questCounts = Object.freeze({ ...this.state.questCounts, [project.projectId]: 0 });
+        this.state.projectModal = false;
+        this.state.projectModalError = null;
+        await this.openProject(project.projectId);
+        return;
+      }
+
+      if (kind === "ai-draft" || kind === "empty-draft") {
+        const about = kind === "ai-draft" ? optionalText(data, "about") : null;
+        const title = about && about.length > 0 ? about.slice(0, 80) : "Новый квест";
+        const project = await this.api.createProject({
+          projectId: generateTechnicalId(title),
+          title: about && about.length > 0 ? `Квест: ${about.slice(0, 120)}` : "Новый проект"
+        });
+        this.state.projects = await this.api.listProjects();
+        const draft = await this.api.createQuest({
+          projectId: project.projectId,
+          questId: generateTechnicalId(title),
+          title,
+          entryLocationId: "start",
+          initialBlocks: [createInitialLocationBlock("start", "Старт")]
+        });
+        this.state.questCounts = Object.freeze({ ...this.state.questCounts, [project.projectId]: 1 });
+        this.state.projectModal = false;
+        this.state.projectModalError = null;
+        await this.openProject(project.projectId);
+        await this.selectQuest(draft.questId);
+        if (kind === "ai-draft") {
+          this.state.message = "Черновик создан. ИИ-помощник работает только в ограниченном профиле: текст и структура, рисование недоступно. Откройте «Соавтор», чтобы продолжить.";
+          this.state.inspectorTab = "coauthor";
+          this.render();
+        }
+        return;
+      }
+
+      if (kind === "quest-rename") {
+        await this.saveChanges([{ kind: "quest.title.set", title: text(data, "title") }]);
         return;
       }
 
       if (kind === "quest") {
         const projectId = requireSelected(this.state.selectedProjectId, "Сначала выберите проект.");
-        const questId = text(data, "questId");
-        const entryLocationId = text(data, "entryLocationId");
+        const title = text(data, "title");
+        const questId = generateTechnicalId(title);
+        const entryLocationId = "start";
         const draft = await this.api.createQuest({
           projectId,
           questId,
-          title: text(data, "title"),
+          title,
           entryLocationId,
-          initialBlocks: [createInitialLocationBlock(entryLocationId, text(data, "entryLocationTitle"))]
+          initialBlocks: [createInitialLocationBlock(entryLocationId, "Старт")]
         });
         this.state.quests = await this.api.listQuests(projectId);
         this.state.selectedQuestId = questId;
@@ -381,9 +498,10 @@ export class StudioApp {
       }
 
       if (kind === "resource") {
+        const title = text(data, "title");
         await this.saveChanges([{ kind: "block.add", block: createResourceBlock({
-          id: text(data, "id"),
-          title: text(data, "title"),
+          id: generateTechnicalId(title),
+          title,
           unit: text(data, "unit"),
           initialValue: integer(data, "initialValue"),
           min: integer(data, "min"),
@@ -393,9 +511,10 @@ export class StudioApp {
       }
 
       if (kind === "paint-action") {
+        const title = text(data, "title");
         await this.saveChanges([{ kind: "block.add", block: createPaintActionBlock({
-          id: text(data, "id"),
-          title: text(data, "title"),
+          id: generateTechnicalId(title),
+          title,
           resourceId: text(data, "resourceId"),
           resourceUnitsPerUnit: integer(data, "resourceUnitsPerUnit"),
           durationSecondsPerUnit: integer(data, "durationSecondsPerUnit"),
@@ -416,6 +535,9 @@ export class StudioApp {
         }]);
       }
     } catch (error) {
+      if (kind === "project-new" || kind === "ai-draft" || kind === "empty-draft") {
+        this.state.projectModalError = error instanceof Error ? error.message : "Не удалось создать проект.";
+      }
       this.setError(error);
       this.render();
     }
@@ -706,6 +828,52 @@ export class StudioApp {
     this.render();
   }
 
+  private async openProject(projectId: string): Promise<void> {
+    await this.selectProject(projectId);
+    this.state.view = "editor";
+    this.render();
+  }
+
+  private onInput(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.dataset.input === "project-search") {
+      this.state.projectSearch = target.value;
+      const grid = this.root.querySelector("[data-project-grid]");
+      if (grid) {
+        grid.innerHTML = this.filteredProjects()
+          .map((item) => projectCard(item, this.state.questCounts[item.projectId] ?? 0)).join("")
+          || `<div class="empty-rail">Ничего не найдено.</div>`;
+      }
+      const count = this.root.querySelector("[data-project-count]");
+      if (count) count.textContent = String(this.filteredProjects().length);
+    }
+  }
+
+  private filteredProjects(): readonly ProjectView[] {
+    const query = this.state.projectSearch.trim().toLowerCase();
+    if (!query) return this.state.projects;
+    return this.state.projects.filter((item) => item.title.toLowerCase().includes(query));
+  }
+
+  private async playCurrentQuest(): Promise<void> {
+    const draft = this.state.draft;
+    if (!draft) {
+      this.state.message = "Сначала выберите квест в библиотеке слева.";
+      this.render();
+      return;
+    }
+    await this.validateCurrentDraft();
+    const validation = this.state.validation;
+    if (!validation || validation.status !== "valid") {
+      this.state.message = "Квест пока не готов к игре: сначала исправьте ошибки проверки.";
+      this.render();
+      return;
+    }
+    await this.createCurrentPlaytest();
+    await this.launchCurrentPlayer();
+  }
+
   private async selectQuest(questId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Сначала выберите проект.");
     this.state.phase = "loading";
@@ -741,7 +909,7 @@ export class StudioApp {
     const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
     const draft = requireDraft(this.state.draft);
     this.state.phase = "saving";
-    this.state.message = `Сохраняем revision ${draft.draftRevision}…`;
+    this.state.message = `Сохраняем изменения…`;
     this.render();
 
     try {
@@ -750,7 +918,7 @@ export class StudioApp {
         changes
       });
       this.state.phase = "saved";
-      this.state.message = `Сохранено. Текущая revision: ${this.state.draft.draftRevision}.`;
+      this.state.message = `Сохранено.`;
       this.state.conflict = null;
       this.state.restoreIntent = null;
       this.state.releaseBuildIntent = null;
@@ -1194,64 +1362,154 @@ export class StudioApp {
 
   private render(): void {
     const focusKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.focusKey : undefined;
+    if (this.state.view === "projects" && this.state.access.mode !== "anonymous") {
+      this.root.innerHTML = this.renderProjects();
+    } else {
+      this.root.innerHTML = this.renderEditor();
+    }
+
+    if (focusKey) {
+      const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
+      const element = this.root.querySelector<HTMLElement>(selector);
+      element?.focus();
+    }
+  }
+
+  private profileLabel(): string {
+    const access = this.state.access;
+    if (access.mode === "local-owner") return "Локальный владелец";
+    if (access.mode === "authenticated" && access.auth) {
+      const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+      const role = project ? ` · ${project.role}` : "";
+      return `${access.auth.user.username}${role}`;
+    }
+    return "Гость";
+  }
+
+  private renderProjects(): string {
+    const allowProjectCreate = canCreateProject(this.state.access);
+    const filtered = this.filteredProjects();
+    return `
+      <div class="projects-screen">
+        <header class="projects-topbar">
+          <div class="brand"><span class="brand-mark">М</span><span><span class="brand-name">Мастерская</span><br><span class="brand-sub">Living History Studio</span></span></div>
+          <nav>
+            <button data-action="help-projects" title="Помощь">Помощь</button>
+            <span class="projects-profile" title="Профиль: роль и короткий ID">${escapeHtml(this.profileLabel())}</span>
+          </nav>
+        </header>
+        <div class="projects-wrap">
+          <div class="projects-head">
+            <div><h1>Мои проекты</h1><p>${escapeHtml(this.state.message)}</p></div>
+            ${allowProjectCreate ? `<button class="primary" data-action="new-project">Новый проект</button>` : ``}
+          </div>
+          ${this.state.projects.length === 0 ? `
+            <section class="projects-empty" aria-label="Первый проект">
+              <h2>О чём будет ваш первый квест?</h2>
+              <form data-form="ai-draft">
+                <div class="ai-row">
+                  <input data-focus-key="ai-about" name="about" maxlength="200" placeholder="О чём будет квест?">
+                  <button class="primary" type="submit">Создать с ИИ</button>
+                </div>
+              </form>
+              <p class="paint-note">ИИ-помощник работает в ограниченном профиле: помогает с текстом и структурой, но рисование и игровые действия ему недоступны — их вы добавляете сами в редакторе.</p>
+              <form data-form="empty-draft"><button type="submit">Начать с пустого проекта</button></form>
+            </section>
+          ` : `
+            <div class="projects-toolbar">
+              <input class="search" data-input="project-search" data-focus-key="project-search" placeholder="Поиск по названию" value="${escapeAttr(this.state.projectSearch)}">
+              <span><span data-project-count>${filtered.length}</span> из ${this.state.projects.length}</span>
+            </div>
+            <div class="project-grid" data-project-grid>
+              ${filtered.map((item) => projectCard(item, this.state.questCounts[item.projectId] ?? 0)).join("") || `<div class="empty-rail">Ничего не найдено.</div>`}
+            </div>
+          `}
+        </div>
+        ${this.state.projectModal ? projectModal(this.state.projectModalError) : ``}
+      </div>`;
+  }
+
+  private renderEditor(): string {
     const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
     const draft = this.state.draft;
     const resources = draft ? resourceBlocks(draft.blocks) : [];
     const actions = draft ? paintActionBlocks(draft.blocks) : [];
-    const allowProjectCreate = canCreateProject(this.state.access);
     const allowEdit = canEditProject(this.state.access, project);
     const allowTest = canTestProject(this.state.access, project);
     const allowPublish = allowEdit && project?.role === "owner";
+    const quest = this.state.quests.find((item) => item.questId === this.state.selectedQuestId) ?? null;
 
-    this.root.innerHTML = `
+    if (this.state.access.mode === "anonymous") {
+      return `
       <div class="studio-shell">
         <header class="topbar">
           <div>
             <div class="brand">Living History Studio</div>
-            <div class="brand-subtitle">Authoring поверх Control API</div>
+            <div class="brand-subtitle">Мастерская историй</div>
           </div>
           <div class="topbar-status ${escapeHtml(this.state.phase)}" role="status" aria-live="polite">${escapeHtml(this.state.message)}</div>
         </header>
+        <aside class="sidebar" aria-label="Вход в Studio">${renderAccessPanel(this.state.access, project)}</aside>
+        <main class="workspace"><div class="empty-workspace"><h1>Вход в Мастерскую</h1><p>Войдите слева, чтобы увидеть ваши проекты.</p></div></main>
+      </div>`;
+    }
 
-        <aside class="sidebar" aria-label="Навигация по проектам">
-          ${renderAccessPanel(this.state.access, project)}
-          <section class="sidebar-section">
-            <div class="section-heading-row"><h2>Проекты</h2><span>${this.state.projects.length}</span></div>
-            <div class="rail-list">${this.state.projects.map((item) => `
-              <button class="rail-item ${item.projectId === this.state.selectedProjectId ? "active" : ""}" data-action="select-project" data-project-id="${escapeAttr(item.projectId)}">
-                <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.projectId)} · ${escapeHtml(item.role)}</small>
-              </button>`).join("") || `<div class="empty-rail">Пока пусто</div>`}</div>
-            ${allowProjectCreate ? projectForm() : ""}
-          </section>
+    if (!project) {
+      this.state.view = "projects";
+      return this.renderProjects();
+    }
 
-          ${project ? `<section class="sidebar-section">
-            <div class="section-heading-row"><h2>Квесты</h2><span>${this.state.quests.length}</span></div>
-            <div class="rail-list">${this.state.quests.map((item) => `
-              <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
-                <strong>${escapeHtml(item.title)}</strong><small>r${item.draftRevision} · ${escapeHtml(item.questId)}</small>
-              </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
-            ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
-          </section>` : ""}
-        </aside>
+    return `
+      <div class="ed-shell">
+        <header class="ed-topbar">
+          <nav class="crumbs" aria-label="Навигация">
+            <button data-action="back-projects" title="Ко всем проектам">← Проекты</button>
+            <span>${escapeHtml(project.title)}</span>
+            ${quest ? `<span>· ${escapeHtml(quest.title)}</span>` : ``}
+          </nav>
+          ${draft && allowEdit ? `
+          <form class="ed-rename" data-form="quest-rename" title="Переименовать квест">
+            <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название квеста">
+            <button type="submit" title="Сохранить название">✓</button>
+          </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
+          <span class="ed-save-state">${escapeHtml(saveStateLabel(this.state.phase))}</span>
+          <span class="spacer"></span>
+          <div class="actions">
+            ${draft ? `<button data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
+            <button class="primary" data-action="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Запуск…" : "Играть"}</button>` : ``}
+          </div>
+        </header>
 
-        <main class="workspace">
-          ${draft ? `
+        <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}">
+          <aside class="ed-library" aria-label="Библиотека квестов">
+            <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? "»" : "« Библиотека"}</button>
+            <div class="library-content">
+              <section class="sidebar-section">
+                <div class="section-heading-row"><h2>Квесты</h2><span>${this.state.quests.length}</span></div>
+                <div class="rail-list">${this.state.quests.map((item) => `
+                  <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
+                    <strong>${escapeHtml(item.title)}</strong>
+                  </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
+                ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
+              </section>
+            </div>
+          </aside>
+
+          <main class="ed-main">
+            <div class="topbar-status ${escapeHtml(this.state.phase)}" role="status" aria-live="polite">${escapeHtml(this.state.message)}</div>
+            ${draft ? `
             <section class="draft-header">
               <div>
-                <span class="technical-id">${escapeHtml(draft.questId)}</span>
                 <h1>${escapeHtml(draft.title)}</h1>
-                <p>Authoritative draft с сервера. Локально хранится только текущее представление.</p>
+                <p>Черновик хранится на сервере. Здесь всегда показана текущая версия.</p>
               </div>
-              <div class="draft-meta"><span>revision <strong>${draft.draftRevision}</strong></span><code title="content hash">${escapeHtml(shortHash(draft.contentHash))}</code></div>
             </section>
+            <details class="diagnostics draft-meta"><summary>Дополнительно: технические данные</summary>
+              <div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>
+              <div>Версия черновика: <code>${draft.draftRevision}</code>, контрольная сумма: <code>${escapeHtml(shortHash(draft.contentHash))}</code></div>
+            </details>
 
             ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
-
-            ${renderAuthorAssistantPanel(this.state.authorAssistant, {
-              canMutate: allowEdit,
-              hasMutationProof: this.state.access.mutationProof,
-              busy: isAuthorAssistantBusy(this.state.phase)
-            })}
 
             ${renderVersionsPanel(
               this.state.versions,
@@ -1273,54 +1531,76 @@ export class StudioApp {
 
             <div class="editor-grid">
               <section class="editor-section">
-                <div class="section-title"><div><h2>Ресурсы</h2><p>Целочисленные величины игрового мира.</p></div></div>
+                <div class="section-title"><div><h2>Ресурсы</h2><p>Запасы игрового мира: сколько есть и в каких пределах.</p></div></div>
                 <div class="entity-list">${resources.map((resource) => `
                   <article class="entity-row">
-                    <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.id)} · ${escapeHtml(resource.data.unit)}</small></div>
+                    <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.data.unit)}</small></div>
                     <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
-                    ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Delete…</button>` : ""}
+                    ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Удалить…</button>` : ""}
                   </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
-                ${allowEdit ? resourceForm() : `<p class="form-hint">Read-only: изменения draft недоступны для текущей роли/session.</p>`}
+                ${allowEdit ? resourceForm() : `<p class="form-hint">Только чтение: изменения недоступны для вашей роли.</p>`}
+                ${resources.length ? `<details class="diagnostics"><summary>Дополнительно: ID ресурсов</summary>${resources.map((resource) => `<div><code>${escapeHtml(resource.id)}</code></div>`).join("")}</details>` : ``}
               </section>
 
               <section class="editor-section">
-                <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Bounded core.paint без произвольного JSON.</p></div></div>
+                <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Одно простое действие: тратит ресурс и занимает время.</p></div></div>
                 <div class="entity-list">${actions.map((action) => paintActionRow(action, allowEdit)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
                 ${allowEdit
                   ? (resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`)
-                  : `<p class="form-hint">Read-only: изменение действий недоступно для текущей роли/session.</p>`}
+                  : `<p class="form-hint">Только чтение: изменение действий недоступно для вашей роли.</p>`}
               </section>
             </div>
+            ` : `
+            <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите квест в библиотеке слева или создайте новый.</p></div>
+            `}
+          </main>
 
-            <section class="validation-section">
-              <div>
-                <h2>Проверка квеста</h2>
-                <p>Validation всегда привязана к конкретной server revision и content hash.</p>
-              </div>
-              ${allowTest
-                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
-                : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
-      ${validationPanel(this.state.validation, draft)}
-              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
-        playerUrl: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerUrl : null,
-        playerError: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerError : null,
-        playerLaunching: this.state.playerPlaytestId === this.state.playtest?.playtestId && this.state.playerLaunching
-      })}
-              ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
-            </section>
-          ` : project ? `
-            <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите существующий квест или создайте новый в левой панели.</p></div>
-          ` : `
-            <div class="empty-workspace"><h1>Первый путь автора</h1><p>Создайте проект слева. Studio будет сохранять всё через authoritative Control API.</p></div>
-          `}
-        </main>
+          <aside class="ed-inspector" aria-label="Правая панель">
+            <div class="ed-tabs" role="tablist">
+              <button class="${this.state.inspectorTab === "props" ? "active" : ""}" data-action="inspector-tab" data-tab="props" role="tab">Свойства</button>
+              <button class="${this.state.inspectorTab === "coauthor" ? "active" : ""}" data-action="inspector-tab" data-tab="coauthor" role="tab">Соавтор</button>
+            </div>
+            ${this.state.inspectorTab === "props" ? `
+              <section class="sidebar-section">
+                <div class="section-heading-row"><h2>Проект</h2></div>
+                <div><strong>${escapeHtml(project.title)}</strong></div>
+                ${renderAccessPanel(this.state.access, project)}
+                <details class="diagnostics"><summary>Дополнительно: технические данные</summary>
+                  <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
+                  ${draft ? `<div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
+                </details>
+              </section>
+            ` : `
+              <p class="paint-note">Соавтор помогает с текстом и структурой. Рисование ему недоступно.</p>
+              ${renderAuthorAssistantPanel(this.state.authorAssistant, {
+                canMutate: allowEdit,
+                hasMutationProof: this.state.access.mutationProof,
+                busy: isAuthorAssistantBusy(this.state.phase)
+              })}
+            `}
+          </aside>
+        </div>
+
+        ${draft ? `
+        <footer class="ed-bottom">
+          <section class="validation-section">
+            <div>
+              <h2>Проверка квеста</h2>
+              <p>Проверка относится к текущей версии черновика. После изменений запустите её снова.</p>
+            </div>
+            ${allowTest
+              ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
+              : `<span class="access-note">Проверка и запуск доступны вашей роли после входа.</span>`}
+            ${validationPanel(this.state.validation, draft)}
+            ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
+              playerUrl: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerUrl : null,
+              playerError: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerError : null,
+              playerLaunching: this.state.playerPlaytestId === this.state.playtest?.playtestId && this.state.playerLaunching
+            })}
+            ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
+          </section>
+        </footer>` : ``}
       </div>`;
-
-    if (focusKey) {
-      const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
-      const element = this.root.querySelector<HTMLElement>(selector);
-      element?.focus();
-    }
   }
 }
 
@@ -1346,18 +1626,39 @@ function projectForm(): string {
   return `<form class="compact-form" data-form="project">
     <h3>Новый проект</h3>
     <label>Название<input data-focus-key="project-title" name="title" required maxlength="200" placeholder="Моя история"></label>
-    <label>Technical ID<input name="projectId" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" placeholder="my-story"></label>
     <button type="submit">Создать проект</button>
   </form>`;
+}
+
+function projectModal(error: string | null): string {
+  return `<div class="modal-backdrop" data-modal="project">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Новый проект">
+      <h2>Новый проект</h2>
+      <form data-form="project-new">
+        <label>Название<input data-focus-key="project-new-title" name="title" required maxlength="200" placeholder="Моя история"></label>
+        <label>О чём проект?<textarea name="description" maxlength="500" rows="3" placeholder="Коротко о замысле (необязательно)"></textarea></label>
+        ${error ? `<p class="form-error">${escapeHtml(error)}</p>` : ``}
+        <div class="modal-actions">
+          <button type="button" data-action="close-project-modal">Отмена</button>
+          <button class="primary" type="submit">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>`;
+}
+
+function projectCard(item: ProjectView, questCount: number): string {
+  return `<button class="project-card" data-action="open-project" data-project-id="${escapeAttr(item.projectId)}">
+    <span class="project-cover" aria-hidden="true">Обложка скоро появится</span>
+    <h2>${escapeHtml(item.title)}</h2>
+    <span class="project-meta"><span>Квестов: ${questCount}</span><span class="role-badge">${escapeHtml(item.role)}</span></span>
+  </button>`;
 }
 
 function questForm(): string {
   return `<form class="compact-form" data-form="quest">
     <h3>Новый квест</h3>
     <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Первая сцена"></label>
-    <label>Technical ID<input name="questId" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" placeholder="first-quest"></label>
-    <label>ID стартовой локации<input name="entryLocationId" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" value="start"></label>
-    <label>Название локации<input name="entryLocationTitle" required maxlength="200" value="Старт"></label>
     <button type="submit">Создать квест</button>
   </form>`;
 }
@@ -1367,7 +1668,6 @@ function resourceForm(): string {
     <h3>Добавить ресурс</h3>
     <div class="form-grid two">
       <label>Название<input data-focus-key="resource-title" name="title" required maxlength="200" placeholder="Синяя краска"></label>
-      <label>Technical ID<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" placeholder="blue-paint"></label>
       <label>Единица<input name="unit" required maxlength="100" value="portion"></label>
       <label>Начальное значение<input name="initialValue" type="number" step="1" required value="2"></label>
       <label>Минимум<input name="min" type="number" step="1" required value="0"></label>
@@ -1382,8 +1682,7 @@ function paintActionForm(resources: ReturnType<typeof resourceBlocks>): string {
     <h3>Добавить действие</h3>
     <div class="form-grid two">
       <label>Название<input data-focus-key="action-title" name="title" required maxlength="200" value="Рисовать"></label>
-      <label>Technical ID<input name="id" required pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,199}" value="paint"></label>
-      <label>Ресурс<select name="resourceId" required>${resources.map((resource) => `<option value="${escapeAttr(resource.id)}">${escapeHtml(resource.title)} (${escapeHtml(resource.id)})</option>`).join("")}</select></label>
+      <label>Ресурс<select name="resourceId" required>${resources.map((resource) => `<option value="${escapeAttr(resource.id)}">${escapeHtml(resource.title)}</option>`).join("")}</select></label>
       <label>Стоимость на единицу<input name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="1"></label>
       <label>Секунд на единицу<input name="durationSecondsPerUnit" type="number" min="0" step="1" required value="300"></label>
       <label class="checkbox"><input name="allowPartial" type="checkbox" checked> Разрешить частичное выполнение</label>
@@ -1394,12 +1693,12 @@ function paintActionForm(resources: ReturnType<typeof resourceBlocks>): string {
 
 function paintActionRow(action: ActionBlock, editable: boolean): string {
   return `<article class="entity-row action-row">
-    <div><strong>${escapeHtml(action.title)}</strong><small>${escapeHtml(action.id)} · ${escapeHtml(action.data.resourceId)} · ${action.data.durationSecondsPerUnit}s</small></div>
+    <div><strong>${escapeHtml(action.title)}</strong><small>стоимость ${action.data.resourceUnitsPerUnit} · ${action.data.durationSecondsPerUnit} сек. на единицу</small></div>
     ${editable ? `<div class="action-edit-controls"><form data-form="paint-cost" class="cost-form">
       <input type="hidden" name="blockId" value="${escapeAttr(action.id)}">
       <label>Стоимость<input data-focus-key="cost-${escapeAttr(action.id)}" name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="${action.data.resourceUnitsPerUnit}"></label>
       <button type="submit">Сохранить</button>
-    </form><button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(action.id)}">Delete…</button></div>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
+    </form><button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(action.id)}">Удалить…</button></div>` : `<div class="entity-value">${action.data.resourceUnitsPerUnit}<small>стоимость</small></div>`}
   </article>`;
 }
 
@@ -1407,10 +1706,12 @@ function validationPanel(validation: ValidationView | null, draft: DraftView): s
   if (!validation) return `<div class="validation-empty">Проверок для текущей работы ещё нет.</div>`;
   const stale = validation.draftRevision !== draft.draftRevision || validation.contentHash !== draft.contentHash;
   return `<div class="validation-result ${validation.status}">
-    <strong>${validation.status === "valid" ? "Квест валиден" : "Найдены ошибки"}</strong>
-    <span>revision ${validation.draftRevision} · ${escapeHtml(shortHash(validation.contentHash))}</span>
-    ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей revision. Проверьте квест снова после изменений.</p>` : ""}
+    <strong>${validation.status === "valid" ? "Квест готов" : "Найдены ошибки"}</strong>
+    ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей версии. Проверьте квест снова после изменений.</p>` : ""}
     ${validation.errors.length ? `<ul>${validation.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
+    <details class="diagnostics"><summary>Дополнительно: данные проверки</summary>
+      <div>Версия: <code>${validation.draftRevision}</code>, сумма: <code>${escapeHtml(shortHash(validation.contentHash))}</code></div>
+    </details>
   </div>`;
 }
 
@@ -1467,6 +1768,19 @@ function text(data: FormData, name: string): string {
   const value = data.get(name);
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Поле ${name} обязательно.`);
   return value.trim();
+}
+
+function optionalText(data: FormData, name: string): string | null {
+  const value = data.get(name);
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  return value.trim();
+}
+
+function generateTechnicalId(title: string): string {
+  // Control принимает только [A-Za-z0-9][A-Za-z0-9._:-]{0,199}: кириллицу выкидываем, ID генерирует Studio.
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${slug}-${suffix}`.slice(0, 64);
 }
 
 function mutationKey(prefix: string): string {

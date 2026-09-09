@@ -118,7 +118,7 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
 
   if (access.mode === "local-owner") {
     return `<section class="access-panel">
-      <div><strong>Local loopback owner</strong><span>Локальный режим без сетевой identity. Сервер всё равно остаётся authority.</span></div>
+      <div><strong>Локальный режим</strong><span>Работа без входа: проверки и сохранения выполняет сервер.</span></div>
       ${project ? roleSummary(project.role) : ""}
     </section>`;
   }

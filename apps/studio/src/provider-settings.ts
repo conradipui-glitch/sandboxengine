@@ -32,6 +32,48 @@ function renderProviderStatus(value: any): void {
   field("baseUrl").readOnly = field("preset").value === "openrouter";
 }
 
+function showStatusOnly(connected: boolean): void {
+  // V01: не-владелец видит только статус, форма скрыта по умолчанию.
+  if (!form || !status) return;
+  for (const element of Array.from(form.elements)) {
+    const html = element as HTMLElement;
+    if (html.id === "provider-status") continue;
+    const label = html.closest("label");
+    if (label) label.style.display = "none";
+    else html.style.display = "none";
+  }
+  document.querySelector("#provider-disconnect")?.remove();
+  form.querySelector("button[type=submit]")?.remove();
+  status.textContent = connected ? "Соавтор подключён" : "Соавтор недоступен";
+}
+
+async function isOwner(): Promise<boolean> {
+  // Роль берём из Control member API (список проектов с ролями).
+  // 404 session = локальный режим без auth (local-owner) — форму показываем.
+  // Роль недоступна — форму скрываем по умолчанию.
+  const session = await fetch("/control/v1/auth/session");
+  if (session.status === 404) return true;
+  if (!session.ok) return false;
+  const projects = await fetch("/control/v1/projects");
+  if (!projects.ok) return false;
+  const body = await projects.json().catch(() => null);
+  const list = Array.isArray(body?.projects) ? body.projects : [];
+  return list.some((item: any) => item?.role === "owner");
+}
+
+async function providerConnected(): Promise<boolean> {
+  try {
+    const response = await fetch("/local/author-provider", {
+      headers: { "x-lh-local-settings": "1" }
+    });
+    if (!response.ok) return false;
+    const body = await response.json().catch(() => null);
+    return body?.state === "connected";
+  } catch {
+    return false;
+  }
+}
+
 if (form && status) {
   const refresh = async (method = "GET", body?: string) => {
     const response = await fetch("/local/author-provider", { method,
@@ -54,6 +96,13 @@ if (form && status) {
     field("credential").value = "";
     void refresh("DELETE").catch(report);
   });
-  void refresh().catch(report);
+  void (async () => {
+    try {
+      if (await isOwner()) await refresh().catch(report);
+      else showStatusOnly(await providerConnected());
+    } catch {
+      showStatusOnly(false);
+    }
+  })();
 }
 export {};

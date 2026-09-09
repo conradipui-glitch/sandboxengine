@@ -97,6 +97,6 @@ test("B05-04 onboarding module has no network, Control, Runtime, Player, Core, p
 
 test("B05-04 static entry loads onboarding beside Studio on empty and quest workspaces", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /dist\/src\/app\.js/);
-  assert.match(html, /dist\/src\/onboarding\.js/);
+  assert.match(html, /studio-assets\/dist\/src\/app\.js/);
+  assert.match(html, /studio-assets\/dist\/src\/onboarding\.js/);
 });

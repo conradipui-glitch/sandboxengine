@@ -86,7 +86,7 @@ export function renderAuthorAssistantPanel(
     return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Server contract недоступен.</p></div></div><div class="assistant-empty">${escapeHtml(state.reason)}</div></section>`;
   }
   if (state.kind === "empty") {
-    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Persistent author chat · server authority</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
+    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Соавтор</h2><p>Переписка хранится на сервере</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
       ? `<button class="primary" data-action="author-start">Начать диалог</button>`
       : `<div class="assistant-empty">Для нового диалога нужна editor/owner роль и свежий CSRF proof.</div>`}</section>`;
   }
