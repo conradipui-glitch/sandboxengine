@@ -179,6 +179,20 @@ describe("бот: меню владельца", () => {
     assert.match(last.text, /Предзаявка @newbie/);
   });
 
+  it("добавление через username известного боту человека привязывает ID сразу", async () => {
+    const { gate, state, tg } = setup();
+    // Человек уже писал боту (заявка висит) — владелец добавляет по username.
+    state.accessRequests["req9"] = { telegramId: STRANGER, username: "stranger", firstName: "S", attemptId: "", createdAt: now, status: "pending" };
+    await gate.handleUpdate(msg(OWNER, "/start", { username: "owner" }));
+    await gate.handleUpdate(msg(OWNER, "➕ Добавить участника", { username: "owner" }));
+    await gate.handleUpdate(msg(OWNER, "@stranger", { username: "owner" }));
+    assert.equal(state.accessRequests["req9"].status, "approved");
+    assert.equal(gate.isAuthorized(STRANGER), true);
+    assert.equal(state.nameClaims["stranger"], undefined);
+    const last = tg.sent[tg.sent.length - 1];
+    assert.match(last.text, new RegExp(STRANGER));
+  });
+
   it("«Участники» и «Отозвать доступ» работают из меню", async () => {
     const { gate, tg } = setup();
     gate.addUser(MEMBER, { username: "ivan" });

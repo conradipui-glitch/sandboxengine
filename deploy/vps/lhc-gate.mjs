@@ -416,7 +416,32 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
     }
     const m = /^@?([A-Za-z0-9_]{5,32})$/.exec(t);
     if (m) {
-      state.nameClaims[m[1].toLowerCase()] = { createdAt: now(), note: "owner username claim" };
+      const want = m[1].toLowerCase();
+      // Человек уже писал боту? Его числовой ID известен — привязываем сразу, без ожидания.
+      const known = Object.entries(state.users).find(
+        ([id, u]) => !u.revoked && String(u.username || "").toLowerCase() === want
+      );
+      if (known) {
+        delete state.ui[ownerId];
+        save();
+        await tg.sendMessage(chatId, `Готово: @${m[1]} уже известен боту — доступ привязан к его ID ${known[0]}. Отдельного подтверждения не нужно.`, { reply_markup: OWNER_KB() });
+        return;
+      }
+      // Человек писал боту, но ещё не одобрен (висит заявка)? Добавление по username = одобрение.
+      const pendingReq = Object.entries(state.accessRequests).find(
+        ([, r]) => r.status === "pending" && String(r.username || "").toLowerCase() === want
+      );
+      if (pendingReq) {
+        const [reqId, r] = pendingReq;
+        r.status = "approved";
+        addUser(r.telegramId, { username: r.username, firstName: r.firstName });
+        delete state.ui[ownerId];
+        save();
+        try { await tg.sendMessage(r.telegramId, "Владелец подтвердил доступ — добро пожаловать в Living History.", { reply_markup: USER_KB() }); } catch {}
+        await tg.sendMessage(chatId, `Готово: @${m[1]} писал боту — заявка одобрена, доступ привязан к ID ${r.telegramId}.`, { reply_markup: OWNER_KB() });
+        return;
+      }
+      state.nameClaims[want] = { createdAt: now(), note: "owner username claim" };
       delete state.ui[ownerId];
       save();
       await tg.sendMessage(chatId, `Предзаявка @${m[1]} записана. Права появятся, когда этот человек напишет боту /start (права привяжутся к его числовому ID). Одну ссылку на бота можно дать сразу: https://t.me/${botUsername}`, { reply_markup: OWNER_KB() });
