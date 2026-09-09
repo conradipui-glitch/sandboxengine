@@ -13,18 +13,29 @@
 | Player (запускается Studio) | 127.0.0.1:8745 | :8745 ssl (nginx) | Просмотр frozen playtest |
 | lhc-gate | 127.0.0.1:8744 | :8741/gate/* | Telegram-аутентификация |
 
-## Telegram-доступ (без пароля, с отзывом)
+## Telegram-вход (бот-управляемый, без паролей и ручных кодов)
 
-1. Владелец один раз в @BotFather для бота **@living_history_gate_bot** (выделенный бот Studio;
-   токен в `deploy/vps/.env` на VPS как `LHC_TELEGRAM_BOT_TOKEN`, НЕ коммитится): Bot Settings →
-   **Login Domain** →
-   добавить `85.137.95.104.sslip.io`. Верификация подписи — локальный HMAC, polling не используется.
-2. Владелец: `POST /gate/invite {"telegramId": <id>}` с `x-lhc-master` → одноразовый код, TTL 15 мин.
-3. Участник открывает invite-URL → «Log in with Telegram» → `POST /gate/callback` проверяет
-   HMAC-подпись Telegram, совпадение `auth.id` с приглашённым id, одноразовость кода.
-4. Успех: HMAC-подписанная cookie `lhc_session` (TTL 12h, HttpOnly+Secure).
-5. Отзыв: `POST /gate/revoke {sessionId | inviteCode}` — сессия мгновенно недействительна.
-6. nginx `auth_request /gate/check` закрывает Studio и Player от неавторизованных.
+1. Отдельный бот **@living_history_gate_bot** (polling getUpdates в процессе lhc-gate;
+   токен на VPS в `deploy/vps/.env` как `LHC_TELEGRAM_BOT_TOKEN`, в git НЕ коммитится).
+2. Владелец задан серверной настройкой `LHC_OWNER_TELEGRAM_ID` (самоназначение невозможно —
+   такого API/команды нет). Меню владельца: «Добавить участника», «Участники»,
+   «Отозвать доступ», «Открыть Studio».
+3. Участникам — одна ссылка на бота. `/start` допущенного показывает «Открыть Studio»,
+   недопущенного — понятное сообщение + запрос владельцу на подтверждение.
+4. Добавление: числовой Telegram ID — сразу права; @username — предзаявка, права
+   появляются, когда человек с таким username пишет `/start` (фиксируется числовой ID).
+5. Браузер создаёт login-попытку (`POST /gate/login/start`, TTL ~2 мин, одноразовая);
+   участник подтверждает КОНКРЕТНУЮ попытку в боте (видны UA/IP/время), браузер
+   опрашивает статус и забирает сессию (`POST /gate/login/consume` ставит cookie).
+   Перехваченная ссылка без подтверждения сессию не даёт.
+6. Сессии серверные: cookie `lhc_session` HttpOnly+Secure+SameSite=Lax без Max-Age
+   (живёт до закрытия браузера), серверная запись — 90 суток или до отзыва.
+   Права действуют до отзыва; закрытие браузера = повторный вход через бота
+   без нового приглашения; отзыв убивает активные сессии.
+7. Старый invite/widget-путь (`/gate/invite`, `/gate/callback`, `/gate/revoke`) удалён
+   (отвечает 410). Страница входа: `deploy/vps/login.html` → `/var/www/lhc/login.html`.
+8. Тесты: `node --test deploy/vps/lhc-gate.test.mjs`. Живая приёмка с людьми —
+   по `deploy/vps/ACCEPTANCE-checklist.md` (автоматике недоступны чужие аккаунты).
 
 ## Установка (root@conradipui.fvds.ru, docker 29.6.1, node системный 24.18 → движок в контейнере 24.19)
 
@@ -37,14 +48,12 @@
     # 4. nginx
     cp deploy/vps/nginx-lhc.conf /etc/nginx/conf.d/lhc.conf && nginx -t && systemctl reload nginx
 
-## Приёмка (сценарий участника)
+## Приёмка
 
-1. Приглашение владельца → участник открывает `https://…:8741/?invite=…` → Telegram-логин → cookie.
-2. Studio: создать проект/квест → сохранить (draft revision 1).
-3. Перелогин/повторное открытие: квест на месте (SQLite persist).
-4. Freeze → «Открыть в Player» → Player открывается по `https://…:8745/p/<playtestId>` → покраска работает.
-5. Внешняя связка: `POST https://living-history-florence-preview.../api/games {runtime:"engine"}` →
-   BFF ходит в `ENGINE_RUNTIME_URL=https://85.137.95.104.sslip.io:8743` → сессия движка на VPS.
+Автоматика: `node --test deploy/vps/lhc-gate.test.mjs` (гейт и бот: права, попытки,
+подтверждения, отзыв, миграция v1). Вживую с людьми — по
+`deploy/vps/ACCEPTANCE-checklist.md`: вход владельца, вход участника, неизвестный,
+повтор ссылки, вход без подтверждения, отзыв активной сессии.
 
 ## Известные ограничения
 
@@ -57,5 +66,3 @@
 
 - B13.a2 остаётся PARTIAL: размещение на VPS не является изоляцией исполнения.
 - Merge #39 и production-деплой в это задание не входят.
-- Login Widget требует одноразового `/setdomain` от владельца в @BotFather (существующий токен
-  бота используется только для верификации подписи локально; polling Ивы не затрагивается).

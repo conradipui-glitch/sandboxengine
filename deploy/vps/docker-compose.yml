@@ -50,7 +50,8 @@ services:
       - LHC_STUDIO_ORIGIN=https://85.137.95.104.sslip.io:8741
       - LHC_STORE=/data/lhc-gate-state.json
       - LHC_GATE_SECRET=${LHC_GATE_SECRET}
-      - TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
+      - LHC_TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
+      - LHC_OWNER_TELEGRAM_ID=${LHC_OWNER_TELEGRAM_ID:-332664273}
     volumes:
       - ../vps:/app:ro
       - engine-data:/data
