@@ -1,6 +1,6 @@
 import { PlayerClientError, RuntimePlayerClient } from "/player-lib/client.js";
 import { PresentationExecutor } from "/player-lib/presentation-executor.js";
-import { BrowserPresentationRenderer } from "/presentation-renderer.js";
+import { BrowserPresentationRenderer } from "/player-assets/presentation-renderer.js";
 
 const root = document.querySelector("#app");
 if (!(root instanceof HTMLElement)) throw new Error("Player root is missing");

@@ -127,7 +127,7 @@ test("B05-03 Studio bridge freezes current validation and later draft edits cann
 
 test("B05-03 Studio browser bundle exposes freeze/launch UI without embedding gameplay rules", async () => {
   await withStudio(async ({ origin }) => {
-    const appResponse = await fetch(`${origin}/dist/src/app.js`);
+    const appResponse = await fetch(`${origin}/studio-assets/dist/src/app.js`);
     assert.equal(appResponse.status, 200);
     const app = await appResponse.text();
     assert.match(app, /create-playtest/);
@@ -135,7 +135,7 @@ test("B05-03 Studio browser bundle exposes freeze/launch UI without embedding ga
     assert.match(app, /npm run dev:player/);
     assert.doesNotMatch(app, /completedUnits\s*=|resource\.value\s*-/);
 
-    const cssResponse = await fetch(`${origin}/styles.css`);
+    const cssResponse = await fetch(`${origin}/studio-assets/styles.css`);
     assert.equal(cssResponse.status, 200);
     const css = await cssResponse.text();
     assert.match(css, /\.playtest-result/);

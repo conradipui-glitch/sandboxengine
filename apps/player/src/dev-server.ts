@@ -256,13 +256,24 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
     return;
   }
 
+  // Канонические пути статики Player — только /player-assets/* (V00: разводка
+  // неймспейсов со стилями Studio). Корневые /styles.css, /app.js и др. больше
+  // не обслуживаются. Игровые scope-пути (/player-lib, /contracts-lib,
+  // /player-meta.json, /v1) без изменений.
+  if (pathname.startsWith("/player-assets/")) {
+    const name = pathname.slice("/player-assets/".length);
+    if (name === "styles.css" || name === "presentation.css"
+      || name === "app.js" || name === "presentation-renderer.js") {
+      await sendFile(response, join(playerRoot, name));
+      return;
+    }
+    sendText(response, 404, "Not found");
+    return;
+  }
+
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "");
-  const allowed = normalized === "index.html"
-    || normalized === "styles.css"
-    || normalized === "presentation.css"
-    || normalized === "app.js"
-    || normalized === "presentation-renderer.js";
+  const allowed = normalized === "index.html";
   if (!allowed) {
     sendText(response, 404, "Not found");
     return;

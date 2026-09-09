@@ -188,7 +188,20 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
 }
 
 async function serveStatic(response: any, pathname: string): Promise<void> {
-  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  // Канонические пути статики Studio — только /studio-assets/* (V00: разводка
+  // неймспейсов со стилями Player). Корневые /styles.css и /dist/* больше
+  // не обслуживаются: публичный /styles.css раньше уходил в Player (F01).
+  let relative: string;
+  if (pathname === "/") {
+    relative = "index.html";
+  } else if (pathname === "/studio-assets/styles.css") {
+    relative = "styles.css";
+  } else if (pathname.startsWith("/studio-assets/dist/")) {
+    relative = pathname.slice("/studio-assets/".length);
+  } else {
+    sendText(response, 404, "Not found");
+    return;
+  }
   const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "").replace(/\\/g, "/");
   const allowed = normalized === "index.html"
     || normalized === "styles.css"
