@@ -27,6 +27,14 @@ Branch: `feat/live-author-studio`
   `feat/florence-vertical-slice` чужой вертикали; адаптер доказан на интерфейсе Gateway,
   живой прогон фиксируется как отдельный шаг приёмки B13 (по решению оператора).
 
+## Живой прогон (2026-09-09, по разрешению оператора)
+
+- `gh workflow run deploy-florence-preview.yml --repo conradipui-glitch/sandbox --ref feat/florence-vertical-slice` — dispatch прошёл;
+- run `34321012260` на `ffba7c896bc9a02ab2485cce55ee1445f455f942` — **success**;
+- smoke preview-воркера `https://living-history-florence-preview.conradipui.workers.dev/` — HTTP 200 (SPA отдаётся);
+- smoke production-воркера `https://living-history-sandbox.conradipui.workers.dev/` — HTTP 200, заголовок «Переиграть историю»;
+- production не диспетчивался и не менялся: деплой-ран не запускался, проверен только read-only GET.
+
 ## Ограничения
 
 - Адаптер не создаёт, не меняет и не удаляет workflows; он только dispatch'ит уже существующий.
