@@ -191,8 +191,12 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
 
 function jobFailedHint(code: string): string {
   if (code === "backend.auth_required") return " — ИИ не подключён или ключ отклонён: укажите провайдера, модель и ключ в форме «Подключение ИИ-помощника» выше.";
-  if (code === "backend.rate_limited") return " — провайдер отвечает 429; повторите позже.";
+  if (code === "backend.rate_limited") return " — провайдер отвечает 429 (лимит запросов); повторите позже.";
   if (code === "backend.timeout") return " — провайдер не ответил за отведённое время; повторите запрос.";
+  if (code === "backend.invalid_response") return " — провайдер вернул нечитаемый ответ; проверьте модель и её поддержку JSON-ответов.";
+  if (code === "backend.session_expired") return " — сессия истекла; отправьте сообщение заново.";
+  if (code === "backend.aborted") return " — запрос был прерван; отправьте сообщение заново.";
+  if (code === "backend.backend_error") return " — провайдер вернул ошибку; проверьте адрес API и модель, затем повторите.";
   return "";
 }
 

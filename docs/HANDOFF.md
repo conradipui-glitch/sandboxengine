@@ -2,8 +2,8 @@
 
 Обновлено: 2026-09-09
 
-Текущий блок: **L04 — контекст и формат ответа; L00–L03 приняты; B12 опубликован**  
-Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L02 подтверждены свежими проверками; L03 принят 2026-09-09. B13 отложен за этот маршрут.
+Текущий блок: **L09 — финализация; L00–L07 приняты, L08 UNVERIFIED; B12 опубликован**  
+Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 приняты 2026-09-09 (см. worklog ниже); L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. B13 отложен за этот маршрут.
 
 ## L00 — baseline review (2026-09-09)
 
@@ -51,7 +51,36 @@
 - `apps/studio` group 55/59: 4 failures reproduce without L03 changes (pre-existing B05/B10-era scripted-backend expectations on this branch);
 - no paid API call; Node `24.18.0` vs `>=24.19.0 <25` remains an environment limitation.
 
-Следующее: L04 — контекст и формат ответа (canonical schema, полный small-quest контекст, свежий revision после Apply).
+## L04 — контекст и формат ответа (2026-09-09)
+
+- аудит карточки: пункты 1–6 уже реализованы заготовками и подтверждены (каноническая схема в промпте, small_quest до 32 блоков / 64k символов, entry-режим сохранён, fail до сети, MCP-протокол зелёный, paint-ограничение в контракте);
+- пункт 7: устранены литеральные `\n` в user-сообщении (модель получала backslash-n вместо переводов строк);
+- новые тесты: `node --test apps/server/test/author-context-l04.test.mjs` — exit 0, 3/3 (correction видит созданные блоки и fresh revision; «увеличь расход краски до двух» даёт один `block.replace` без дубликата id; переполнение контекста падает до сети; настоящие переводы строк);
+- `node --test apps/server/test/*.test.mjs` — exit 0, 121/121.
+
+## L05 — запуск frozen Player из Studio (2026-09-09)
+
+- переиспользуемый `apps/player/src/launch.ts` с явными отказами (playtest_not_found / unsupported_playtest / …); CLI переведён на него без ломания контракта;
+- `POST /local/launch-player` за тем же loopback-полиси, сериализация запусков, ровно один Player на процесс Studio, повторный запрос возвращает работающий URL;
+- кнопка «Открыть в Player» в панели готового playtest + ссылка после старта; shutdown Studio освобождает порты и SQLite-хендлы;
+- тесты: `node --test packages/player/test/launch.test.mjs` — exit 0, 2/2; `node --test apps/studio/test/live-author-player-launch.test.mjs` — exit 0, 1/1 (405/403/400/404/409 + конкурентные POST → один URL).
+
+## L06 — сквозной цикл через настоящий HTTP adapter (2026-09-09)
+
+- `node --test apps/studio/test/live-author-full-http-cycle.test.mjs` — exit 0, 1/1 на SQLite-стеке: настройки через endpoint формы → Bearer/model/JSON-format у стаба → apply r0→r1 (повторный apply без новой ревизии) → correction видит созданные блоки и fresh revision → block.replace расхода 1→2 → validate/freeze → launch Player → покраска 1 юнита списывает 2 (замороженное правило) → правка draft после freeze не влияет на запущенную версию → невалидный JSON и 429 не меняют draft/frozen/state.
+
+## L07 — браузерная приёмка (2026-09-09)
+
+- исправлена причина 4 старых падений: `serveStatic` на win32 нормализовал пути с backslash и все собранные браузерные файлы отдавали 404;
+- `author-assistant-app.test.mjs` обновлён под текущую композицию (без scripted backend, с playerLauncher);
+- реальный Chromium (CDP): desktop 1280×900 и 360×800 — boot, сохранение настроек, очистка пароля, честные статусы, клавиатура/focus, справка открывается/повторяется (8 тем), нет горизонтального скролла, нет overlap, consoleErrors пусто; сняты скриншоты;
+- `node --test apps/studio/test/*.test.mjs` — exit 0, **61/61**.
+
+## L08 — живой прогон (2026-09-09)
+
+- **UNVERIFIED: нет доступа к провайдеру** (ключ не предоставлен; чужие ключи не ищутся). Лимиты для будущего прогона зафиксированы в worklog.
+
+Следующее: L09 — финализация документации и `npm run verify`.
 
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  

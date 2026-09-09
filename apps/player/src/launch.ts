@@ -54,8 +54,20 @@ export async function closeAllPlayers(): Promise<void> {
  * Player for the same playtestId; callers must close it via the returned handle
  * or closePlayer/closeAllPlayers. Refusals are explicit codes, never guesses.
  */
+const launchChains = new Map<string, Promise<LaunchFrozenPlayerResult>>();
+let anyLaunchChain: Promise<unknown> = Promise.resolve();
+
 export async function launchFrozenPlayer(options: LaunchFrozenPlayerOptions): Promise<LaunchFrozenPlayerResult> {
-  const playtestId = String(options.playtestId ?? "").trim();
+  const requestedId = String(options.playtestId ?? "").trim();
+  // In-process mutex: two concurrent launches (same or different ids) must never race
+  // past the managedPlayers cache and start duplicate servers.
+  const chained = anyLaunchChain.catch(() => undefined).then(() => launchFrozenPlayerUncached(options, requestedId));
+  anyLaunchChain = chained;
+  return chained;
+}
+
+async function launchFrozenPlayerUncached(options: LaunchFrozenPlayerOptions, requestedId: string): Promise<LaunchFrozenPlayerResult> {
+  const playtestId = requestedId;
   const databasePath = resolve(options.databasePath);
   if (playtestId.length === 0) return failure("invalid_playtest", "Playtest id is empty.");
 
@@ -146,6 +158,7 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
     } catch (error) {
       guestAccess.close();
       rawStorage.close();
+      controlStore.close();
       return failure("listen_failed", error instanceof Error ? error.message : "Runtime listen failed");
     }
 
@@ -185,6 +198,7 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
       await runtime.close();
       guestAccess.close();
       rawStorage.close();
+      controlStore.close();
       return failure("listen_failed", error instanceof Error ? error.message : "Player listen failed");
     }
 

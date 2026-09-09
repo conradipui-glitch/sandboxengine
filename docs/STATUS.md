@@ -2,14 +2,14 @@
 
 Последнее обновление: 2026-09-09.
 
-Текущая работа в `feat/live-author-studio`: [L00–L09 — завершение live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L03 приняты; следующая карточка — L04. Сквозной тест через HTTP adapter, браузер, live API и кнопка Player ещё не приняты. Это не меняет исторические статусы релиза ниже. B13 — последующий, не текущий шаг.
+Текущая работа в `feat/live-author-studio`: [L00–L09 — завершение live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L07 приняты; L08 — `UNVERIFIED: нет доступа к провайдеру`; L09 — финализация. Сквозной цикл через HTTP adapter и браузерная приёмка пройдены; живой прогон реальной модели не заявляется.
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
 | Репозиторий | **B01–B12 published** | B12 merge `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; tag `v0.1.0` |
 | Core/Runtime | **GREEN** | full deterministic suite + durable restart/replay/fencing |
 | Storage/assets | **B12 GREEN / scoped** | online backup/restore + 12/12 Florence hashes; no Cloudflare DO claim |
-| Studio/Player | **GREEN / live-authoring in progress** | historical author/playtest/publication paths + T29 real 360×800 keyboard/focus smoke `34246143800`; L00–L03 accepted, L04 next |
+| Studio/Player | **GREEN / live-authoring L00–L07 accepted** | historical author/playtest/publication paths + T29 smoke `34246143800`; real-HTTP e2e cycle, browser desktop+360px acceptance, provider settings lifecycle; L08 live model run UNVERIFIED |
 | Releases/rollback | **GREEN** | permanent `drill:rollback`; exact B12 `main` CI #729 / `34251551857` |
 | Persistent operations | **GREEN** | `npm start` + `/healthz` + SQLite + graceful SIGTERM |
 | Security/quota | **GREEN** | permanent release audit 0/0 + 429 no-turn save integrity |

@@ -194,6 +194,11 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
 
   const filePath = join(studioRoot, normalized);
+  const resolved = normalize(filePath);
+  if (!resolved.startsWith(normalize(studioRoot))) {
+    sendText(response, 404, "Not found");
+    return;
+  }
   try {
     const bytes = await readFile(filePath);
     response.statusCode = 200;
