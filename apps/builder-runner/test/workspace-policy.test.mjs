@@ -63,6 +63,7 @@ test("B13.0 refuses write escalation and malformed repository snapshots", () => 
   assert.throws(() => policy({ baseBranch: "refs/heads/main.lock" }), BuilderPolicyError);
   assert.throws(() => policy({ writablePaths: ["apps/studio"] }), BuilderPolicyError);
   assert.throws(() => policy({ readablePaths: [".git"] }), BuilderPolicyError);
+  assert.throws(() => policy({ readablePaths: ["vendor/plugin/.git"] }), BuilderPolicyError);
   assert.throws(
     () => policy({ verificationCommands: [{ executable: "npm run verify", args: [] }] }),
     BuilderPolicyError

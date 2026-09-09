@@ -2,8 +2,8 @@
 
 Обновлено: 2026-09-09
 
-Текущий блок: **B13.a1 NEXT; B13.0 GREEN; L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
-Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 повторно проверены и исправлены 2026-09-09; L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. L09 закрыт локальным verify и Linux CI. B13.0 принят; следующая работа — B13.a1 без push/deployment authority.
+Текущий блок: **B13.a2 NEXT; B13.0–B13.a1 GREEN; L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
+Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 повторно проверены и исправлены 2026-09-09; L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. L09 закрыт локальным verify и Linux CI. B13.0–B13.a1 приняты; следующая работа — B13.a2 без push/deployment authority.
 
 ## L00 — baseline review (2026-09-09)
 
@@ -90,7 +90,7 @@
 - §24 спецификации больше не хранит устаревший статус реализации и направляет в `docs/STATUS.md`;
 - L08 честно остаётся UNVERIFIED; merge, production deploy и новый release tag не входят в L09.
 
-Следующее: [B13.a1](tasks/B13-BUILDER.md) — фактический изолированный workspace adapter с exact-HEAD и realpath/symlink boundary; push и deployment не входят.
+Следующее: [B13.a2](tasks/B13-BUILDER.md) — bounded agent patch/diff/tree identity в isolated workspace; push и deployment не входят.
 
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  
@@ -127,6 +127,6 @@ Deterministic adapter/account/controller evidence is green: exact protocol pin, 
 
 B13 допускается после принятого B12, но текущий приоритет пользователя — завершение сквозного авторского маршрута L00–L09. Builder/deployment остаётся отдельным блоком; опубликованные доказательства `v0.1.0` сохраняются.
 
-Первый bounded slice B13.0 принят: policy фиксирует exact repository/base SHA и канонические read/write scopes, но не выполняет файловые или внешние операции. Следующая карточка B13.a1 добавляет фактическую изоляцию workspace и realpath/symlink checks до любых push/deployment полномочий. См. [карточку](tasks/B13-BUILDER.md) и [worklog](worklog/2026-09-09-B13-00-builder-policy.md).
+B13.0–B13.a1 приняты: policy фиксирует exact repository/base SHA и канонические read/write scopes; read-only adapter создаёт disposable clone, сверяет HEAD и блокирует symlink/junction escape. Следующая карточка B13.a2 добавляет bounded patch/diff/tree identity в отдельном sandbox до любых push/deployment полномочий. См. [карточку](tasks/B13-BUILDER.md) и [worklog](worklog/2026-09-09-B13-a1-readonly-workspace.md).
 
 Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE-MATRIX.md`. Evidence ledger: `docs/RELEASE-REPORT.md`.

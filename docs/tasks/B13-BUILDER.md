@@ -1,6 +1,6 @@
 # B13 — подключаемый Builder и deployment
 
-Статус: **B13.0 GREEN; B13.a1 NEXT**
+Статус: **B13.0–B13.a1 GREEN; B13.a2 NEXT**
 Вход: опубликованный B12 (`6f2ad73fca228c60361012250b72609447edc968` в истории текущей ветки), §25 и T33–35 спецификации.
 
 ## Граница блока
@@ -14,7 +14,7 @@ Builder работает отдельным процессом от Core/Runtime
 | ID | Результат | Статус |
 |---|---|---|
 | B13.0 | Точный repository snapshot, канонические read/write paths и argv проверок; fail-closed policy без файлового исполнения | GREEN (2026-09-09) |
-| B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | NEXT |
+| B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
 | B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | NOT STARTED |
 | B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | NOT STARTED |
 | B13.b2 | Один preview deployment adapter с artifact identity и smoke | NOT STARTED |
@@ -30,6 +30,12 @@ Builder работает отдельным процессом от Core/Runtime
 
 **Доказательство:** [worklog B13.0](../worklog/2026-09-09-B13-00-builder-policy.md).
 
-## Следующий шаг — B13.a1
+## B13.a1 — read-only workspace adapter
 
-Создать adapter изолированного workspace на локальном fixture-репозитории. Он должен подтвердить exact base SHA, отказаться от изменившегося HEAD, разрешать чтение только после realpath/symlink проверки и никогда не писать в исходный checkout. Никаких model backend, push или deployment в этой карточке.
+Реализован disposable local clone на exact base SHA. Git вызывается только фиксированными argv без shell, с очищенным HOME/config и без интерактивных запросов; repository-defined commands, hooks, tests, model output и deployment не запускаются. Adapter повторно сверяет HEAD источника после clone, читает только разрешённые policy paths, отвергает `realpath` за пределами clone и ограничивает один текстовый файл 1 MiB. Fixture подтверждает: source checkout и его `.git/HEAD`/`.git/config` не изменились, изменившийся HEAD отвергается, junction/symlink наружу отвергается.
+
+**Доказательство:** [worklog B13.a1](../worklog/2026-09-09-B13-a1-readonly-workspace.md).
+
+## Следующий шаг — B13.a2
+
+Добавить bounded agent job, который создаёт patch только в разрешённом isolated workspace, фиксирует diff/tree hash и запускает лишь предварительно разрешённые проверки. Не включать push, PR, workflow или deployment.

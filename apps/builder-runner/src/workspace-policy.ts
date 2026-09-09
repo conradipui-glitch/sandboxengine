@@ -106,7 +106,7 @@ function canonicalRelativePath(value: string, label: string): string {
   if (value.startsWith("/") || /^[A-Za-z]:/.test(value)) invalid(`${label} must be relative`);
   const segments = value.split("/");
   if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) invalid(`${label} is not canonical`);
-  if (segments[0] === ".git") invalid(`${label} cannot grant access to Git metadata`);
+  if (segments.includes(".git")) invalid(`${label} cannot grant access to Git metadata`);
   return segments.join("/");
 }
 
