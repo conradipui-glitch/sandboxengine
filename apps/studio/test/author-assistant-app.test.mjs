@@ -16,13 +16,20 @@ test("B10.a real StudioApp mounts persistent assistant and routes server mutatio
   assert.doesNotMatch(app, /localStorage|sessionStorage/);
 });
 
-test("B10.a dev Studio composes durable SQLite author stores and explicit no-tools scripted backend", async () => {
+test("B10.a dev Studio composes durable SQLite author stores and the L03-L05 real provider stack", async () => {
   const main = await readFile(new URL("../dist/src/main.js", import.meta.url), "utf8");
   assert.match(main, /SQLiteAuthorAgentJobStore/);
   assert.match(main, /SQLiteAuthorAgentProposalArtifactStore/);
   assert.match(main, /SQLiteAuthorConversationStore/);
-  assert.match(main, /studio-dev-scripted-author/);
+  // L02/L03: the assistant backend is the server-owned ModelProvider bridge configured through LocalAuthorProvider;
+  // the B10-era scripted backend is gone.
+  assert.match(main, /LocalAuthorProvider/);
+  assert.match(main, /backend: authorProvider\.backend/);
+  assert.doesNotMatch(main, /studio-dev-scripted-author/);
   assert.match(main, /authorAssistant:/);
   assert.match(main, /profileId: "studio-dev-author-profile"/);
-  assert.match(main, /dev-only deterministic title proposal; no tools/);
+  // L05: frozen Player launches from the same database path; no shell commands are built.
+  assert.match(main, /launchFrozenPlayer/);
+  assert.match(main, /playerLauncher/);
+  assert.doesNotMatch(main, /child_process/);
 });

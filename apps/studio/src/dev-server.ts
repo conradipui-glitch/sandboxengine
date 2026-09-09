@@ -184,7 +184,7 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
 
 async function serveStatic(response: any, pathname: string): Promise<void> {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "");
+  const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "").replace(/\\/g, "/");
   const allowed = normalized === "index.html"
     || normalized === "styles.css"
     || normalized.startsWith("dist/");
