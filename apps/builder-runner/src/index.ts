@@ -27,3 +27,11 @@ export {
 export type {
   PreviewDeploymentPolicy, PreviewDeploymentTarget, PreviewDeploymentGateway, PreviewDeploymentReceipt
 } from "./preview-deployment.js";
+
+export {
+  ProductionDeploymentAdapter, ProductionDeploymentError,
+  createProductionDeploymentPolicy, assertProductionGrant
+} from "./production-deployment.js";
+export type {
+  ProductionDeploymentPolicy, ProductionGrant, ProductionDeploymentReceipt, ProductionRollbackReceipt
+} from "./production-deployment.js";

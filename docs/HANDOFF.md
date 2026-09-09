@@ -2,8 +2,8 @@
 
 Обновлено: 2026-09-09
 
-Текущий блок: **B13.c1 NEXT; B13.0–B13.b2 GREEN; L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
-Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 повторно проверены и исправлены 2026-09-09; L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. L09 закрыт локальным verify и Linux CI. B13.0–B13.b2 приняты; следующая работа — B13.c1 (production policy + rollback).
+Текущий блок: **B13 принят (B13.0–B13.c1 GREEN, adapter-level); L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
+Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L09 закрыт локальным verify и Linux CI. B13.0–B13.c1 приняты на уровне адаптеров; живые preview/production dispatch — отдельные шаги приёмки по разрешению оператора.
 
 ## L00 — baseline review (2026-09-09)
 
@@ -127,8 +127,8 @@ Deterministic adapter/account/controller evidence is green: exact protocol pin, 
 
 B13 допускается после принятого B12, но текущий приоритет пользователя — завершение сквозного авторского маршрута L00–L09. Builder/deployment остаётся отдельным блоком; опубликованные доказательства `v0.1.0` сохраняются.
 
-B13.0–B13.b2 приняты: policy фиксирует exact repository/base SHA и канонические read/write scopes; a1 — read-only clone с HEAD/symlink boundary; a2 — bounded patch job с реальным executor (policy-bounded writes, deterministic `git write-tree` identity, verification runner только по policy); b1 — authorized change set (bounded operationId, grant ≡ policy, push из isolated clone, exact-SHA CI reconciliation); b2 — single preview deployment adapter (fixed workflow dispatch, artifact SHA reconciliation, HTTP smoke; Cloudflare-токены только в CI). Живой preview dispatch — отдельный шаг приёмки (ref чужой вертикали). Следующая карточка B13.c1: production policy, reconciliation потерянного ответа и проверенный rollback. См. [карточку](tasks/B13-BUILDER.md) и worklog-и `2026-09-09-B13-*`.
+B13.0–B13.c1 приняты на уровне адаптеров: policy фиксирует exact repository/base SHA и канонические read/write scopes; a1 — read-only clone с HEAD/symlink boundary; a2 — bounded patch job с реальным executor (policy-bounded writes, deterministic `git write-tree` identity, verification runner только по policy); b1 — authorized change set (bounded operationId, grant ≡ policy, push из isolated clone, exact-SHA CI reconciliation); b2 — single preview deployment adapter (fixed workflow dispatch, artifact SHA reconciliation, HTTP smoke; Cloudflare-токены только в CI); c1 — production policy с обязательным per-SHA grant, reconciliation потерянного ответа без нового dispatch и verified rollback с smoke-подтверждением. Живые preview/production dispatch — отдельные шаги приёмки по разрешению оператора. См. [карточку](tasks/B13-BUILDER.md) и worklog-и `2026-09-09-B13-*`.
 
-Последние проверки: CI success `34315990935` на `9f17250` (b1) и `34317405839` на `14a1619` (b2); локальный `npm run verify` exit 0, builder 19/19.
+Последние проверки: CI success `34315990935` на `9f17250` (b1), `34317405839` на `14a1619` (b2); локальный `npm run verify` exit 0, builder 24/24.
 
 Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE-MATRIX.md`. Evidence ledger: `docs/RELEASE-REPORT.md`.

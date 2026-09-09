@@ -1,6 +1,6 @@
 # B13 — подключаемый Builder и deployment
 
-Статус: **B13.0–B13.a1 GREEN; B13.a2 NEXT**
+Статус: **B13.0–B13.c1 GREEN (все карточки)**
 Вход: опубликованный B12 (`6f2ad73fca228c60361012250b72609447edc968` в истории текущей ветки), §25 и T33–35 спецификации.
 
 ## Граница блока
@@ -18,7 +18,7 @@ Builder работает отдельным процессом от Core/Runtime
 | B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | GREEN (2026-09-09) |
 | B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | GREEN (2026-09-09) |
 | B13.b2 | Один preview deployment adapter с artifact identity и smoke | GREEN (2026-09-09, adapter; живой dispatch — отдельный шаг) |
-| B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | NOT STARTED |
+| B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | GREEN (2026-09-09, adapter; живой production dispatch — по разрешению оператора) |
 
 ## B13.0 — policy baseline
 
@@ -62,6 +62,21 @@ exact artifact SHA, smoke URL + подстрока) → `PreviewDeploymentAdapte
 как отдельный шаг приёмки.
 
 **Доказательство:** [worklog b2](../worklog/2026-09-09-B13-b2-preview-deployment.md).
+
+## B13.c1 — production policy, reconciliation, rollback (2026-09-09, GREEN)
+
+Отдельная строгая production-политика: обязательный per-SHA `ProductionGrant` (authorizedBy +
+bounded reason), `maxConcurrentDeployments === 1`. `deploy(grant)` — dispatch → сверка рана с
+grant SHA → smoke → квитанция `production-<runId>`. `reconcileLostResponse` восстанавливает
+потерянный ответ по SHA без нового dispatch (T35: повтор не создаёт скрытый второй деплой).
+`rollback(from, grant)` — verified rollback на другой SHA (same-SHA отказ), подтверждается
+smoke-пробой; квитанция `rollback-<runId>` с from/to. Все отказы типизированы.
+
+**Проверить:** `npm run test:builder` — 24/24; verify exit 0. Живой production dispatch не
+выполнялся (production не трогается без явного разрешения оператора на конкретный артефакт);
+механика идентична проверенному b2-адаптеру.
+
+**Доказательство:** [worklog c1](../worklog/2026-09-09-B13-c1-production-rollback.md).
 
 ## B13.a2 — bounded agent job (2026-09-09, GREEN)
 
