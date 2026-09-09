@@ -45,30 +45,48 @@ try {
   const beforeShutdown = await stat(databasePath);
   assert.ok(beforeShutdown.size > 0, "persistent entrypoint must create a non-empty SQLite database");
 
-  child.kill("SIGTERM");
-  const exit = await waitForExit(child, 10_000);
-  assert.deepEqual(exit, { code: 0, signal: null }, `unexpected shutdown: ${JSON.stringify(exit)}\n${stderr}`);
-  child = null;
-
-  const afterShutdown = await stat(databasePath);
-  assert.ok(afterShutdown.size > 0);
-
-  console.log(JSON.stringify({
-    drill: "B12-startup-shutdown",
-    result: "pass",
-    runtimeHealth: "/healthz:200",
-    controlProbe: "/control/v1/agent-kit:200",
-    ephemeralPortsReported: true,
-    sqliteCreated: true,
-    sigtermExitCode: 0,
-    scope: "standalone Node 24 Runtime + Control + local SQLite entrypoint"
-  }));
-} finally {
-  if (child && child.exitCode === null && child.signalCode === null) {
+  if (process.platform === "win32") {
+    // child.kill() on Windows force-terminates (TerminateProcess): no signal reaches the
+    // in-process SIGTERM handler, so graceful exit code 0 is unobservable from a parent
+    // (verified: SIGTERM/SIGINT/SIGBREAK all report code:null + signal). The graceful
+    // shutdown contract is exercised by the POSIX CI runner (B12 evidence) — skip here
+    // without counting it as a product failure.
     child.kill("SIGKILL");
-    await waitForExit(child, 2_000).catch(() => {});
+    await waitForExit(child, 10_000);
+    console.log(JSON.stringify({
+      drill: "B12-startup-shutdown",
+      result: "skip",
+      reason: "win32 child.kill() cannot deliver a graceful signal; POSIX CI is the authoritative gate",
+      runtimeHealth: "/healthz:200",
+      controlProbe: "/control/v1/agent-kit:200",
+      sqliteCreated: true
+    }));
+    child = null;
+  } else {
+    child.kill("SIGTERM");
+    const exit = await waitForExit(child, 10_000);
+    assert.deepEqual(exit, { code: 0, signal: null }, `unexpected shutdown: ${JSON.stringify(exit)}\n${stderr}`);
+    child = null;
+    const afterShutdown = await stat(databasePath);
+    assert.ok(afterShutdown.size > 0);
+    console.log(JSON.stringify({
+      drill: "B12-startup-shutdown",
+      result: "pass",
+      runtimeHealth: "/healthz:200",
+      controlProbe: "/control/v1/agent-kit:200",
+      ephemeralPortsReported: true,
+      sqliteCreated: true,
+      sigtermExitCode: 0,
+      scope: "standalone Node 24 Runtime + Control + local SQLite entrypoint"
+    }));
   }
-  await rm(directory, { recursive: true, force: true });
+} finally {
+  if (child) {
+    // Ensure the child is fully reaped (SQLite handles released) before removing the temp dir.
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    await waitForExit(child, 3_000).catch(() => {});
+  }
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
 }
 
 function waitForAddresses(processHandle, readStdout, readStderr) {

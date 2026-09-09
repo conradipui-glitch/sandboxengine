@@ -234,3 +234,19 @@ test("B10.a empty, paused and terminal UI expose only valid controls", async () 
   assert.doesNotMatch(cancelledHtml, /data-form="author-message"/);
   assert.match(cancelledHtml, /Job завершён/);
 });
+
+test("L07 context overflow explains the corrective action instead of showing only an internal code", () => {
+  const failedState = Object.freeze({
+    kind: "ready",
+    model: Object.freeze({
+      job: job({ state: "failed" }),
+      checkpoints: Object.freeze([
+        Object.freeze({ jobId: "job-1", ordinal: 0, fact: Object.freeze({ kind: "job.failed", code: "context_too_large" }), createdAtMs: 1 })
+      ]),
+      messages: Object.freeze([]),
+      proposalCards: Object.freeze([])
+    })
+  });
+  const html = renderAuthorAssistantPanel(failedState, { canMutate: true, hasMutationProof: true });
+  assert.match(html, /сократите квест до 32 блоков или уменьшите объём текста/);
+});

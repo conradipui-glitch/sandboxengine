@@ -77,6 +77,7 @@ interface StudioState {
   publicationReceipt: PublicationReceipt | null;
   deletionIntent: DeletionIntent | null;
   playerUrl: string | null;
+  playerPlaytestId: string | null;
   playerError: string | null;
   playerLaunching: boolean;
   phase: "loading" | "idle" | "saving" | "saved" | "validating" | "freezing" | "restoring" | "building-release" | "publishing" | "assistant-starting" | "assistant-running" | "assistant-applying" | "assistant-stopping" | "conflict" | "error";
@@ -105,6 +106,7 @@ export class StudioApp {
     publicationReceipt: null,
     deletionIntent: null,
     playerUrl: null,
+    playerPlaytestId: null,
     playerError: null,
     playerLaunching: false,
     phase: "loading",
@@ -1006,6 +1008,7 @@ export class StudioApp {
     }
     if (this.state.playerLaunching) return;
     this.state.playerLaunching = true;
+    this.state.playerPlaytestId = playtest.playtestId;
     this.state.playerError = null;
     this.state.message = "Запускаем Player для замороженной версии…";
     this.render();
@@ -1297,9 +1300,11 @@ export class StudioApp {
               ${allowTest
                 ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
                 : `<span class="access-note">Validation/playtest mutation требует разрешённую роль и свежий CSRF proof.</span>`}
-              ${validationPanel(this.state.validation, draft)}
+      ${validationPanel(this.state.validation, draft)}
               ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
-        playerUrl: this.state.playerUrl, playerError: this.state.playerError, playerLaunching: this.state.playerLaunching
+        playerUrl: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerUrl : null,
+        playerError: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerError : null,
+        playerLaunching: this.state.playerPlaytestId === this.state.playtest?.playtestId && this.state.playerLaunching
       })}
               ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
             </section>

@@ -13,7 +13,8 @@ if (playtestId.length === 0) {
 const launched = await launchFrozenPlayer({
   databasePath,
   playtestId,
-  port: envPort(process.env.LH_PLAYER_PORT)
+  port: envPort(process.env.LH_PLAYER_PORT, 4180),
+  runtimePort: envPort(process.env.LH_RUNTIME_PORT, 0)
 });
 if (!launched.ok) throw new Error(launched.message);
 
@@ -28,7 +29,9 @@ const shutdown = async () => {
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
 
-function envPort(value: unknown): number | undefined {
+function envPort(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 65_535) throw new Error("Invalid local port");
+  return parsed;
 }

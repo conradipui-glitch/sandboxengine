@@ -16,6 +16,7 @@ export interface LaunchFrozenPlayerOptions {
   readonly databasePath: string;
   readonly playtestId: string;
   readonly port?: number;
+  readonly runtimePort?: number;
   readonly host?: string;
 }
 
@@ -24,6 +25,8 @@ export type LaunchFrozenPlayerResult =
   | { readonly ok: false; readonly code: "playtest_not_found" | "unsupported_playtest" | "invalid_playtest" | "display_incomplete" | "listen_failed"; readonly message: string };
 
 interface ManagedPlayer {
+  readonly databasePath: string;
+  readonly url: string;
   close(): Promise<void>;
 }
 
@@ -37,16 +40,16 @@ export function runningPlayerIds(): readonly string[] {
   return [...managedPlayers.keys()];
 }
 
-export async function closePlayer(playtestId: string): Promise<void> {
+async function closePlayerNow(playtestId: string): Promise<void> {
   const player = managedPlayers.get(playtestId);
   if (!player) return;
   managedPlayers.delete(playtestId);
   await player.close();
 }
 
-export async function closeAllPlayers(): Promise<void> {
+async function closeAllPlayersNow(): Promise<void> {
   const ids = [...managedPlayers.keys()];
-  for (const id of ids) await closePlayer(id);
+  for (const id of ids) await closePlayerNow(id);
 }
 
 /**
@@ -54,16 +57,27 @@ export async function closeAllPlayers(): Promise<void> {
  * Player for the same playtestId; callers must close it via the returned handle
  * or closePlayer/closeAllPlayers. Refusals are explicit codes, never guesses.
  */
-const launchChains = new Map<string, Promise<LaunchFrozenPlayerResult>>();
-let anyLaunchChain: Promise<unknown> = Promise.resolve();
+let playerOperationChain: Promise<unknown> = Promise.resolve();
+
+function serializePlayerOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = playerOperationChain.catch(() => undefined).then(operation);
+  playerOperationChain = next;
+  return next;
+}
+
+export function closePlayer(playtestId: string): Promise<void> {
+  return serializePlayerOperation(() => closePlayerNow(playtestId));
+}
+
+export function closeAllPlayers(): Promise<void> {
+  return serializePlayerOperation(closeAllPlayersNow);
+}
 
 export async function launchFrozenPlayer(options: LaunchFrozenPlayerOptions): Promise<LaunchFrozenPlayerResult> {
   const requestedId = String(options.playtestId ?? "").trim();
   // In-process mutex: two concurrent launches (same or different ids) must never race
   // past the managedPlayers cache and start duplicate servers.
-  const chained = anyLaunchChain.catch(() => undefined).then(() => launchFrozenPlayerUncached(options, requestedId));
-  anyLaunchChain = chained;
-  return chained;
+  return serializePlayerOperation(() => launchFrozenPlayerUncached(options, requestedId));
 }
 
 async function launchFrozenPlayerUncached(options: LaunchFrozenPlayerOptions, requestedId: string): Promise<LaunchFrozenPlayerResult> {
@@ -72,17 +86,16 @@ async function launchFrozenPlayerUncached(options: LaunchFrozenPlayerOptions, re
   if (playtestId.length === 0) return failure("invalid_playtest", "Playtest id is empty.");
 
   const existing = managedPlayers.get(playtestId);
-  if (existing) {
-    const url = playerUrls.get(playtestId);
-    if (url) return Object.freeze({ ok: true as const, url, playtestId, close: () => closePlayer(playtestId) });
-    managedPlayers.delete(playtestId);
+  if (existing && existing.databasePath === databasePath) {
+    return Object.freeze({ ok: true as const, url: existing.url, playtestId, close: () => closePlayer(playtestId) });
   }
+  // A Studio process owns at most one Player. Switching playtest or database
+  // closes the previous servers and SQLite handles before opening the next.
+  await closeAllPlayersNow();
 
   const started = await startPlayer({ ...options, databasePath, playtestId });
   return started;
 }
-
-const playerUrls = new Map<string, string>();
 
 async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playtestId: string }): Promise<LaunchFrozenPlayerResult> {
   const { databasePath, playtestId } = options;
@@ -154,7 +167,7 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
     const host = options.host ?? "127.0.0.1";
     let runtimeAddress: { readonly host: string; readonly port: number };
     try {
-      runtimeAddress = await runtime.listen(0, host);
+      runtimeAddress = await runtime.listen(options.runtimePort ?? 0, host);
     } catch (error) {
       guestAccess.close();
       rawStorage.close();
@@ -203,21 +216,20 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
     }
 
     const url = `http://${playerAddress.host}:${playerAddress.port}`;
-    const closeOnce = once(() => {
-      playerUrls.delete(playtestId);
-    });
     const handle: ManagedPlayer = Object.freeze({
+      databasePath,
+      url,
       close: async () => {
-        closeOnce();
-        await player.close();
-        await runtime.close();
-        guestAccess.close();
-        rawStorage.close();
-        controlStore.close();
+        let firstError: unknown = null;
+        try { await player.close(); } catch (error) { firstError = error; }
+        try { await runtime.close(); } catch (error) { firstError ??= error; }
+        try { guestAccess.close(); } catch (error) { firstError ??= error; }
+        try { rawStorage.close(); } catch (error) { firstError ??= error; }
+        try { controlStore.close(); } catch (error) { firstError ??= error; }
+        if (firstError) throw firstError;
       }
     });
     managedPlayers.set(playtestId, handle);
-    playerUrls.set(playtestId, url);
     return Object.freeze({ ok: true as const, url, playtestId, close: () => closePlayer(playtestId) });
   } catch (error) {
     try { controlStore.close(); } catch { /* already closed on a failure path */ }
@@ -227,13 +239,4 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
 
 function failure(code: Extract<LaunchFrozenPlayerResult, { ok: false }>["code"], message: string): LaunchFrozenPlayerResult {
   return Object.freeze({ ok: false as const, code, message });
-}
-
-function once(fn: () => void): () => void {
-  let called = false;
-  return () => {
-    if (called) return;
-    called = true;
-    fn();
-  };
 }

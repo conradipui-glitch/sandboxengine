@@ -68,6 +68,12 @@ test("L05 Studio launch endpoint: guard, unknown id, serialized single launch, r
     });
     assert.equal(invalidBody.status, 400);
 
+    const unknownField = await request(context.port, "/local/launch-player", {
+      method: "POST", headers: jsonHeaders, body: JSON.stringify({ playtestId: "playtest-ok", extra: true })
+    });
+    assert.equal(unknownField.status, 400);
+    assert.equal(launches, 0);
+
     const unknown = await request(context.port, "/local/launch-player", {
       method: "POST", headers: jsonHeaders, body: JSON.stringify({ playtestId: "playtest-missing" })
     });

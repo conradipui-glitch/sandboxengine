@@ -66,6 +66,8 @@ test("L06 full author cycle over the real HTTP adapter: settings -> linked block
   const upstreamBodies = [];
   const upstreamRequests = [];
   let upstreamMode = "ok";
+  let resolveSlowRequest;
+  const slowRequestStarted = new Promise((resolve) => { resolveSlowRequest = resolve; });
   const upstream = createServer((req, res) => {
     let raw = "";
     req.setEncoding("utf8");
@@ -77,6 +79,7 @@ test("L06 full author cycle over the real HTTP adapter: settings -> linked block
       if (upstreamMode === "unauthorized") { res.statusCode = 401; res.end(JSON.stringify({ error: { message: "bad key" } })); return; }
       if (upstreamMode === "rate_limited") { res.statusCode = 429; res.end(JSON.stringify({ error: { message: "slow down" } })); return; }
       if (upstreamMode === "slow_ok") {
+        resolveSlowRequest();
         setTimeout(() => {
           const body = providerBody("test-model", upstreamRequests.length <= 1 ? 1 : 2);
           res.end(JSON.stringify(body));
@@ -205,7 +208,7 @@ test("L06 full author cycle over the real HTTP adapter: settings -> linked block
 
     // 8. provider failures do not change draft, frozen snapshot or state
     const draftBeforeFailures = await api.getDraft("l06", "quest");
-    const frozenSnapshotBefore = playtest.contentHash;
+    const frozenSnapshotBefore = (await store.getPlaytest(playtest.playtestId)).contentHash;
 
     // 8a. 401 on a fresh job maps to auth_required failure without touching anything
     upstreamMode = "unauthorized";
@@ -220,10 +223,10 @@ test("L06 full author cycle over the real HTTP adapter: settings -> linked block
     const jobCancel = await api.createAuthorJob("l06", "quest", {}, "l06-job-cancel");
     const cancelPromise = api.runAuthorSegment("l06", "quest", jobCancel.jobId, "проверка отмены", false, "l06-seg-cancel")
       .catch((error) => error);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await slowRequestStarted;
     await api.cancelAuthorJob("l06", "quest", jobCancel.jobId, "l06-cancel-1");
     const cancelOutcome = await cancelPromise;
-    assert.ok(cancelOutcome === undefined || cancelOutcome.job || cancelOutcome.code);
+    assert.equal(cancelOutcome.code, "AUTHOR_CANCELLED");
     const cancelledJobView = await api.getAuthorJob("l06", "quest", jobCancel.jobId);
     assert.equal(cancelledJobView.job.state, "cancelled");
 
@@ -244,6 +247,7 @@ test("L06 full author cycle over the real HTTP adapter: settings -> linked block
     const draftAfterFailures = await api.getDraft("l06", "quest");
     assert.equal(draftAfterFailures.draftRevision, draftBeforeFailures.draftRevision);
     assert.equal(draftAfterFailures.contentHash, draftBeforeFailures.contentHash);
+    assert.equal((await store.getPlaytest(playtest.playtestId)).contentHash, frozenSnapshotBefore);
     const status = await request(studioAddress.port, "/local/author-provider");
     assert.equal(status.body.state, "error");
     assert.ok(["invalid_response", "rate_limited"].includes(status.body.lastErrorCode));

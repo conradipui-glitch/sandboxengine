@@ -110,6 +110,24 @@ test("L04.b small quest context over block or char limits fails before any backe
   const failed = checkpoints.find((entry) => entry.fact.kind === "job.failed");
   assert.equal(failed.fact.code, "context_too_large");
   assert.equal(backend.capturedTurnRequests.length, 0);
+
+  const overChars = [workshop];
+  for (let i = 0; i < 31; i += 1) {
+    overChars.push({ schemaVersion: "1.0", id: `large-${i}`, kind: "core.resource", title: `Large ${i}`, description: "x".repeat(2000), data: { unit: "u", initialValue: 1, min: 0, max: 2 } });
+  }
+  const charBackend = new ScriptedAgentBackend({ backendId: "scripted-author-chars", nowMs: () => 0 });
+  const charDependencies = makeDependencies({ backend: charBackend });
+  await seedQuest(charDependencies, overChars);
+  assert.equal((await createAuthorAssistantJob(charDependencies, {
+    jobId: "job-l04-chars", projectId: "p1", questId: "quest", ownerUserId: "owner"
+  })).kind, "created");
+  const charResult = await runAuthorAssistantSegment(charDependencies, {
+    jobId: "job-l04-chars", instruction: "test", autoApply: false
+  });
+  assert.equal(charResult.kind, "invalid_backend_output");
+  const charCheckpoints = await charDependencies.jobs.listCheckpoints("job-l04-chars");
+  assert.equal(charCheckpoints.find((entry) => entry.fact.kind === "job.failed").fact.code, "context_too_large");
+  assert.equal(charBackend.capturedTurnRequests.length, 0);
 });
 
 test("L04.c prompt uses real newlines between instruction and context", async () => {

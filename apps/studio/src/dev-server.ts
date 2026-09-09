@@ -68,6 +68,11 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         if (request.method !== "POST") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
         try {
           const body = await readLocalJson(request) as { playtestId?: unknown };
+          if (!body || typeof body !== "object" || Array.isArray(body)
+            || Object.keys(body).length !== 1 || !("playtestId" in body)) {
+            sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } });
+            return;
+          }
           const playtestId = typeof body?.playtestId === "string" ? body.playtestId.trim() : "";
           if (!playtestId || playtestId.length > 200) { sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } }); return; }
           const outcome = await launchPlayerSerialized(options.playerLauncher, playtestId);
