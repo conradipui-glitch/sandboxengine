@@ -2,8 +2,8 @@
 
 Обновлено: 2026-09-09
 
-Текущий блок: **L09 — финализация; L00–L07 приняты, L08 UNVERIFIED; B12 опубликован**  
-Рабочая ветка: `feat/live-author-studio`. Задание: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 приняты 2026-09-09 (см. worklog ниже); L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. B13 отложен за этот маршрут.
+Текущий блок: **B13 baseline; L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
+Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). Карточки L04–L07 повторно проверены и исправлены 2026-09-09; L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. L09 закрыт локальным verify и Linux CI на исправленном коде. Следующая отдельная работа — B13 baseline без push/deployment authority.
 
 ## L00 — baseline review (2026-09-09)
 
@@ -80,7 +80,17 @@
 
 - **UNVERIFIED: нет доступа к провайдеру** (ключ не предоставлен; чужие ключи не ищутся). Лимиты для будущего прогона зафиксированы в worklog.
 
-Следующее: L09 — финализация документации и `npm run verify`.
+Итог L08: живой provider-вызов не подменялся mock-проверкой; L09 закрыт отдельно ниже.
+
+## L09 — финализация и передача (2026-09-09)
+
+- повторное ревью L04–L07: [worklog](worklog/2026-09-09-live-author-L04-L07-review.md);
+- свежий локальный `npm run verify` — exit 0: Studio 62/62, Player 29/29, Server 121/121; audit 0 advisories; backup/restore, rollback, boundaries и docs checks прошли;
+- Linux CI на исправленном коде `2abd8cadc60ddf5a50b559c3158ef6cd8c2437cd`: run `34302849541` — success;
+- §24 спецификации больше не хранит устаревший статус реализации и направляет в `docs/STATUS.md`;
+- L08 честно остаётся UNVERIFIED; merge, production deploy и новый release tag не входят в L09.
+
+Следующее: отдельная baseline-карточка B13 с минимальной границей repository/workspace; push и deployment в первый срез не входят.
 
 Release: `v0.1.0`  
 B12 merge: `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`  

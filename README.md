@@ -2,7 +2,7 @@
 
 Переносимый движок причинных интерактивных историй с server-authoritative Runtime, Studio для авторинга, Player, immutable releases, SQLite persistence, plugins, presentation/assets и ограниченными AI-границами.
 
-Опубликован **v0.1.0 (B01–B12)**. Ветка `feat/live-author-studio` доделывает подключение ИИ в Studio по [плану L00–L09](docs/tasks/LIVE-AUTHOR-COMPLETION.md): L00–L07 приняты (настройка провайдера, HTTP adapter, сквозной цикл, браузерная приёмка), L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`, L09 — финализация документации.
+Опубликован **v0.1.0 (B01–B12)**. Ветка `feat/live-author-studio` завершила подключение ИИ в Studio по [плану L00–L09](docs/tasks/LIVE-AUTHOR-COMPLETION.md): L00–L07 и L09 приняты (настройка провайдера, HTTP adapter, сквозной цикл, Player и браузерная приёмка), L08 — живой прогон реальной модели — `UNVERIFIED: нет доступа к провайдеру`. Следующий отдельный блок — B13 Builder.
 
 ## Что уже реализовано
 

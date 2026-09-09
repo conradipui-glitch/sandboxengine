@@ -2,14 +2,14 @@
 
 Последнее обновление: 2026-09-09.
 
-Текущая работа в `feat/live-author-studio`: [L00–L09 — завершение live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L07 приняты; L08 — `UNVERIFIED: нет доступа к провайдеру`; L09 — финализация. Сквозной цикл через HTTP adapter и браузерная приёмка пройдены; живой прогон реальной модели не заявляется.
+Ветка `feat/live-author-studio` завершила [L00–L09 — live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L07 и L09 приняты; L08 — `UNVERIFIED: нет доступа к провайдеру`. Сквозной цикл через HTTP adapter, запуск frozen Player и браузерная приёмка пройдены; живой прогон реальной модели не заявляется. Следующий отдельный блок — B13 Builder.
 
 | Область | Состояние | Доказательство / следующий шаг |
 |---|---|---|
 | Репозиторий | **B01–B12 published** | B12 merge `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; tag `v0.1.0` |
 | Core/Runtime | **GREEN** | full deterministic suite + durable restart/replay/fencing |
 | Storage/assets | **B12 GREEN / scoped** | online backup/restore + 12/12 Florence hashes; no Cloudflare DO claim |
-| Studio/Player | **GREEN / live-authoring L00–L07 accepted** | historical author/playtest/publication paths + T29 smoke `34246143800`; real-HTTP e2e cycle, browser desktop+360px acceptance, provider settings lifecycle; L08 live model run UNVERIFIED |
+| Studio/Player | **GREEN / live-authoring L00–L09 closed** | L00–L07 + L09 accepted; PR CI `34302849541` on reviewed code; L08 live model run UNVERIFIED |
 | Releases/rollback | **GREEN** | permanent `drill:rollback`; exact B12 `main` CI #729 / `34251551857` |
 | Persistent operations | **GREEN** | `npm start` + `/healthz` + SQLite + graceful SIGTERM |
 | Security/quota | **GREEN** | permanent release audit 0/0 + 429 no-turn save integrity |
@@ -40,4 +40,4 @@ Operational commands and limitations: `docs/RUNBOOK.md`. Canonical evidence: `do
 
 ## Next block
 
-Сначала L00–L09 по текущему handoff. B13 — Builder/code/GitHub/deployment orchestration — остаётся отдельным последующим блоком и не меняет опубликованные доказательства `v0.1.0`.
+Начать B13 с отдельной baseline-карточки: зафиксировать разрешённый repository/workspace contract и тестируемую изоляцию до подключения push или deployment. B13 не меняет опубликованные доказательства `v0.1.0`.
