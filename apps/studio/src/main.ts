@@ -63,8 +63,19 @@ interface PlayerLaunchModule {
 }
 const playerLaunchModule = await import(new URL("../../../player/dist/src/launch.js", import.meta.url).href) as PlayerLaunchModule;
 const playerLauncher = async (playtestId: string) => {
-  const launched = await playerLaunchModule.launchFrozenPlayer({ databasePath, playtestId });
-  if (launched.ok) return { ok: true as const, url: launched.url, playtestId: launched.playtestId };
+  // Reverse-proxy hosting: fixed loopback port + a public base URL returned to the
+  // browser instead of the loopback address (the Player itself stays loopback-only).
+  const fixedPort = Number(process.env.LH_PLAYER_FIXED_PORT ?? "");
+  const publicBase = String(process.env.LH_PLAYER_PUBLIC_BASE ?? "").replace(/\/+$/, "");
+  const launched = await playerLaunchModule.launchFrozenPlayer({
+    databasePath,
+    playtestId,
+    ...Number.isSafeInteger(fixedPort) && fixedPort > 0 ? { port: fixedPort } : {}
+  } as Parameters<PlayerLaunchModule["launchFrozenPlayer"]>[0]);
+  if (launched.ok) {
+    const url = publicBase.length > 0 ? `${publicBase}/p/${playtestId}` : launched.url;
+    return { ok: true as const, url, playtestId: launched.playtestId };
+  }
   return { ok: false as const, code: launched.code, message: launched.message };
 };
 const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher });

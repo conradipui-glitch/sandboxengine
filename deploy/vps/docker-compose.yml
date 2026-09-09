@@ -1,0 +1,60 @@
+services:
+  engine:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.engine
+    container_name: lhc-engine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8742:8742"
+    environment:
+      - LH_HOST=0.0.0.0
+      - LH_PORT=8742
+      - LH_DATABASE_PATH=/data/living-history.sqlite
+    volumes:
+      - engine-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8742/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  studio:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.studio
+    container_name: lhc-studio
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8740:8740"
+      - "127.0.0.1:8745:8745"
+    environment:
+      - LH_DATABASE_PATH=/data/living-history.sqlite
+      - LH_STUDIO_PORT=8740
+      - LH_PLAYER_FIXED_PORT=8745
+    volumes:
+      - engine-data:/data
+    depends_on:
+      engine:
+        condition: service_started
+
+  gate:
+    image: node:24.19-slim
+    container_name: lhc-gate
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "/app/lhc-gate.mjs"]
+    ports:
+      - "127.0.0.1:8744:8744"
+    environment:
+      - LHC_GATE_PORT=8744
+      - LHC_STUDIO_ORIGIN=https://85.137.95.104.sslip.io:8741
+      - LHC_STORE=/data/lhc-gate-state.json
+      - LHC_GATE_SECRET=${LHC_GATE_SECRET}
+      - TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
+    volumes:
+      - ../vps:/app:ro
+      - engine-data:/data
+
+volumes:
+  engine-data:
