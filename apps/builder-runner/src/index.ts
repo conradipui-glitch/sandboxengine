@@ -15,3 +15,8 @@ export type { ReadonlyBuilderWorkspace } from "./readonly-workspace.js";
 
 export { MutableWorkspaceError, createMutableBuilderWorkspace, createPolicyVerificationRunner } from "./workspace-executor.js";
 export type { MutableBuilderWorkspaceReal, VerificationOutcome } from "./workspace-executor.js";
+
+export { BoundedChangeSetApplier, ChangeSetError } from "./changeset-operations.js";
+export type {
+  ChangeSetInput, ChangeSetReceipt, CiReconciliation, CiStatusSource, PushGrant
+} from "./changeset-operations.js";

@@ -15,8 +15,8 @@ Builder работает отдельным процессом от Core/Runtime
 |---|---|---|
 | B13.0 | Точный repository snapshot, канонические read/write paths и argv проверок; fail-closed policy без файлового исполнения | GREEN (2026-09-09) |
 | B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
-| B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | NOT STARTED |
-| B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | NOT STARTED |
+| B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | GREEN (2026-09-09) |
+| B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | NEXT |
 | B13.b2 | Один preview deployment adapter с artifact identity и smoke | NOT STARTED |
 | B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | NOT STARTED |
 
@@ -36,9 +36,9 @@ Builder работает отдельным процессом от Core/Runtime
 
 **Доказательство:** [worklog B13.a1](../worklog/2026-09-09-B13-a1-readonly-workspace.md).
 
-## Следующий шаг — B13.a2
+## B13.b1 — разрешённые repo-операции
 
-Добавить bounded agent job, который создаёт patch только в разрешённом isolated workspace, фиксирует diff/tree hash и запускает лишь предварительно разрешённые проверки. Не включать push, PR, workflow или deployment.
+Добавить разрешённый commit/push change set с внешним operation ID и сверкой CI-результата с нужным SHA.
 
 ## B13.a2 — bounded agent job (2026-09-09, GREEN)
 
