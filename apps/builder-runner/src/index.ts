@@ -20,3 +20,10 @@ export { BoundedChangeSetApplier, ChangeSetError } from "./changeset-operations.
 export type {
   ChangeSetInput, ChangeSetReceipt, CiReconciliation, CiStatusSource, PushGrant
 } from "./changeset-operations.js";
+
+export {
+  PreviewDeploymentAdapter, PreviewDeploymentError, createPreviewDeploymentPolicy, createGhPreviewDeploymentGateway
+} from "./preview-deployment.js";
+export type {
+  PreviewDeploymentPolicy, PreviewDeploymentTarget, PreviewDeploymentGateway, PreviewDeploymentReceipt
+} from "./preview-deployment.js";

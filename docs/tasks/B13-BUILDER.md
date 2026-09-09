@@ -17,7 +17,7 @@ Builder работает отдельным процессом от Core/Runtime
 | B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
 | B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | GREEN (2026-09-09) |
 | B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | GREEN (2026-09-09) |
-| B13.b2 | Один preview deployment adapter с artifact identity и smoke | NEXT |
+| B13.b2 | Один preview deployment adapter с artifact identity и smoke | GREEN (2026-09-09, adapter; живой dispatch — отдельный шаг) |
 | B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | NOT STARTED |
 
 ## B13.0 — policy baseline
@@ -48,6 +48,20 @@ identity/subject валидированы, коммит и push из isolated cl
 (run `34315990935`).
 
 **Доказательство:** [worklog b1](../worklog/2026-09-09-B13-b1-changeset-operations.md).
+
+## B13.b2 — preview deployment adapter (2026-09-09, GREEN)
+
+Один deployment path: immutable `PreviewDeploymentPolicy` (target repository/workflow/ref,
+exact artifact SHA, smoke URL + подстрока) → `PreviewDeploymentAdapter.deploy()`: dispatch
+фиксированного workflow → сверка рана с тем же SHA (drift отклоняется) → success → HTTP smoke.
+`deployment_not_authorized` при другом SHA; failed run/smoke fail closed. Gateway реализован
+через `gh` (fixed argv, чистое environment); Cloudflare-токены остаются только в CI.
+
+**Проверить:** `npm run test:builder` — 19/19; verify exit 0. Живой dispatch workflow
+`Deploy Florence Preview` не выполнялся из этой сессии (ref чужой вертикали) и фиксируется
+как отдельный шаг приёмки.
+
+**Доказательство:** [worklog b2](../worklog/2026-09-09-B13-b2-preview-deployment.md).
 
 ## B13.a2 — bounded agent job (2026-09-09, GREEN)
 
