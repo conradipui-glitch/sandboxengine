@@ -129,4 +129,6 @@ B13 допускается после принятого B12, но текущи�
 
 B13.0–B13.a1 приняты: policy фиксирует exact repository/base SHA и канонические read/write scopes; read-only adapter создаёт disposable clone, сверяет HEAD и блокирует symlink/junction escape. Следующая карточка B13.a2 добавляет bounded patch/diff/tree identity в отдельном sandbox до любых push/deployment полномочий. См. [карточку](tasks/B13-BUILDER.md) и [worklog](worklog/2026-09-09-B13-a1-readonly-workspace.md).
 
+Последняя проверка B13.a1: Linux CI `34310010055` — success на `d9ccb6a5c00eb980d20bbb0fed67b379807cba5b`.
+
 Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE-MATRIX.md`. Evidence ledger: `docs/RELEASE-REPORT.md`.

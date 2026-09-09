@@ -13,6 +13,7 @@ Branch: `feat/live-author-studio`
 
 - `npm run test:builder` — exit 0, 6/6;
 - `npm run verify` — exit 0; Builder 6/6, Studio 62/62, Player 29/29 и Server 121/121; release audit, drills, boundaries и docs checks прошли;
+- Linux CI `34310010055` — success на implementation SHA `d9ccb6a5c00eb980d20bbb0fed67b379807cba5b`.
 - отдельный local Git fixture доказал: workspace root отличается от source root, exact SHA совпадает, разрешённый файл читается, запрещённый файл не читается, source content / `.git/HEAD` / `.git/config` / `git status --porcelain` не изменились;
 - source с новым HEAD отвергается `base_commit_mismatch`;
 - фактическая Windows junction (POSIX symlink на соответствующей платформе), указывающая наружу checkout, отвергается `workspace_path_symlinked`;
