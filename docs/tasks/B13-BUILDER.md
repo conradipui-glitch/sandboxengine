@@ -39,3 +39,21 @@ Builder работает отдельным процессом от Core/Runtime
 ## Следующий шаг — B13.a2
 
 Добавить bounded agent job, который создаёт patch только в разрешённом isolated workspace, фиксирует diff/tree hash и запускает лишь предварительно разрешённые проверки. Не включать push, PR, workflow или deployment.
+
+## B13.a2 — bounded agent job (2026-09-09, GREEN)
+
+Контрактный слой (`bounded-patch-job.ts`, `bounded-agent-job.ts`) + реальный executor
+(`workspace-executor.ts`): disposable isolated checkout на exact base SHA, policy-bounded writes
+(1 MiB cap, realpath containment, `.git` недоступен), детерминированный `treeIdentity()`
+(`git write-tree`, кросс-проверен ручным репозиторием), verification-runner исполняет дословно
+только policy-команды (execFile без shell, чистое environment, timeout 120 s).
+
+**Проверить:** `npm run test:builder` — exit 0, 13/13; тот же patch на двух workspace → одинаковый
+tree SHA; source checkout не изменён; запись вне prefix/traversal/`.git`/oversize/unknown command —
+fail closed. Полный `npm run verify` и Linux CI — см. worklog.
+
+**Ограничение:** исполнение команд без контейнерной изоляции (Docker/Podman отсутствуют, WSL2
+сломан) — границей служит policy-allowlist, PATH не security boundary.
+
+**Доказательство:** [worklog a2 contract](../worklog/2026-09-09-B13-a2-bounded-patch-job.md),
+[worklog a2 executor](../worklog/2026-09-09-B13-a2-workspace-executor.md).
