@@ -1,0 +1,36 @@
+{
+  "operationId": "b13-b2-rollback-drill-20260909",
+  "steps": [
+    {
+      "step": "rollback",
+      "ref": "af9f2134cdfb8cea5cdfabd14eb9439124a3250c",
+      "receipt": {
+        "deploymentId": "preview-34325047861",
+        "runId": "34325047861",
+        "artifactCommitSha": "af9f2134cdfb8cea5cdfabd14eb9439124a3250c",
+        "smokeUrl": "https://living-history-florence-preview.conradipui.workers.dev/",
+        "smokePassed": true
+      },
+      "smoke": {
+        "status": 200,
+        "matched": true
+      }
+    },
+    {
+      "step": "restore",
+      "ref": "ffba7c896bc9a02ab2485cce55ee1445f455f942",
+      "receipt": {
+        "deploymentId": "preview-34325106273",
+        "runId": "34325106273",
+        "artifactCommitSha": "ffba7c896bc9a02ab2485cce55ee1445f455f942",
+        "smokeUrl": "https://living-history-florence-preview.conradipui.workers.dev/",
+        "smokePassed": true
+      },
+      "smoke": {
+        "status": 200,
+        "matched": true
+      }
+    }
+  ],
+  "result": "PASS"
+}
