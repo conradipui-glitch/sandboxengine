@@ -15,7 +15,6 @@ import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
-declare const process: any;
 
 const PORT = Number(process.env.LHC_GATE_PORT ?? 8744);
 const STUDIO_ORIGIN = String(process.env.LHC_STUDIO_ORIGIN ?? "https://85.137.95.104.sslip.io:8741");
