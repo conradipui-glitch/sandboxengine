@@ -15,9 +15,10 @@
 
 ## Telegram-доступ (без пароля, с отзывом)
 
-1. Владелец один раз в @BotFather для бота Ивы/hermes (токен уже на VPS): `/setdomain` →
-   `85.137.95.104.sslip.io` (Login Widget привязывается к домену; сама верификация подписи
-   выполняется локально HMAC — конфликтов с polling Ивы нет).
+1. Владелец один раз в @BotFather для бота **@living_history_gate_bot** (выделенный бот Studio;
+   токен в `deploy/vps/.env` на VPS как `LHC_TELEGRAM_BOT_TOKEN`, НЕ коммитится): Bot Settings →
+   **Login Domain** →
+   добавить `85.137.95.104.sslip.io`. Верификация подписи — локальный HMAC, polling не используется.
 2. Владелец: `POST /gate/invite {"telegramId": <id>}` с `x-lhc-master` → одноразовый код, TTL 15 мин.
 3. Участник открывает invite-URL → «Log in with Telegram» → `POST /gate/callback` проверяет
    HMAC-подпись Telegram, совпадение `auth.id` с приглашённым id, одноразовость кода.
