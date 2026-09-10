@@ -1,0 +1,5 @@
+
+> sandboxengine@0.1.0 docs:check
+> node scripts/docs-check.mjs
+
+docs:check ok — 14 navigation documents and 10 generated contracts are current

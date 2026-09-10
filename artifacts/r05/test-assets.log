@@ -1,0 +1,35 @@
+
+> sandboxengine@0.1.0 test:assets
+> npm run typecheck && node --test packages/assets/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B07-02 byte sniffing accepts bounded PNG/WebP/JPEG/WAV/Ogg Vorbis/MP3 profiles (2.6626ms)
+✔ ingestion derives trusted hash/metadata and emits canonical AssetManifestV2 (27.2791ms)
+✔ claimed MIME and known filename extension are hints that must agree with proven bytes (4.054ms)
+✔ SVG/HTML/script/unknown and malformed headers fail closed even when renamed as raster (2.2264ms)
+✔ explicit byte/dimension/pixel/audio-duration bounds reject before storage publication (7.8825ms)
+✔ content-addressed objects deduplicate while logical asset versions stay immutable and old hashes remain readable (27.0893ms)
+✔ assetId paths are rejected and traversal-like original filename is inert display metadata (21.4372ms)
+✔ safe read is exact: missing identity and corrupted content never substitute another version (14.3934ms)
+✔ registry records are immutable for one exact assetId + hash (13.4292ms)
+✔ assets package has no network/process/gameplay authority imports (1.0531ms)
+✔ PNG requires a structurally complete final IEND instead of trusting IHDR only (2.2165ms)
+✔ WebP rejects forged first-chunk lengths even when RIFF and VP8X signatures look valid (1.0669ms)
+✔ JPEG requires final EOI and rejects bytes appended after the image identity (0.3771ms)
+✔ metadata bounds are configurable downward but never wider than canonical AssetManifestV2 (13.7149ms)
+✔ visual alt text stays mandatory and unknown filename extensions cannot masquerade as accepted content (29.4205ms)
+✔ bounded audio profiles reject codec/profile ambiguity instead of inventing duration (0.7305ms)
+✔ B07-02 PCM WAV duration is trusted only when byteRate/blockAlign match channel/sample metadata (5.5601ms)
+✔ B07-02 animated WebP is rejected rather than smuggling an independent animation timeline (1.1341ms)
+✔ Ogg bounded profile requires BOS and still distinguishes Vorbis from other Ogg codecs (0.4634ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 268.1867

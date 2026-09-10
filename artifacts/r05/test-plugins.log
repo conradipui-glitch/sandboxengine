@@ -1,0 +1,54 @@
+
+> sandboxengine@0.1.0 test:plugins
+> npm run typecheck && node --test packages/plugins/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B08-03 Core contains no dice-check identity or plugin-specific import (10.6036ms)
+✔ B08-03 authored dice sidecar is immutable and detached from mutable draft input (1.4021ms)
+✔ B08-03 artifact-bound registration fails before execution when frozen hash does not match (0.9623ms)
+✔ B08-03 exact frozen artifact binds the executable definition used by the generic execution registry (14.7167ms)
+✔ B08-03 manifest/schema/form/recipe identities agree (2.291ms)
+✔ B08-03 authored definition passes JSON Schema and runtime validation with aligned Studio bounds (2.1574ms)
+✔ B08-03 malformed bounds, HTML/unknown placeholders and noncanonical effect templates fail closed (0.3495ms)
+✔ B08-03 resolver draws exactly one d20 and player args cannot inject authored authority (11.2149ms)
+✔ B08-03 success/failure select only the authored branch and project deterministic text (0.995ms)
+✔ B08-03 narrative renderer is allowlisted text substitution only (0.1901ms)
+✔ B08-03 frozen artifact sidecar passes installed registry and blocks missing/incompatible plugin (1.4857ms)
+✔ B08-02 execution registration must match installed manifest declarations (19.7639ms)
+✔ B08-02 invalid args are rejected before resolver invocation (1.4895ms)
+✔ B08-02 resolver receives detached deeply frozen state and args (1.6109ms)
+✔ B08-02 host owns deterministic RNG provenance (3.2084ms)
+✔ B08-02 resolver throws and RNG draw overflow fail without plan (1.9205ms)
+✔ B08-02 authority-widened and custom-effect plans fail closed (0.7125ms)
+✔ B08-02 blocked plans cannot hide time/effects/events and must explain why (0.4486ms)
+✔ B08-02 public readonly registry never leaks mutable backing Map through forEach (0.4248ms)
+✔ B08-02 scheduler handler receives frozen snapshot and may only emit its own-source canonical events (4.3199ms)
+✔ B08-01 canonical plugin manifest schema is Draft 2020-12 and matches runtime shape (2.5886ms)
+✔ B08-01 schema rejects executable or raw UI widening (0.5915ms)
+✔ B08-03 build-installed registry metadata matches code versions and the actual dice-check manifest (0.7397ms)
+✔ B08-01 zero-plugin registry is valid, deterministic and frozen (2.4088ms)
+✔ B08-01 valid single plugin is normalized and deeply frozen (12.5682ms)
+✔ B08-01 dependency graph sorts dependencies first and insertion order is irrelevant (1.2672ms)
+✔ B08-01 missing dependency fails closed (0.2418ms)
+✔ B08-01 dependency version mismatch fails closed (0.2714ms)
+✔ B08-01 dependency cycles are rejected (0.9791ms)
+✔ B08-01 duplicate plugin IDs are rejected (0.204ms)
+✔ B08-01 cross-plugin ownership collisions are rejected even with valid namespaces (0.237ms)
+✔ B08-01 non-namespaced plugin-owned IDs are rejected (0.272ms)
+✔ B08-01 duplicate IDs inside one manifest are rejected across categories (0.224ms)
+✔ B08-01 manifest exact shape rejects executable/import URL/raw HTML/source widening (0.2348ms)
+✔ B08-01 incompatible engine plugin API range is rejected (0.1486ms)
+✔ B08-01 strict version ranges are deterministic (0.11ms)
+✔ B08-01 release compatibility fails explicitly for missing/incompatible plugin capability and schema (0.8982ms)
+✔ B08-01 invalid requirement shape fails closed (0.2099ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 328.2026

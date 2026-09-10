@@ -1,0 +1,5 @@
+
+> sandboxengine@0.1.0 audit:release
+> node scripts/b12-release-audit.mjs
+
+{"gate":"B12.3-release-audit","allDependencies":{"counts":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0},"advisories":[]},"productionDependencies":{"counts":{"info":0,"low":0,"moderate":0,"high":0,"critical":0,"total":0},"advisories":[]},"policy":{"failOnModerateHighCriticalAnywhere":true,"productionGraphReportedSeparately":true,"lowAndInfoRemainVisibleButDoNotBlock":true}}

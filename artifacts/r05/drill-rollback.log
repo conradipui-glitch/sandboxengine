@@ -1,0 +1,9 @@
+
+> sandboxengine@0.1.0 drill:rollback
+> npm run typecheck && node scripts/b12-rollback-drill.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+{"drill":"B12-release-rollback","result":"pass","currentReleaseAfterRestart":"release-1","immutableReleaseHashesPreserved":true,"publicationHistory":["publish:null->release-1","publish:release-1->release-2","rollback:release-2->release-1"],"sessions":{"preUpgrade":{"sessionId":"session-a","pinnedRelease":"release-1","resourceAfterAction":3},"preRollback":{"sessionId":"session-b","pinnedRelease":"release-2","resourceAfterAction":2},"postRollback":{"sessionId":"session-c","pinnedRelease":"release-1","resourceAfterAction":3}},"restartIncluded":true,"scope":"local SQLite Control releases + Runtime sessions/bindings; rollback changes current pointer for future sessions only"}

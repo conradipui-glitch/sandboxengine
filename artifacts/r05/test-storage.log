@@ -1,0 +1,38 @@
+
+> sandboxengine@0.1.0 test:storage
+> npm run typecheck && node --test packages/runtime/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B09-03 SQLite playtest trace reads exact persisted release evidence without secrets or replay (90.714ms)
+✔ B09-03 playtest trace reader treats a database without Runtime tables as no launched evidence (3.8939ms)
+✔ T10 SQLite durable — lost response after commit replays identically after adapter restart (73.4797ms)
+✔ T11 SQLite durable — two independent adapter instances cannot own different commands on one revision (51.9249ms)
+✔ T12 SQLite durable — crash before commit rolls back, restart reacquires, and old fencing token stays stale (68.105ms)
+✔ SQLite fault injection before finishWithoutTurn COMMIT leaves operation and active owner unchanged (50.5271ms)
+✔ SQLite busy policy is bounded by adapter timeout and never publishes a partial operation (44.8419ms)
+✔ Memory shared contract T10 — duplicate key commits once and persisted response replays (5.3045ms)
+✔ Memory shared contract T11 — only one active owner exists for one session revision (0.502ms)
+✔ Memory shared contract T12 foundation — reacquire fences the stale token without partial commit (0.5231ms)
+✔ Memory shared contract invalid candidate leaves state, turn and operation response unpublished (0.9595ms)
+✔ SQLite shared contract T10 — duplicate key commits once and persisted response replays (76.6545ms)
+✔ SQLite shared contract T11 — only one active owner exists for one session revision (50.5ms)
+✔ SQLite shared contract T12 foundation — reacquire fences the stale token without partial commit (48.5638ms)
+✔ SQLite shared contract invalid candidate leaves state, turn and operation response unpublished (46.6008ms)
+✔ T10 Memory — duplicate key commits once, replays persisted response, and rejects reused key with another hash (2.6057ms)
+✔ T11 Memory — two different commands cannot own the same session revision (0.3262ms)
+✔ T12 foundation — expired lease reacquires with higher fencing token and stale worker cannot commit (0.4152ms)
+✔ failed commit publishes no partial state, turn, or response (0.3494ms)
+✔ service lease clock is independent from B03 game clock (0.31ms)
+✔ finishWithoutTurn stores replayable response without changing world revision (0.447ms)
+✔ renewLease keeps fencing token and uses only injected service time (0.3392ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 481.4113

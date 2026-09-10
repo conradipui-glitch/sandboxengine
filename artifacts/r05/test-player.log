@@ -1,0 +1,45 @@
+
+> sandboxengine@0.1.0 test:player
+> npm run typecheck && node --test packages/player/test/*.test.mjs apps/player/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B05-03 Player UI serves human surface, safe metadata and the compiled RuntimePlayerClient (1357.8507ms)
+✔ B05-03 Player proxy carries the exact RuntimePlayerClient create/action/reset path (96.4533ms)
+✔ B05-03 Player dev server refuses non-loopback exposure and non-loopback Runtime target (49.0971ms)
+✔ B05-03 dev:player process boots from a real durable frozen playtest and serves the authored cost (385.4851ms)
+✔ B07-04 presentation asset route requires guest auth and exact registered assetId+hash (1318.3083ms)
+✔ B07-04 wrong credential and other frozen release cannot read this Player release asset (108.7771ms)
+✔ B07-04 valid optional presentation is deep-frozen and kept separate from structured gameplay (44.0863ms)
+✔ B07-04 malformed or authority-widened presentation is discarded without invalidating successful gameplay (0.7781ms)
+✔ B07-04 resume restores exact persisted frame from the last operation without replaying its plan (0.7911ms)
+✔ B07-04 stale persisted presentation cannot overwrite a newer Runtime player revision (0.5815ms)
+✔ B07-04 arbitrary hashes and unregistered presentation commands are rejected at the client boundary (0.7447ms)
+✔ B05-03 RuntimePlayerClient owns create/action/reset transport without client simulation (1252.4762ms)
+✔ B06-03 RuntimePlayerClient exposes only validated optional narrative presentation (87.8793ms)
+✔ L05 launch: start, repeat returns same address, close releases, relaunch works (909.2502ms)
+✔ L05 launch refusals: unknown playtest and unsupported action count fail closed (318.3095ms)
+✔ B05-03 frozen bootstrap is deterministic and does not read current draft (7.347ms)
+✔ B05-03 causal E2E — P1 cost=1, reset P1 stays cost=1, P2 cost=2 (699.6941ms)
+✔ B05-03 bootstrap rejects a broken frozen snapshot instead of repairing it (1.9723ms)
+✔ sequence order, parallel start semantics and final authoritative frame are deterministic (3.0576ms)
+✔ parallel siblings start before the group waits for all of them (2.8003ms)
+✔ skip/reduced-motion before playback execute no plan commands and restore exact target (0.6558ms)
+✔ skip during a blocking presentation wait cancels remaining effects and restores target (0.4227ms)
+✔ duplicate/reload/stale/conflict/gap never replay or invent presentation transitions (0.4392ms)
+✔ invalid/non-convergent plan is preflight rejected without partial renderer delivery (0.289ms)
+✔ media/renderer failure degrades to direct frame restore and consumes the committed turn once (0.3325ms)
+✔ revealTextInstantly changes only presentation reveal policy (0.333ms)
+✔ a slow old restore cannot overwrite a newer confirmed frame (1.1099ms)
+✔ cancelActive leaves the last confirmed frame intact and executor idle (0.2905ms)
+✔ runtime plan objects cannot widen the canonical per-command duration bound (1.1836ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2147.3983

@@ -1,0 +1,73 @@
+
+> sandboxengine@0.1.0 test:contracts
+> npm run typecheck && node --test packages/contracts/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ domain outcomes and processing outcomes stay separate (1.3137ms)
+✔ unknown values are rejected (0.1614ms)
+✔ canonical JSON fixtures are checked at the public contract boundary (12.8862ms)
+✔ B05 core.action is one strict bounded core.paint authoring block (92.7551ms)
+✔ B05 core.action resource reference is semantic and cannot point to a missing block (4.46ms)
+✔ B01-03 schemas use the canonical dialect, ids and version (19.9395ms)
+✔ minimal quest package and resolved intent are shape-valid (134.2468ms)
+✔ unknown block kind and incompatible quest version are rejected by schema (130.146ms)
+✔ ResolvedIntent cannot smuggle duration or state mutation (63.8396ms)
+✔ broken release references stay shape-valid but fail semantic validation (88.8762ms)
+✔ duplicate block ids are rejected semantically (89.7794ms)
+✔ resource bounds are a semantic invariant, not a guessed JSON Schema comparison (1.853ms)
+✔ B10 registry advertises implemented author HTTP, agent-kit read and external task-package export while keeping later authority unavailable (58.1711ms)
+✔ CalculatedAction strict union includes paint and bounded social outcomes (217.9401ms)
+✔ social CalculatedAction cannot pretend a proposal already executed physically (0.3278ms)
+✔ CalculatedAction rejects unregistered action types and unknown fields (0.145ms)
+✔ Condition schema exposes only the bounded B02-03 condition language (116.7211ms)
+✔ Condition rejects unknown fields and empty composites (0.4541ms)
+✔ GameplayEffect is a strict union of implemented executable effect types (77.0608ms)
+✔ entity.move rejects arbitrary mutation fields and malformed ids (0.4624ms)
+✔ unknown gameplay effect types are rejected (0.1409ms)
+✔ generated agent contracts expose only implemented capabilities (66.7382ms)
+✔ generated docs are deterministic and stale content is detected (293.7483ms)
+✔ B10.b.10 checked agent recipes reject missing paths and unsafe verification scripts (62.9039ms)
+✔ M01 mission: two-branch draft validates clean (2.1302ms)
+✔ M01 mission: dangling choice target is rejected (0.2759ms)
+✔ M01 mission: missing entry scene is rejected (0.1481ms)
+✔ M01 mission: unreachable ending is rejected (0.1623ms)
+✔ M01 mission: hash changes on text edit and on layer move (29.2603ms)
+✔ B07-01 full transition gate proves a valid plan converges to its target SceneFrame (2.4771ms)
+✔ allowed references are insufficient: a plan ending on another allowed background is rejected (0.5402ms)
+✔ allowed actor command with wrong final slot is rejected even though the actor reference is valid (0.4935ms)
+✔ parallel branches may share the same write but conflicting writes have no accidental array-order meaning (0.5349ms)
+✔ transition identity is bound to one session/release/turn/target frame (0.3288ms)
+✔ B07-01 presentation v2 has separate stable schema IDs and leaves legacy v1 untouched (18.2454ms)
+✔ AssetManifestV2 is immutable-hash typed and distinguishes image/audio semantics (68.9441ms)
+✔ SceneFrameV2 schema + semantic catalog validation prove complete reload-safe final state (61.1094ms)
+✔ PresentationPlanV2 accepts bounded sequence/parallel commands and rejects executable authority (62.591ms)
+✔ PresentationPlanV2 semantic validation rejects unknown refs, wrong revision and asset hash (56.8654ms)
+✔ tree/deadline-like presentation bounds prevent unbounded animation programs (49.8945ms)
+✔ reload/replay helpers refuse downgrade and do not replay a committed turn (0.4514ms)
+✔ presentation public structures contain no gameplay mutation or executable keys (2.0254ms)
+✔ ScheduledEffectEvent is a separate strict v1 contract instead of widening ScheduledEvent v1 (77.1194ms)
+✔ effect events reject arbitrary mutation fields and invalid gameplay effects (0.3768ms)
+✔ ScheduledEvent exposes one bounded marker kind with safe integer time (116.9895ms)
+✔ ScheduledEvent rejects arbitrary payload, executable fields and unsafe integers (0.4171ms)
+✔ canonical schemas use Draft 2020-12, stable ids and version 1.0 (19.2791ms)
+✔ valid fixtures pass the canonical JSON Schemas (183.7305ms)
+✔ bad status, version and field types are rejected by JSON Schema (64.8737ms)
+✔ unknown fields are rejected instead of silently accepted (17.9022ms)
+✔ semantic reference checks reject missing world and dialogue ids (42.4489ms)
+✔ public TypeScript guard stays compatible with the ActionResult schema (22.5166ms)
+✔ SocialAct keeps request, permission and response as strict separate variants (85.3646ms)
+✔ social subject cannot smuggle duration, effects or state mutation (2.9091ms)
+✔ response decisions are bounded and permission cannot masquerade as request (1.2407ms)
+✔ ScheduledTask is strict and enforces semantic completion >= start (87.0371ms)
+✔ ScheduledTerminalEvent is a separate bounded scheduler event (25.701ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1028.8604

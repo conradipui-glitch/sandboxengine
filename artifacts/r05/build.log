@@ -1,0 +1,8 @@
+
+> sandboxengine@0.1.0 build
+> npm run typecheck
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+

@@ -1,0 +1,9 @@
+
+> sandboxengine@0.1.0 drill:startup-shutdown
+> npm run typecheck && node scripts/b12-startup-shutdown-drill.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+{"drill":"B12-startup-shutdown","result":"skip","reason":"win32 child.kill() cannot deliver a graceful signal; POSIX CI is the authoritative gate","runtimeHealth":"/healthz:200","controlProbe":"/control/v1/agent-kit:200","sqliteCreated":true}

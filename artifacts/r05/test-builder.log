@@ -1,0 +1,41 @@
+
+> sandboxengine@0.1.0 test:builder
+> npm run typecheck && node --test apps/builder-runner/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B13.a2 bounded agent job applies patch and runs only policy verification commands (1328.3098ms)
+✔ B13.a2 agent job fails closed when a patch path is outside the policy (1205.9325ms)
+✔ B13.a2 records bounded patch evidence and only returns allowed paths (3.8189ms)
+✔ B13.a2 rejects empty patches and policy escalation (0.8561ms)
+✔ B13.b1 applies and pushes a bounded change set and records the exact commit (2683.3089ms)
+✔ B13.b1 refuses grants that do not match the policy and invalid operation ids (666.3088ms)
+✔ B13.b1 CI reconciliation requires a run at the exact pushed SHA (2015.9881ms)
+✔ B13.b2 adapter deploys the exact artifact, reconciles the run and passes smoke (2.6411ms)
+✔ B13.b2 refuses artifact drift, failed runs and failed smoke (1.6318ms)
+✔ B13.b2 reconcileLostResponse restores an existing successful run without a new dispatch (0.8789ms)
+✔ B13.b2 policy rejects malformed targets and smoke expectations (0.3839ms)
+✔ B13.c1 production deploy requires a grant, reconciles the run and passes smoke (1.1668ms)
+✔ B13.c1 reconcileLostResponse returns the existing receipt without a new dispatch (4.2807ms)
+✔ B13.c1 verified rollback moves to a different SHA and refuses same-SHA rollback (1.3107ms)
+✔ B13.c1 production failures fail closed: bad grant, failed run, failed smoke (2.2262ms)
+✔ B13.c1 production policy validation is strict (0.266ms)
+✔ B13.a1 clones the exact source HEAD and leaves source checkout unchanged (1062.7296ms)
+✔ B13.a1 refuses a source repository whose HEAD moved after policy capture (829.4714ms)
+✔ B13.a1 rejects a symlink or junction that escapes the isolated checkout (1219.6951ms)
+✔ B13.a2 mutable workspace writes allowed paths and computes deterministic tree identity (2503.261ms)
+✔ B13.a2 write authorization fails closed outside writable prefixes and for git metadata (1037.7361ms)
+✔ B13.a2 verification runner executes only policy commands and reports failures (938.1009ms)
+✔ B13.0 accepts exact repo identity and resolves only task-authorized paths (1.4138ms)
+✔ B13.0 rejects traversal, absolute paths, Git metadata and prefix collisions (0.544ms)
+✔ B13.0 refuses write escalation and malformed repository snapshots (1.5057ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5538.3925

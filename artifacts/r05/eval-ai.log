@@ -1,0 +1,16 @@
+
+> sandboxengine@0.1.0 eval:ai
+> npm run typecheck && node scripts/eval-ai.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+{
+  "schemaVersion": "1.0",
+  "status": "not_configured",
+  "reason": "LHE_EVAL_API_KEY and LHE_EVAL_MODEL are required for explicit live eval",
+  "provider": "https://openrouter.ai/api/v1",
+  "model": null,
+  "cases": []
+}

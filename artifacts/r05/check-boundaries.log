@@ -1,0 +1,5 @@
+
+> sandboxengine@0.1.0 check:boundaries
+> node scripts/check-boundaries.mjs
+
+check:boundaries ok — Core cannot depend on plugin/runtime/control infrastructure; Player is isolated from Core/Control/storage; Runtime AI is isolated from gameplay/UI/storage; Assets are isolated from gameplay/network/process authority; trusted Plugins are isolated from Core/DB/network/process/dynamic-code and obvious wall-clock/entropy shortcuts

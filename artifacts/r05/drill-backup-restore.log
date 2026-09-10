@@ -1,0 +1,9 @@
+
+> sandboxengine@0.1.0 drill:backup-restore
+> npm run typecheck && node scripts/b12-backup-restore-drill.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+{"drill":"B12.2-backup-restore","result":"pass","database":{"backedUpPages":11,"sessionId":"session-1","revision":1,"releaseId":"release-1","contentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","turns":1,"idempotentReplay":true},"assets":{"manifest":"living-history.asset-migration/1","files":12,"sourceCommit":"092bcef0be5943e32bf02f08f9e9d4cde393fa95","sha256VerifiedAfterRestore":true},"scope":"local SQLite Runtime + repository Florence assets; not a Cloudflare Durable Object backup claim"}

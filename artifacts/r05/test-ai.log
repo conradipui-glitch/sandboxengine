@@ -1,0 +1,62 @@
+
+> sandboxengine@0.1.0 test:ai
+> npm run typecheck && node --test packages/ai/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B06-04 AgentBackend is session-oriented, no-tools and separate from gameplay authority (2.6863ms)
+✔ B06-04 AgentBackend deadline and cancellation fail before scripted backend work (0.4731ms)
+✔ B06-04 AgentBackend normalizes auth/rate-limit/session errors without fabricating usage (0.3525ms)
+✔ B06-04 runtime-safe assertion rejects any future tool capability widening (0.3364ms)
+✔ B10.c.14 subscription login supports browser/device-code only and keeps experimental/paid fallback disabled (5.4703ms)
+✔ B10.c.14 refusal, expiry, no-account, API-key and unsupported account modes stay distinct (1.3516ms)
+✔ B10.c.14 quota preserves zero/null/reset metadata and explicitly disables Luna Reserve fallback (1.1247ms)
+✔ B10.c.14 two controllers cannot share identity, pending login, quota cache or notification state (0.7361ms)
+✔ B10.c.14 logout and credential rotation invalidate quota plus existing Codex author session handles (1.4655ms)
+✔ B10.c.14 account cache identity includes owner, connection, account and credential revision (0.1654ms)
+✔ B10.c.14 transport must be dedicated to exact user/connection and cannot advertise paid/borrowed/fallback modes (0.6118ms)
+✔ B10.c.13 Codex adapter validates exact installed protocol pin and proves no-tools AgentBackend safe view (2.2804ms)
+✔ B10.c.13 unsafe transport, browser forwarding or protocol drift fail before a Codex session exists (0.5955ms)
+✔ B10.c.13 initialize-time protocol drift and auth/rate-limit failures stay typed with no fallback transport (0.3771ms)
+✔ B10.c.13 forbidden native activity fails closed and triggers interrupt instead of returning model output (0.3ms)
+✔ B10.c.13 profile/session/deadline/output bounds fail before transport side effects (0.2503ms)
+✔ B06-02 strict proposal builds source-bound ResolvedIntent and rejects authority fields (1.8685ms)
+✔ B06-02 catalog and argument allowlists reject invented mechanics, unknown IDs and invalid units (0.4477ms)
+✔ B06-02 clarification and unsupported are processing decisions, not calculated action statuses (0.1875ms)
+✔ T02/T04 prepared interpreter decisions preserve player ownership instead of manufacturing consent (0.9203ms)
+✔ T09 multi-action is clarification and does not silently resolve the first action (0.1976ms)
+✔ T16 prompt injection is data: invented privileged fields consume bounded repair budget then fail (0.2477ms)
+✔ B06-02 malformed first response may repair once, and evidence never grants authority (0.2744ms)
+✔ B06-04 eval:ai is explicit and returns clean not_configured without credentials (146.0265ms)
+✔ B06-04 not_configured eval output never echoes unrelated environment secrets (101.1571ms)
+✔ L02 ModelProvider bridge sends bounded JSON Chat Completions and preserves safe lifecycle (33.8018ms)
+✔ L02 ModelProvider bridge maps provider failures, keeps usage and frees sessions (2.6444ms)
+✔ L02 bridge enforces deadline, per-turn cancel, busy/session limits and rotation race (28.2855ms)
+✔ L02 bridge rejects non-JSON provider output and invalid input before network (0.4684ms)
+✔ B06-03 deterministic fallback explains executed/partial/blocked without speakers or invented refs (1.5937ms)
+✔ T14 narrative validator allows only FactPacket speaker/observation IDs and exact presentation fields (0.3905ms)
+✔ B06-03 valid strict and expressive narration share the same authority allowlists (1.2427ms)
+✔ T13 malformed/unknown-speaker narrator output consumes at most two attempts then deterministic fallback (1.3679ms)
+✔ T13 retryable narrator failure may retry once; exhausted/expired narration falls back without throwing (0.3042ms)
+✔ B06-01 presets separate OpenRouter defaults from custom compatible URL (1.4198ms)
+✔ B06-01 endpoint policy blocks credentials/private/metadata and allows explicit loopback only (0.6114ms)
+✔ B06-01 OpenRouter connection factory uses preset URL and keeps opaque credentials out of URL (22.5627ms)
+✔ B06-01 compatible adapter sends bounded Chat Completions request and preserves provider usage (0.7874ms)
+✔ B06-01 compatible adapter does not expose provider body or credential in normalized HTTP errors (0.4254ms)
+✔ B06-01 capability mismatch and expired deadline fail before network (0.2189ms)
+✔ B06-01 scripted fake is deterministic and connection test reports real shape (0.3952ms)
+✔ B06-01 OpenRouter key quota preserves real zero, null reset instant, and does not call management endpoint without credential (23.4345ms)
+✔ B06-01 explicit OpenRouter reset instant is preserved while unknown numeric fields stay null (1.9763ms)
+✔ B06-01 management credential is separate and account credits use only provider numbers (1.2652ms)
+✔ B06-01 quota endpoint errors do not throw or fabricate inference failure (0.3782ms)
+✔ B06-01 quota cache identity includes connection, account and credential revision and stale is explicit (0.3381ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 480.9492

@@ -1,0 +1,795 @@
+
+> sandboxengine@0.1.0 test
+> npm run test:contracts && npm run test:assets && npm run test:plugins && npm run test:core && npm run test:ai && npm run test:storage && npm run test:control && npm run test:server && npm run test:studio && npm run test:player
+
+
+> sandboxengine@0.1.0 test:contracts
+> npm run typecheck && node --test packages/contracts/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ domain outcomes and processing outcomes stay separate (1.6194ms)
+✔ unknown values are rejected (0.3311ms)
+✔ canonical JSON fixtures are checked at the public contract boundary (8.2581ms)
+✔ B05 core.action is one strict bounded core.paint authoring block (128.991ms)
+✔ B05 core.action resource reference is semantic and cannot point to a missing block (2.9157ms)
+✔ B01-03 schemas use the canonical dialect, ids and version (5.6724ms)
+✔ minimal quest package and resolved intent are shape-valid (380.2412ms)
+✔ unknown block kind and incompatible quest version are rejected by schema (128.789ms)
+✔ ResolvedIntent cannot smuggle duration or state mutation (50.4941ms)
+✔ broken release references stay shape-valid but fail semantic validation (41.7161ms)
+✔ duplicate block ids are rejected semantically (26.9093ms)
+✔ resource bounds are a semantic invariant, not a guessed JSON Schema comparison (2.1924ms)
+✔ B10 registry advertises implemented author HTTP, agent-kit read and external task-package export while keeping later authority unavailable (61.3677ms)
+✔ CalculatedAction strict union includes paint and bounded social outcomes (120.5163ms)
+✔ social CalculatedAction cannot pretend a proposal already executed physically (0.3367ms)
+✔ CalculatedAction rejects unregistered action types and unknown fields (0.1689ms)
+✔ Condition schema exposes only the bounded B02-03 condition language (230.3216ms)
+✔ Condition rejects unknown fields and empty composites (0.3138ms)
+✔ GameplayEffect is a strict union of implemented executable effect types (189.7817ms)
+✔ entity.move rejects arbitrary mutation fields and malformed ids (0.7397ms)
+✔ unknown gameplay effect types are rejected (0.1426ms)
+✔ generated agent contracts expose only implemented capabilities (37.1798ms)
+✔ generated docs are deterministic and stale content is detected (406.4446ms)
+✔ B10.b.10 checked agent recipes reject missing paths and unsafe verification scripts (45.5122ms)
+✔ M01 mission: two-branch draft validates clean (3.2754ms)
+✔ M01 mission: dangling choice target is rejected (0.532ms)
+✔ M01 mission: missing entry scene is rejected (0.2279ms)
+✔ M01 mission: unreachable ending is rejected (0.372ms)
+✔ M01 mission: hash changes on text edit and on layer move (11.1136ms)
+✔ B07-01 full transition gate proves a valid plan converges to its target SceneFrame (3.0554ms)
+✔ allowed references are insufficient: a plan ending on another allowed background is rejected (0.5396ms)
+✔ allowed actor command with wrong final slot is rejected even though the actor reference is valid (0.2699ms)
+✔ parallel branches may share the same write but conflicting writes have no accidental array-order meaning (0.436ms)
+✔ transition identity is bound to one session/release/turn/target frame (0.291ms)
+✔ B07-01 presentation v2 has separate stable schema IDs and leaves legacy v1 untouched (5.7557ms)
+✔ AssetManifestV2 is immutable-hash typed and distinguishes image/audio semantics (191.634ms)
+✔ SceneFrameV2 schema + semantic catalog validation prove complete reload-safe final state (56.4843ms)
+✔ PresentationPlanV2 accepts bounded sequence/parallel commands and rejects executable authority (46.6149ms)
+✔ PresentationPlanV2 semantic validation rejects unknown refs, wrong revision and asset hash (77.4647ms)
+✔ tree/deadline-like presentation bounds prevent unbounded animation programs (81.6706ms)
+✔ reload/replay helpers refuse downgrade and do not replay a committed turn (0.8931ms)
+✔ presentation public structures contain no gameplay mutation or executable keys (0.3231ms)
+✔ ScheduledEffectEvent is a separate strict v1 contract instead of widening ScheduledEvent v1 (221.2423ms)
+✔ effect events reject arbitrary mutation fields and invalid gameplay effects (0.4253ms)
+✔ ScheduledEvent exposes one bounded marker kind with safe integer time (82.0973ms)
+✔ ScheduledEvent rejects arbitrary payload, executable fields and unsafe integers (0.39ms)
+✔ canonical schemas use Draft 2020-12, stable ids and version 1.0 (5.9878ms)
+✔ valid fixtures pass the canonical JSON Schemas (126.8848ms)
+✔ bad status, version and field types are rejected by JSON Schema (52.6919ms)
+✔ unknown fields are rejected instead of silently accepted (19.5432ms)
+✔ semantic reference checks reject missing world and dialogue ids (30.7286ms)
+✔ public TypeScript guard stays compatible with the ActionResult schema (14.7836ms)
+✔ SocialAct keeps request, permission and response as strict separate variants (99.1377ms)
+✔ social subject cannot smuggle duration, effects or state mutation (1.1576ms)
+✔ response decisions are bounded and permission cannot masquerade as request (1.0295ms)
+✔ ScheduledTask is strict and enforces semantic completion >= start (71.0864ms)
+✔ ScheduledTerminalEvent is a separate bounded scheduler event (41.1403ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1007.4306
+
+> sandboxengine@0.1.0 test:assets
+> npm run typecheck && node --test packages/assets/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B07-02 byte sniffing accepts bounded PNG/WebP/JPEG/WAV/Ogg Vorbis/MP3 profiles (5.5085ms)
+✔ ingestion derives trusted hash/metadata and emits canonical AssetManifestV2 (33.3601ms)
+✔ claimed MIME and known filename extension are hints that must agree with proven bytes (1.9026ms)
+✔ SVG/HTML/script/unknown and malformed headers fail closed even when renamed as raster (1.5779ms)
+✔ explicit byte/dimension/pixel/audio-duration bounds reject before storage publication (1.6675ms)
+✔ content-addressed objects deduplicate while logical asset versions stay immutable and old hashes remain readable (22.4098ms)
+✔ assetId paths are rejected and traversal-like original filename is inert display metadata (15.5755ms)
+✔ safe read is exact: missing identity and corrupted content never substitute another version (11.841ms)
+✔ registry records are immutable for one exact assetId + hash (8.0933ms)
+✔ assets package has no network/process/gameplay authority imports (0.8934ms)
+✔ PNG requires a structurally complete final IEND instead of trusting IHDR only (1.7323ms)
+✔ WebP rejects forged first-chunk lengths even when RIFF and VP8X signatures look valid (1.1364ms)
+✔ JPEG requires final EOI and rejects bytes appended after the image identity (0.3984ms)
+✔ metadata bounds are configurable downward but never wider than canonical AssetManifestV2 (13.2396ms)
+✔ visual alt text stays mandatory and unknown filename extensions cannot masquerade as accepted content (14.9527ms)
+✔ bounded audio profiles reject codec/profile ambiguity instead of inventing duration (0.6055ms)
+✔ B07-02 PCM WAV duration is trusted only when byteRate/blockAlign match channel/sample metadata (3.1118ms)
+✔ B07-02 animated WebP is rejected rather than smuggling an independent animation timeline (0.4221ms)
+✔ Ogg bounded profile requires BOS and still distinguishes Vorbis from other Ogg codecs (0.3243ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 253.8897
+
+> sandboxengine@0.1.0 test:plugins
+> npm run typecheck && node --test packages/plugins/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B08-03 Core contains no dice-check identity or plugin-specific import (6.3315ms)
+✔ B08-03 authored dice sidecar is immutable and detached from mutable draft input (1.6155ms)
+✔ B08-03 artifact-bound registration fails before execution when frozen hash does not match (0.9002ms)
+✔ B08-03 exact frozen artifact binds the executable definition used by the generic execution registry (16.3247ms)
+✔ B08-03 manifest/schema/form/recipe identities agree (1.6745ms)
+✔ B08-03 authored definition passes JSON Schema and runtime validation with aligned Studio bounds (2.4349ms)
+✔ B08-03 malformed bounds, HTML/unknown placeholders and noncanonical effect templates fail closed (0.4583ms)
+✔ B08-03 resolver draws exactly one d20 and player args cannot inject authored authority (11.8031ms)
+✔ B08-03 success/failure select only the authored branch and project deterministic text (1.0166ms)
+✔ B08-03 narrative renderer is allowlisted text substitution only (0.2669ms)
+✔ B08-03 frozen artifact sidecar passes installed registry and blocks missing/incompatible plugin (1.5819ms)
+✔ B08-02 execution registration must match installed manifest declarations (11.3258ms)
+✔ B08-02 invalid args are rejected before resolver invocation (0.9476ms)
+✔ B08-02 resolver receives detached deeply frozen state and args (0.9491ms)
+✔ B08-02 host owns deterministic RNG provenance (1.0404ms)
+✔ B08-02 resolver throws and RNG draw overflow fail without plan (0.824ms)
+✔ B08-02 authority-widened and custom-effect plans fail closed (0.5215ms)
+✔ B08-02 blocked plans cannot hide time/effects/events and must explain why (0.4781ms)
+✔ B08-02 public readonly registry never leaks mutable backing Map through forEach (0.327ms)
+✔ B08-02 scheduler handler receives frozen snapshot and may only emit its own-source canonical events (0.9121ms)
+✔ B08-01 canonical plugin manifest schema is Draft 2020-12 and matches runtime shape (2.2904ms)
+✔ B08-01 schema rejects executable or raw UI widening (0.3291ms)
+✔ B08-03 build-installed registry metadata matches code versions and the actual dice-check manifest (0.727ms)
+✔ B08-01 zero-plugin registry is valid, deterministic and frozen (3.523ms)
+✔ B08-01 valid single plugin is normalized and deeply frozen (10.8512ms)
+✔ B08-01 dependency graph sorts dependencies first and insertion order is irrelevant (1.3112ms)
+✔ B08-01 missing dependency fails closed (0.227ms)
+✔ B08-01 dependency version mismatch fails closed (0.2624ms)
+✔ B08-01 dependency cycles are rejected (0.9341ms)
+✔ B08-01 duplicate plugin IDs are rejected (0.199ms)
+✔ B08-01 cross-plugin ownership collisions are rejected even with valid namespaces (0.2087ms)
+✔ B08-01 non-namespaced plugin-owned IDs are rejected (0.3926ms)
+✔ B08-01 duplicate IDs inside one manifest are rejected across categories (0.2813ms)
+✔ B08-01 manifest exact shape rejects executable/import URL/raw HTML/source widening (0.2074ms)
+✔ B08-01 incompatible engine plugin API range is rejected (0.1601ms)
+✔ B08-01 strict version ranges are deterministic (0.1155ms)
+✔ B08-01 release compatibility fails explicitly for missing/incompatible plugin capability and schema (0.7825ms)
+✔ B08-01 invalid requirement shape fails closed (0.1885ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 325.4144
+
+> sandboxengine@0.1.0 test:core
+> npm run typecheck && node --test packages/core/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ Core creates a minimal executed result (1.8014ms)
+✔ Core rejects malformed or processing-only results (0.4499ms)
+✔ T01 core: request 8 with paint 2 resolves partial 2, -2 resource and 600 seconds (6.8447ms)
+✔ T01 core repeat with paint 0 is blocked without time or effects (13.447ms)
+✔ sufficient resource resolves executed (8.2562ms)
+✔ partial-disabled action blocks instead of silently shrinking the request (2.1055ms)
+✔ invalid intent or definition fails without calculated state (1.0814ms)
+✔ T05 NPC returns at 900 inside work to 2400 and later step sees new location (13.4903ms)
+✔ T06 completion at exact deadline uses canonical 20-before-100 priority and crosses midnight unambiguously (3.4198ms)
+✔ T08 self-generated immediate events hit one global step budget with no partial commit (2.0224ms)
+✔ same-time generated child cannot jump before its parent effective priority/sequence (2.2808ms)
+✔ B11 real Florence compiles through generic contracts and keeps six beats separate from clock (63.0684ms)
+✔ B11 Transfer Desk proves a different social/item causal shape with atomic blocking (5.4752ms)
+✔ B11 quest identities stay out of Core source (9.7891ms)
+✔ B11 second quest is not a Florence-shaped rename (7.7991ms)
+✔ compileQuest produces stable immutable artifacts for two domains (31.8237ms)
+✔ meaningful content changes change the compiled hash (44.7844ms)
+✔ broken references and incompatible versions produce no artifact (35.658ms)
+✔ canonicalStringify sorts object keys but preserves array order (0.3481ms)
+✔ known resource/entity/item conditions deterministically return true or false (13.7162ms)
+✔ composite conditions evaluate without eval and preserve boolean semantics (4.176ms)
+✔ broken references are failures, not false, even after a false sibling (2.6046ms)
+✔ invalid condition shape is distinct from a valid condition that evaluates false (2.2979ms)
+✔ resource.change batch applies sequentially to a new state (9.0332ms)
+✔ valid item.transfer moves one unique item without mutating authoritative input (1.5699ms)
+✔ entity.move changes exactly one existing entity location without mutating authoritative input (1.3887ms)
+✔ entity.move reference failure keeps an earlier mixed trial batch atomic (1.4154ms)
+✔ T07 mixed batch is atomic when item transfer fails after resource change (1.0129ms)
+✔ failure in the second resource effect rejects the whole batch without partial state (8.0713ms)
+✔ missing references and unsupported effects fail without state (3.6944ms)
+✔ unsafe integer deltas are rejected before arithmetic (2.8492ms)
+✔ M02 mission execution: fork A and B reach different scenes (1.9898ms)
+✔ M02 mission execution: endings terminate, turn is not a scene index (0.2564ms)
+✔ M02 mission execution: wrong-scene choice is rejected, replay is deterministic (0.3156ms)
+✔ M02 mission execution: available choices report condition status (0.2288ms)
+✔ M02 mission execution: legacy sidecar beats become a linear mission story (0.2035ms)
+✔ same explicit seed and draw sequence is byte-for-byte reproducible (2.0518ms)
+✔ RNG uses explicit immutable state and reports invalid seed/bounds (0.1853ms)
+✔ draw index overflow is explicit and no hidden process entropy is consulted (0.132ms)
+✔ B03-02 due effect events observe chronological state and commit clock/revision once (8.1011ms)
+✔ later event failure rejects the whole scheduler transition without partial state (2.9376ms)
+✔ marker events are traced as due but remain state no-ops before final clock commit (3.0666ms)
+✔ zero-duration committed transition keeps clock but increments revision exactly once (4.7524ms)
+✔ pending events are returned unchanged and not applied prematurely (3.6037ms)
+✔ plan/state mismatch, malformed ordering and revision overflow fail before transition (3.5708ms)
+✔ B03 replay: same plan+seed yields identical ordered effects, final state and sha256 hash (12.781ms)
+✔ B03 replay fingerprint changes when meaningful RNG provenance/plan/result changes (2.2795ms)
+✔ B03-01 event inside a long action is planned before the action end (5.9371ms)
+✔ ordering is independent from input order and resolves ties by order then eventId (1.4608ms)
+✔ inclusive [start,end] boundary is explicit and future events stay pending (1.6236ms)
+✔ duration zero can plan an event due now but never consumes a future event (1.1362ms)
+✔ past and duplicate events are explicit queue failures rather than silent skips (0.9043ms)
+✔ event limit fails the whole plan without exposing a partial due list (0.9282ms)
+✔ safe integer and bounded option failures are rejected before planning (0.9462ms)
+✔ invalid event shape is a failure, not an ignored queue entry (1.6848ms)
+✔ T02 request to leave a copy stays conditional and cannot reverse-transfer an item (5.1395ms)
+✔ T03 permission to relay a response remains permission, not a new request (1.3368ms)
+✔ T04 request remains pending until explicit accept/refuse response (1.3111ms)
+✔ social response must reference the concrete request and its addressee (1.2135ms)
+✔ missing social participants are resolution failures, not refusals (0.6795ms)
+✔ ScheduledTask projects canonical start/completion priorities with actor reference validation (5.0394ms)
+✔ deadline uses fixed priority 100, interrupts a planned 600-second action and skips later effects (1.9124ms)
+✔ terminal state blocks subsequent normal planning and application (0.8324ms)
+✔ deadline helper rejects malformed or noncanonical priority definitions (0.3561ms)
+ℹ tests 64
+ℹ suites 0
+ℹ pass 64
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 485.0664
+
+> sandboxengine@0.1.0 test:ai
+> npm run typecheck && node --test packages/ai/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B06-04 AgentBackend is session-oriented, no-tools and separate from gameplay authority (2.0113ms)
+✔ B06-04 AgentBackend deadline and cancellation fail before scripted backend work (0.2769ms)
+✔ B06-04 AgentBackend normalizes auth/rate-limit/session errors without fabricating usage (0.3586ms)
+✔ B06-04 runtime-safe assertion rejects any future tool capability widening (0.3998ms)
+✔ B10.c.14 subscription login supports browser/device-code only and keeps experimental/paid fallback disabled (3.2847ms)
+✔ B10.c.14 refusal, expiry, no-account, API-key and unsupported account modes stay distinct (0.7689ms)
+✔ B10.c.14 quota preserves zero/null/reset metadata and explicitly disables Luna Reserve fallback (3.5326ms)
+✔ B10.c.14 two controllers cannot share identity, pending login, quota cache or notification state (5.6239ms)
+✔ B10.c.14 logout and credential rotation invalidate quota plus existing Codex author session handles (4.3478ms)
+✔ B10.c.14 account cache identity includes owner, connection, account and credential revision (0.3296ms)
+✔ B10.c.14 transport must be dedicated to exact user/connection and cannot advertise paid/borrowed/fallback modes (1.0295ms)
+✔ B10.c.13 Codex adapter validates exact installed protocol pin and proves no-tools AgentBackend safe view (3.1929ms)
+✔ B10.c.13 unsafe transport, browser forwarding or protocol drift fail before a Codex session exists (0.825ms)
+✔ B10.c.13 initialize-time protocol drift and auth/rate-limit failures stay typed with no fallback transport (0.5342ms)
+✔ B10.c.13 forbidden native activity fails closed and triggers interrupt instead of returning model output (0.3952ms)
+✔ B10.c.13 profile/session/deadline/output bounds fail before transport side effects (0.3213ms)
+✔ B06-02 strict proposal builds source-bound ResolvedIntent and rejects authority fields (1.8136ms)
+✔ B06-02 catalog and argument allowlists reject invented mechanics, unknown IDs and invalid units (0.8211ms)
+✔ B06-02 clarification and unsupported are processing decisions, not calculated action statuses (0.1804ms)
+✔ T02/T04 prepared interpreter decisions preserve player ownership instead of manufacturing consent (0.9066ms)
+✔ T09 multi-action is clarification and does not silently resolve the first action (0.189ms)
+✔ T16 prompt injection is data: invented privileged fields consume bounded repair budget then fail (0.2834ms)
+✔ B06-02 malformed first response may repair once, and evidence never grants authority (0.4079ms)
+✔ B06-04 eval:ai is explicit and returns clean not_configured without credentials (165.2978ms)
+✔ B06-04 not_configured eval output never echoes unrelated environment secrets (100.8829ms)
+✔ L02 ModelProvider bridge sends bounded JSON Chat Completions and preserves safe lifecycle (30.6028ms)
+✔ L02 ModelProvider bridge maps provider failures, keeps usage and frees sessions (1.6822ms)
+✔ L02 bridge enforces deadline, per-turn cancel, busy/session limits and rotation race (37.3905ms)
+✔ L02 bridge rejects non-JSON provider output and invalid input before network (0.6096ms)
+✔ B06-03 deterministic fallback explains executed/partial/blocked without speakers or invented refs (1.7268ms)
+✔ T14 narrative validator allows only FactPacket speaker/observation IDs and exact presentation fields (0.7629ms)
+✔ B06-03 valid strict and expressive narration share the same authority allowlists (1.7262ms)
+✔ T13 malformed/unknown-speaker narrator output consumes at most two attempts then deterministic fallback (0.3258ms)
+✔ T13 retryable narrator failure may retry once; exhausted/expired narration falls back without throwing (0.4756ms)
+✔ B06-01 presets separate OpenRouter defaults from custom compatible URL (1.5686ms)
+✔ B06-01 endpoint policy blocks credentials/private/metadata and allows explicit loopback only (0.6131ms)
+✔ B06-01 OpenRouter connection factory uses preset URL and keeps opaque credentials out of URL (26.5118ms)
+✔ B06-01 compatible adapter sends bounded Chat Completions request and preserves provider usage (0.7095ms)
+✔ B06-01 compatible adapter does not expose provider body or credential in normalized HTTP errors (0.5167ms)
+✔ B06-01 capability mismatch and expired deadline fail before network (0.3355ms)
+✔ B06-01 scripted fake is deterministic and connection test reports real shape (0.4539ms)
+✔ B06-01 OpenRouter key quota preserves real zero, null reset instant, and does not call management endpoint without credential (34.1228ms)
+✔ B06-01 explicit OpenRouter reset instant is preserved while unknown numeric fields stay null (0.7525ms)
+✔ B06-01 management credential is separate and account credits use only provider numbers (1.201ms)
+✔ B06-01 quota endpoint errors do not throw or fabricate inference failure (0.4674ms)
+✔ B06-01 quota cache identity includes connection, account and credential revision and stale is explicit (0.4146ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 536.9775
+
+> sandboxengine@0.1.0 test:storage
+> npm run typecheck && node --test packages/runtime/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B09-03 SQLite playtest trace reads exact persisted release evidence without secrets or replay (82.2623ms)
+✔ B09-03 playtest trace reader treats a database without Runtime tables as no launched evidence (2.4331ms)
+✔ T10 SQLite durable — lost response after commit replays identically after adapter restart (61.8119ms)
+✔ T11 SQLite durable — two independent adapter instances cannot own different commands on one revision (51.9466ms)
+✔ T12 SQLite durable — crash before commit rolls back, restart reacquires, and old fencing token stays stale (69.8494ms)
+✔ SQLite fault injection before finishWithoutTurn COMMIT leaves operation and active owner unchanged (53.0686ms)
+✔ SQLite busy policy is bounded by adapter timeout and never publishes a partial operation (42.1746ms)
+✔ Memory shared contract T10 — duplicate key commits once and persisted response replays (2.6442ms)
+✔ Memory shared contract T11 — only one active owner exists for one session revision (0.3634ms)
+✔ Memory shared contract T12 foundation — reacquire fences the stale token without partial commit (0.4788ms)
+✔ Memory shared contract invalid candidate leaves state, turn and operation response unpublished (0.9835ms)
+✔ SQLite shared contract T10 — duplicate key commits once and persisted response replays (67.4148ms)
+✔ SQLite shared contract T11 — only one active owner exists for one session revision (48.299ms)
+✔ SQLite shared contract T12 foundation — reacquire fences the stale token without partial commit (54.2813ms)
+✔ SQLite shared contract invalid candidate leaves state, turn and operation response unpublished (53.1038ms)
+✔ T10 Memory — duplicate key commits once, replays persisted response, and rejects reused key with another hash (2.3104ms)
+✔ T11 Memory — two different commands cannot own the same session revision (0.4219ms)
+✔ T12 foundation — expired lease reacquires with higher fencing token and stale worker cannot commit (0.7401ms)
+✔ failed commit publishes no partial state, turn, or response (0.3416ms)
+✔ service lease clock is independent from B03 game clock (0.344ms)
+✔ finishWithoutTurn stores replayable response without changing world revision (0.5312ms)
+✔ renewLease keeps fencing token and uses only injected service time (0.341ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 415.6536
+
+> sandboxengine@0.1.0 test:control
+> npm run typecheck && node --test packages/control/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B10.a Memory job discovery is exact-owner/exact-quest and newest-activity first (2.5217ms)
+✔ B10.a SQLite job discovery matches Memory and survives reopen (139.7543ms)
+✔ B10.a Memory AuthorAgentJob lifecycle fences replay, budget, resume and cancel (6.4322ms)
+✔ B10.a SQLite AuthorAgentJob lifecycle fences replay, budget, resume and cancel (142.1531ms)
+✔ B10.a SQLite AuthorAgentJob pending/completed operation replay survives reopen (117.767ms)
+✔ B10.a author job time budget pauses one segment and explicit resume opens another (0.4493ms)
+✔ B10.a author job capability grant denies ungranted mutation without consuming budget (0.2848ms)
+✔ B10.b.9 Memory stores exact bounded context evidence (2.4253ms)
+✔ B10.b.9 SQLite context evidence survives reopen (109.2575ms)
+✔ B10.b.9 selected action expands one outgoing resource dependency and omits unrelated/inbound blocks (3.0547ms)
+✔ B10.b.9 selected character includes its initial location only (0.2854ms)
+✔ B10.b.9 selector fails closed for bad selection, duplicate stored ids, missing typed targets and selection overflow (1.043ms)
+✔ B10.b.9 capability catalog is deterministic, bounded and deeply immutable (0.2709ms)
+✔ B10.a conversation rejects oversize text and never creates orphan messages (1.7933ms)
+✔ B10.a Memory conversation is ordered, idempotent and proposal references are assistant-only (2.29ms)
+✔ B10.a SQLite conversation matches Memory semantics (114.571ms)
+✔ B10.a SQLite conversation survives reopen with exact ordinals and payload hashes (108.7143ms)
+✔ B10.b.11 broker pins server policy and third-party Skill/MCP text cannot grant forbidden authority (3.3888ms)
+✔ B10.b.11 broker pin survives SQLite reopen and does not silently adopt a new docs/Skill hash (59.5045ms)
+✔ B10.b.11 broker never widens a reduced job grant (1.3181ms)
+✔ B10.a Memory proposal preview is non-mutating and apply is exact/idempotent (18.4488ms)
+✔ B10.a SQLite proposal preview is non-mutating and apply is exact/idempotent (225.4502ms)
+✔ B10.a stale proposal remains previewable but cannot apply or overwrite (4.1974ms)
+✔ B10.a invalid references fail preview without touching the real draft (0.9853ms)
+✔ B10.a missing capability is explicit and cannot be applied as a fake block (2.7878ms)
+✔ B10.a SQLite completed proposal replay survives store/authority reopen (162.4413ms)
+✔ B10.a base content hash mismatch fails closed (1.1052ms)
+✔ K05 SQLite BoardDocument: CAS, replay, key reuse and atomic validation (184.3605ms)
+✔ K05 SQLite BoardDocument survives close/reopen and upgrades schema v1 (173.9738ms)
+✔ B05-01 Memory shared — stale baseRevision cannot overwrite current draft (8.1359ms)
+✔ B05-01 Memory shared — invalid multi-change set is atomic (1.2063ms)
+✔ B05-01 Memory shared — referenced resource cannot be removed (6.9276ms)
+✔ B05-01 Memory shared — validation and frozen playtests bind exact snapshot hash (11.2662ms)
+✔ B05-01 SQLite shared — stale baseRevision cannot overwrite current draft (248.5714ms)
+✔ B05-01 SQLite shared — invalid multi-change set is atomic (137.0392ms)
+✔ B05-01 SQLite shared — referenced resource cannot be removed (150.7763ms)
+✔ B05-01 SQLite shared — validation and frozen playtests bind exact snapshot hash (142.8455ms)
+✔ B05-01 SQLite durable — draft, validation and frozen playtest survive reopen (157.9151ms)
+✔ B05-01 SQLite durable — two independent stores reject stale draft writer (133.3306ms)
+✔ B05-01 stale baseRevision never overwrites a newer draft (12.814ms)
+✔ B05-01 invalid multi-change set is all-or-nothing (1.437ms)
+✔ B05-01 referenced resource cannot be removed and draft stays unchanged (19.6992ms)
+✔ B05-01 validation is bound to exact revision/hash and playtests stay frozen (25.7119ms)
+✔ B09-03 history defaults to newest bounded page and exposes an explicit cursor (1.5433ms)
+✔ B09-03 history cursor pages backward without overlap and never exceeds the configured bound (1.8542ms)
+✔ B09-03 Memory immutable snapshots expose deterministic history/compare/reference reads (43.5621ms)
+✔ B09-03 SQLite immutable snapshots expose deterministic history/compare/reference reads (169.6196ms)
+✔ B09-03 SQLite draft history remains readable after reopen (166.9645ms)
+✔ B09-03 history metadata is bounded deterministic author data and deeply immutable (6.2249ms)
+✔ B09-03 comparison reports title, entry, add/remove/replace without attempting an automatic merge (0.6959ms)
+✔ B09-03 comparison is semantic for canonical JSON key order and rejects cross-quest use (0.878ms)
+✔ B09-03 typed reference analysis explains quest, character and action dependencies (13.0215ms)
+✔ B09-03 reference analysis does not treat descriptive strings as executable/reference authority (0.5855ms)
+✔ B09-03 duplicate stored IDs fail closed instead of producing ambiguous comparison (0.3858ms)
+✔ B09-03 concurrent identical Memory restore converges on one restored revision and one replay (11.578ms)
+✔ B09-03 Memory restore creates a new revision from exact old content and preserves old records (13.8728ms)
+✔ B09-03 Memory restore is idempotent and stale base cannot overwrite newer draft (13.8542ms)
+✔ B09-03 SQLite restore creates a new revision from exact old content and preserves old records (238.883ms)
+✔ B09-03 SQLite restore is idempotent and stale base cannot overwrite newer draft (151.409ms)
+✔ B09-03 restore is snapshot-level and works for drafts larger than normal 100-change batch (13.7251ms)
+✔ B09-03 SQLite restore idempotency survives reopen (189.3812ms)
+✔ B09-03 two SQLite writers cannot both restore from the same base revision (129.2417ms)
+✔ B09-03 import accepts its canonical exported package before hostile mutations (13.5934ms)
+✔ B09-03 import rejects traversal, absolute, NUL and duplicate normalized paths before extraction (5.9543ms)
+✔ B09-03 import rejects unsupported ZIP features, symlink-like attrs and declared oversize (13.3987ms)
+✔ B09-03 import rejects checksum mismatch, extra executable files and secret-shaped sections (6.4879ms)
+✔ B09-03 import rejects incompatible format/schema/plugin requirements and invalid authored refs (3.2765ms)
+✔ B09-03 canonical ZIP writer never exceeds parser member/count bounds (1.6133ms)
+✔ B09-03 bytes emitted by the canonical writer stay inside the canonical parser envelope (19.0136ms)
+✔ M01 SQLite mission: save/get/history/export/import with CAS and idempotency (179.2432ms)
+✔ M01 SQLite mission: schema migrates past v3 (191.7388ms)
+✔ M02 mission sessions: fork A/B diverge, replay and conflicts behave (181.1846ms)
+✔ M02 mission sessions: resume after restart keeps the exact pinned release (234.2256ms)
+✔ M03 project asset library: register/list/unlist keeps bytes referenced (206.5071ms)
+✔ M06 publication store: Memory publish/replay/update/unpublish (4.0776ms)
+✔ M06 publication store: SQLite survives reopen and keeps public record (109.0607ms)
+✔ B09-03 Memory clone pins source revision, remaps typed references and stays independent (38.9186ms)
+✔ B09-03 Memory clone retry is idempotent and changed input cannot reuse the key (26.6681ms)
+✔ B09-03 SQLite clone pins source revision, remaps typed references and stays independent (246.9736ms)
+✔ B09-03 SQLite clone retry is idempotent and changed input cannot reuse the key (148.1556ms)
+✔ B09-03 SQLite clone idempotency and pinned source survive reopen (134.2341ms)
+✔ B09-03 Memory exact draft export is deterministic, hashed and structurally secret-free (16.3224ms)
+✔ B09-03 SQLite exact draft export is deterministic, hashed and structurally secret-free (203.1586ms)
+✔ B09-03 Memory and SQLite produce byte-identical export for equivalent exact snapshots (131.1327ms)
+✔ B09-03 Memory valid export imports as a new independent unpublished draft (14.2841ms)
+✔ B09-03 Memory import retry is idempotent and changed identity cannot reuse the key (7.3764ms)
+✔ B09-03 Memory invalid package is atomic and does not consume an idempotency key (2.2372ms)
+✔ B09-03 SQLite valid export imports as a new independent unpublished draft (189.1242ms)
+✔ B09-03 SQLite import retry is idempotent and changed identity cannot reuse the key (142.9428ms)
+✔ B09-03 SQLite invalid package is atomic and does not consume an idempotency key (131.6192ms)
+✔ B09-03 SQLite import idempotency survives reopen (100.2384ms)
+✔ B09-03 Memory deletion reuses typed reference analysis (12.9109ms)
+✔ B09-03 SQLite deletion reuses typed reference analysis (145.1105ms)
+✔ B09-03 Memory stale green deletion preflight never authorizes deletion (1.4847ms)
+✔ B09-03 SQLite stale green deletion preflight never authorizes deletion (131.6394ms)
+✔ B09-03 Memory exports an exact inactive immutable release and never moves current pointer (54.3627ms)
+✔ B09-03 SQLite exports an exact inactive immutable release and never moves current pointer (155.9896ms)
+✔ B09-03 release export fails closed for plugin-authored releases that import cannot preserve yet (1.4674ms)
+✔ B09-03 release export rejects a stored artifact whose immutable compiled hash no longer matches (0.8491ms)
+✔ B09-02 Memory release store — immutable release, idempotency, publish and rollback pointer (3.7244ms)
+✔ B09-02 SQLite release store — immutable release, idempotency, publish and rollback pointer (177.447ms)
+✔ B09-02 SQLite release store survives reopen with immutable releases, pointer, history and idempotency (132.618ms)
+✔ B09-01 scrypt verifier is salted, bounded and never contains plaintext password (161.6349ms)
+✔ B09-01 Memory — credentials, sessions and project roles fail closed (259.548ms)
+✔ B09-01 SQLite — credentials, sessions and project roles fail closed (2552.9374ms)
+✔ B09-01 SQLite — users, memberships and session revocation survive reopen (370.5584ms)
+ℹ tests 106
+ℹ suites 0
+ℹ pass 106
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4681.4809
+
+> sandboxengine@0.1.0 test:server
+> npm run typecheck && node --test apps/server/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B10.a SQLite restart reuses durable proposal artifact without a second backend turn (286.9307ms)
+✔ B10.a scripted author produces server-bound proposal without mutating draft until explicit apply (19.8572ms)
+✔ B10.a explicit autoApply goes through proposal preview/apply and creates exactly one draft revision (5.3472ms)
+✔ B10.a unknown mechanic becomes missing capability and never invents a fake draft block (2.8123ms)
+✔ B10.a malformed backend output fails closed and leaves draft unchanged (2.2634ms)
+✔ B10.a backend rate limit is surfaced without fallback or draft mutation (2.9407ms)
+✔ B10.a concurrent edit during backend turn makes generated proposal stale and blocks overwrite (7.9999ms)
+✔ B10.b.11 backend may request one brokered reference and receives bounded tool_result in the same segment (26.913ms)
+✔ B10.b.11 tool call consumes segment budget; resume replays MCP result without a second transport call (8.8878ms)
+✔ B10.b.11 MCP timeout is returned to backend as typed task material, not a permission fallback (63.7487ms)
+✔ B10.b.11 cancellation aborts in-flight MCP and prevents the second backend turn (17.8123ms)
+✔ B10.b.11 strict protocol rejects unknown tools and a second tool request (9.5186ms)
+✔ B10.b.9 installed plugin registry becomes a sorted safe author capability catalog (1.5853ms)
+✔ L04.a correction turn receives the previously created resource/action with fresh revision and hash (31.077ms)
+✔ L04.b small quest context over block or char limits fails before any backend call (43.7386ms)
+✔ L04.c prompt uses real newlines between instruction and context (4.0668ms)
+✔ B10.b.9 author backend receives entry-seeded bounded context, installed catalog and exact checkpoint evidence (15.3425ms)
+✔ B10.a Stop aborts in-flight backend signal and discards a late success result (557.4919ms)
+✔ B10.a author job HTTP is editor-only, CSRF protected and create is idempotent (619.1897ms)
+✔ B10.a author segment replays durable proposal and rejects changed instruction before backend (672.9131ms)
+✔ B10.a cancel is state-idempotent and blocks later author segments (350.147ms)
+✔ B10.a author job HTTP stays unavailable when author assistant is not composed (500.6618ms)
+✔ B10.a job-scoped Apply resolves durable artifact, commits once and checkpoints once (494.0124ms)
+✔ B10.a cancelled job cannot Apply a previously produced proposal (508.0809ms)
+✔ B10.a job-scoped Apply rejects browser-supplied proposal JSON before mutation (377.9869ms)
+✔ B10.b.11 bounded MCP reference read is broker-authorized, version-targeted and output-bounded (3.5425ms)
+✔ B10.b.11 MCP offline is typed, makes zero transport calls and never auto-runs fallback (0.5058ms)
+✔ B10.b.11 MCP timeout aborts the call and returns typed unavailable (6.1395ms)
+✔ B10.b.11 invalid/oversized MCP output fails closed (3.6758ms)
+✔ B10.b.11 MCP client config cannot bind write/shell authority (0.3919ms)
+✔ B10.b.12 task package is deterministic, standalone and structurally excludes proposal project content (10.1812ms)
+✔ B10.b.12 task package rejects credential-shaped goal material and stale already-installed capability (4.4081ms)
+✔ B10.b.12 real HTTP exports only the exact persisted missing capability and ignores later unrelated draft changes (762.7752ms)
+✔ B10.b.11 configured author job grants reference read only when MCP reference client exists (14.5471ms)
+✔ B10.b.11 bridge exposes one read tool, journals it, and exact retry replays without a second MCP call (33.3377ms)
+✔ B10.b.11 offline MCP result is durable, budgeted and replayed without implicit fallback (5.3315ms)
+✔ B10.b.11 completed reference operation survives SQLite reopen and replays exact output (77.9884ms)
+✔ B10.b.11 a job without docs.reference.read grant is denied before MCP transport (1.6411ms)
+✔ B10.a proposal HTTP is editor-scoped, preview-only, CSRF/idempotent on apply, and stale-safe (773.8884ms)
+✔ B11 authored scenario resolves only when bound to the exact immutable release hash (33.2646ms)
+✔ B11 authored release rejects duplicate scenario sidecars and compiled-artifact drift (4.5633ms)
+✔ B11 Florence published authored Runtime commits canonical route once and replays idempotently (268.5068ms)
+✔ B11 Florence published Runtime keeps paid compromise distinct from canonical acceptance (148.5469ms)
+✔ B11 Transfer Desk published Runtime preserves blocked/no-turn then conditional then item handoff (164.1247ms)
+✔ B11 free text receives the current beat catalog and executes through the same authored resolver (82.7888ms)
+✔ B11 authored scenario sidecar is artifact/quest bound and exposes only the current beat (61.8695ms)
+✔ B11 Florence canonical + paid compromise + preserve-authorship routes keep distinct source meanings (3.1263ms)
+✔ B11 Florence state-dependent cases preserve conditional negotiation, proof-backed agreement and withdrawal (4.333ms)
+✔ B11 authored blocked options do not advance revision, clock or effects (2.597ms)
+✔ B11 retries remain caller/storage-owned: executor is pure for the same state (2.5459ms)
+✔ B12 upstream HTTP 429 intent failure is replayable no-turn and preserves the save (461.0232ms)
+✔ K05 Control HTTP BoardDocument is separate, CAS/idempotent and bounded (453.8201ms)
+✔ K06 hosted identity and BoardDocument roles are enforced server-side (648.168ms)
+✔ B05-01 Control HTTP refuses non-loopback bind before authenticated Control access exists (5.5923ms)
+✔ B09-01 authenticated Control login, throttle, expiry, origin, CORS and CSRF fail closed (1067.6118ms)
+✔ B09-01 authenticated Control enforces owner/editor/tester matrix and project isolation (609.8276ms)
+✔ B09-01 authenticated network bind requires Secure cookies and a nonempty origin allowlist (48.9726ms)
+✔ B05-01 Control HTTP drives draft -> validation -> frozen playtest and survives SQLite restart (850.7369ms)
+✔ B05-01 Control HTTP rejects malformed JSON before draft mutation (6.9196ms)
+✔ B09-02 Control release routes preserve B09-01 auth, CORS, CSRF and role authority (1186.6504ms)
+✔ B09-02 Control publish and rollback move only the durable current pointer with CAS (553.7499ms)
+✔ B09-02 release endpoints stay unavailable when release authority is not composed (6.3909ms)
+✔ B08-03 server proof binds authored dice mechanics to the exact frozen artifact before Core execution (32.3355ms)
+✔ B08-03 same authored check/state/seed is byte-equivalent through generic host and Core (18.2003ms)
+✔ B08-03 success and failure branches become canonical Core effects without plugin math in Core (2.7072ms)
+✔ B08-03 authored invalid effect branch still fails atomically at the existing Core invariant gate (5.4539ms)
+✔ B09-03 draft version reads reject unknown and duplicate query parameters (7.7261ms)
+✔ B09-03 restore rejects query modifiers before CSRF/body mutation path (0.5938ms)
+✔ B09-03 tester can read canonical history/compare/reference data but cannot restore (581.3431ms)
+✔ B09-03 restore is editor-only, CSRF/idempotent, append-only, and returns server comparison on stale base (387.3003ms)
+✔ B09-03 project isolation hides draft history from non-members (255.0225ms)
+✔ FIN-01/B02: rollback repoints the catalog to the exact release bundle, not the latest draft (600.5757ms)
+✔ FIN-01: an existing release never adopts a newer draft when it is published again (224.8933ms)
+✔ FIN-01: the release to bundle pin survives a publication store restart (1203.6461ms)
+✔ FIN-01: a release whose referenced asset bytes changed fails closed instead of hashing a silent null (380.1189ms)
+✔ FIN-01: a legacy publication record proves its own revision, and an unprovable rollback target fails closed (173.6007ms)
+✔ R01/F01: editing the draft must not break the published mission or an open session (289.9729ms)
+✔ R01/F02: republishing an edited draft succeeds and repins the catalog atomically (173.878ms)
+✔ R01/F02: a failed catalog write must not leave a moved release pointer (222.2472ms)
+✔ R01/F03: unpublish blocks new launches but keeps a started game playable (1191.0004ms)
+✔ R03/F05: public asset bytes are served only for the pinned published revision (366.833ms)
+✔ M06 public catalog: only public listing fields are exposed and slug lookup works (120.5924ms)
+✔ M06 public mission runtime pins the published release and keeps credential server-side (261.4362ms)
+✔ M06 owner publish automatically creates catalog record from the current MissionDraft (362.8174ms)
+✔ M02 Control HTTP mission: document, sessions and turns over the wire (342.4908ms)
+✔ B09-03 Control playtest trace is tester-readable, project-hidden and derives exact runtime identity server-side (334.2384ms)
+✔ B09-03 Control does not advertise fabricated trace when no reader is composed (12.4005ms)
+✔ B08-02 same state/args/seed produces identical Core candidate and RNG provenance (17.0427ms)
+✔ B08-02 different seed can change resolver-visible deterministic draw without hidden entropy (0.7649ms)
+✔ B08-02 invalid canonical effect fails atomically at existing Core effect gate (0.4011ms)
+✔ B08-02 plugin-generated canonical scheduler event is handled by existing time planner (0.484ms)
+✔ B08-02 plugin cannot smuggle a state patch past plan validation (0.3392ms)
+✔ B08-02 plugin scheduler children are processed by Core dynamic scheduler, not a parallel queue (1.4504ms)
+✔ B08-02 Core rejects plugin child events generated into the past and RNG is not published on failure (0.6038ms)
+✔ B08-02 Core rejects duplicate plugin child event ids (0.5525ms)
+✔ B09-03 authenticated project list exposes only the current membership role (649.7152ms)
+✔ B09-03 local loopback project view exposes explicit synthetic owner role (38.3798ms)
+✔ M03 Control HTTP assets: upload/list/download PNG over the wire (768.8239ms)
+✔ B09-02 session binding is immutable, exact and SQLite durable without changing Runtime schema (113.1692ms)
+✔ B09-02 current resolver follows publish/rollback while pinned resolver ignores pointer changes (31.5757ms)
+✔ B09-02 resolver fails closed when current release has ambiguous core action routing (2.6393ms)
+✔ B09-02 published Runtime has no static-template fallback when current release is absent (277.3959ms)
+✔ B09-02 new sessions follow publish and rollback while existing sessions execute their exact pinned release (167.654ms)
+✔ B09-02 a missing published-session binding fails closed instead of borrowing another release (114.521ms)
+✔ B09-02 Runtime refuses ambiguous mixed static/published composition (3.1021ms)
+✔ B09-02 SQLite reopen preserves published pointer, pinned session binding and exact release execution (348.5828ms)
+✔ B09-03 clone is editor-only, CSRF protected, idempotent and rewrites internal references (644.0193ms)
+✔ B09-03 exact draft export is editor-only, query-exact and returns a real lhquest ZIP envelope (569.0746ms)
+✔ B09-03 real HTTP accepts a canonical export larger than the ordinary Control body cap (480.5097ms)
+✔ B09-03 HTTP export/import round trip is editor-only, CSRF protected, idempotent and never auto-publishes (617.2691ms)
+✔ B09-02 exact valid validation builds immutable real-release artifact and explicit empty plugin sidecar (105.4979ms)
+✔ B09-02 build idempotency replays exact release and rejects changed request identity (33.7249ms)
+✔ B09-02 old validation cannot certify a changed draft revision (30.1303ms)
+✔ B09-02 validation compiled hash is recomputed before release persistence (5.291ms)
+✔ B09-02 dice-check authored data requires installed compatible plugin and binds to final artifact hash (38.4692ms)
+✔ B09-02 stored-release preflight fails closed on artifact or authored-sidecar tampering (11.589ms)
+✔ B09-03 Control HTTP exports an exact inactive immutable release without moving publication (282.9052ms)
+✔ B09-02 publish preflights immutable release before moving current pointer and replays idempotently (46.4738ms)
+✔ B09-02 incompatible installed plugin build blocks publication without moving pointer (7.37ms)
+✔ B09-02 stale publish CAS loses and cannot overwrite newer current release (3.5609ms)
+✔ B09-02 rollback targets only previously published release and preserves immutable content (20.0753ms)
+✔ guest verifier is hashed at rest and another guest cannot mutate the session (174.5586ms)
+✔ oversize and malformed JSON are rejected before operation claim/Core execution (91.9517ms)
+✔ real SQLite write lock maps to HTTP 503 without Core execution or partial operation (95.0405ms)
+✔ T15 public boundary — guest-owned PlayerView is deny-by-default and cross-owner access is hidden (142.6947ms)
+✔ T15 retry — committed HTTP action replays byte-equivalent persisted payload without a second Core execution (100.1514ms)
+✔ HTTP processing/action-in-progress mapping and malformed transport never execute Core (79.6887ms)
+✔ T15 durable ownership/recovery — guest credential and committed response survive server/storage restart (68.1326ms)
+✔ B06-02 free text and legacy explicit input converge on the same Core result (162.8053ms)
+✔ B06-02 claim-before-AI makes free-text retry replay without a second provider/Core call (75.8941ms)
+✔ B06-02 clarification and unsupported finish without turn and preserve world revision/time/resources (83.5281ms)
+✔ B06-02 stale clarification is rejected before provider/Core execution (62.8891ms)
+✔ B06-02 valid clarification reference is checked against the stored no-turn operation (60.7886ms)
+✔ T16 malformed privileged model output exhausts bounded attempts and finishes without turn (51.6893ms)
+✔ T13 narrator failure falls back, commits Core exactly once, and idempotent retry replays narrative (150.2671ms)
+✔ B06-03 text intent and narrator share one deadline and narrator sees only bounded FactPacket (87.6576ms)
+✔ B07-04 committed response persists bounded presentation and idempotent replay returns exact identity (166.3731ms)
+✔ B07-04 presentation decoration never changes candidate gameplay state or creates presentation on no-turn outcomes (80.7306ms)
+ℹ tests 138
+ℹ suites 0
+ℹ pass 138
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5484.8977
+
+> sandboxengine@0.1.0 test:studio
+> npm run typecheck && node --test apps/studio/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B09-03 owner role PUT and member DELETE carry the in-memory CSRF proof (36.9084ms)
+✔ B09-03 Access renders owner controls only for other members, never self membership (2.616ms)
+✔ B09-03 Access probe distinguishes local owner from authenticated anonymous without guessing (33.5317ms)
+✔ B09-03 authenticated reload stays read-only until login returns a fresh in-memory CSRF proof (1.6539ms)
+✔ B09-03 owner member list is server-read; editor/tester never request owner-only members (1.1306ms)
+✔ B09-03 tester presentation has read/test semantics and no editor mutation capability (0.4418ms)
+✔ B09-03 Studio client keeps CSRF in memory and attaches it only after login (50.6179ms)
+✔ B09-03 Studio session read never invents mutation proof after reload (0.4707ms)
+✔ B09-03 Studio logout requires current in-memory CSRF and clears it only on success (0.6856ms)
+✔ B09-03 Studio clears stale mutation proof when server rejects the session (1.241ms)
+✔ M03 Studio proxy forwards asset headers and allows asset bodies past the JSON limit (79.1212ms)
+✔ B09-03 authenticated Studio round-trip preserves cookie, CSRF and canonical member reads (426.0403ms)
+✔ B10.a Studio author client keeps discovery read-only and sends CSRF/idempotency on mutations (57.0197ms)
+✔ B10.a real StudioApp mounts persistent assistant and routes server mutations (10.3257ms)
+✔ B10.a dev Studio composes durable SQLite author stores and the L03-L05 real provider stack (4.034ms)
+✔ B10.a busy Studio state removes new mutation triggers but keeps Stop available (1.1676ms)
+✔ B10.a terminal job cannot continue but can start a fresh server conversation (0.1654ms)
+✔ B10.a Studio job-scoped Apply sends no proposal content back from the browser (44.516ms)
+✔ B10.a Studio reload discovers latest server job, reads persisted chat and refreshes proposal preview (5.7728ms)
+✔ B10.a Studio renderer shows factual checkpoints and fresh Apply without invented progress percentage (0.9339ms)
+✔ B10.a stale or unavailable fresh preview removes Apply fail closed (0.5861ms)
+✔ B10.a renderer escapes conversation and missing-capability text (0.4083ms)
+✔ B10.a empty, paused and terminal UI expose only valid controls (0.4563ms)
+✔ L07 context overflow explains the corrective action instead of showing only an internal code (0.2028ms)
+✔ B05 canonical audit — fresh Studio author path reaches frozen P1/P2 Runtime/Core and static repeatable help (564.489ms)
+✔ T21 B09 full Studio author cycle reaches explicit owner publication without manual JSON (285.9698ms)
+✔ T22 B09 stale Studio editor conflict is visible, server-authoritative, and never silently overwrites (220.3829ms)
+✔ B10 acceptance: Studio assistant linked blocks -> Apply -> correction reply -> Apply -> frozen playtest without manual proposal JSON (382.2856ms)
+✔ inspector replacement preserves canonical fields and emits block.replace (1.6632ms)
+✔ inspector creates all supported canonical block kinds (0.4098ms)
+✔ inspector rejects invalid action and resource values before Control API (0.4775ms)
+✔ K01 lifecycle mounts once, updates model/selection without remounting, and preserves viewport (5.0578ms)
+✔ K01 lifecycle invalidates callbacks from the previous quest and destroys exactly once (0.291ms)
+✔ B13 board: draftToBoard создаёт узлы всех четырёх видов и entry-маркер на месте (1.7608ms)
+✔ B13 board: связи выводятся — character→location «Начинает здесь» и action→resource «Расходует» (0.2812ms)
+✔ B13 board: связи нет, когда цель отсутствует или initialLocationId = null (0.211ms)
+✔ B13 board: edgeToDraftChange возвращает block.replace с canonical полем, недопустимые связи — null (0.4029ms)
+✔ K04 board: fallback layout is deterministic and collision-aware across all block kinds (0.4423ms)
+✔ B13 board: сохранённая позиция из savedPositions переопределяет fallback (0.1888ms)
+✔ B13 board: пустой draft даёт пустую доску (0.0971ms)
+✔ B09-03 Studio stale conflict uses authoritative server comparison before explicit retry (39.9927ms)
+✔ B09-03 Studio stale conflict fails closed when comparison read is unavailable (0.5967ms)
+✔ C01: namespaced Studio entry is served (95.4555ms)
+✔ C02: board is a projection of the canonical draft (1.5293ms)
+✔ C03: all four supported canonical block factories preserve schema (0.2224ms)
+✔ C04: inspector edits emit full block.replace and retain untouched data (0.1946ms)
+✔ C05: allowed connections produce canonical replace changes (4.1598ms)
+✔ C06: unsupported connections are rejected (0.1327ms)
+✔ C07: edge geometry is deterministic and follows moved endpoints (0.2153ms)
+✔ C08: fallback layout has no collisions across supported kinds (0.2506ms)
+✔ C09: lifecycle keeps one renderer and viewport through updates (0.4057ms)
+✔ C10: BoardDocument starts separate from draft content (221.6667ms)
+✔ C11: BoardDocument CAS stores layout without changing draft revision (185.3573ms)
+✔ C12: BoardDocument idempotency replay and reuse are distinct (167.8013ms)
+✔ C13: authenticated role gate distinguishes read and write (360.1667ms)
+✔ C14: role is resolved from server session, not forged headers (0.3279ms)
+✔ C15: zoom is bounded and read-only-safe (0.1043ms)
+✔ C16: canonical draft has no layout fields (0.1842ms)
+✔ C17: full verify surfaces the existing independent suites (0.0796ms)
+﹣ C18: exact-SHA VPS smoke is executed only when explicitly requested (0.054ms) # SKIP
+✔ B09-03 Studio deletion preflight renders concrete typed references, green confirm, and stale fail-closed state (174.0562ms)
+✔ B09-03 deletion renderer never offers confirm for missing target (0.3873ms)
+✔ L01 local Control and Studio proxy fail closed for foreign origin, fake Host and oversized JSON (106.7173ms)
+✔ L06 full author cycle over the real HTTP adapter: settings -> linked blocks -> apply -> correction -> apply -> validate -> freeze -> Player paints with frozen rule (881.7857ms)
+✔ L05 Studio launch endpoint: guard, unknown id, serialized single launch, repeat reuses running player (159.6875ms)
+✔ L03 provider lifecycle: configure, safe status, failed update, rotation, disconnect, restart, turn states (101.2507ms)
+✔ B05-04 help vocabulary is static and limited to implemented B05 path (1.2746ms)
+✔ B05-04 tour state machine is deterministic, replayable, and supports back/skip (3.3432ms)
+✔ B05-04 completion preference is UI-only, optional, and failure-safe (0.2785ms)
+✔ B05-04 tour registry is pinned to real Studio anchors (13.8017ms)
+✔ B05-04 onboarding module has no network, Control, Runtime, Player, Core, provider, or LLM boundary (1.3783ms)
+✔ B05-04 static entry loads onboarding beside Studio on empty and quest workspaces (0.6676ms)
+✔ B05-03 Studio bridge freezes current validation and later draft edits cannot rewrite it (441.4622ms)
+✔ B05-03 Studio browser bundle exposes freeze/launch UI without embedding gameplay rules (192.659ms)
+✔ B09-03 Studio playtest evidence reads persisted Runtime trace without replay or secret leakage (436.9954ms)
+✔ B09-03 Studio portability client preserves exact export identity and creates only new drafts (344.5079ms)
+✔ B09-03 portability renderer exposes exact controls only to owner/editor and surfaces concrete server cause (0.7447ms)
+✔ M04 preview bridge: versions are pinned and frames fail closed (1.4554ms)
+✔ M04 preview host: mount/ready/post/destroy lifecycle with stale guards (0.4551ms)
+✔ B09-03 Studio proxy preserves session/CSRF/idempotency boundary without forwarding arbitrary headers (106.4461ms)
+✔ B09-03 publication renderer separates inert reports from server-confirmed receipts (13.1454ms)
+✔ B09-03 authenticated publication requires owner receipt, CAS and published rollback target (484.5101ms)
+✔ B09-03 Versions release build/report binds exact server truth and never claims publication early (1.3963ms)
+✔ B09-03 authenticated editor builds immutable release idempotently without publication pointer movement (390.5901ms)
+✔ B09-03 Versions restore UI requires explicit prepare -> confirm and fails closed when base becomes stale (1.255ms)
+✔ B09-03 authenticated Studio restore keeps CSRF/idempotency authority and never moves immutable release pointer (412.7659ms)
+✔ M05 screens: missing scene/ending has a stable editable default (1.6363ms)
+✔ M05 screens: save background/inherit/music in the correct scene or ending slot (0.3821ms)
+✔ M05 screens: layer transform is bounded and duplicate/missing layer operations fail closed (1.7334ms)
+✔ B05-02 compiled browser entry is actually served by Studio dev server (144.588ms)
+✔ M05 story board: scenes and endings become nodes, choices become labeled edges (2.1153ms)
+✔ M05 story board: saved positions win, fallback is deterministic per kind (1.0525ms)
+✔ M05 story board: dangling choice targets never become edges (0.2444ms)
+✔ M05 story mutations: add scene/ending/choice, duplicate ids rejected (0.7173ms)
+✔ M05 story mutations: remove node is fail-closed on entry and references (0.5111ms)
+✔ M05 story positions: story: prefix avoids block collisions (0.1839ms)
+✔ M05 story mutations: update node title/text, missing rejected (0.2632ms)
+✔ B05-02 regression — dev:studio process boots its real Control + Studio entrypoint (527.8974ms)
+✔ B05-02 Studio serves responsive human authoring surface through loopback proxy (160.4518ms)
+✔ B05-02 author path persists project -> quest -> resource -> paint cost=1 -> validation -> cost=2 (163.7645ms)
+✔ B05-02 stale save returns conflict, preserves server draft, and requires explicit retry (115.1535ms)
+✔ B05-02 Studio proxy refuses non-loopback Control origin (0.2868ms)
+✔ V01 project create/list/open cycle works with Studio-generated IDs (no user Technical ID) (213.0275ms)
+✔ V01 design tokens are present in Studio styles (1.1985ms)
+✔ V01 root entry paths are unchanged (6.0802ms)
+✔ V01 empty projects screen has AI prompt, honest paint note and blank-project start (0.8831ms)
+✔ V01 project cards open the project and show quest counts with roles (1.0881ms)
+✔ V01 new-project modal is 480px dialog without Technical ID (0.2389ms)
+✔ K02 editor keeps the board in the main workspace and moves utility panels behind the menu (0.5711ms)
+✔ B09-03 Studio Versions API reads canonical history and release routes (31.3757ms)
+✔ B09-03 Versions read model joins only server history and release truth (10.5137ms)
+✔ B09-03 Versions renderer escapes server text and reports read failure without inventing publication state (0.3281ms)
+ℹ tests 112
+ℹ suites 0
+ℹ pass 111
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 4805.968
+
+> sandboxengine@0.1.0 test:player
+> npm run typecheck && node --test packages/player/test/*.test.mjs apps/player/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ B05-03 Player UI serves human surface, safe metadata and the compiled RuntimePlayerClient (150.7615ms)
+✔ B05-03 Player proxy carries the exact RuntimePlayerClient create/action/reset path (97.5729ms)
+✔ B05-03 Player dev server refuses non-loopback exposure and non-loopback Runtime target (56.1409ms)
+✔ B05-03 dev:player process boots from a real durable frozen playtest and serves the authored cost (343.4823ms)
+✔ B07-04 presentation asset route requires guest auth and exact registered assetId+hash (173.0673ms)
+✔ B07-04 wrong credential and other frozen release cannot read this Player release asset (93.6132ms)
+✔ B07-04 valid optional presentation is deep-frozen and kept separate from structured gameplay (41.1422ms)
+✔ B07-04 malformed or authority-widened presentation is discarded without invalidating successful gameplay (0.8271ms)
+✔ B07-04 resume restores exact persisted frame from the last operation without replaying its plan (0.732ms)
+✔ B07-04 stale persisted presentation cannot overwrite a newer Runtime player revision (0.5789ms)
+✔ B07-04 arbitrary hashes and unregistered presentation commands are rejected at the client boundary (0.715ms)
+✔ B05-03 RuntimePlayerClient owns create/action/reset transport without client simulation (142.0983ms)
+✔ B06-03 RuntimePlayerClient exposes only validated optional narrative presentation (78.6935ms)
+✔ L05 launch: start, repeat returns same address, close releases, relaunch works (373.7684ms)
+✔ L05 launch refusals: unknown playtest and unsupported action count fail closed (292.5366ms)
+✔ B05-03 frozen bootstrap is deterministic and does not read current draft (10.0038ms)
+✔ B05-03 causal E2E — P1 cost=1, reset P1 stays cost=1, P2 cost=2 (212.2562ms)
+✔ B05-03 bootstrap rejects a broken frozen snapshot instead of repairing it (1.9652ms)
+✔ sequence order, parallel start semantics and final authoritative frame are deterministic (3.3104ms)
+✔ parallel siblings start before the group waits for all of them (7.3025ms)
+✔ skip/reduced-motion before playback execute no plan commands and restore exact target (0.7018ms)
+✔ skip during a blocking presentation wait cancels remaining effects and restores target (0.5233ms)
+✔ duplicate/reload/stale/conflict/gap never replay or invent presentation transitions (0.5701ms)
+✔ invalid/non-convergent plan is preflight rejected without partial renderer delivery (0.4032ms)
+✔ media/renderer failure degrades to direct frame restore and consumes the committed turn once (0.3918ms)
+✔ revealTextInstantly changes only presentation reveal policy (0.3001ms)
+✔ a slow old restore cannot overwrite a newer confirmed frame (1.2492ms)
+✔ cancelActive leaves the last confirmed frame intact and executor idle (0.3177ms)
+✔ runtime plan objects cannot widen the canonical per-command duration bound (1.1433ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 968.1064

@@ -1,0 +1,80 @@
+
+> sandboxengine@0.1.0 test:core
+> npm run typecheck && node --test packages/core/test/*.test.mjs
+
+
+> sandboxengine@0.1.0 typecheck
+> tsc -b
+
+✔ Core creates a minimal executed result (1.781ms)
+✔ Core rejects malformed or processing-only results (0.5086ms)
+✔ T01 core: request 8 with paint 2 resolves partial 2, -2 resource and 600 seconds (22.8411ms)
+✔ T01 core repeat with paint 0 is blocked without time or effects (5.1117ms)
+✔ sufficient resource resolves executed (1.2011ms)
+✔ partial-disabled action blocks instead of silently shrinking the request (3.631ms)
+✔ invalid intent or definition fails without calculated state (1.0902ms)
+✔ T05 NPC returns at 900 inside work to 2400 and later step sees new location (30.7131ms)
+✔ T06 completion at exact deadline uses canonical 20-before-100 priority and crosses midnight unambiguously (3.6465ms)
+✔ T08 self-generated immediate events hit one global step budget with no partial commit (1.3536ms)
+✔ same-time generated child cannot jump before its parent effective priority/sequence (4.8951ms)
+✔ B11 real Florence compiles through generic contracts and keeps six beats separate from clock (139.7983ms)
+✔ B11 Transfer Desk proves a different social/item causal shape with atomic blocking (15.1782ms)
+✔ B11 quest identities stay out of Core source (6.5722ms)
+✔ B11 second quest is not a Florence-shaped rename (114.8399ms)
+✔ compileQuest produces stable immutable artifacts for two domains (240.083ms)
+✔ meaningful content changes change the compiled hash (3.6139ms)
+✔ broken references and incompatible versions produce no artifact (3.9892ms)
+✔ canonicalStringify sorts object keys but preserves array order (0.2498ms)
+✔ known resource/entity/item conditions deterministically return true or false (57.8486ms)
+✔ composite conditions evaluate without eval and preserve boolean semantics (6.2797ms)
+✔ broken references are failures, not false, even after a false sibling (3.6356ms)
+✔ invalid condition shape is distinct from a valid condition that evaluates false (9.8424ms)
+✔ resource.change batch applies sequentially to a new state (19.4771ms)
+✔ valid item.transfer moves one unique item without mutating authoritative input (5.289ms)
+✔ entity.move changes exactly one existing entity location without mutating authoritative input (7.5489ms)
+✔ entity.move reference failure keeps an earlier mixed trial batch atomic (1.3525ms)
+✔ T07 mixed batch is atomic when item transfer fails after resource change (4.092ms)
+✔ failure in the second resource effect rejects the whole batch without partial state (2.5364ms)
+✔ missing references and unsupported effects fail without state (1.2769ms)
+✔ unsafe integer deltas are rejected before arithmetic (2.6275ms)
+✔ M02 mission execution: fork A and B reach different scenes (2.3541ms)
+✔ M02 mission execution: endings terminate, turn is not a scene index (0.3656ms)
+✔ M02 mission execution: wrong-scene choice is rejected, replay is deterministic (0.3204ms)
+✔ M02 mission execution: available choices report condition status (0.3709ms)
+✔ M02 mission execution: legacy sidecar beats become a linear mission story (0.1903ms)
+✔ same explicit seed and draw sequence is byte-for-byte reproducible (2.2778ms)
+✔ RNG uses explicit immutable state and reports invalid seed/bounds (0.263ms)
+✔ draw index overflow is explicit and no hidden process entropy is consulted (0.1672ms)
+✔ B03-02 due effect events observe chronological state and commit clock/revision once (7.3731ms)
+✔ later event failure rejects the whole scheduler transition without partial state (1.9319ms)
+✔ marker events are traced as due but remain state no-ops before final clock commit (1.4796ms)
+✔ zero-duration committed transition keeps clock but increments revision exactly once (0.9412ms)
+✔ pending events are returned unchanged and not applied prematurely (1.1877ms)
+✔ plan/state mismatch, malformed ordering and revision overflow fail before transition (0.9751ms)
+✔ B03 replay: same plan+seed yields identical ordered effects, final state and sha256 hash (19.347ms)
+✔ B03 replay fingerprint changes when meaningful RNG provenance/plan/result changes (3.6517ms)
+✔ B03-01 event inside a long action is planned before the action end (7.8584ms)
+✔ ordering is independent from input order and resolves ties by order then eventId (1.1984ms)
+✔ inclusive [start,end] boundary is explicit and future events stay pending (0.8889ms)
+✔ duration zero can plan an event due now but never consumes a future event (2.282ms)
+✔ past and duplicate events are explicit queue failures rather than silent skips (1.0987ms)
+✔ event limit fails the whole plan without exposing a partial due list (0.6166ms)
+✔ safe integer and bounded option failures are rejected before planning (0.6558ms)
+✔ invalid event shape is a failure, not an ignored queue entry (1.3729ms)
+✔ T02 request to leave a copy stays conditional and cannot reverse-transfer an item (18.7463ms)
+✔ T03 permission to relay a response remains permission, not a new request (1.6849ms)
+✔ T04 request remains pending until explicit accept/refuse response (1.8202ms)
+✔ social response must reference the concrete request and its addressee (3.0009ms)
+✔ missing social participants are resolution failures, not refusals (0.9622ms)
+✔ ScheduledTask projects canonical start/completion priorities with actor reference validation (5.7618ms)
+✔ deadline uses fixed priority 100, interrupts a planned 600-second action and skips later effects (2.0821ms)
+✔ terminal state blocks subsequent normal planning and application (1.1769ms)
+✔ deadline helper rejects malformed or noncanonical priority definitions (0.2004ms)
+ℹ tests 64
+ℹ suites 0
+ℹ pass 64
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 614.9321
