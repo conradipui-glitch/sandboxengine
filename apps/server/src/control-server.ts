@@ -914,23 +914,32 @@ async function routeControlRequest(
       sendJson(response, 400, { error: { code: "INVALID_PUBLISH_REQUEST" } });
       return;
     }
-    // The catalog record is written first: a failure there leaves the release
-    // pointer untouched. If the promotion then fails, the catalog is reverted
-    // so no path can observe a catalog pointing at a release that is not live.
-    const previousPublication = releases.publicationStore
-      ? await releases.publicationStore.getPublicationForQuest(projectId, questId)
-      : null;
-    const publication = await syncPublicationRecord(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth));
-    if (publication.kind === "source_stale") {
+    // A publish is staged, never compensated. The candidate catalog record is
+    // written durably but stays invisible (`beginPublicationCandidate`), the
+    // release pointer is promoted with its CAS check, and only a successful
+    // promotion commits the record. A rejected publish therefore leaves no
+    // trace: there is no window in which the catalog points at a release that
+    // is not live, and nothing has to be rolled back afterwards.
+    const staged = await beginPublicationCandidate(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth), "publish");
+    if (staged.kind === "source_stale") {
       sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
       return;
     }
-    if (publication.kind === "bundle_unavailable") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
+    if (staged.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: staged.code } });
       return;
     }
-    if (publication.kind === "conflict") {
+    if (staged.kind === "store_failure") {
+      // The catalog could not be written, so the release pointer must not move.
+      sendJson(response, 500, { error: { code: "PUBLICATION_STORE_UNAVAILABLE" } });
+      return;
+    }
+    if (staged.kind === "conflict") {
       sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
+      return;
+    }
+    if (staged.kind === "replay") {
+      sendJson(response, 200, { publication: { kind: "replay" }, catalog: publicPublicationView(staged.record) });
       return;
     }
     const result = await publishControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
@@ -943,19 +952,19 @@ async function routeControlRequest(
       idempotencyKey
     });
     const promoted = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay";
-    if (!promoted) {
-      await revertPublicationRecord(
-        releases,
-        projectId,
-        questId,
-        previousPublication,
-        publication.kind === "published" || publication.kind === "replay" ? publication.record : null,
-        idempotencyKey
-      );
-    }
-    if (promoted && (publication.kind === "published" || publication.kind === "replay")) {
-      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
+    if (promoted && staged.kind === "ready") {
+      const committed = await commitPublicationCandidate(releases, projectId, questId, staged.operationKey, releaseNowMs(releases, auth));
+      if (!committed) {
+        sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
+        return;
+      }
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(committed) });
       return;
+    }
+    if (!promoted && staged.kind === "ready") {
+      // Nothing became visible, so abandoning the staged record restores exactly
+      // the state the caller started from.
+      await abortPublicationCandidate(releases, projectId, questId, staged.operationKey, releaseNowMs(releases, auth));
     }
     if (promoted) {
       sendJson(response, 200, { publication: result });
@@ -1000,6 +1009,26 @@ async function routeControlRequest(
       sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: preflight.code } });
       return;
     }
+    // The catalog change is staged before the pointer moves: a rollback that
+    // cannot write the catalog record must leave the release pointer exactly
+    // where it was, the same way a rejected publish does.
+    const publication = await beginPublicationCandidate(releases, missionStore, projectId, questId, body.targetReleaseId, idempotencyKey, releaseNowMs(releases, auth), "rollback", preflight.kind === "resolved" ? preflight : undefined);
+    if (publication.kind === "conflict" || publication.kind === "source_stale") {
+      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
+      return;
+    }
+    if (publication.kind === "store_failure") {
+      sendJson(response, 500, { error: { code: "PUBLICATION_STORE_UNAVAILABLE" } });
+      return;
+    }
+    if (publication.kind === "replay") {
+      sendJson(response, 200, { publication: { kind: "replay" }, catalog: publicPublicationView(publication.record) });
+      return;
+    }
     const result = await rollbackControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
       projectId,
       questId,
@@ -1009,22 +1038,20 @@ async function routeControlRequest(
       createdAtMs: releaseNowMs(releases, auth),
       idempotencyKey
     });
-    const publication = result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay"
-      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth), preflight.kind === "resolved" ? preflight : undefined)
-      : { kind: "not_attempted" as const };
-    if (publication.kind === "conflict" || publication.kind === "source_stale") {
-      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+    if (publication.kind === "ready" && (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay")) {
+      const committed = await commitPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
+      if (!committed) {
+        sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
+        return;
+      }
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(committed) });
       return;
     }
-    if (publication.kind === "bundle_unavailable") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
-      return;
+    if (publication.kind === "ready") {
+      await abortPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
     }
-    if (publication.kind === "published" || publication.kind === "replay") {
-      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
-      return;
-    }
-    if (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay") {
+    if (publication.kind === "not_attempted" && (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay")) {
+      // Without a catalog store there is nothing to stage.
       sendJson(response, 200, { publication: result });
     } else if (result.kind === "release_not_found") {
       sendNotFound(response);
@@ -1558,7 +1585,23 @@ type ResolvedReleaseBundle = {
   readonly bundleHash: string;
 };
 
-async function syncPublicationRecord(
+type PublicationStaging =
+  | { readonly kind: "ready"; readonly operationKey: string }
+  | { readonly kind: "replay"; readonly record: ControlPublicationRecord }
+  | { readonly kind: "source_stale" | "not_attempted" }
+  | { readonly kind: "bundle_unavailable"; readonly code: string }
+  | { readonly kind: "store_failure" }
+  | { readonly kind: "conflict" };
+
+/**
+ * Stages a catalog change without making it visible.
+ *
+ * The candidate record is written durably as a pending publication operation,
+ * so an interrupted publish survives a restart and can be committed or
+ * abandoned later, while the public catalog still serves exactly what it served
+ * before. Visibility only changes in `commitPublicationCandidate`.
+ */
+async function beginPublicationCandidate(
   releases: ControlReleaseModeOptions,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
   projectId: string,
@@ -1566,12 +1609,9 @@ async function syncPublicationRecord(
   releaseId: string,
   idempotencyKey: string,
   publishedAtMs: number,
+  kind: "publish" | "rollback",
   preResolved?: ResolvedReleaseBundle
-): Promise<
-  | { readonly kind: "published" | "replay"; readonly record: ControlPublicationRecord }
-  | { readonly kind: "source_stale" | "conflict" | "not_attempted" }
-  | { readonly kind: "bundle_unavailable"; readonly code: string }
-> {
+): Promise<PublicationStaging> {
   const publicationStore = releases.publicationStore;
   if (!publicationStore) return { kind: "not_attempted" };
   const release = await releases.store.getRelease(projectId, questId, releaseId);
@@ -1581,7 +1621,7 @@ async function syncPublicationRecord(
   // and the digests of the assets that revision references. Resolving through
   // the pin is what makes rollback truthful — the catalog is repointed, the
   // content behind it is not re-read from the latest draft.
-  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing);
+  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing, kind);
   if (resolved.kind !== "resolved") return resolved;
   const { mission, bundleHash } = resolved;
   const record: ControlPublicationRecord = {
@@ -1599,13 +1639,64 @@ async function syncPublicationRecord(
     listing: mission.listing,
     publishedAtMs
   };
-  const result = await publicationStore.publish({
-    record,
-    idempotencyKey: `catalog-${idempotencyKey}`.slice(0, 200),
-    requestHash: bundleHash
+  const operationKey = `catalog-${idempotencyKey}`.slice(0, 200);
+  const begun = await publicationStore.beginPublicationOperation({
+    operation: {
+      schemaVersion: "1.0",
+      projectId,
+      questId,
+      operationKey,
+      kind,
+      requestHash: hashControlOpaqueSecret(`${bundleHash}\u0000${releaseId.slice(0, 120)}`),
+      targetReleaseId: releaseId,
+      candidate: record,
+      state: "pending",
+      startedAtMs: publishedAtMs,
+      finishedAtMs: null
+    }
   });
-  if (result.kind === "published" || result.kind === "replay") return { kind: result.kind, record: result.publication };
-  return { kind: "conflict" };
+  if (begun.kind === "invalid_request") return { kind: "store_failure" };
+  if (begun.kind === "operation_conflict") return { kind: "conflict" };
+  if (begun.kind === "replay") {
+    // The same request already finished: there is nothing left to do, and the
+    // answer must name the content that is actually live.
+    return begun.operation.state === "committed"
+      ? { kind: "replay", record: begun.operation.candidate }
+      : { kind: "ready", operationKey };
+  }
+  return { kind: "ready", operationKey };
+}
+
+/** Publishes the staged record, atomically with marking the operation committed. */
+async function commitPublicationCandidate(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  operationKey: string,
+  committedAtMs: number
+): Promise<ControlPublicationRecord | null> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return null;
+  const result = await publicationStore.commitPublicationOperation({ projectId, questId, operationKey, committedAtMs });
+  if (result.kind === "committed" || result.kind === "replay") return result.publication;
+  return null;
+}
+
+/** Abandons a staged record. It was never visible, so there is nothing to undo. */
+async function abortPublicationCandidate(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  operationKey: string,
+  abortedAtMs: number
+): Promise<void> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return;
+  try {
+    await publicationStore.abortPublicationOperation({ projectId, questId, operationKey, abortedAtMs });
+  } catch {
+    // The staged record was never visible; a stuck operation is recoverable.
+  }
 }
 
 /**
@@ -1759,44 +1850,6 @@ async function resolveReferencedAssets(
   return Object.freeze(assets
     .filter((asset) => referenced.has(asset.assetId))
     .map((asset) => Object.freeze({ assetId: asset.assetId, hash: asset.hash })));
-}
-
-/**
- * Compensating revert of the catalog pointer when the release promotion fails
- * after the catalog record was already written.
- */
-async function revertPublicationRecord(
-  releases: ControlReleaseModeOptions,
-  projectId: string,
-  questId: string,
-  previous: ControlPublicationRecord | null,
-  written: ControlPublicationRecord | null,
-  idempotencyKey: string
-): Promise<void> {
-  const publicationStore = releases.publicationStore;
-  if (!publicationStore) return;
-  try {
-    if (previous) {
-      await publicationStore.publish({
-        record: { ...previous, status: "published" },
-        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
-        requestHash: previous.contentHash
-      });
-      return;
-    }
-    if (written) {
-      await publicationStore.unpublish({
-        publicMissionId: written.publicMissionId,
-        expectedReleaseId: written.releaseId,
-        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
-        requestHash: written.contentHash
-      });
-    }
-  } catch {
-    // The revert is best effort: the caller still reports the original failure.
-  }
-  void projectId;
-  void questId;
 }
 
 function publicPublicationView(record: ControlPublicationRecord): object {

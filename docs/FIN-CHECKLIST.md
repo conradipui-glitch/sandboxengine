@@ -7,7 +7,7 @@
 |---|---|---|---|---|
 | FIN-00 контекст и карта | — | LOCAL_PASS | этот файл + SHA ниже | — |
 | FIN-01 неизменяемый bundle и rollback | B02, M01/M06 | LOCAL_PASS | `apps/server/test/fin01-release-bundle.test.mjs` 5/5 (до фикса 0/5); Control 106/106, Server 138/138 | hosted-проверка после доставки |
-| FIN-02 согласованная публикация/повтор | B03, M06 | TODO | `m06-publish-sync.test.mjs`, `m06-public-catalog.test.mjs` (MemoryStore) — реальная SQLite не покрыта | транзакция/операция pending→committed, CAS+idempotency receipt, SQLite-тесты |
+| FIN-02 согласованная публикация/повтор | B03, M06 | LOCAL_PASS | `apps/server/test/fin02-publication-atomicity.test.mjs` 3/3 (до фикса — 1/3: `published` вместо `unlisted`); staged-операции в Memory и SQLite; Control 106/106, Server 141/141, Contracts 57/57, Studio 112 | hosted-проверка после доставки |
 | FIN-03 старые сессии сохраняют ассеты | B04, M03/M06 | TODO | ассеты привязаны к текущей публикации | доступ к ассетам версии через session binding + immutable published objects |
 | FIN-04 доставка всех компонентов | B01, R04 | PARTIAL | engine exact-SHA `7e61f98` + supervised `lhc-authored` доставлены (2026-09-11) | B01: Studio `main.ts` держит собственный Control-писатель и публикацию-store; нужен manifest версий процессов/образов и проверка, что старый Control не пишет в общую БД |
 | FIN-05 экраны и ручная композиция | M03–M05, F05 | TODO | общий renderer подключён, композиция слоёв не закрыта | слои/transform/анимация/аудио, 3 сцены + 2 финала не-Florence |
@@ -33,6 +33,7 @@
 ## Не проверено / блокеры
 
 - FIN-01: hosted-проверка rollback требует доставки новой ревизии engine на стенд (не выполнялось в этой карточке).
+- FIN-02: невидимость кандидата до commit и восстановление после падения проверены unit-тестами; hosted-проверка (перезапуск процесса с pending-операцией) не выполнялась, recovery-API пока не подключён к маршруту.
 - FIN-01 известное ограничение: bundle фиксируется при **сборке релиза** (HTTP-маршрут build) или, если pin отсутствует, при первой публикации; релизы, собранные до этой правки, остаются без pin — их mapping берётся из записи публикации, а при невозможности доказать ревизию публикация/rollback отказывают (`LEGACY_PIN_UNPROVABLE`), а не подставляют latest draft.
 - FIN-05/FIN-06: живые роли C18 требуют приглашённых Telegram-аккаунтов; gate не ослаблять.
 - FIN-04: production-канал и рестарт gate/блога/Ивы без явного разрешения владельца не выполняются.
