@@ -20,6 +20,18 @@
 | Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | Release | **`v0.1.0` published** | tag resolves exactly to `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; main CI #729 success |
 | B13 Builder/deployment | **B13.0–B13.c1 GREEN (adapters) / приёмка живых dispatch отдельно** | policy + read-only clone + bounded patch executor + authorized change set w/ exact-SHA CI check + preview adapter + production policy/lost-response reconciliation/verified rollback; live dispatches pending operator |
+| M06 mission→site publication | **PARTIAL** | R01–R03 (F01–F06) исправлены и покрыты тестами локально; F07/R04, повторная exact-SHA доставка, live-проход двух миссий и C18 — открыты. См. `docs/HANDOFF.md` |
+
+## M06 publication route — текущее состояние (2026-09-11)
+
+Независимая проверка зафиксировала семь дефектов; шесть исправлены локально с регрессионными тестами:
+
+- **F01/F02/F03 (P1)** — `5475da0`: публичный контент и открытые сессии разрешаются по неизменяемому `contentRevision`, публикация новой ревизии перекрепляет каталог, каталог пишется до release pointer с компенсирующим откатом, unpublish блокирует только новые запуски.
+- **F04 (P1)** — site `f7f1233`: финал сохраняется в binding, GET реконсилируется с движком.
+- **F05/F06 (P1/P2)** — site `db7cbe8` + engine `8ebe741`: авторский frame (фон, слои, диалоги, варианты, финал) строится из pinned-ревизии и рендерится общим mission renderer; published namespace не уходит в legacy, сбой каталога даёт 5xx, legacy-карточки остаются в каталоге; ассеты pinned-ревизии отдаются публично.
+- **F07 (P1) — НЕ исправлено**: authored-runtime остаётся ручным процессом вне compose, healthcheck проверяет только 8742, конфигурация лежит в `/tmp`.
+
+M06 не считается завершённым: нужны R04 (управляемый service + вынос конфигурации), exact-SHA доставка, live-проход и C18.
 
 ## Published B12 result
 

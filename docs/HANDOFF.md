@@ -2,10 +2,42 @@
 
 Обновлено: 2026-09-11
 
-Текущий блок: **M06 hosted acceptance DONE: обе тестовые миссии созданы в Studio, опубликованы, сыграны через generic catalog/BFF, unpublish и legacy-регрессия проверены. OPEN: C18 ролевые проверки editor/viewer.**
+Текущий блок: **M06 PARTIAL (независимая проверка + корректирующие R01–R03 выполнены локально). OPEN: R04 воспроизводимое размещение (F07), повторная доставка exact-SHA и live-приёмка, R05 закрытие, C18 ролевые проверки.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
-## M06 hosted acceptance (2026-09-11)
+## Независимая проверка M06 и корректирующие работы (2026-09-11)
+
+Внешний аудит признал предыдущий отчёт о завершении M06 недействительным: hosted happy-path работал, но полная приёмка не проходила. Все семь дефектов воспроизведены регрессионными тестами и исправлены, кроме F07.
+
+| Дефект | Severity | Исправление | Проверка |
+|---|---|---|---|
+| F01 сохранение черновика ломает опубликованную игру | P1 | `5475da0` | `apps/server/test/m06-immutable-release.test.mjs` 4/4 |
+| F02 неуспешная публикация частично меняет состояние | P1 | `5475da0` | там же (каталог пишется до указателя, откат при отказе promotion) |
+| F03 unpublish убивает начатую игру | P1 | `5475da0` | там же |
+| F04 финал теряется при reload сайта | P1 | site `f7f1233` | `src/worker/public-mission-recovery.test.ts`, `b11-public-route.test.ts` |
+| F05 опубликованные миссии не идут через общий renderer | P1 | site `db7cbe8` + engine `8ebe741` | `frame-build.test.ts`, `published-mission-stage.test.tsx`, `b11-public-route.test.ts` |
+| F06 отсутствующая миссия падает в legacy, каталог теряет legacy-карточки | P2 | site `db7cbe8` | `b11-catalog-route.test.ts` 4/4 |
+| F07 authored-runtime не восстановится штатным перезапуском | P1 | **НЕ исправлено** | — |
+
+Ключевые решения:
+
+- Опубликованный контент и открытая сессия разрешаются по неизменяемому `contentRevision` (`getMissionAtRevision`), а не по latest draft; сессия создаётся с явным pin.
+- Публикация новой версии перекрепляет каталог (`draftRevision`/`draftContentHash` = текущая авторская ревизия) вместо отказа `PUBLICATION_SOURCE_STALE`; stable id/slug сохраняются.
+- `contentHash` каталога — bundle-identity: renderer contract + авторский `missionContentHash` (story, screens, listing, defaults) + дайджесты используемых ассетов. Quest-board compile hash намеренно не используется как идентичность MissionDraft.
+- Каталог пишется до release pointer; при отказе promotion выполняется компенсирующий откат каталога.
+- Continuation игры не требует активной публикации: unpublish блокирует только новые запуски.
+- Терминал (финал) хранится в binding, GET реконсилируется с движком — потерянная запись DO самоизлечивается.
+- Публичные ассеты опубликованной ревизии отдаются по `/public/v1/missions/:id/assets/:assetId`; при unpublish отзываются; всё, что ревизия не упоминает, остаётся приватным.
+
+Регрессия после R01–R03 (Node 24.19.0):
+
+- Engine `npm run build` (tsc -b) — exit 0;
+- Control 106/106, Server 133/133, Contracts 57/57, fail 0;
+- Site `npm run check` — exit 0; Vitest 18 файлов / 82 теста, fail 0; production build — exit 0.
+
+Не выполнено в этом этапе (честно): F07/R04 (отдельный управляемый authored-service, healthcheck, вынос `/tmp`-конфигурации), повторная доставка новых SHA на VPS, браузерный проход двух непохожих миссий на живом сайте, C18 ролевые входы. M06 остаётся PARTIAL до live-подтверждения.
+
+## M06 hosted acceptance (2026-09-11, до независимой проверки)
 
 - SSH восстановлен из проектных данных: ключ [REDACTED], host 85.137.95.104, port 48176, user root; ключи для root без порта 48176 не работают — отказ «ключей root» был следствием неверного порта.
 - Engine доставлен на `b1546dad200aa9995b0b1d98bbabad20047b19e7` (M06 `df07f5f` + hosted-фиксы `4fdfd74`, `b1546da`), worktree чист.
