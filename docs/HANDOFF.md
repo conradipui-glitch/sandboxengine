@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **M04 DONE (shared renderer + preview bundle + Studio host). Следующее: M05 — сюжетная доска и редактор экранов. OPEN: engine deploy на VPS и ролевые C18-проверки.**
+Текущий блок: **M05 DONE локально + BROWSER/LOCAL (story board + screen editor). Следующее: M06 — публикация и generic site catalog/BFF. OPEN: engine deploy на VPS и ролевые C18-проверки.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -211,4 +211,4 @@ Blocking item: role-separated checks (editor/viewer/read-only) need their own Te
 - Validation: «Revision 5 валидна. Можно заморозить playtest», «Квест готов».
 - Player: frozen `playtest-3` (revision 5, compiled `6243bb1…1288fb`); VPS loopback `http://127.0.0.1:8745` → **200**.
 
-Следующее: M05 — сюжетная доска и редактор экранов.
+Следующее: M06 — публикация и generic site catalog/BFF.

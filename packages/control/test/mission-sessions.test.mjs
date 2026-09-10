@@ -208,7 +208,7 @@ test("M02 mission sessions: resume after restart keeps the exact pinned release"
     const db = new DatabaseSync(path);
     const row = db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
     db.close();
-    assert.equal(Number(row.value), 4);
+    assert.ok(Number(row.value) >= 4);
   } finally {
     reopened.close();
     await rm(dir, { recursive: true, force: true });

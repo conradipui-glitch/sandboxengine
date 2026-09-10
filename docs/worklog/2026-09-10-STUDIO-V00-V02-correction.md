@@ -220,3 +220,16 @@ Next blocking item: editor/viewer/read-only checks need separate Telegram-gate s
 - Suites: site 58/58 (tsc clean), studio 101+1 skip; typecheck engine exit 0.
 - Синхронизация версий: `MISSION_RENDERER_VERSION=1.0.0` + `PREVIEW_BRIDGE_VERSION=1` одинаковы в обоих репозиториях на этих commit; смена — только парой с записью в worklog.
 - `tsconfig.worker.json` получил `jsx: react-jsx` (shared .tsx в include).
+
+## M05 — story board + screen editor — DONE локально + BROWSER/LOCAL
+
+- Studio получает `ControlApiClient.getMission/saveMission`: GET/POST canonical `MissionDraft` через существующий CAS/idempotency endpoint; клиент использует `saved.mission.contentRevision`, а не выдуманное поле response.
+- `apps/studio/src/story-model.ts`: чистая проекция `MissionDraft.story` → scene/ending nodes и choice edges; deterministic fallback positions; `story:`-префикс layout-позиций не смешивает content с BoardDocument; мутации scene/ending/choice/update/delete fail-closed.
+- `apps/studio/src/story-dom.ts`: отдельный SVG/DOM story renderer с подписанными стрелками, connect mode, drag/fit/zoom/pan, selection lifecycle; read-only отключает drag, связи и кнопку «Связать».
+- `apps/studio/src/screen-model.ts`: canonical `screens.scenes/endings`, background/inherit/music, layer add/remove и bounded transform/asset validation.
+- `app.ts`: вкладка «Сюжет», mission create с минимально проходимым entry→ending графом, inspector текста/выборов, undo через новую revision, screen editor для каждого scene/ending (background asset ref + layers).
+- RED/GREEN: `screen-model.test.mjs` сначала получил ожидаемый `ERR_MODULE_NOT_FOUND`; после реализации — **3/3**. Story model — **7/7**. `npm run typecheck` через Node 24.19.0 — exit 0.
+- Browser route на чистой локальной SQLite/Chrome: mission create → scene add → 2 choice edges → text edit, server read-back revision `4`/hash/text, reload/reopen восстановил 3 nodes + 2 edges.
+- Browser screen route: background asset ref сохранён Revision `5`, layer transform сохранён Revision `6`; server read-back подтвердил `background`, `inherit=false`, layer `x=.4,y=.6,scale=1.2,opacity=.8,z=3`; reload восстановил hash и 1 layer.
+- `node@24.19.0 --test apps/studio/test/*.test.mjs` — **111 pass, 0 fail, 1 skip (C18)**. `packages/control + apps/server + packages/contracts` — **286/286**. Полный `npx --yes -p node@24.19.0 -p npm@11.9.0 -c "npm run verify"` — exit 0.
+- No VPS deploy in M05. M06 starts with publication record/release wiring and generic site catalog/BFF; role-separated C18 Telegram sessions remain OPEN.

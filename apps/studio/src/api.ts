@@ -1,4 +1,4 @@
-import type { Block, JsonValue } from "@living-history/contracts";
+import type { Block, JsonValue, MissionDraft } from "@living-history/contracts";
 import type {
   AuthorAgentCheckpoint,
   AuthorAgentJobRecord,
@@ -509,6 +509,34 @@ export class ControlApiClient {
       { idempotencyKey: createClientIdempotencyKey() }
     );
     return body.board;
+  }
+
+  async getMission(projectId: string, questId: string): Promise<MissionDraft | null> {
+    try {
+      const body = await this.request<{ readonly mission: MissionDraft }>(
+        "GET",
+        `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/mission`
+      );
+      return body.mission;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async saveMission(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    mission: MissionDraft
+  ): Promise<{ readonly mission: MissionDraft; readonly replay?: boolean }> {
+    const body = await this.request<{ readonly mission: MissionDraft; readonly replay?: boolean }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/mission`,
+      { baseRevision, mission },
+      { idempotencyKey: createClientIdempotencyKey() }
+    );
+    return body;
   }
 
   async getDraft(projectId: string, questId: string): Promise<DraftView> {
