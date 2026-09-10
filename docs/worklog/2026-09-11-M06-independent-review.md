@@ -45,19 +45,35 @@
 
 ## Регрессия (Node 24.19.0)
 
+Все прогоны — Node `24.19.0` (portable, `%TEMP%
+ode-v24.19.0-win-x64`), npm `11.17.0`. Hermes-овский Node `v22.23.2` даёт ложное падение `C17` (проверка `process.version`), поэтому для отчёта он не использовался.
+
 | Проверка | Команда | Результат |
 |---|---|---|
 | Engine typecheck/build | `npm run build` | exit 0 |
 | Control | `npm run test:control` | 106/106, fail 0 |
 | Server | `npm run test:server` | 133/133, fail 0 |
 | Contracts | `npm run test:contracts` | 57/57, fail 0 |
+| Studio | `npm run test:studio` | 111 pass, 0 fail, 1 skip (C18 требует `CORRECTION_VPS_URL`) |
+| M06 focused (engine) | `node --test m06-immutable-release / m06-public-asset / m06-publish-sync / m06-public-runtime / m06-public-catalog` | 4 + 1 + 3, fail 0 |
 | Site typecheck | `npm run check` | exit 0 |
 | Site tests | `npx vitest run` | 18 файлов, 82/82, fail 0 |
 | Site build | `npm run build` | exit 0 |
 
+## R04 — воспроизводимое размещение (F07), commit `9c0d2a5`
+
+Кандидат подготовлен, live-рестарт не выполнялся.
+
+- `deploy/vps/docker-compose.yml`: добавлен сервис `authored` (`lhc-authored`) с `restart: unless-stopped`, `working_dir: /engine`, `command: node /engine/deploy/vps/authored-server.mjs`, собственным healthcheck на `127.0.0.1:8746/healthz` и общим томом `engine-data`. Раньше runtime :8746 запускался вручную через `docker exec -d`, поэтому пересоздание `lhc-engine` его теряло (nginx начинал отдавать 502).
+- `engine` получает `LH_PUBLIC_MISSION_SESSION_SECRET` из `deploy/vps/.env` через `--env-file` вместо `/tmp/lhc-m06-compose-override.yml` (файл 0644 в `/tmp`, не переживал перезагрузку и был читаем локальным пользователям).
+- `deploy/vps/authored-server.mjs`: `MemoryPublishedSessionBindingStore` → `SQLitePublishedSessionBindingStore` (+ закрытие на shutdown), поэтому перезапуск контейнера больше не теряет начатую legacy authored-сессию. Долговечность этого стора уже покрыта `apps/server/test/published-runtime-restart.test.mjs`.
+- `docs/RUNBOOK.md` §15: состав сервисов, где лежит конфигурация, процедура восстановления после пересоздания контейнера и план отката.
+
+Проверка кандидата: `docker-compose.yml` разобран парсером — 4 сервиса, команда и healthcheck `authored` на месте, интерполяция секрета присутствует; полный lifecycle (`compose up` с нуля, restart, reload) требует VPS и не выполнялся.
+
 ## Открыто
 
-- **F07/R04** — не исправлено: authored-runtime вне compose (запускается вручную `docker exec -d ... authored-server.mjs`), healthcheck только на 8742, конфигурация в `/tmp/lhc-m06-compose-override.yml` (0644). Нужен управляемый сервис с restart policy, свой healthcheck, перенос конфигурации в защищённое штатное размещение и durable binding вместо memory.
+- **F07/R04** — кандидат готов (см. выше), но live lifecycle не прогонялся: сервис `authored` не поднимался на VPS, `compose up` с нуля, restart и reload на стенде не проверялись. Секрет всё ещё существует в `/tmp/lhc-m06-compose-override.yml` до доставки нового compose и переноса значения в `deploy/vps/.env`.
 - Повторная exact-SHA доставка engine/site и live-приёмка (два браузерных прохода, unpublish, каталог) — не выполнялись.
 - C18 editor/viewer/read-only — нужны отдельные Telegram-аккаунты; локальные серверные проверки разрешений не подменяют живой вход.
 - M06 — **PARTIAL**, не завершён.

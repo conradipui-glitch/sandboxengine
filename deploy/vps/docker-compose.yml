@@ -13,6 +13,9 @@ services:
       - CONTROL_AUTH_MODE=authenticated
       - CONTROL_SECURE_COOKIES=true
       - RUNTIME_DB_PATH=/data/living-history.sqlite
+      # Public mission sessions are derived from this secret; it comes from
+      # deploy/vps/.env (never committed) via --env-file, not from /tmp.
+      - LH_PUBLIC_MISSION_SESSION_SECRET=${LH_PUBLIC_MISSION_SESSION_SECRET}
     volumes:
       - engine-data:/data
     healthcheck:
@@ -20,6 +23,33 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # Legacy authored scenario runtime (:8746). It used to be a manual
+  # `docker exec -d` process outside compose, so a container recreate silently
+  # dropped it and nginx started answering 502.
+  authored:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.engine
+    container_name: lhc-authored
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /engine
+    command: ["node", "/engine/deploy/vps/authored-server.mjs"]
+    environment:
+      - AUTHORED_PORT=8746
+      - AUTHORED_DB_PATH=/data/living-history.sqlite
+    volumes:
+      - engine-data:/data
+    depends_on:
+      engine:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8746/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   studio:
     build:
