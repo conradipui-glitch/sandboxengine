@@ -213,6 +213,12 @@ async function routeControlRequest(
   const method = String(request.method ?? "GET").toUpperCase();
   const url = new URL(String(request.url ?? "/"), "http://control.local");
   const isPublicMissionEndpoint = url.pathname.startsWith("/public/v1/missions");
+  // Public identifiers (e.g. `mission:project:quest`) arrive percent-encoded from
+  // HTTP clients; match public routes against the decoded form.
+  let publicPathname = url.pathname;
+  if (isPublicMissionEndpoint) {
+    try { publicPathname = decodeURIComponent(url.pathname); } catch { publicPathname = url.pathname; }
+  }
 
   if (!isPublicMissionEndpoint && !auth && !isAllowedLocalHttpRequest(request)) {
     sendJson(response, 403, { error: { code: "CONTROL_LOCAL_ORIGIN_DENIED" } });
@@ -231,7 +237,7 @@ async function routeControlRequest(
     }
   }
 
-  const publicMissionMatch = /^\/public\/v1\/missions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(url.pathname);
+  const publicMissionMatch = /^\/public\/v1\/missions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(publicPathname);
   if (method === "GET" && releases?.publicationStore && publicMissionMatch) {
     if (url.searchParams.size !== 0) {
       sendJson(response, 400, { error: { code: "INVALID_PUBLIC_CATALOG_REQUEST" } });
@@ -249,7 +255,7 @@ async function routeControlRequest(
     return;
   }
 
-  const publicSessionMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})(\/turns)?)?$/.exec(url.pathname);
+  const publicSessionMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})(\/turns)?)?$/.exec(publicPathname);
   if (publicSessionMatch && releases?.publicationStore && missionStore) {
     await routePublicMissionSession(request, response, method, publicSessionMatch, releases, missionStore);
     return;
