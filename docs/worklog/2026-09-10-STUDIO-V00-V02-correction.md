@@ -61,3 +61,22 @@ K01: добавить failing lifecycle regression against the actually mounted 
 ## C01–C18 preliminary status
 
 Все C01–C18: **OPEN** на входе; existing model tests are not counted as acceptance evidence.
+
+## K02 — доска как главный экран — DONE
+
+- `.ed-shell` занимает viewport; библиотека `240px`, inspector `336px`, центральная область и внутренние панели прокручиваются отдельно.
+- Validation перенесена внутрь центральной области; `ed-bottom` и основной поток versions/portability убраны.
+- Меню `…` открывает «История версий», «Импорт и экспорт», «Настройки проекта и доступа».
+- Inspector по умолчанию — «Свойства карточки» с подсказкой «Выберите карточку на доске»; доступ и ID перенесены в настройки.
+- Вкладка помощника подписана «ИИ-помощник»; видимый переключатель один: «Доска / Список».
+- Добавлена единая primary/secondary button system и responsive CSS с доступным inspector на 360px.
+- STATIC: Node 24.19.0 `npm run typecheck` exit 0; Studio suite `78/78`.
+- BROWSER/LOCAL: отдельная SQLite и чистый Chrome с CDP; через реальный DOM click создан throwaway project/quest. После открытия квеста `data-board-host=true`; меню, History и Portability открылись, доска оставалась в DOM.
+
+### R status after K02
+
+- R01 **DONE локально** (K01; browser lifecycle C09 ещё открыт).
+- R02 **DONE локально + BROWSER/LOCAL**, VPS для candidate ещё не обновлён.
+- R03/R04/R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+
+Следующая точная операция: K03 — настоящий canonical inspector и создание/редактирование всех четырёх типов.

@@ -189,7 +189,7 @@ test("V01 new-project modal is 480px dialog without Technical ID", async () => {
   assert.ok(!root.innerHTML.includes("Technical ID"), "modal has no Technical ID field");
 });
 
-test("V01 editor shell has 60px topbar, 240px library, inspector tabs and bottom check panel", async () => {
+test("K02 editor keeps the board in the main workspace and moves utility panels behind the menu", async () => {
   const projects = [{ projectId: "p-one", title: "Первая история", role: "owner" }];
   const { app, root } = await bootStudio({ projects, questsByProject: { "p-one": [] } });
   await app.openProject("p-one");
@@ -210,9 +210,12 @@ test("V01 editor shell has 60px topbar, 240px library, inspector tabs and bottom
   assert.match(root.innerHTML, /ed-library/);
   assert.match(root.innerHTML, /Библиотека/);
   assert.match(root.innerHTML, /Свойства/);
-  assert.match(root.innerHTML, /Соавтор/);
-  assert.match(root.innerHTML, /ed-bottom/);
-  assert.match(root.innerHTML, /Проверка квеста/);
+  assert.match(root.innerHTML, /ИИ-помощник/);
+  assert.match(root.innerHTML, /Выберите карточку на доске/);
+  assert.match(root.innerHTML, /ed-validation/);
+  assert.match(root.innerHTML, /data-action="toggle-editor-menu"/);
+  assert.doesNotMatch(root.innerHTML, /История черновика/);
+  assert.doesNotMatch(root.innerHTML, /portability-section/);
   assert.ok(!root.innerHTML.includes("Technical ID"), "no Technical ID in editor main path");
   assert.match(root.innerHTML, /Дополнительно/);
 });

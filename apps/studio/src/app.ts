@@ -97,12 +97,14 @@ interface StudioState {
   projectModalError: string | null;
   questCounts: Readonly<Record<string, number>>;
   libraryCollapsed: boolean;
-    inspectorTab: "props" | "coauthor";
-    boardView: "board" | "list";
-    selectedBoardNodeId: string | null;
-    selectedBoardEdgeId: string | null;
-    boardPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
-  }
+  inspectorTab: "props" | "coauthor";
+  boardView: "board" | "list";
+  selectedBoardNodeId: string | null;
+  selectedBoardEdgeId: string | null;
+  boardPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+  editorMenuOpen: boolean;
+  utilityPanel: "versions" | "portability" | "settings" | null;
+}
 
 export class StudioApp {
   private readonly state: StudioState = {
@@ -137,12 +139,14 @@ export class StudioApp {
     projectModalError: null,
     questCounts: Object.freeze({}),
     libraryCollapsed: false,
-        inspectorTab: "props",
-        boardView: "board",
-        selectedBoardNodeId: null,
-        selectedBoardEdgeId: null,
-        boardPositions: new Map()
-      };
+    inspectorTab: "props",
+    boardView: "board",
+    selectedBoardNodeId: null,
+    selectedBoardEdgeId: null,
+    boardPositions: new Map(),
+    editorMenuOpen: false,
+    utilityPanel: null
+  };
 
   private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
   private boardHost: HTMLElement | null = null;
@@ -345,6 +349,26 @@ export class StudioApp {
       this.state.projectModal = false;
       this.state.projectModalError = null;
       this.render();
+      return;
+    }
+    if (action === "toggle-editor-menu") {
+      this.state.editorMenuOpen = !this.state.editorMenuOpen;
+      this.render();
+      return;
+    }
+    if (action === "close-utility-panel") {
+      this.state.utilityPanel = null;
+      this.state.editorMenuOpen = false;
+      this.render();
+      return;
+    }
+    if (action === "open-utility-panel") {
+      const panel = target.dataset.panel;
+      if (panel === "versions" || panel === "portability" || panel === "settings") {
+        this.state.utilityPanel = panel;
+        this.state.editorMenuOpen = false;
+        this.render();
+      }
       return;
     }
     if (action === "toggle-library") {
@@ -1641,11 +1665,19 @@ export class StudioApp {
             <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название квеста">
             <button type="submit" title="Сохранить название">✓</button>
           </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
-          <span class="ed-save-state">${escapeHtml(saveStateLabel(this.state.phase))}</span>
+          <span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>
           <span class="spacer"></span>
           <div class="actions">
-            ${draft ? `<button data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
+            ${draft ? `<button class="button-secondary" data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
             <button class="primary" data-action="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Запуск…" : "Играть"}</button>` : ``}
+            <div class="ed-menu-wrap">
+              <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
+              ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
+                <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
+                <button data-action="open-utility-panel" data-panel="portability" role="menuitem">Импорт и экспорт</button>
+                <button data-action="open-utility-panel" data-panel="settings" role="menuitem">Настройки проекта и доступа</button>
+              </div>` : ``}
+            </div>
           </div>
         </header>
 
@@ -1679,31 +1711,14 @@ export class StudioApp {
             </details>
 
             ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
-
-            ${renderVersionsPanel(
-              this.state.versions,
-              draft,
-              saveStateLabel(this.state.phase),
-              this.state.versionsError,
-              allowEdit,
-              this.state.restoreIntent,
-              allowEdit,
-              this.state.validation,
-              this.state.releaseBuildIntent,
-              allowPublish,
-              this.state.publishReport,
-              this.state.publicationReceipt
-            )}
-
-            ${renderPortabilityPanel(draft, this.state.versions, allowEdit)}
             ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
             <div class="board-toggle" role="group" aria-label="Вид редактора квеста">
-                          <button class="${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board">Доска</button>
-                          <button class="${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list">Список</button>
-                        </div>
+              <button class="button-secondary ${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board">Доска</button>
+              <button class="button-secondary ${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list">Список</button>
+            </div>
 
-                        ${this.state.boardView === "board"
+            ${this.state.boardView === "board"
                           ? `<div class="board-host" data-board-host aria-label="Доска квеста"></div>`
                           : `<div class="editor-grid">
                           <section class="editor-section">
@@ -1729,25 +1744,43 @@ export class StudioApp {
             ` : `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите квест в библиотеке слева или создайте новый.</p></div>
             `}
+            ${draft ? `
+            <section class="ed-validation validation-section">
+              <div>
+                <h2>Проверка квеста</h2>
+                <p>Проверка относится к текущей версии черновика. После изменений запустите её снова.</p>
+              </div>
+              ${allowTest
+                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
+                : `<span class="access-note">Проверка и запуск доступны вашей роли после входа.</span>`}
+              ${validationPanel(this.state.validation, draft)}
+              ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
+                playerUrl: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerUrl : null,
+                playerError: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerError : null,
+                playerLaunching: this.state.playerPlaytestId === this.state.playtest?.playtestId && this.state.playerLaunching
+              })}
+              ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
+            </section>` : ``}
           </main>
 
           <aside class="ed-inspector" aria-label="Правая панель">
             <div class="ed-tabs" role="tablist">
-              <button class="${this.state.inspectorTab === "props" ? "active" : ""}" data-action="inspector-tab" data-tab="props" role="tab">Свойства</button>
-              <button class="${this.state.inspectorTab === "coauthor" ? "active" : ""}" data-action="inspector-tab" data-tab="coauthor" role="tab">Соавтор</button>
+              <button class="button-secondary ${this.state.inspectorTab === "props" ? "active" : ""}" data-action="inspector-tab" data-tab="props" role="tab">Свойства</button>
+              <button class="button-secondary ${this.state.inspectorTab === "coauthor" ? "active" : ""}" data-action="inspector-tab" data-tab="coauthor" role="tab">ИИ-помощник</button>
             </div>
             ${this.state.inspectorTab === "props" ? `
-              <section class="sidebar-section">
-                <div class="section-heading-row"><h2>Проект</h2></div>
-                <div><strong>${escapeHtml(project.title)}</strong></div>
-                ${renderAccessPanel(this.state.access, project)}
-                <details class="diagnostics"><summary>Дополнительно: технические данные</summary>
-                  <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
-                  ${draft ? `<div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
-                </details>
+              <section class="inspector-section" aria-label="Инспектор карточки">
+                <div class="section-heading-row"><h2>Свойства карточки</h2></div>
+                ${this.state.selectedBoardNodeId
+                  ? `<div class="inspector-placeholder"><strong>Выбрана карточка</strong><code>${escapeHtml(this.state.selectedBoardNodeId)}</code><p>Поля карточки загружаются в инспекторе.</p></div>`
+                  : `<p class="inspector-empty">Выберите карточку на доске</p>`}
+                <button class="button-secondary settings-link" data-action="open-utility-panel" data-panel="settings">Настройки доступа и проекта</button>
               </section>
             ` : `
-              <p class="paint-note">Соавтор помогает с текстом и структурой. Рисование ему недоступно.</p>
+              <section class="inspector-section">
+                <div class="section-heading-row"><h2>ИИ-помощник</h2></div>
+                <p class="paint-note">ИИ-помощник помогает с текстом и структурой. Рисование и игровые действия добавляются автором.</p>
+              </section>
               ${renderAuthorAssistantPanel(this.state.authorAssistant, {
                 canMutate: allowEdit,
                 hasMutationProof: this.state.access.mutationProof,
@@ -1757,26 +1790,50 @@ export class StudioApp {
           </aside>
         </div>
 
-        ${draft ? `
-        <footer class="ed-bottom">
-          <section class="validation-section">
-            <div>
-              <h2>Проверка квеста</h2>
-              <p>Проверка относится к текущей версии черновика. После изменений запустите её снова.</p>
-            </div>
-            ${allowTest
-              ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
-              : `<span class="access-note">Проверка и запуск доступны вашей роли после входа.</span>`}
-            ${validationPanel(this.state.validation, draft)}
-            ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
-              playerUrl: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerUrl : null,
-              playerError: this.state.playerPlaytestId === this.state.playtest?.playtestId ? this.state.playerError : null,
-              playerLaunching: this.state.playerPlaytestId === this.state.playtest?.playtestId && this.state.playerLaunching
-            })}
-            ${renderPlaytestEvidence(this.state.playtest, this.state.playtestTrace, this.state.playtestTraceError)}
-          </section>
-        </footer>` : ``}
+        ${this.renderUtilityPanel(draft, project, allowEdit)}
       </div>`;
+  }
+
+  private renderUtilityPanel(draft: DraftView | null, project: ProjectView, allowEdit: boolean): string {
+    if (this.state.utilityPanel === null) return "";
+    const panelTitle = this.state.utilityPanel === "versions"
+      ? "История версий"
+      : this.state.utilityPanel === "portability"
+        ? "Импорт и экспорт"
+        : "Настройки проекта и доступа";
+    const body = this.state.utilityPanel === "versions"
+      ? renderVersionsPanel(
+        this.state.versions,
+        draft,
+        saveStateLabel(this.state.phase),
+        this.state.versionsError,
+        allowEdit,
+        this.state.restoreIntent,
+        allowEdit,
+        this.state.validation,
+        this.state.releaseBuildIntent,
+        allowEdit && project.role === "owner",
+        this.state.publishReport,
+        this.state.publicationReceipt
+      )
+      : this.state.utilityPanel === "portability"
+        ? draft
+          ? renderPortabilityPanel(draft, this.state.versions, allowEdit)
+          : `<p class="empty-panel">Сначала откройте квест, чтобы импортировать или экспортировать его.</p>`
+        : `<section class="settings-panel">
+            <h2>Настройки проекта и доступа</h2>
+            <p>Права редактирования определяет сервер. Владелец проекта не получает глобальные права Studio автоматически.</p>
+            ${renderAccessPanel(this.state.access, project)}
+            <details class="diagnostics" open>
+              <summary>Технические данные</summary>
+              <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
+              ${draft ? `<div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
+            </details>
+          </section>`;
+    return `<section class="ed-utility-panel" role="dialog" aria-label="${escapeAttr(panelTitle)}">
+      <header><h2>${escapeHtml(panelTitle)}</h2><button class="button-secondary" data-action="close-utility-panel" aria-label="Закрыть">Закрыть</button></header>
+      <div class="ed-utility-body">${body}</div>
+    </section>`;
   }
 }
 
