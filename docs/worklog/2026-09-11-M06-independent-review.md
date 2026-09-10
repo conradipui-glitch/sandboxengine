@@ -60,7 +60,7 @@ ode-v24.19.0-win-x64`), npm `11.17.0`. Hermes-овский Node `v22.23.2` да�
 | Site tests | `npx vitest run` | 18 файлов, 82/82, fail 0 |
 | Site build | `npm run build` | exit 0 |
 
-## R04 — воспроизводимое размещение (F07), commit `9c0d2a5`
+## R04 — воспроизводимое размещение (F07), commit `83f5cbf`
 
 Кандидат подготовлен, live-рестарт не выполнялся.
 
