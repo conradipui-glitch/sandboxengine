@@ -113,5 +113,5 @@ test("B09-03 tester presentation has read/test semantics and no editor mutation 
   assert.equal(canEditProject(access, testerProject), false);
   assert.equal(canTestProject(access, testerProject), true);
   const html = renderAccessPanel(access, testerProject);
-  assert.match(html, /редактирование\/publish\/access недоступны/);
+  assert.match(html, /чтение · проверка и запуск; редактирование, публикация и участники недоступны/);
 });

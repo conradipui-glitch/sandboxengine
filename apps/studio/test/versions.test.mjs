@@ -112,7 +112,7 @@ test("B09-03 Versions read model joins only server history and release truth", a
   assert.match(html, /published before/);
   assert.match(html, /release-never/);
   assert.match(html, /never published/);
-  assert.match(html, /Current pointer: <code>release-2<\/code>/);
+  assert.match(html, /Текущий выпуск: <code>release-2<\/code>/);
 });
 
 test("B09-03 Versions renderer escapes server text and reports read failure without inventing publication state", () => {

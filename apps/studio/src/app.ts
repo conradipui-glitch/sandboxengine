@@ -41,8 +41,16 @@ import {
   loadSelectedProjectAccess,
   probeStudioAccess,
   renderAccessPanel,
+  projectRoleLabel,
   type StudioAccessState
 } from "./access.js";
+import {
+  draftToBoard,
+  edgeToDraftChange,
+  type BoardModel
+} from "./board-model.js";
+import { createBoardView, type BoardViewCallbacks } from "./board-render.js";
+import { loadBoardPositions, saveBoardPosition } from "./board-storage.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
 import {
@@ -89,8 +97,12 @@ interface StudioState {
   projectModalError: string | null;
   questCounts: Readonly<Record<string, number>>;
   libraryCollapsed: boolean;
-  inspectorTab: "props" | "coauthor";
-}
+    inspectorTab: "props" | "coauthor";
+    boardView: "board" | "list";
+    selectedBoardNodeId: string | null;
+    selectedBoardEdgeId: string | null;
+    boardPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+  }
 
 export class StudioApp {
   private readonly state: StudioState = {
@@ -125,8 +137,12 @@ export class StudioApp {
     projectModalError: null,
     questCounts: Object.freeze({}),
     libraryCollapsed: false,
-    inspectorTab: "props"
-  };
+        inspectorTab: "props",
+        boardView: "board",
+        selectedBoardNodeId: null,
+        selectedBoardEdgeId: null,
+        boardPositions: new Map()
+      };
 
   constructor(
     private readonly root: HTMLElement,
@@ -309,10 +325,18 @@ export class StudioApp {
       return;
     }
     if (action === "toggle-library") {
-      this.state.libraryCollapsed = !this.state.libraryCollapsed;
-      this.render();
-      return;
-    }
+          this.state.libraryCollapsed = !this.state.libraryCollapsed;
+          this.render();
+          return;
+        }
+        if (action === "board-view") {
+          const view = target.dataset.view;
+          if (view === "board" || view === "list") {
+            this.state.boardView = view;
+            this.render();
+          }
+          return;
+        }
     if (action === "inspector-tab") {
       const tab = target.dataset.tab;
       if (tab === "props" || tab === "coauthor") {
@@ -384,7 +408,7 @@ export class StudioApp {
         this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, selected);
         this.state.phase = "idle";
         this.state.message = selected
-          ? `Вход подтверждён. Текущая роль: ${selected.role}.`
+          ? `Вход подтверждён. Текущая роль: ${projectRoleLabel(selected.role)}.`
           : "Вход выполнен. Выберите проект.";
         this.render();
         return;
@@ -879,7 +903,11 @@ export class StudioApp {
     this.state.phase = "loading";
     this.state.message = "Загружаем draft с сервера…";
     this.state.selectedQuestId = questId;
-    this.state.validation = null;
+        this.state.boardView = "board";
+        this.state.selectedBoardNodeId = null;
+        this.state.selectedBoardEdgeId = null;
+        this.state.boardPositions = loadBoardPositions(questId);
+        this.state.validation = null;
     this.state.playtest = null;
     this.state.versions = null;
     this.state.versionsError = null;
@@ -896,8 +924,8 @@ export class StudioApp {
       await this.refreshAuthorAssistant(projectId, questId);
       this.state.phase = "idle";
       this.state.message = this.state.versionsError === null
-        ? "Draft, Versions и Author Assistant перечитаны с Control API."
-        : "Draft и Author Assistant загружены; Versions временно недоступны.";
+        ? "Черновик, версии и соавтор обновлены с сервера."
+        : "Черновик и соавтор загружены; версии временно недоступны.";
     } catch (error) {
       this.setError(error);
     }
@@ -1369,18 +1397,109 @@ export class StudioApp {
     }
 
     if (focusKey) {
-      const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
-      const element = this.root.querySelector<HTMLElement>(selector);
-      element?.focus();
-    }
-  }
+          const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
+          const element = this.root.querySelector<HTMLElement>(selector);
+          element?.focus();
+        }
+
+        this.mountBoardIfNeeded();
+      }
+
+      /** Монтирует доску в host после каждого полного перерендера редактора. */
+      private mountBoardIfNeeded(): void {
+        if (this.state.view !== "editor" || this.state.boardView !== "board") return;
+        if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+        const host = this.root.querySelector<HTMLElement>("[data-board-host]");
+        if (!host) return;
+        const draft = this.state.draft;
+        if (!draft) return;
+        const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+        try {
+          const model = draftToBoard(draft, this.state.boardPositions);
+          const options = {
+            callbacks: this.boardCallbacks(),
+            selectedNodeId: this.state.selectedBoardNodeId,
+            selectedEdgeId: this.state.selectedBoardEdgeId
+          };
+          const view = createBoardView(model, options);
+          host.innerHTML = view.render(model, options);
+          view.attach(host, model, options);
+          // показываем все карточки после сборки (zoom/pan живут внутри attach)
+          host.querySelector<HTMLElement>('[data-board-action="fit"]')?.click();
+        } catch (error) {
+          host.innerHTML = `<div class="board-error">${escapeHtml(error instanceof Error ? error.message : "Не удалось показать доску квеста.")}</div>`;
+        }
+      }
+
+      private boardCallbacks(): BoardViewCallbacks {
+        return {
+          onNodeMove: (nodeId, x, y) => {
+            const questId = this.state.selectedQuestId;
+            if (!questId) return;
+            saveBoardPosition(questId, nodeId, x, y);
+            const next = new Map(this.state.boardPositions);
+            next.set(nodeId, { x, y });
+            this.state.boardPositions = next;
+          },
+          onNodeSelect: (nodeId) => {
+            this.state.selectedBoardNodeId = nodeId;
+            this.state.selectedBoardEdgeId = null;
+            this.paintBoardSelection();
+          },
+          onEdgeSelect: (edgeId) => {
+            this.state.selectedBoardEdgeId = edgeId;
+            this.state.selectedBoardNodeId = null;
+            this.paintBoardSelection();
+          },
+          onBackgroundClick: () => {
+            this.state.selectedBoardNodeId = null;
+            this.state.selectedBoardEdgeId = null;
+            this.paintBoardSelection();
+          },
+          onConnect: (sourceId, targetId) => {
+            const draft = this.state.draft;
+            const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+            if (!draft) return;
+            if (!canEditProject(this.state.access, project)) {
+              this.state.phase = "idle";
+              this.state.message = "Связи между карточками может менять редактор. Ваша роль — наблюдение.";
+              this.render();
+              return;
+            }
+            const model = draftToBoard(draft, this.state.boardPositions);
+            const change = edgeToDraftChange(draft, model, sourceId, targetId);
+            if (!change) {
+              this.state.phase = "idle";
+              this.state.message = "Такая связь не поддерживается: персонаж соединяется с местом начала, действие — с расходуемым ресурсом.";
+              this.render();
+              return;
+            }
+            void this.saveChanges([change]);
+          }
+        };
+      }
+
+      /** Обновляет классы выделения на живой доске без полного перерендера. */
+      private paintBoardSelection(): void {
+        if (typeof this.root.querySelector !== "function") return;
+        const host = this.root.querySelector<HTMLElement>("[data-board-host]");
+        if (!host) return;
+        host.querySelectorAll<HTMLElement>(".board-node.selected").forEach((el) => el.classList.remove("selected"));
+        host.querySelectorAll<SVGPathElement>("path.selected").forEach((el) => el.classList.remove("selected"));
+        if (this.state.selectedBoardNodeId) {
+          host.querySelector<HTMLElement>(`.board-node[data-node-id="${cssEscape(this.state.selectedBoardNodeId)}"]`)?.classList.add("selected");
+        }
+        if (this.state.selectedBoardEdgeId) {
+          host.querySelector<SVGPathElement>(`path[data-edge-id="${cssEscape(this.state.selectedBoardEdgeId)}"]`)?.classList.add("selected");
+        }
+      }
 
   private profileLabel(): string {
     const access = this.state.access;
-    if (access.mode === "local-owner") return "Локальный владелец";
+    if (access.mode === "local-owner") return "Владелец";
     if (access.mode === "authenticated" && access.auth) {
       const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
-      const role = project ? ` · ${project.role}` : "";
+      const role = project ? ` · ${projectRoleLabel(project.role)}` : "";
       return `${access.auth.user.username}${role}`;
     }
     return "Гость";
@@ -1529,27 +1648,34 @@ export class StudioApp {
             ${renderPortabilityPanel(draft, this.state.versions, allowEdit)}
             ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
-            <div class="editor-grid">
-              <section class="editor-section">
-                <div class="section-title"><div><h2>Ресурсы</h2><p>Запасы игрового мира: сколько есть и в каких пределах.</p></div></div>
-                <div class="entity-list">${resources.map((resource) => `
-                  <article class="entity-row">
-                    <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.data.unit)}</small></div>
-                    <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
-                    ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Удалить…</button>` : ""}
-                  </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
-                ${allowEdit ? resourceForm() : `<p class="form-hint">Только чтение: изменения недоступны для вашей роли.</p>`}
-                ${resources.length ? `<details class="diagnostics"><summary>Дополнительно: ID ресурсов</summary>${resources.map((resource) => `<div><code>${escapeHtml(resource.id)}</code></div>`).join("")}</details>` : ``}
-              </section>
+            <div class="board-toggle" role="group" aria-label="Вид редактора квеста">
+                          <button class="${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board">Доска</button>
+                          <button class="${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list">Список</button>
+                        </div>
 
-              <section class="editor-section">
-                <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Одно простое действие: тратит ресурс и занимает время.</p></div></div>
-                <div class="entity-list">${actions.map((action) => paintActionRow(action, allowEdit)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
-                ${allowEdit
-                  ? (resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`)
-                  : `<p class="form-hint">Только чтение: изменение действий недоступно для вашей роли.</p>`}
-              </section>
-            </div>
+                        ${this.state.boardView === "board"
+                          ? `<div class="board-host" data-board-host aria-label="Доска квеста"></div>`
+                          : `<div class="editor-grid">
+                          <section class="editor-section">
+                            <div class="section-title"><div><h2>Ресурсы</h2><p>Запасы игрового мира: сколько есть и в каких пределах.</p></div></div>
+                            <div class="entity-list">${resources.map((resource) => `
+                              <article class="entity-row">
+                                <div><strong>${escapeHtml(resource.title)}</strong><small>${escapeHtml(resource.data.unit)}</small></div>
+                                <div class="entity-value">${resource.data.initialValue}<small>${resource.data.min}…${resource.data.max}</small></div>
+                                ${allowEdit ? `<button class="danger" data-action="prepare-delete-block" data-block-id="${escapeAttr(resource.id)}">Удалить…</button>` : ""}
+                              </article>`).join("") || `<div class="empty-panel">Ресурсов пока нет.</div>`}</div>
+                            ${allowEdit ? resourceForm() : `<p class="form-hint">Только чтение: изменения недоступны для вашей роли.</p>`}
+                            ${resources.length ? `<details class="diagnostics"><summary>Дополнительно: ID ресурсов</summary>${resources.map((resource) => `<div><code>${escapeHtml(resource.id)}</code></div>`).join("")}</details>` : ``}
+                          </section>
+
+                          <section class="editor-section">
+                            <div class="section-title"><div><h2>Действие «Рисовать»</h2><p>Одно простое действие: тратит ресурс и занимает время.</p></div></div>
+                            <div class="entity-list">${actions.map((action) => paintActionRow(action, allowEdit)).join("") || `<div class="empty-panel">Действие ещё не добавлено.</div>`}</div>
+                            ${allowEdit
+                              ? (resources.length > 0 ? paintActionForm(resources) : `<p class="form-hint">Сначала добавьте ресурс — он станет доступен в выборе.</p>`)
+                              : `<p class="form-hint">Только чтение: изменение действий недоступно для вашей роли.</p>`}
+                          </section>
+                        </div>`}
             ` : `
             <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите квест в библиотеке слева или создайте новый.</p></div>
             `}
@@ -1612,14 +1738,14 @@ function isAuthorAssistantBusy(phase: StudioState["phase"]): boolean {
 }
 
 function saveStateLabel(phase: StudioState["phase"]): string {
-  if (phase === "saving") return "saving…";
-  if (phase === "saved") return "server saved";
-  if (phase === "restoring") return "restoring…";
-  if (phase === "building-release") return "building immutable release…";
-  if (phase === "publishing") return "awaiting publication receipt…";
-  if (phase === "conflict") return "conflict — server draft preserved";
-  if (phase === "error") return "check status message";
-  return "server state";
+  if (phase === "saving") return "Сохраняем…";
+  if (phase === "saved") return "Сохранено на сервере";
+  if (phase === "restoring") return "Восстанавливаем…";
+  if (phase === "building-release") return "Собираем выпуск…";
+  if (phase === "publishing") return "Ждём подтверждение публикации…";
+  if (phase === "conflict") return "Конфликт — черновик сервера сохранён";
+  if (phase === "error") return "Проверьте сообщение о статусе";
+  return "Состояние сервера";
 }
 
 function projectForm(): string {
@@ -1651,14 +1777,14 @@ function projectCard(item: ProjectView, questCount: number): string {
   return `<button class="project-card" data-action="open-project" data-project-id="${escapeAttr(item.projectId)}">
     <span class="project-cover" aria-hidden="true">Обложка скоро появится</span>
     <h2>${escapeHtml(item.title)}</h2>
-    <span class="project-meta"><span>Квестов: ${questCount}</span><span class="role-badge">${escapeHtml(item.role)}</span></span>
+    <span class="project-meta"><span>Квестов: ${questCount}</span><span class="role-badge">${escapeHtml(projectRoleLabel(item.role))}</span></span>
   </button>`;
 }
 
 function questForm(): string {
   return `<form class="compact-form" data-form="quest">
     <h3>Новый квест</h3>
-    <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Первая сцена"></label>
+    <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Название квеста"></label>
     <button type="submit">Создать квест</button>
   </form>`;
 }

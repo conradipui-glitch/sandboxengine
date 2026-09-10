@@ -79,7 +79,7 @@ export function renderVersionsPanel(
   if (!currentDraft) return "";
   if (!model) {
     return `<section class="versions-section" aria-labelledby="versions-heading">
-      <div class="section-title"><div><h2 id="versions-heading">Версии</h2><p>История и immutable releases загружаются с Control API.</p></div></div>
+      <div class="section-title"><div><h2 id="versions-heading">Версии</h2><p>История и выпуски загружаются с сервера.</p></div></div>
       <div class="versions-loading ${errorMessage ? "error" : ""}">${escapeHtml(errorMessage ?? "Загружаем server history…")}</div>
     </section>`;
   }
@@ -91,7 +91,7 @@ export function renderVersionsPanel(
 
   return `<section class="versions-section" aria-labelledby="versions-heading">
     <div class="section-title">
-      <div><h2 id="versions-heading">Версии</h2><p>Только серверные immutable revisions и releases. Никакой локальной истории.</p></div>
+      <div><h2 id="versions-heading">Версии</h2><p>Только серверные версии и выпуски. Никакой локальной истории.</p></div>
       <div class="versions-current">
         <span>draft <strong>r${currentDraft.draftRevision}</strong></span>
         <code title="current draft content hash">${escapeHtml(shortHash(currentDraft.contentHash))}</code>
@@ -106,7 +106,7 @@ export function renderVersionsPanel(
 
     <div class="versions-grid">
       <div class="versions-card">
-        <div class="versions-card-title"><h3>Draft history</h3><span>${model.history.length}${model.historyHasMore ? "+" : ""}</span></div>
+        <div class="versions-card-title"><h3>История черновика</h3><span>${model.history.length}${model.historyHasMore ? "+" : ""}</span></div>
         <div class="version-list">
           ${history.map((entry) => `<article class="version-row ${entry.draftRevision === model.currentRevision ? "current" : ""}">
             <div>
@@ -125,7 +125,7 @@ export function renderVersionsPanel(
       </div>
 
       <div class="versions-card">
-        <div class="versions-card-title"><h3>Immutable releases</h3><span>${releases.length}</span></div>
+        <div class="versions-card-title"><h3>Неизменяемые выпуски</h3><span>${releases.length}</span></div>
         <div class="version-list">
           ${releases.map((release) => `<article class="version-row release-row ${release.isCurrent ? "current" : ""}">
             <div>
@@ -138,7 +138,7 @@ export function renderVersionsPanel(
             </div>
           </article>`).join("") || `<div class="empty-panel">Immutable releases ещё не создавались.</div>`}
         </div>
-        <p class="form-hint">Current pointer: ${model.currentReleaseId === null ? "не установлен" : `<code>${escapeHtml(model.currentReleaseId)}</code>`}.</p>
+        <p class="form-hint">Текущий выпуск: ${model.currentReleaseId === null ? "не установлен" : `<code>${escapeHtml(model.currentReleaseId)}</code>`}.</p>
         ${renderReleaseBuildForm(canBuildRelease, currentDraft, validation)}
       </div>
     </div>

@@ -150,11 +150,18 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
 
 function roleSummary(role: ProjectView["role"]): string {
   const permissions = role === "owner"
-    ? "редактирование · validation/playtest · release build · publish/rollback · access"
+    ? "редактирование · проверка и запуск · выпуски · публикация и откат · участники"
     : role === "editor"
-      ? "редактирование · validation/playtest · release build; publish/access — owner only"
-      : "read · validation/playtest; редактирование/publish/access недоступны";
-  return `<div class="access-role"><span>role</span><strong>${escapeHtml(role)}</strong><small>${escapeHtml(permissions)}</small></div>`;
+      ? "редактирование · проверка и запуск · выпуски; публикация и участники — только владелец"
+      : "чтение · проверка и запуск; редактирование, публикация и участники недоступны";
+  return `<div class="access-role"><span>Роль</span><strong>${escapeHtml(projectRoleLabel(role))}</strong><small>${escapeHtml(permissions)}</small></div>`;
+}
+
+export function projectRoleLabel(role: string): string {
+  if (role === "owner") return "Владелец";
+  if (role === "editor") return "Редактор";
+  if (role === "tester") return "Наблюдатель";
+  return role;
 }
 
 function renderMembers(
