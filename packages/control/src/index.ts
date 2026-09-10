@@ -213,7 +213,12 @@ export {
   type SQLiteControlReleaseStoreOptions
 } from "./release-stores.js";
 export type {
+  ApplyBoardChangesInput,
+  ApplyBoardChangesResult,
   ApplyDraftChangesResult,
+  BoardDocument,
+  BoardDocumentStore,
+  BoardPosition,
   ControlStore,
   CreatePlaytestResult,
   CreateProjectInput,

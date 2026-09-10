@@ -14,6 +14,7 @@ import {
   type ControlSecurityStore,
   type ControlSessionRecord,
   type ControlStore,
+  type BoardDocumentStore,
   type ControlUserRecord,
   type DraftSnapshot,
   type DraftValidationRecord,
@@ -64,6 +65,7 @@ export interface ControlReleaseModeOptions {
 
 export interface ControlServerDependencies {
   readonly store: ControlStore;
+  readonly boardStore?: BoardDocumentStore;
   readonly releases?: ControlReleaseModeOptions;
   readonly playtestTrace?: PlaytestTraceReader;
   readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore };
@@ -102,6 +104,7 @@ interface LoginFailureState {
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
+  const boardStore = dependencies.boardStore ?? (isBoardDocumentStore(dependencies.store) ? dependencies.store as BoardDocumentStore : null);
   const authorAssistant = dependencies.authorAssistant
     ? Object.freeze({
         ...dependencies.authorAssistant,
@@ -116,6 +119,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         request,
         response,
         dependencies.store,
+        boardStore,
         releases,
         dependencies.playtestTrace ?? null,
         authorAssistant,
@@ -173,6 +177,7 @@ async function routeControlRequest(
   request: any,
   response: any,
   store: ControlStore,
+  boardStore: BoardDocumentStore | null,
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
   authorAssistant: (Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore }) | null,
@@ -395,6 +400,57 @@ async function routeControlRequest(
     } else {
       sendJson(response, 422, { error: { code: "INVALID_DRAFT_CHANGE_SET", details: result.errors } });
     }
+    return;
+  }
+
+  const boardMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/board(?:\/changes)?$/.exec(url.pathname);
+  if (boardMatch) {
+    const projectId = boardMatch[1];
+    const questId = boardMatch[2];
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (boardStore === null) {
+      sendJson(response, 501, { error: { code: "BOARD_STORAGE_UNAVAILABLE" } });
+      return;
+    }
+    const isChanges = url.pathname.endsWith("/changes");
+    if (!isChanges && method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const board = await boardStore.getBoardDocument(projectId, questId);
+      if (!board) sendNotFound(response);
+      else sendJson(response, 200, { board });
+      return;
+    }
+    if (isChanges && method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      if (!hasExactKeys(body, ["baseRevision", "positions"])
+        || !isRevision(body.baseRevision) || !isPlainObject(body.positions)) {
+        sendJson(response, 400, { error: { code: "INVALID_BOARD_CHANGE_SET" } });
+        return;
+      }
+      const result = await boardStore.applyBoardChanges(projectId, questId, {
+        baseRevision: body.baseRevision,
+        positions: body.positions,
+        idempotencyKey,
+        actorUserId: identity?.user.userId ?? "local-owner"
+      });
+      if (result.kind === "updated") sendJson(response, 200, { board: result.board });
+      else if (result.kind === "replay") sendJson(response, 200, { board: result.board, replay: true });
+      else if (result.kind === "project_not_found" || result.kind === "quest_not_found") sendNotFound(response);
+      else if (result.kind === "revision_conflict") {
+        sendJson(response, 409, { error: { code: "BOARD_REVISION_CONFLICT", currentRevision: result.currentRevision } });
+      } else if (result.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: "BOARD_IDEMPOTENCY_KEY_REUSED" } });
+      } else {
+        sendJson(response, 422, { error: { code: "INVALID_BOARD_CHANGE_SET", details: result.errors } });
+      }
+      return;
+    }
+    sendNotFound(response);
     return;
   }
 
@@ -1095,6 +1151,11 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function isBoardDocumentStore(value: ControlStore): value is ControlStore & BoardDocumentStore {
+  return typeof (value as Partial<BoardDocumentStore>).getBoardDocument === "function"
+    && typeof (value as Partial<BoardDocumentStore>).applyBoardChanges === "function";
 }
 
 function isId(value: unknown): value is string {

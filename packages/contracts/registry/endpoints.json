@@ -145,6 +145,22 @@
       "summary": "Owner/editor атомарное применение change set к указанной draft revision"
     },
     {
+      "id": "control.board.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/board",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Получение server-authoritative layout BoardDocument отдельно от canonical draft"
+    },
+    {
+      "id": "control.board.changes",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/board/changes",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor atomic CAS layout update with required idempotency-key"
+    },
+    {
       "id": "control.draft.history",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",

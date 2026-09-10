@@ -8,6 +8,8 @@ import type {
   AuthoringProposal,
   AuthoringProposalApplication,
   AuthoringProposalPreview,
+  BoardDocument,
+  BoardPosition,
   ControlProjectRole,
   DraftChangeSet
 } from "@living-history/control";
@@ -486,6 +488,29 @@ export class ControlApiClient {
     );
   }
 
+  async getBoard(projectId: string, questId: string): Promise<BoardDocument> {
+    const body = await this.request<{ readonly board: BoardDocument }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/board`
+    );
+    return body.board;
+  }
+
+  async applyBoardChanges(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    positions: Readonly<Record<string, BoardPosition>>
+  ): Promise<BoardDocument> {
+    const body = await this.request<{ readonly board: BoardDocument; readonly replay?: boolean }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/board/changes`,
+      { baseRevision, positions },
+      { idempotencyKey: createClientIdempotencyKey() }
+    );
+    return body.board;
+  }
+
   async getDraft(projectId: string, questId: string): Promise<DraftView> {
     const body = await this.request<{ readonly draft: DraftView }>(
       "GET",
@@ -728,6 +753,12 @@ export class ControlApiClient {
     }
     return payload as T;
   }
+}
+
+function createClientIdempotencyKey(): string {
+  const cryptoObject = globalThis.crypto as Crypto & { randomUUID?: () => string };
+  if (typeof cryptoObject?.randomUUID === "function") return `board-${cryptoObject.randomUUID()}`;
+  return `board-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 async function parseJson(response: Response): Promise<unknown> {

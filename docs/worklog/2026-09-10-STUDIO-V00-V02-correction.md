@@ -39,7 +39,7 @@
 | R03 | Настоящий inspector выбранного canonical block | **DONE локально + BROWSER/LOCAL** | `block-inspector.ts` + app inspector, полный `block.replace`, debounce и conflict preservation проверены browser smoke. |
 | R04 | Создание и редактирование четырёх типов блока | **DONE локально + BROWSER/LOCAL** | Library/modal создали location, character, resource и action; type-specific canonical fields подтверждены GET draft. |
 | R05 | Связи, drag/zoom/fit, collision-aware layout | **DONE локально + BROWSER/LOCAL** | `edgeToDraftChange` используется app; SVG edges имеют direction marker; valid/invalid pointer connections, два drag с edge tracking, zoom/pan/fit и collision-free fallback проверены. |
-| R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **OPEN** | `board-storage.ts` прямо признаёт localStorage по одному `questId`; endpoint `/board` и Control persistence не найдены. |
+| R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **DONE локально + BROWSER/LOCAL** | SQLite BoardDocument/idempotency tables, v1→v2 migration, atomic bounds/CAS, GET/POST route, generated registry/OpenAPI, close/reopen and profile A→B readback verified. VPS remains open. |
 | R07 | Read-only/role behavior and V00/Player regression evidence | **PARTIAL** | Access gates и existing Player tests есть, но browser proof of read-only board and independent playtests for this candidate отсутствует. |
 | R08 | Regression suite C01–C18 and real connected renderer | **OPEN** | Existing `board-model.test.mjs` covers projection only; no suite reaches the renderer lifecycle, browser interactions, or C01–C18 matrix. |
 | R09 | Hosted identity and server-side global provider/project permissions | **OPEN** | Current task explicitly requires this correction; UI access state cannot be treated as security. Need trace gate→nginx→Studio→Control and add server tests for forged identity/revoke/global provider mutation. |
@@ -119,7 +119,24 @@ K01: добавить failing lifecycle regression against the actually mounted 
 
 ### R status after K04
 
-- R01/R02/R03/R04/R05 **DONE локально + BROWSER/LOCAL** (VPS candidate ещё не обновлён).
-- R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+- R01/R02/R03/R04/R05/R06 **DONE локально + BROWSER/LOCAL** (VPS candidate ещё не обновлён).
+- R07 **PARTIAL**; R08/R09 **OPEN**.
 
 Следующая точная операция: K05 — серверный BoardDocument persistence, revision/idempotency, restart и другой браузер.
+
+## K05 — server BoardDocument persistence — DONE локально + BROWSER/LOCAL
+
+- Добавлены `BoardDocument`, `BoardPosition`, `BoardDocumentStore` и CAS result types в `packages/control/src/types.ts`; canonical draft/contentHash не изменены.
+- `SQLiteControlStore` получил `control_board_documents` и `control_board_idempotency`; schema v1→v2 migration выполняется при startup, future versions fail-closed. Validation: max 1000 positions, finite coordinates in `[-1000000,1000000]`, exact keys, actor audit, atomic `BEGIN IMMEDIATE`.
+- Added `GET /control/v1/projects/:projectId/quests/:questId/board` and `POST .../board/changes`; POST requires existing idempotency key, CAS `baseRevision`, replay returns same board, changed payload with same key returns 409, stale revision returns 409. Existing auth/role/mutation-proof gates are reused unchanged.
+- `apps/studio/src/api.ts` reads BoardDocument and sends full position maps; `app.ts` loads server positions independently from draft, coalesces drag saves at 700ms, updates board revision, and falls back to localStorage only when Board API is unavailable.
+- Registry source `packages/contracts/registry/endpoints.json`, generated `docs/agent/api.openapi.json`/compatibility and migration runbook `docs/migration/2026-09-10-board-document.md` updated through `docs:generate`.
+
+Проверено:
+- RED: new SQLite test initially failed because `getBoardDocument` was absent.
+- GREEN: `packages/control/test/board-document.test.mjs` → **2/2** (CAS, replay, key reuse, bounds, atomicity, close/reopen, v1 migration).
+- `apps/server/test/board-document-http.test.mjs` → **1/1**; full Control → **99/99**, full Server → **122/122**, full Studio → **81/81**.
+- `npm run typecheck` exit 0; `npm run docs:generate` exit 0; `loadInstalledAgentKit()` hash guard passed.
+- BROWSER/LOCAL profile A on fresh server `4186`/isolated SQLite: drag persisted through real board POST; profile B on separate Chrome profile with empty localStorage read `boardRevision=1`, `positions.item-tp6n7a={x:451,y:77}`, and DOM `translate(451px,77px)`.
+
+Ограничение: VPS exact-SHA deployment/smoke и C01–C18 remain open; K06 is next.

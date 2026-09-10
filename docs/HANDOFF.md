@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K04 DONE локально + BROWSER/LOCAL; K05 следующий. Inspector, четыре типа, valid/invalid edges, drag/zoom/pan/fit доказаны; server BoardDocument, C01–C18 и VPS ещё не закрыты**
+Текущий блок: **Studio V00–V02 correction K05 DONE локально + BROWSER/LOCAL; K06 следующий. BoardDocument/CAS/idempotency/API registry/migration и A→B layout readback доказаны; C01–C18, hosted permissions/security и VPS ещё не закрыты**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -154,3 +154,15 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 - Ограничение: позиции ещё только localStorage одного браузера; K05 добавит server BoardDocument/restart/other-browser.
 
 Следующее: K05 — server BoardDocument persistence, revision/idempotency, restart и другой браузер.
+
+## Studio V00–V02 correction — K05 DONE локально + BROWSER/LOCAL
+
+- SQLiteControlStore v2: `control_board_documents` + `control_board_idempotency`, v1→v2 migration, atomic CAS, bounded positions, actor audit.
+- Exact GET/POST board endpoints используют существующие identity/project-role/mutation-proof gates; generated registry/OpenAPI и migration runbook обновлены.
+- Client отдельно читает server positions, сохраняет drag map coalesced after 700ms, обновляет `boardRevision`, localStorage остаётся fallback только при недоступном Board API.
+- Static: typecheck exit 0; Control **99/99**; Server **122/122**; Studio **81/81**; docs:generate/hash guard exit 0.
+- Browser: fresh profile A on local `4186` saved drag; separate profile B with empty localStorage read server `boardRevision=1`, `positions.item-tp6n7a={x:451,y:77}`, DOM `translate(451px,77px)`.
+
+Не закрыто: K06 hosted identity/permissions/provider security, K07 assets/auth/independent Player, K08 C01–C18/full verify/VPS exact-SHA. GREEN не объявлен.
+
+Следующее: K06 — hosted identity, project/global permissions и provider mutation security.

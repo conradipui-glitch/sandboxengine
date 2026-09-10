@@ -1,6 +1,40 @@
 import type { Block } from "@living-history/contracts";
 import type { CompiledQuestArtifact } from "@living-history/core";
 
+export interface BoardPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface BoardDocument {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  readonly boardRevision: number;
+  readonly positions: Readonly<Record<string, BoardPosition>>;
+}
+
+export interface ApplyBoardChangesInput {
+  readonly baseRevision: number;
+  readonly positions: Readonly<Record<string, BoardPosition>>;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type ApplyBoardChangesResult =
+  | { readonly kind: "updated"; readonly board: BoardDocument }
+  | { readonly kind: "replay"; readonly board: BoardDocument }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface BoardDocumentStore {
+  getBoardDocument(projectId: string, questId: string): Promise<BoardDocument | null>;
+  applyBoardChanges(projectId: string, questId: string, input: ApplyBoardChangesInput): Promise<ApplyBoardChangesResult>;
+}
+
 export interface ProjectRecord {
   readonly projectId: string;
   readonly title: string;

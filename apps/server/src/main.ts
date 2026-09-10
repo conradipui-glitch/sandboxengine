@@ -84,6 +84,7 @@ const runtime = createRuntimeHttpServer({
 });
 const control = createControlHttpServer({
   store: controlStore,
+  boardStore: controlStore,
   releases: {
     store: releaseStore,
     pluginRegistry,

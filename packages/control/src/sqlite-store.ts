@@ -1,3 +1,5 @@
+// @ts-ignore — Node 24.19.0 provides node:crypto; repository intentionally has no @types/node dependency yet.
+import { createHash } from "node:crypto";
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -10,7 +12,12 @@ import {
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
 import { analyzeDraftBlockReferences } from "./draft-history.js";
 import type {
+  ApplyBoardChangesInput,
+  ApplyBoardChangesResult,
   ApplyDraftChangesResult,
+  BoardDocument,
+  BoardDocumentStore,
+  BoardPosition,
   ControlStore,
   CreatePlaytestResult,
   CreateProjectInput,
@@ -28,7 +35,7 @@ import type {
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 1;
+const CONTROL_SCHEMA_VERSION = 2;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -43,7 +50,7 @@ interface DraftChangeContext {
   readonly entryLocationId: string;
 }
 
-export class SQLiteControlStore implements ControlStore {
+export class SQLiteControlStore implements ControlStore, BoardDocumentStore {
   readonly #db: any;
   #closed = false;
 
@@ -386,6 +393,95 @@ export class SQLiteControlStore implements ControlStore {
     });
   }
 
+  async getBoardDocument(projectId: string, questId: string): Promise<BoardDocument | null> {
+    this.#assertOpen();
+    if (!this.#projectExists(projectId) || !this.#questExists(projectId, questId)) return null;
+    const row = this.#db.prepare(`
+      SELECT project_id, quest_id, schema_version, board_revision, positions_json
+      FROM control_board_documents WHERE project_id = ? AND quest_id = ?
+    `).get(projectId, questId);
+    return row ? boardDocumentFromRow(row) : emptyBoardDocument(projectId, questId);
+  }
+
+  async applyBoardChanges(
+    projectId: string,
+    questId: string,
+    input: ApplyBoardChangesInput
+  ): Promise<ApplyBoardChangesResult> {
+    const errors = validateBoardChangeInput(input);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(errors) });
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+    const requestHash = hashBoardRequest(input.baseRevision, input.positions);
+
+    return this.#transaction(() => {
+      const replayRow = this.#db.prepare(`
+        SELECT request_hash, result_json
+        FROM control_board_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        return frozen({ kind: "replay", board: boardDocumentFromJson(replayRow.result_json) });
+      }
+
+      const currentRow = this.#db.prepare(`
+        SELECT project_id, quest_id, schema_version, board_revision, positions_json
+        FROM control_board_documents WHERE project_id = ? AND quest_id = ?
+      `).get(projectId, questId);
+      const currentRevision = currentRow ? Number(currentRow.board_revision) : 0;
+      if (currentRevision !== input.baseRevision) {
+        return frozen({ kind: "revision_conflict", currentRevision });
+      }
+      if (currentRevision === Number.MAX_SAFE_INTEGER) {
+        return frozen({ kind: "invalid_request", errors: Object.freeze(["board.revision_exhausted"]) });
+      }
+
+      const board = makeBoardDocument({
+        projectId,
+        questId,
+        boardRevision: currentRevision + 1,
+        positions: input.positions
+      });
+      const positionsJson = JSON.stringify(board.positions);
+      this.#db.prepare(`
+        INSERT INTO control_board_documents (
+          project_id, quest_id, schema_version, board_revision, positions_json, updated_by, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, quest_id) DO UPDATE SET
+          schema_version = excluded.schema_version,
+          board_revision = excluded.board_revision,
+          positions_json = excluded.positions_json,
+          updated_by = excluded.updated_by,
+          updated_at_ms = excluded.updated_at_ms
+      `).run(
+        projectId,
+        questId,
+        board.schemaVersion,
+        board.boardRevision,
+        positionsJson,
+        input.actorUserId,
+        Date.now()
+      );
+      this.#db.prepare(`
+        INSERT INTO control_board_idempotency (
+          project_id, quest_id, idempotency_key, request_hash, result_revision, result_json, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        projectId,
+        questId,
+        input.idempotencyKey,
+        requestHash,
+        board.boardRevision,
+        JSON.stringify(board),
+        input.actorUserId,
+        Date.now()
+      );
+      return frozen({ kind: "updated", board });
+    });
+  }
+
   #initialize(): void {
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS control_meta (
@@ -401,6 +497,29 @@ export class SQLiteControlStore implements ControlStore {
         quest_id TEXT NOT NULL,
         current_revision INTEGER NOT NULL CHECK (current_revision >= 0),
         PRIMARY KEY (project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_board_documents (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        schema_version TEXT NOT NULL CHECK (schema_version = '1.0'),
+        board_revision INTEGER NOT NULL CHECK (board_revision >= 0),
+        positions_json TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_board_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_revision INTEGER NOT NULL CHECK (result_revision >= 1),
+        result_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, idempotency_key),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_draft_snapshots (
         project_id TEXT NOT NULL,
@@ -450,8 +569,14 @@ export class SQLiteControlStore implements ControlStore {
     `);
     this.#transaction(() => {
       const schema = this.#db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
-      if (!schema) this.#db.prepare("INSERT INTO control_meta (key, value) VALUES ('schema_version', ?)").run(CONTROL_SCHEMA_VERSION);
-      else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) throw new Error(`unsupported control schema version ${String(schema.value)}`);
+      if (!schema) {
+        this.#db.prepare("INSERT INTO control_meta (key, value) VALUES ('schema_version', ?)").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 1) {
+        // v2 adds the board document/idempotency tables; CREATE IF NOT EXISTS above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
+        throw new Error(`unsupported control schema version ${String(schema.value)}`);
+      }
       this.#db.prepare("INSERT OR IGNORE INTO control_meta (key, value) VALUES ('validation_counter', 0)").run();
       this.#db.prepare("INSERT OR IGNORE INTO control_meta (key, value) VALUES ('playtest_counter', 0)").run();
     });
@@ -497,6 +622,111 @@ export class SQLiteControlStore implements ControlStore {
   #assertOpen(): void {
     if (this.#closed) throw new Error("SQLiteControlStore is closed");
   }
+}
+
+function emptyBoardDocument(projectId: string, questId: string): BoardDocument {
+  return cloneAndFreeze({
+    schemaVersion: "1.0" as const,
+    projectId,
+    questId,
+    boardRevision: 0,
+    positions: {}
+  });
+}
+
+function makeBoardDocument(input: {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly boardRevision: number;
+  readonly positions: Readonly<Record<string, BoardPosition>>;
+}): BoardDocument {
+  return cloneAndFreeze({
+    schemaVersion: "1.0" as const,
+    projectId: input.projectId,
+    questId: input.questId,
+    boardRevision: input.boardRevision,
+    positions: normalizeBoardPositions(input.positions)
+  });
+}
+
+function boardDocumentFromRow(row: any): BoardDocument {
+  return boardDocumentFromJson(JSON.stringify({
+    schemaVersion: String(row.schema_version),
+    projectId: String(row.project_id),
+    questId: String(row.quest_id),
+    boardRevision: Number(row.board_revision),
+    positions: parseJson(row.positions_json)
+  }));
+}
+
+function boardDocumentFromJson(value: unknown): BoardDocument {
+  const parsed = typeof value === "string" ? parseJson(value) : value;
+  if (!isRecord(parsed)
+    || parsed.schemaVersion !== "1.0"
+    || !isId(parsed.projectId)
+    || !isId(parsed.questId)
+    || !isNonNegativeSafeInteger(parsed.boardRevision)
+    || !isRecord(parsed.positions)) {
+    throw new Error("invalid stored BoardDocument");
+  }
+  const positions = validateBoardPositions(parsed.positions);
+  if (positions.length > 0) throw new Error(`invalid stored BoardDocument: ${positions.join(",")}`);
+  return cloneAndFreeze({
+    schemaVersion: "1.0" as const,
+    projectId: parsed.projectId,
+    questId: parsed.questId,
+    boardRevision: parsed.boardRevision,
+    positions: normalizeBoardPositions(parsed.positions as Readonly<Record<string, BoardPosition>>)
+  });
+}
+
+function validateBoardChangeInput(input: ApplyBoardChangesInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeSafeInteger(input.baseRevision)) errors.push("baseRevision");
+  if (!isRecord(input.positions)) errors.push("positions.shape");
+  else errors.push(...validateBoardPositions(input.positions));
+  if (typeof input.idempotencyKey !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(input.idempotencyKey)) {
+    errors.push("idempotencyKey");
+  }
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
+}
+
+function validateBoardPositions(value: Record<string, unknown>): string[] {
+  const keys = Object.keys(value);
+  const errors: string[] = [];
+  if (keys.length > 1000) errors.push("positions.count");
+  for (const id of keys) {
+    if (!isId(id)) { errors.push(`positions.id:${id}`); continue; }
+    const position = value[id];
+    if (!isRecord(position) || !hasExactKeys(position, ["x", "y"])
+      || !isFiniteBoardCoordinate(position.x) || !isFiniteBoardCoordinate(position.y)) {
+      errors.push(`positions.value:${id}`);
+    }
+  }
+  return errors;
+}
+
+function isFiniteBoardCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1_000_000;
+}
+
+function normalizeBoardPositions(value: Readonly<Record<string, BoardPosition>>): Record<string, BoardPosition> {
+  const positions: Record<string, BoardPosition> = {};
+  for (const id of Object.keys(value).sort()) {
+    const position = value[id];
+    if (position) positions[id] = { x: position.x, y: position.y };
+  }
+  return positions;
+}
+
+function hashBoardRequest(baseRevision: number, positions: Readonly<Record<string, BoardPosition>>): string {
+  const canonical = JSON.stringify({ baseRevision, positions: normalizeBoardPositions(positions) });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 async function buildChangedSnapshot(current: DraftSnapshot, changeSet: DraftChangeSet): Promise<
@@ -729,9 +959,6 @@ function isId(value: unknown): value is string {
 }
 function isTitle(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 200;
-}
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 function cloneJson<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 function cloneAndFreeze<T>(value: T): T { return deepFreeze(cloneJson(value)); }

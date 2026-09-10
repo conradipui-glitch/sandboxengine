@@ -186,6 +186,28 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/board": {
+      "get": {
+        "operationId": "control_board_get",
+        "summary": "Получение server-authoritative layout BoardDocument отдельно от canonical draft",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/board/changes": {
+      "post": {
+        "operationId": "control_board_changes",
+        "summary": "Owner/editor atomic CAS layout update with required idempotency-key",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
       "get": {
         "operationId": "control_draft_history",

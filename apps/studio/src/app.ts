@@ -56,7 +56,7 @@ import {
   type InspectorBlockKind,
   type InspectorPatch
 } from "./block-inspector.js";
-import { loadBoardPositions, saveBoardPosition } from "./board-storage.js";
+import { loadBoardPositions, saveBoardPosition, saveBoardPositions } from "./board-storage.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
 import {
@@ -108,6 +108,9 @@ interface StudioState {
   selectedBoardNodeId: string | null;
   selectedBoardEdgeId: string | null;
   boardPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+  boardRevision: number;
+  boardLoadError: string | null;
+  boardPersistenceEnabled: boolean;
   editorMenuOpen: boolean;
   utilityPanel: "versions" | "portability" | "settings" | null;
   blockModalKind: InspectorBlockKind | null;
@@ -153,6 +156,9 @@ export class StudioApp {
     selectedBoardNodeId: null,
     selectedBoardEdgeId: null,
     boardPositions: new Map(),
+    boardRevision: 0,
+    boardLoadError: null,
+    boardPersistenceEnabled: true,
     editorMenuOpen: false,
     utilityPanel: null,
     blockModalKind: null,
@@ -165,6 +171,9 @@ export class StudioApp {
   private boardContext: { readonly projectId: string; readonly questId: string } | null = null;
   private readonly rootDisposers: Array<() => void> = [];
   private inspectorSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private boardSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private boardSaveInFlight = false;
+  private boardSaveAgain = false;
   private destroyed = false;
 
   constructor(
@@ -195,7 +204,10 @@ export class StudioApp {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.inspectorSaveTimer !== null) clearTimeout(this.inspectorSaveTimer);
+    if (this.boardSaveTimer !== null) clearTimeout(this.boardSaveTimer);
     this.inspectorSaveTimer = null;
+    this.boardSaveTimer = null;
+    this.boardSaveAgain = false;
     this.destroyBoard();
     for (const dispose of this.rootDisposers.splice(0)) dispose();
   }
@@ -1019,6 +1031,9 @@ export class StudioApp {
         this.state.inspectorDraft = null;
         this.state.blockModalKind = null;
         this.state.boardPositions = loadBoardPositions(questId);
+        this.state.boardRevision = 0;
+        this.state.boardLoadError = null;
+        this.state.boardPersistenceEnabled = true;
         this.state.validation = null;
     this.state.playtest = null;
     this.state.versions = null;
@@ -1031,7 +1046,21 @@ export class StudioApp {
     this.state.publicationReceipt = null;
     this.render();
     try {
-      this.state.draft = await this.api.getDraft(projectId, questId);
+      const [draft, board] = await Promise.all([
+        this.api.getDraft(projectId, questId),
+        this.api.getBoard(projectId, questId).catch((error: unknown) => {
+          this.state.boardLoadError = error instanceof ControlApiError
+            ? `Серверная раскладка недоступна (${error.status}); используем локальную.`
+            : "Серверная раскладка недоступна; используем локальную.";
+          this.state.boardPersistenceEnabled = false;
+          return null;
+        })
+      ]);
+      this.state.draft = draft;
+      if (board) {
+        this.state.boardRevision = board.boardRevision;
+        this.state.boardPositions = new Map(Object.entries(board.positions));
+      }
       await this.refreshVersions(projectId, questId);
       await this.refreshAuthorAssistant(projectId, questId);
       this.state.phase = "idle";
@@ -1697,6 +1726,54 @@ export class StudioApp {
       && this.state.selectedQuestId === context.questId;
   }
 
+  private scheduleBoardSave(projectId: string, questId: string): void {
+    if (!this.state.boardPersistenceEnabled || !this.isStudioContextCurrent({ projectId, questId })) return;
+    if (this.boardSaveInFlight) {
+      this.boardSaveAgain = true;
+      return;
+    }
+    if (this.boardSaveTimer !== null) clearTimeout(this.boardSaveTimer);
+    this.boardSaveTimer = setTimeout(() => {
+      this.boardSaveTimer = null;
+      void this.flushBoardSave(projectId, questId);
+    }, 700);
+  }
+
+  private async flushBoardSave(projectId: string, questId: string): Promise<void> {
+    if (this.boardSaveInFlight || !this.state.boardPersistenceEnabled) return;
+    if (!this.isStudioContextCurrent({ projectId, questId })) return;
+    const baseRevision = this.state.boardRevision;
+    const positions = new Map(this.state.boardPositions);
+    this.boardSaveInFlight = true;
+    try {
+      const board = await this.api.applyBoardChanges(projectId, questId, baseRevision, mapToBoardPositions(positions));
+      if (!this.isStudioContextCurrent({ projectId, questId })) return;
+      this.state.boardRevision = board.boardRevision;
+      if (mapsEqual(this.state.boardPositions, positions)) {
+        this.state.boardPositions = new Map(Object.entries(board.positions));
+      } else {
+        this.boardSaveAgain = true;
+      }
+      saveBoardPositions(questId, this.state.boardPositions);
+      this.state.phase = "saved";
+      this.state.message = `Раскладка сохранена (board r${board.boardRevision}).`;
+      this.render();
+    } catch (error) {
+      if (!this.isStudioContextCurrent({ projectId, questId })) return;
+      this.state.phase = "error";
+      this.state.message = error instanceof ControlApiError && error.status === 409
+        ? "Раскладка изменилась в другом окне; локальное перемещение не перезаписало сервер."
+        : "Раскладку не удалось сохранить; локальная позиция сохранена до повтора.";
+      this.render();
+    } finally {
+      this.boardSaveInFlight = false;
+      if (this.boardSaveAgain) {
+        this.boardSaveAgain = false;
+        this.scheduleBoardSave(projectId, questId);
+      }
+    }
+  }
+
   private boardCallbacks(projectId: string, questId: string): {
     readonly onMove: (nodeId: string, x: number, y: number) => void;
     readonly onSelect: (nodeId: string | null) => void;
@@ -1709,6 +1786,7 @@ export class StudioApp {
         const next = new Map(this.state.boardPositions);
         next.set(nodeId, { x, y });
         this.state.boardPositions = next;
+        this.scheduleBoardSave(projectId, questId);
       },
       onSelect: (nodeId) => {
         if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
@@ -2368,6 +2446,24 @@ function integer(data: FormData, name: string): number {
 function requireSelected(value: string | null, message: string): string {
   if (!value) throw new Error(message);
   return value;
+}
+
+function mapToBoardPositions(positions: ReadonlyMap<string, { readonly x: number; readonly y: number }>): Record<string, { readonly x: number; readonly y: number }> {
+  const value: Record<string, { readonly x: number; readonly y: number }> = {};
+  for (const [nodeId, position] of positions) value[nodeId] = { x: position.x, y: position.y };
+  return value;
+}
+
+function mapsEqual(
+  left: ReadonlyMap<string, { readonly x: number; readonly y: number }>,
+  right: ReadonlyMap<string, { readonly x: number; readonly y: number }>
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [nodeId, position] of left) {
+    const other = right.get(nodeId);
+    if (!other || other.x !== position.x || other.y !== position.y) return false;
+  }
+  return true;
 }
 
 function requireDraft(value: DraftView | null): DraftView {
