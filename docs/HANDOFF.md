@@ -1,9 +1,29 @@
 # Передача работы
 
-Обновлено: 2026-09-10
+Обновлено: 2026-09-11
 
-Текущий блок: **M06 DONE локально (publication registry + public catalog + credential-bound generic BFF). OPEN: live engine/site delivery, VPS exact-SHA smoke и ролевые C18-проверки.**
+Текущий блок: **M06 hosted acceptance DONE: обе тестовые миссии созданы в Studio, опубликованы, сыграны через generic catalog/BFF, unpublish и legacy-регрессия проверены. OPEN: C18 ролевые проверки editor/viewer.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
+
+## M06 hosted acceptance (2026-09-11)
+
+- SSH восстановлен из проектных данных: ключ [REDACTED], host 85.137.95.104, port 48176, user root; ключи для root без порта 48176 не работают — отказ «ключей root» был следствием неверного порта.
+- Engine доставлен на `b1546dad200aa9995b0b1d98bbabad20047b19e7` (M06 `df07f5f` + hosted-фиксы `4fdfd74`, `b1546da`), worktree чист.
+- Site preview Worker пере деплоен из `c604421` (`feat/florence-vertical-slice`, M06 `b00b7d1` + hosted-config commit) через workflow run 34510822807, version b27f01fa.
+- Hosted-фиксы, найденные при приёмке (оба закоммичены и задеплоены):
+  - Studio control server не получал `publicationStore` → публикации не появлялись в каталоге (`4fdfd74`);
+  - regex публичных маршрутов не матчил percent-encoded `publicMissionId` → Worker BFF получал 401 (`b1546da`).
+- Конфигурация: override `/tmp/lhc-m06-compose-override.yml` задаёт `LH_PUBLIC_MISSION_SESSION_SECRET` (значение [REDACTED]); runtime 8742, authored runtime 8746 (`docker exec -d lhc-engine node /engine/deploy/vps/authored-server.mjs`), nginx 8743: `/public/v1/missions` → control 8788, `/` → 8746.
+- Worker vars: `ENGINE_PUBLIC_CATALOG_URL` и `ENGINE_PUBLIC_MISSION_URL` добавлены в `wrangler.jsonc`; DO `PublishedMissionRouteSession` и миграция `v4-m06-published-missions` задеплоены вместе с Worker.
+- Приёмочные доказательства (hosted):
+  1. `/public/v1/missions` отдал обе миссии; site `/api/scenarios` их зеркалирует;
+  2. Alpha: create session → turn 1 → turn 2 → `status: victory` через site BFF;
+  3. Beta: сыграна до `victory` так же;
+  4. reload по id сессии вернул сохранённое состояние (turn 2, финальная сцена);
+  5. unpublish Beta (owner CAS по expectedReleaseId) убрал её из engine-каталога и site-каталога; повторное создание игры Beta → 500 (нет в каталоге), Alpha и legacy Florence работают (201);
+  6. legacy Florence продолжает играть через тот же Worker (регрессии нет).
+- Не покрыто: C18 editor/viewer/read-only — на gate есть только один Telegram-owner; нужны отдельные аккаунты для ролевых проверок.
+
 
 ## L00 — baseline review (2026-09-09)
 
