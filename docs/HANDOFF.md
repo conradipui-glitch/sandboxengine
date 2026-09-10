@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **K08 in progress. C01–C17 local/static/browser evidence pass; C18 exact-SHA VPS deployment/authenticated smoke OPEN. Full `npm run verify` running; GREEN запрещён до live proof**
+Текущий блок: **K08 PARTIAL. Full verify exit 0 и Studio exact-SHA `fb0483c` deployed/rechecked; C18 authenticated Telegram browser smoke OPEN. GREEN запрещён до live session evidence**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -188,13 +188,14 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 
 Следующее: K08 — C01–C18, full verify, deployment and VPS smoke.
 
-## Studio V00–V02 correction — K08 in progress
+## Studio V00–V02 correction — K08 PARTIAL, authenticated browser OPEN
 
-- `apps/studio/test/correction-acceptance.test.mjs`: **18 tests, 17 passed, 1 skipped (C18)**; skipped only because live exact-SHA candidate is not deployed yet.
-- `docs/acceptance/studio-c01-c18.md` maps every C criterion to STATIC/LOCAL/BROWSER/VPS evidence and keeps C18 OPEN.
-- `npm run verify` is running under Node 24.19.0; result will be recorded only after the process exits.
-- Next state-changing scope is Studio-only: exact candidate deploy/rebuild, loopback/public/auth smoke, then authenticated browser scenario. Engine, gate, production and auth mechanics stay untouched.
+- Acceptance harness: C01–C17 pass; C18 public boundary passes after deploy, authenticated Telegram browser is not verified.
+- `npm run verify` under Node 24.19.0 → exit 0 after updating the registry count from 42 to 44 for the two board endpoints.
+- Studio-only VPS delivery: remote SHA `fb0483c`, rebuilt image digest `sha256:5411…`, `lhc-studio` recreated with `--no-deps`; Engine health 200 and gate/Engine uptime remained unchanged.
+- Public unauthenticated checks: `/` 200 login fallback; namespaced assets/player-meta/runtime 401; legacy root assets 410. No credentials, ticket or cookie was guessed.
+- Local browser/CDP scenario remains the completed interaction evidence for C01–C17.
 
-GREEN is not declared.
+Blocking item: authenticated public Studio browser scenario (owner/editor/viewer/read-only and playtest result) using an existing Telegram-gate session. GREEN is not declared.
 
-Следующее: exact-SHA Studio-only deployment, VPS smoke, C18 execution and final delivery verification.
+Следующее: получить/использовать авторизованную browser session для C18, затем final delivery verification.

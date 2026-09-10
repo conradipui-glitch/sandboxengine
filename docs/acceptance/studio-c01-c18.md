@@ -29,7 +29,7 @@ Current local candidate: see `git rev-parse HEAD`
 | C15 | Pan/zoom/fit bounds and read-only behavior | acceptance C15; K04 pointer/wheel/space/fit smoke | LOCAL + BROWSER PASS |
 | C16 | V00 namespaces and legacy root separation remain intact | K07 selected suite; public VPS unauth matrix | LOCAL + VPS unauth PASS |
 | C17 | Independent frozen Player can launch and return server runtime result | Player UI/launch/full-cycle suites; K07 selected suite | LOCAL PASS |
-| C18 | Exact candidate SHA deployed and authenticated VPS browser scenario passes | Requires Studio-only deployment, exact-SHA/image/loopback/public checks, then authenticated browser | **OPEN/SKIPPED** |
+| C18 | Exact candidate SHA deployed and authenticated VPS browser scenario passes | Remote read-only proof: SHA `fb0483c`, image digest `sha256:5411…`, Studio/Engine loopback 200; public unauth asset matrix and C18 boundary test pass. Authenticated Telegram browser scenario is still unavailable (no session; browser tool timeout). | **PARTIAL / AUTH OPEN** |
 
 ## Reproducible local commands
 
