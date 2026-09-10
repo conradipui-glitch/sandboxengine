@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K03 DONE локально + BROWSER/LOCAL; K04 следующий. Inspector и четыре canonical block types доказаны, conflict не перезаписывает сервер; C01–C18 и VPS ещё не закрыты**
+Текущий блок: **Studio V00–V02 correction K04 DONE локально + BROWSER/LOCAL; K05 следующий. Inspector, четыре типа, valid/invalid edges, drag/zoom/pan/fit доказаны; server BoardDocument, C01–C18 и VPS ещё не закрыты**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -144,3 +144,13 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 - Не закрыто этим этапом: K04 connections/layout, K05 BoardDocument/other-browser restart, C01–C18 full matrix и VPS exact-SHA smoke.
 
 Следующее: K04 — valid/invalid connections, ports, drag/zoom/fit и collision-aware layout.
+
+## Studio V00–V02 correction — K04 DONE локально + BROWSER/LOCAL
+
+- Fallback layout разделён на четыре type columns с локальными индексами; regression подтверждает отсутствие пересечений карточек.
+- Derived SVG edges получили `marker-end`; valid/invalid connection gestures идут через canonical `block.replace`, недопустимые связи не меняют draft.
+- Реальный CDP pointer smoke подтвердил valid edge `1→2`, invalid edge count без изменения, два drag с обновлением path, wheel zoom, Space+drag pan, fit, localStorage position и сохранение transform при переключении вкладок; осталось 5 nodes.
+- Static: Node 24.19.0 `npm run typecheck` exit 0; board-model **7/7**; Studio **81/81**.
+- Ограничение: позиции ещё только localStorage одного браузера; K05 добавит server BoardDocument/restart/other-browser.
+
+Следующее: K05 — server BoardDocument persistence, revision/idempotency, restart и другой браузер.

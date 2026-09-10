@@ -58,10 +58,10 @@ export const EDGE_RULES: ReadonlyArray<{ readonly kind: BoardEdge["kind"]; reado
  * меняют валидацию/Player. После перетаскивания сохраняются на сервере.
  */
 export function fallbackPosition(kind: BoardBlock["kind"], index: number): { readonly x: number; readonly y: number } {
-  const COLUMNS: Record<BoardBlock["kind"], number> = { location: 0, character: 1, resource: 1, action: 2 };
-  const col = COLUMNS[kind] ?? index % 3;
-  const row = Math.floor(index / 3);
-  return { x: 48 + col * 280, y: 64 + row * 200 };
+  const COLUMNS: Record<BoardBlock["kind"], number> = { location: 0, character: 1, resource: 2, action: 3 };
+  const col = COLUMNS[kind] ?? 0;
+  const row = Number.isSafeInteger(index) && index >= 0 ? index : 0;
+  return { x: 48 + col * 300, y: 64 + row * 160 };
 }
 
 /** Чистая проекция DraftView → BoardModel (без DOM, без random, детерминированно). */
@@ -129,9 +129,9 @@ export function draftToBoard(draft: DraftView, savedPositions: ReadonlyMap<strin
   };
 
   locations.forEach((b, i) => push(b, i));
-  characters.forEach((b, i) => push(b, locations.length + i));
-  resources.forEach((b, i) => push(b, locations.length + characters.length + i));
-  actions.forEach((b, i) => push(b, locations.length + characters.length + resources.length + i));
+  characters.forEach((b, i) => push(b, i));
+  resources.forEach((b, i) => push(b, i));
+  actions.forEach((b, i) => push(b, i));
 
   const edges: BoardEdge[] = [];
   for (const character of characters) {

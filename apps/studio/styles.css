@@ -661,6 +661,8 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .block-modal textarea { resize: vertical; }
 .inspector-placeholder, .inspector-empty { padding: 16px; border: 1px dashed var(--border); border-radius: var(--radius-m); color: var(--muted); }
 .inspector-placeholder { display: grid; gap: 8px; }
+.board-edge { stroke: var(--muted); stroke-width: 2; }
+.board-edge:hover { stroke: var(--primary); }
 @media (max-width: 680px) { .library-add-grid { grid-template-columns: 1fr 1fr; } .block-modal { max-height: 88vh; } }
 .settings-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
 .settings-panel .access-panel { margin: 0; }

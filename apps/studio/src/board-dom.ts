@@ -265,6 +265,22 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   const edgesGroup = document.createElementNS(SVG_NS, "g");
   svg.appendChild(edgesGroup);
 
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const arrowMarker = document.createElementNS(SVG_NS, "marker");
+  arrowMarker.id = "board-arrowhead";
+  arrowMarker.setAttribute("viewBox", "0 0 10 10");
+  arrowMarker.setAttribute("refX", "9");
+  arrowMarker.setAttribute("refY", "5");
+  arrowMarker.setAttribute("markerWidth", "6");
+  arrowMarker.setAttribute("markerHeight", "6");
+  arrowMarker.setAttribute("orient", "auto-start-reverse");
+  const arrow = document.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+  arrow.setAttribute("fill", "currentColor");
+  arrowMarker.appendChild(arrow);
+  defs.appendChild(arrowMarker);
+  svg.appendChild(defs);
+
   /** Пунктирная линия, следующая за курсором при создании связи. */
   const ghostPath = document.createElementNS(SVG_NS, "path");
   ghostPath.setAttribute("class", "board-ghost");
@@ -503,8 +519,10 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       const target = anchorFor(edge.target, "in");
       if (!source || !target) continue;
       const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("class", "board-edge");
       path.setAttribute("data-edge-id", edge.id);
       path.setAttribute("data-edge-kind", edge.kind);
+      path.setAttribute("marker-end", "url(#board-arrowhead)");
       const label = document.createElementNS(SVG_NS, "text");
       label.setAttribute("class", "board-edge-label");
       label.setAttribute("text-anchor", "middle");

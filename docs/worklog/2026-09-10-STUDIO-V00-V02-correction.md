@@ -38,7 +38,7 @@
 | R02 | Доска — главный экран, рабочие размеры и рабочие кнопки | **DONE локально + BROWSER/LOCAL** | K02 viewport shell, board-main workspace, utility menu and one board/list toggle are implemented; local browser smoke confirms board remains mounted while utility panels open. |
 | R03 | Настоящий inspector выбранного canonical block | **DONE локально + BROWSER/LOCAL** | `block-inspector.ts` + app inspector, полный `block.replace`, debounce и conflict preservation проверены browser smoke. |
 | R04 | Создание и редактирование четырёх типов блока | **DONE локально + BROWSER/LOCAL** | Library/modal создали location, character, resource и action; type-specific canonical fields подтверждены GET draft. |
-| R05 | Связи, drag/zoom/fit, collision-aware layout | **OPEN** | Интерактивное подключение есть только в неиспользуемом `board-dom.ts`; подключённый `board-render.ts` не вызывает `onConnect`; fallback `floor(index/3)` может накладывать узлы одного типа. |
+| R05 | Связи, drag/zoom/fit, collision-aware layout | **DONE локально + BROWSER/LOCAL** | `edgeToDraftChange` используется app; SVG edges имеют direction marker; valid/invalid pointer connections, два drag с edge tracking, zoom/pan/fit и collision-free fallback проверены. |
 | R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **OPEN** | `board-storage.ts` прямо признаёт localStorage по одному `questId`; endpoint `/board` и Control persistence не найдены. |
 | R07 | Read-only/role behavior and V00/Player regression evidence | **PARTIAL** | Access gates и existing Player tests есть, но browser proof of read-only board and independent playtests for this candidate отсутствует. |
 | R08 | Regression suite C01–C18 and real connected renderer | **OPEN** | Existing `board-model.test.mjs` covers projection only; no suite reaches the renderer lifecycle, browser interactions, or C01–C18 matrix. |
@@ -106,3 +106,20 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
 
 Следующая точная операция: K04 — допустимые связи, ports, drag/zoom/fit и collision-aware layout.
+
+## K04 — связи, жесты и collision-aware layout — DONE локально + BROWSER/LOCAL
+
+- `apps/studio/src/board-model.ts` теперь строит fallback без пересечений: четыре type columns (`location`, `character`, `resource`, `action`), локальный индекс вида и шаг 160px; saved positions по-прежнему имеют приоритет.
+- `apps/studio/src/board-dom.ts` добавляет явный SVG `marker-end` (`#board-arrowhead`) на каждую derived edge; `onConnect` остаётся типизированным и app применяет `edgeToDraftChange` как полный `block.replace`.
+- Editable board: port/body drag создаёт только `character→location` или `action→resource`; остальные комбинации показывают hint и не меняют edge count. Header drag меняет position live и обновляет path geometry; text inputs не запускают gestures.
+- Static: `npm run typecheck` exit 0; board-model **7/7**; полный Studio suite **81/81**.
+- BROWSER/LOCAL на чистом Chrome profile и отдельной SQLite: valid connection подняла edge count `1→2` с marker; invalid `resource→location` оставила count `2` и показала unsupported hint; два header drag изменили transform и edge `d` оба раза; wheel изменил `41%→47%`, Space+drag изменил pan, «Показать всё» вернул fit `41%`; localStorage подтвердил сохранённую координату; переключение Properties/AI/Properties сохранило transform и 5 nodes.
+
+Ограничение: layout пока localStorage и не доступен другому браузеру; это закрывается K05 BoardDocument.
+
+### R status after K04
+
+- R01/R02/R03/R04/R05 **DONE локально + BROWSER/LOCAL** (VPS candidate ещё не обновлён).
+- R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+
+Следующая точная операция: K05 — серверный BoardDocument persistence, revision/idempotency, restart и другой браузер.

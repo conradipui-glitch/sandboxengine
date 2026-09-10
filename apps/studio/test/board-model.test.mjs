@@ -222,21 +222,45 @@ test("B13 board: edgeToDraftChange возвращает block.replace с canonic
   assert.equal(act.data.resourceId, "res-a");
 });
 
-test("B13 board: fallbackPosition детерминирован и раскладывает виды по колонкам", () => {
-  // Детерминизм: два вызова с теми же аргументами дают одинаковый результат.
-  assert.deepEqual(fallbackPosition("location", 0), fallbackPosition("location", 0));
-  assert.deepEqual(fallbackPosition("action", 1), fallbackPosition("action", 1));
-
-  // Колонки по видам: location=0, character=1, resource=1, action=2 (шаг 280, старт 48).
-  assert.deepEqual(fallbackPosition("location", 0), { x: 48, y: 64 });
-  assert.deepEqual(fallbackPosition("character", 0), { x: 48 + 280, y: 64 });
-  assert.equal(fallbackPosition("resource", 0).x, fallbackPosition("character", 0).x);
-  assert.deepEqual(fallbackPosition("action", 0), { x: 48 + 2 * 280, y: 64 });
-
-  // Строки сетки: индекс 3 переносит на следующую строку (шаг 200).
-  assert.deepEqual(fallbackPosition("location", 1), { x: 48, y: 64 });
-  assert.deepEqual(fallbackPosition("location", 3), { x: 48, y: 64 + 200 });
-  assert.deepEqual(fallbackPosition("character", 4), { x: 48 + 280, y: 64 + 200 });
+test("K04 board: fallback layout is deterministic and collision-aware across all block kinds", () => {
+  const blocks = [
+    locationBlock("loc-1", "Место 1"),
+    locationBlock("loc-2", "Место 2"),
+    locationBlock("loc-3", "Место 3"),
+    locationBlock("loc-4", "Место 4"),
+    characterBlock("char-1", "Персонаж 1", null),
+    characterBlock("char-2", "Персонаж 2", null),
+    resourceBlock("res-1", "Ресурс 1"),
+    resourceBlock("res-2", "Ресурс 2"),
+    actionBlock("act-1", "Действие 1", "res-1"),
+    actionBlock("act-2", "Действие 2", "res-1")
+  ];
+  const model = draftToBoard(makeDraft(blocks, "loc-1"));
+  const rectangles = model.nodes.map((node) => ({
+    id: node.id,
+    x: node.x,
+    y: node.y,
+    right: node.x + 248,
+    bottom: node.y + 112
+  }));
+  for (let i = 0; i < rectangles.length; i += 1) {
+    for (let j = i + 1; j < rectangles.length; j += 1) {
+      const a = rectangles[i];
+      const b = rectangles[j];
+      assert.equal(
+        a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom,
+        false,
+        `${a.id} overlaps ${b.id}`
+      );
+    }
+  }
+  assert.deepEqual(
+    model.nodes.filter((node) => node.type === "location").map(({ x, y }) => ({ x, y })),
+    [fallbackPosition("location", 0), fallbackPosition("location", 1), fallbackPosition("location", 2), fallbackPosition("location", 3)]
+  );
+  assert.equal(new Set(model.nodes.map((node) => `${node.x}:${node.y}`)).size, model.nodes.length);
+  assert.ok(fallbackPosition("location", 1).y > fallbackPosition("location", 0).y);
+  assert.ok(fallbackPosition("resource", 0).x > fallbackPosition("character", 0).x);
 });
 
 test("B13 board: сохранённая позиция из savedPositions переопределяет fallback", () => {
@@ -254,13 +278,13 @@ test("B13 board: сохранённая позиция из savedPositions пе�
   assert.equal(savedNode.y, 777);
   assert.deepEqual(model.positions.get("loc-a"), { x: 999, y: 777 });
 
-  // …а остальные узлы лежат на fallback-позициях (индекс в проекции сквозной:
-  // локации 0..1, персонажи идут после локаций — индекс 2).
+  // …а остальные узлы лежат на fallback-позициях (индекс внутри своего вида: location 0..1,
+  // character начинается с 0 в своей колонке).
   const fallbackNode = model.nodes.find((n) => n.id === "loc-b");
   assert.deepEqual({ x: fallbackNode.x, y: fallbackNode.y }, fallbackPosition("location", 1));
   const charNode = model.nodes.find((n) => n.id === "char-a");
-  assert.deepEqual({ x: charNode.x, y: charNode.y }, fallbackPosition("character", 2));
-  assert.deepEqual(model.positions.get("char-a"), fallbackPosition("character", 2));
+  assert.deepEqual({ x: charNode.x, y: charNode.y }, fallbackPosition("character", 0));
+  assert.deepEqual(model.positions.get("char-a"), fallbackPosition("character", 0));
 });
 
 test("B13 board: пустой draft даёт пустую доску", () => {
