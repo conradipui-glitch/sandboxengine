@@ -163,12 +163,12 @@ K01: добавить failing lifecycle regression against the actually mounted 
 
 Не закрыто: C01–C18, full verify and exact-SHA VPS Studio deployment/smoke (K08). GREEN не объявлен.
 
-## K08 — acceptance matrix / deployment — PARTIAL, auth browser OPEN
+## K08 — acceptance matrix / deployment — PARTIAL, role checks OPEN
 
 - Added `apps/studio/test/correction-acceptance.test.mjs`: local result **18 tests, 17 passed, 1 skipped (C18 without live URL)**; with `CORRECTION_VPS_URL`, C18 boundary check passed for public `/` 200, protected asset/runtime 401 and legacy roots 410.
 - Full `npm run verify` initially caught the expected registry count drift `42→44`; `b10-registry.test.mjs` was corrected and focused test passed. The rerun of full verify exited **0**, including docs/boundaries.
 - Candidate final branch HEAD was delivered through the branch, remote worktree reset exactly to it, Studio image rebuilt and only `lhc-studio` recreated with `--no-deps`. Remote readback (SHA/image digest) is recorded by the final delivery command; Studio loopback 200, Engine health 200, gate/Engine remained running.
 - Public unauthenticated VPS matrix after deploy: `/studio-assets/*`, `/player-assets/*`, `/player-meta.json`, `/v1/*` → 401; `/styles.css`/`/app.js` → 410; `/` → 200 login fallback.
-- Authenticated Telegram browser smoke remains OPEN: no usable session was available, local-cookie browser probe timed out, and no credentials/tickets were guessed. Local Chromium/CDP scenario is complete and recorded for C01–C17.
+- C18 owner-scenario on live VPS (2026-09-10, isolated Chrome + fresh gate ticket, owner `lhc_session`): project «C18 Приёмка» + quest «C18 Миссия» created; board visible on open; resource «C18 Краска» / character «C18 Мастер» / action «C18 Рисовать» added via canonical modals; inspector edit title→«C18 Рисовать v2» persisted; valid character→location drag created `character-initial-location`, invalid resource→character drag rejected; node drag y 492→592 saved; reload keeps 4 nodes / 2 edges / moved layout / edited title; validation «Revision 5 валидна», «Квест готов»; frozen `playtest-3` launched, VPS `127.0.0.1:8745` → **200**. «Приёмка VPS» and Florence Workshop untouched.
 
-Next blocking item: use an already authenticated Telegram browser session (or user-performed login) to execute the public quest/editor/read-only/playtest path. Do not declare GREEN before that evidence.
+Next blocking item: editor/viewer/read-only checks need separate Telegram-gate sessions — one owner session does not prove them. Do not declare GREEN before that evidence.

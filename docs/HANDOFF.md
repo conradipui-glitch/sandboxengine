@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **K08 PARTIAL. Full verify exit 0 и Studio exact-SHA `fb0483c` deployed/rechecked; C18 authenticated Telegram browser smoke OPEN. GREEN запрещён до live session evidence**
+Текущий блок: **K08 PARTIAL. Full verify exit 0, Studio exact-SHA `59bb112` deployed; C18 owner-scenario на VPS ПРОЙДЕН на изолированной миссии (создание→правка→связи→save→reload→validation→Player 200). OPEN: editor/viewer/read-only роли (нужны отдельные сессии). GREEN не объявлен до ролевых проверок.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -196,6 +196,19 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 - Public unauthenticated checks: `/` 200 login fallback; namespaced assets/player-meta/runtime 401; legacy root assets 410. No credentials, ticket or cookie was guessed.
 - Local browser/CDP scenario remains the completed interaction evidence for C01–C17.
 
-Blocking item: authenticated public Studio browser scenario (owner/editor/viewer/read-only and playtest result) using an existing Telegram-gate session. GREEN is not declared.
+Blocking item: role-separated checks (editor/viewer/read-only) need their own Telegram-gate sessions; one owner session does not prove them. GREEN is not declared.
 
-Следующее: получить/использовать авторизованную browser session для C18, затем final delivery verification.
+## Studio V00–V02 correction — K08 C18 owner-scenario PASSED (2026-09-10, VPS live)
+
+- Session: isolated Chrome profile + fresh gate ticket, owner cookie `lhc_session`; remote SHA `59bb112`, Studio loopback 200.
+- Isolated mission only: project «C18 Приёмка» + quest «C18 Миссия». «Приёмка VPS» (1 quest) and Florence Workshop untouched.
+- Quest open shows working board immediately (start location «Начало», `board-nodes 1`).
+- Created via library modals with canonical fields: resource «C18 Краска» (шт), character «C18 Мастер», action «C18 Рисовать» (resourceId preset to the new resource). Nodes 1→4, each step «Сохранено на сервере».
+- Inspector edits canonical fields of the selected block (title→«C18 Рисовать v2», resourceId `c18-doj8v1`, units/duration/allowPartial); edit persisted server-side.
+- Valid drag character→location created `character-initial-location`; invalid drag resource→character rejected (edges stayed 2: `character-initial-location`, `action-resource` «Расходует»).
+- Node drag moved location y 492→592, edges tracked, BoardDocument saved.
+- Reload: project list shows C18 (3 of 3 projects); reopened quest has 4 nodes, 2 edges, moved position y=592, edited title — content+layout persisted.
+- Validation: «Revision 5 валидна. Можно заморозить playtest», «Квест готов».
+- Player: frozen `playtest-3` (revision 5, compiled `6243bb1…1288fb`); VPS loopback `http://127.0.0.1:8745` → **200**.
+
+Следующее: ролевые проверки editor/viewer/read-only отдельными сессиями, затем STUDIO-MISSION-TO-SITE-TASK-RU.md.
