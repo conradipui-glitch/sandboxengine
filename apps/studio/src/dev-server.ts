@@ -15,6 +15,12 @@ const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
   "origin",
   "x-csrf-token",
   "idempotency-key",
+  "x-asset-id",
+  "x-filename",
+  "x-claimed-mime",
+  "x-alt-text",
+  "x-source",
+  "x-rights",
   "x-lh-engine-version",
   "x-lh-registry-hash",
   "x-lh-docs-hash"
@@ -153,7 +159,7 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
   if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
   let body: ArrayBuffer | undefined;
   try {
-    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname));
   } catch (error) {
     if (error instanceof StudioProxyRequestError) {
       sendJson(response, error.status, { error: { code: error.code } });
@@ -228,18 +234,18 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
 }
 
-async function readRequestBody(request: any): Promise<ArrayBuffer> {
+async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_BYTES): Promise<ArrayBuffer> {
   const chunks: Uint8Array[] = [];
   let total = 0;
   const contentLength = Number(request.headers?.["content-length"] ?? "");
-  if (Number.isSafeInteger(contentLength) && contentLength > STUDIO_PROXY_BODY_LIMIT_BYTES) {
+  if (Number.isSafeInteger(contentLength) && contentLength > maxBytes) {
     throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
   }
   for await (const chunk of request) {
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
     chunks.push(bytes);
     total += bytes.byteLength;
-    if (total > STUDIO_PROXY_BODY_LIMIT_BYTES) throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
+    if (total > maxBytes) throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
   }
   const result = new Uint8Array(total);
   let offset = 0;
@@ -248,6 +254,17 @@ async function readRequestBody(request: any): Promise<ArrayBuffer> {
     offset += chunk.byteLength;
   }
   return result.buffer;
+}
+
+// Must stay equal to DEFAULT_ASSET_LIMITS.maxInputBytes + 1 from
+// @living-history/assets; Control re-validates, the proxy only forwards.
+const STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES = 20 * 1024 * 1024 + 1;
+
+function proxyBodyLimit(pathname: string): number {
+  if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/assets$/.test(pathname)) {
+    return STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES;
+  }
+  return STUDIO_PROXY_BODY_LIMIT_BYTES;
 }
 
 class StudioProxyRequestError extends Error {

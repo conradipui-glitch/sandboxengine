@@ -201,6 +201,30 @@
       "summary": "Owner/editor idempotent mission turn: choice effects and scene transition commit together"
     },
     {
+      "id": "control.assets.upload",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/assets",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor authorized octet-stream upload with real format inspection and required idempotency-key"
+    },
+    {
+      "id": "control.assets.list",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/assets",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Project asset library listing for authorized roles"
+    },
+    {
+      "id": "control.assets.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/assets/{assetId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Authorized immutable asset bytes by exact assetId and hash"
+    },
+    {
       "id": "control.draft.history",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",

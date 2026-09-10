@@ -101,6 +101,9 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions` — Owner/editor mission session bound to an exact content revision
 - `GET /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}` — Чтение состояния mission session, привязанной к pinned release
 - `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns` — Owner/editor idempotent mission turn: choice effects and scene transition commit together
+- `POST /control/v1/projects/{projectId}/assets` — Owner/editor authorized octet-stream upload with real format inspection and required idempotency-key
+- `GET /control/v1/projects/{projectId}/assets` — Project asset library listing for authorized roles
+- `GET /control/v1/projects/{projectId}/assets/{assetId}` — Authorized immutable asset bytes by exact assetId and hash
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/history` — Постраничная история immutable draft revisions доступного проекта
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/compare` — Серверное сравнение двух конкретных draft revisions без автоматического merge
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления

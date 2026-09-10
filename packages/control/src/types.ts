@@ -119,6 +119,53 @@ export interface MissionSessionStore {
   applyMissionTurn(sessionId: string, input: ApplyMissionTurnInput): Promise<ApplyMissionTurnResult>;
 }
 
+export interface ProjectAssetEntry {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly listed: boolean;
+  readonly uploadedBy: string;
+  readonly createdAtMs: number;
+}
+
+export interface RegisterProjectAssetInput {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type RegisterProjectAssetResult =
+  | { readonly kind: "registered"; readonly asset: ProjectAssetEntry }
+  | { readonly kind: "replay"; readonly asset: ProjectAssetEntry }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface ProjectAssetLibrary {
+  registerProjectAsset(projectId: string, input: RegisterProjectAssetInput): Promise<RegisterProjectAssetResult>;
+  listProjectAssets(projectId: string, listedOnly: boolean): Promise<readonly ProjectAssetEntry[]>;
+  setProjectAssetListed(
+    projectId: string,
+    assetId: string,
+    listed: boolean,
+    actorUserId: string
+  ): Promise<{ readonly kind: "updated" } | { readonly kind: "not_found" } | { readonly kind: "invalid_request" }>;
+}
+
 export interface ProjectRecord {
   readonly projectId: string;
   readonly title: string;

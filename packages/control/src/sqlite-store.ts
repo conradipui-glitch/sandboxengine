@@ -42,7 +42,11 @@ import type {
   MissionHistoryEntry,
   MissionSessionState,
   MissionSessionStore,
+  ProjectAssetEntry,
+  ProjectAssetLibrary,
   ProjectRecord,
+  RegisterProjectAssetInput,
+  RegisterProjectAssetResult,
   RestoreDraftInput,
   RestoreDraftResult,
   SaveMissionInput,
@@ -50,7 +54,7 @@ import type {
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 4;
+const CONTROL_SCHEMA_VERSION = 5;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -65,7 +69,7 @@ interface DraftChangeContext {
   readonly entryLocationId: string;
 }
 
-export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore, MissionSessionStore {
+export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore, MissionSessionStore, ProjectAssetLibrary {
   readonly #db: any;
   #closed = false;
 
@@ -593,6 +597,110 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     return this.getMission(projectId, questId);
   }
 
+  async registerProjectAsset(
+    projectId: string,
+    input: RegisterProjectAssetInput
+  ): Promise<RegisterProjectAssetResult> {
+    const shapeErrors = validateProjectAssetInput(input);
+    if (shapeErrors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(shapeErrors) });
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    const requestHash = hashProjectAssetRequest(projectId, input);
+    return this.#transaction((): RegisterProjectAssetResult => {
+      const replayRow = this.#db.prepare(`
+        SELECT asset_id, request_hash FROM control_project_asset_idempotency
+        WHERE project_id = ? AND idempotency_key = ?
+      `).get(projectId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        const existing = this.#projectAssetFromRow(this.#db.prepare(`
+          SELECT * FROM control_project_assets WHERE project_id = ? AND asset_id = ?
+        `).get(projectId, String(replayRow.asset_id)));
+        if (!existing) return frozen({ kind: "invalid_request", errors: Object.freeze(["assets.entry_lost"]) });
+        return frozen({ kind: "replay", asset: existing });
+      }
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_project_assets (
+          project_id, asset_id, hash, filename, mime_type, kind,
+          width_px, height_px, duration_ms, byte_length,
+          listed, uploaded_by, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(project_id, asset_id) DO UPDATE SET
+          hash = excluded.hash,
+          filename = excluded.filename,
+          mime_type = excluded.mime_type,
+          kind = excluded.kind,
+          width_px = excluded.width_px,
+          height_px = excluded.height_px,
+          duration_ms = excluded.duration_ms,
+          byte_length = excluded.byte_length,
+          listed = 1,
+          uploaded_by = excluded.uploaded_by,
+          created_at_ms = excluded.created_at_ms
+      `).run(
+        projectId, input.assetId, input.hash, input.filename, input.mimeType, input.kind,
+        input.widthPx, input.heightPx, input.durationMs, input.byteLength,
+        input.actorUserId, now
+      );
+      this.#db.prepare(`
+        INSERT INTO control_project_asset_idempotency (
+          project_id, idempotency_key, asset_id, request_hash, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(projectId, input.idempotencyKey, input.assetId, requestHash, input.actorUserId, now);
+      const asset = this.#projectAssetFromRow(this.#db.prepare(`
+        SELECT * FROM control_project_assets WHERE project_id = ? AND asset_id = ?
+      `).get(projectId, input.assetId));
+      if (!asset) return frozen({ kind: "invalid_request", errors: Object.freeze(["assets.entry_lost"]) });
+      return frozen({ kind: "registered", asset });
+    });
+  }
+
+  async listProjectAssets(projectId: string, listedOnly: boolean): Promise<readonly ProjectAssetEntry[]> {
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return Object.freeze([]);
+    const rows = listedOnly
+      ? this.#db.prepare(`
+        SELECT * FROM control_project_assets WHERE project_id = ? AND listed = 1 ORDER BY asset_id ASC
+      `).all(projectId)
+      : this.#db.prepare(`
+        SELECT * FROM control_project_assets WHERE project_id = ? ORDER BY asset_id ASC
+      `).all(projectId);
+    return Object.freeze(rows.map((row: any) => this.#projectAssetFromRow(row)).filter((entry: ProjectAssetEntry | null) => entry !== null) as ProjectAssetEntry[]);
+  }
+
+  async setProjectAssetListed(
+    projectId: string,
+    assetId: string,
+    listed: boolean,
+    actorUserId: string
+  ): Promise<{ readonly kind: "updated" } | { readonly kind: "not_found" } | { readonly kind: "invalid_request" }> {
+    this.#assertOpen();
+    if (!isId(assetId) || !isId(actorUserId)) return frozen({ kind: "invalid_request" });
+    const updated = this.#db.prepare(`
+      UPDATE control_project_assets SET listed = ? WHERE project_id = ? AND asset_id = ?
+    `).run(listed ? 1 : 0, projectId, assetId);
+    return frozen(Number(updated.changes) === 1 ? { kind: "updated" } : { kind: "not_found" });
+  }
+
+  #projectAssetFromRow(row: any): ProjectAssetEntry | null {
+    if (!row) return null;
+    return cloneAndFreeze({
+      assetId: String(row.asset_id),
+      hash: String(row.hash),
+      filename: row.filename === null ? null : String(row.filename),
+      mimeType: String(row.mime_type),
+      kind: String(row.kind),
+      widthPx: row.width_px === null ? null : Number(row.width_px),
+      heightPx: row.height_px === null ? null : Number(row.height_px),
+      durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
+      byteLength: Number(row.byte_length),
+      listed: Number(row.listed) === 1,
+      uploadedBy: String(row.uploaded_by),
+      createdAtMs: Number(row.created_at_ms)
+    });
+  }
+
   async createMissionSession(
     projectId: string,
     questId: string,
@@ -854,6 +962,33 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         PRIMARY KEY (session_id, idempotency_key),
         FOREIGN KEY (session_id) REFERENCES control_mission_sessions(session_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_project_assets (
+        project_id TEXT NOT NULL,
+        asset_id TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        filename TEXT,
+        mime_type TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        width_px INTEGER,
+        height_px INTEGER,
+        duration_ms INTEGER,
+        byte_length INTEGER NOT NULL CHECK (byte_length >= 0),
+        listed INTEGER NOT NULL CHECK (listed IN (0, 1)),
+        uploaded_by TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, asset_id),
+        FOREIGN KEY (project_id) REFERENCES control_projects(project_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_project_asset_idempotency (
+        project_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        asset_id TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, idempotency_key),
+        FOREIGN KEY (project_id, asset_id) REFERENCES control_project_assets(project_id, asset_id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS control_draft_snapshots (
         project_id TEXT NOT NULL,
         quest_id TEXT NOT NULL,
@@ -912,6 +1047,9 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) === 3) {
         // v4 adds the mission session/turn tables; CREATE IF NOT EXISTS above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 4) {
+        // v5 adds the project asset library tables; CREATE IF NOT EXISTS above is the migration.
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
         throw new Error(`unsupported control schema version ${String(schema.value)}`);
@@ -1131,6 +1269,45 @@ function hashMissionTurnRequest(sessionId: string, input: ApplyMissionTurnInput)
     sessionId,
     baseTurn: input.baseTurn,
     choiceId: input.choiceId
+  });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function validateProjectAssetInput(input: RegisterProjectAssetInput): string[] {
+  const errors: string[] = [];
+  if (!isId(input.assetId)) errors.push("assetId");
+  if (typeof input.hash !== "string" || !/^[0-9a-f]{64}$/.test(input.hash)) errors.push("hash");
+  if (input.filename !== null && (typeof input.filename !== "string" || input.filename.length < 1 || input.filename.length > 255)) {
+    errors.push("filename");
+  }
+  if (typeof input.mimeType !== "string" || input.mimeType.length < 1 || input.mimeType.length > 127) errors.push("mimeType");
+  if (input.kind !== "image" && input.kind !== "audio") errors.push("kind");
+  for (const field of [input.widthPx, input.heightPx, input.durationMs] as const) {
+    if (field !== null && (!Number.isSafeInteger(field) || field < 0)) {
+      errors.push("dimensions");
+      break;
+    }
+  }
+  if (!Number.isSafeInteger(input.byteLength) || input.byteLength < 1) errors.push("byteLength");
+  if (typeof input.idempotencyKey !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(input.idempotencyKey)) {
+    errors.push("idempotencyKey");
+  }
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
+}
+
+function hashProjectAssetRequest(projectId: string, input: RegisterProjectAssetInput): string {
+  const canonical = JSON.stringify({
+    projectId,
+    assetId: input.assetId,
+    hash: input.hash,
+    filename: input.filename,
+    mimeType: input.mimeType,
+    kind: input.kind,
+    widthPx: input.widthPx,
+    heightPx: input.heightPx,
+    durationMs: input.durationMs,
+    byteLength: input.byteLength
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }

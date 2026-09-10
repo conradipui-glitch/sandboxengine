@@ -33,7 +33,7 @@ test("B10 registry advertises implemented author HTTP, agent-kit read and extern
   }
 
   const available = registry.operations.filter((operation) => operation.readiness === "available");
-  assert.equal(available.length, 49);
+  assert.equal(available.length, 52);
   assert.equal(
     available.filter((operation) => /^control\.author(?:ing)?\./.test(operation.id)).length,
     EXPECTED_B10_A.length + EXPECTED_B10_B.length
@@ -51,8 +51,8 @@ test("B10 registry advertises implemented author HTTP, agent-kit read and extern
   const openapi = JSON.parse(generated.get("docs/agent/api.openapi.json"));
   const capabilities = JSON.parse(generated.get("docs/agent/capabilities.json"));
   const compatibility = JSON.parse(generated.get("docs/agent/compatibility.json"));
-  assert.equal(compatibility.availableOperationCount, 49);
-  assert.equal(capabilities.operations.length, 49);
+  assert.equal(compatibility.availableOperationCount, 52);
+  assert.equal(capabilities.operations.length, 52);
 
   for (const [id, method, path] of [...EXPECTED_B10_A, ...EXPECTED_B10_B]) {
     assert.equal(openapi.paths[path]?.[method.toLowerCase()]?.operationId, id.replace(/[^A-Za-z0-9_]/g, "_"));

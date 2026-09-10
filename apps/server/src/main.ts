@@ -1,12 +1,13 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { mkdirSync } from "node:fs";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   SQLiteControlReleaseStore,
   SQLiteControlSecurityStore,
   SQLiteControlStore
 } from "@living-history/control";
+import { LocalAssetStore } from "@living-history/assets";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import {
@@ -85,6 +86,9 @@ const runtime = createRuntimeHttpServer({
 const control = createControlHttpServer({
   store: controlStore,
   boardStore: controlStore,
+  missionStore: controlStore,
+  assetLibrary: controlStore,
+  assetStorage: new LocalAssetStore(join(dirname(databasePath), "assets")),
   releases: {
     store: releaseStore,
     pluginRegistry,

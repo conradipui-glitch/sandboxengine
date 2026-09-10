@@ -261,6 +261,37 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/assets": {
+      "post": {
+        "operationId": "control_assets_upload",
+        "summary": "Owner/editor authorized octet-stream upload with real format inspection and required idempotency-key",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "get": {
+        "operationId": "control_assets_list",
+        "summary": "Project asset library listing for authorized roles",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/assets/{assetId}": {
+      "get": {
+        "operationId": "control_assets_get",
+        "summary": "Authorized immutable asset bytes by exact assetId and hash",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
       "get": {
         "operationId": "control_draft_history",

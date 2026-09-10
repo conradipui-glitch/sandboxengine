@@ -197,3 +197,15 @@ Next blocking item: editor/viewer/read-only checks need separate Telegram-gate s
 - Suites: core 64/64, control 103/103, contracts 57/57, server 124/124; typecheck exit 0.
 - Docs: `docs/migration/2026-09-10-mission-sessions.md`. VPS prod уже durable (`main.ts` → SQLite binding на общем volume; Memory store только в legacy `authored-server.mjs` вне compose).
 - OPEN в M02: live two-mission play через BFF на VPS (нужен engine deploy с mission endpoints + M06 publication wiring).
+
+## M03 — project asset library + HTTP + proxy — DONE
+
+- `packages/control`: `ProjectAssetLibrary` — register/list/unlist (unlist не трогает байты), idempotency, SQLite v5. Test 1/1.
+- `apps/server`: `POST .../assets` (octet-stream, bounded, metadata headers, ingest → 201/replay/409/422), `GET .../assets` (tester listed, editor `?all=1`), `GET .../assets/{id}?hash=` (immutable bytes). Test 1/1 (real PNG bytes, mismatch/HTML rejections).
+- `main.ts`: `LocalAssetStore(<data-dir>/assets)` + library wiring. Studio proxy: asset headers в allowlist, asset-body limit 20MB+1 только для `.../assets`, обычные маршруты по-прежнему 413.
+- Proxy test 1/1 (headers + 300KB проходят, draft-changes 413).
+- Registry +3 (`control.assets.*`), `docs:generate`, b10 count 49→52.
+- Suites (node 24.19): control 103+/103+, server 125/125, studio 99+1 skip, contracts green; typecheck exit 0.
+- Замечание: системный node v22 роняет C17 (`process.version startsWith v24`) — environment, не регрессия; все suites гоняются под node 24.19.
+- Thumbnails отложены в M04 (client-side, без выдуманного ресайза); не-ASCII metadata клиент кодирует (граница для M05).
+- Docs: `docs/migration/2026-09-10-project-assets.md`.

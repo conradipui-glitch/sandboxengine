@@ -21,9 +21,16 @@ import {
   type FrozenPlaytestRecord,
   type MissionDocumentStore,
   type MissionSessionStore,
+  type ProjectAssetLibrary,
   type SaveMissionResult
 } from "@living-history/control";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
+import {
+  AssetBoundaryError,
+  DEFAULT_ASSET_LIMITS,
+  LocalAssetStore,
+  ingestAsset
+} from "@living-history/assets";
 import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
 import type { PlaytestTraceReader } from "@living-history/runtime";
 import { buildControlRelease } from "./release-authority.js";
@@ -70,6 +77,8 @@ export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly boardStore?: BoardDocumentStore;
   readonly missionStore?: MissionDocumentStore & MissionSessionStore;
+  readonly assetStorage?: LocalAssetStore;
+  readonly assetLibrary?: ProjectAssetLibrary;
   readonly releases?: ControlReleaseModeOptions;
   readonly playtestTrace?: PlaytestTraceReader;
   readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore };
@@ -110,6 +119,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   const releases = dependencies.releases ?? null;
   const boardStore = dependencies.boardStore ?? (isBoardDocumentStore(dependencies.store) ? dependencies.store as BoardDocumentStore : null);
   const missionStore = dependencies.missionStore ?? (isMissionStore(dependencies.store) ? dependencies.store as MissionDocumentStore & MissionSessionStore : null);
+  const assetLibrary = dependencies.assetLibrary ?? (isProjectAssetLibrary(dependencies.store) ? dependencies.store as ProjectAssetLibrary : null);
   const authorAssistant = dependencies.authorAssistant
     ? Object.freeze({
         ...dependencies.authorAssistant,
@@ -126,6 +136,8 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         dependencies.store,
         boardStore,
         missionStore,
+        dependencies.assetStorage ?? null,
+        assetLibrary,
         releases,
         dependencies.playtestTrace ?? null,
         authorAssistant,
@@ -185,6 +197,8 @@ async function routeControlRequest(
   store: ControlStore,
   boardStore: BoardDocumentStore | null,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
+  assetStorage: LocalAssetStore | null,
+  assetLibrary: ProjectAssetLibrary | null,
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
   authorAssistant: (Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore }) | null,
@@ -571,6 +585,118 @@ async function routeControlRequest(
       } else {
         sendJson(response, 422, { error: { code: "INVALID_MISSION_TURN", details: result.errors } });
       }
+      return;
+    }
+    sendNotFound(response);
+    return;
+  }
+
+  const assetsMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(url.pathname);
+  if (assetsMatch) {
+    const projectId = assetsMatch[1];
+    const assetId = assetsMatch[2] ?? null;
+    if (!projectId) { sendNotFound(response); return; }
+    if (assetStorage === null || assetLibrary === null) {
+      sendJson(response, 501, { error: { code: "ASSET_STORAGE_UNAVAILABLE" } });
+      return;
+    }
+    if (assetId === null && method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const editorView = url.searchParams.get("all") === "1";
+      if (editorView && !(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      const assets = await assetLibrary.listProjectAssets(projectId, !editorView);
+      sendJson(response, 200, { assets });
+      return;
+    }
+    if (assetId === null && method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const contentType = readHeader(request, "content-type");
+      if (typeof contentType !== "string" || !/^application\/octet-stream(?:\s*;|$)/i.test(contentType)) {
+        sendJson(response, 415, { error: { code: "UNSUPPORTED_MEDIA_TYPE" } });
+        return;
+      }
+      const meta = readAssetMetadata(request);
+      if (meta === null) {
+        sendJson(response, 400, { error: { code: "INVALID_ASSET_METADATA" } });
+        return;
+      }
+      const raw = await readOctetBody(request, DEFAULT_ASSET_LIMITS.maxInputBytes + 1);
+      if (!raw.ok) {
+        sendJson(response, raw.status, { error: { code: raw.code } });
+        return;
+      }
+      let record;
+      try {
+        record = await ingestAsset(assetStorage, {
+          assetId: meta.assetId,
+          bytes: raw.bytes,
+          claimedMimeType: meta.claimedMimeType,
+          originalFilename: meta.filename,
+          altText: meta.altText,
+          source: meta.source,
+          rights: meta.rights
+        });
+      } catch (error) {
+        if (error instanceof AssetBoundaryError) {
+          sendJson(response, error.code === "too_large" ? 413 : 422, { error: { code: `ASSET_${error.code.toUpperCase()}`, message: error.message } });
+        } else {
+          sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
+        }
+        return;
+      }
+      const registered = await assetLibrary.registerProjectAsset(projectId, {
+        assetId: record.manifest.id,
+        hash: record.manifest.hash,
+        filename: record.originalFilename,
+        mimeType: record.manifest.mimeType,
+        kind: record.manifest.kind,
+        widthPx: record.manifest.widthPx,
+        heightPx: record.manifest.heightPx,
+        durationMs: record.manifest.durationMs,
+        byteLength: record.byteLength,
+        idempotencyKey,
+        actorUserId: identity?.user.userId ?? "local-owner"
+      });
+      if (registered.kind === "registered") sendJson(response, 201, { manifest: record.manifest, listed: true });
+      else if (registered.kind === "replay") sendJson(response, 200, { manifest: record.manifest, listed: true, replay: true });
+      else if (registered.kind === "project_not_found") sendNotFound(response);
+      else if (registered.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: "ASSET_IDEMPOTENCY_KEY_REUSED" } });
+      } else {
+        sendJson(response, 422, { error: { code: "INVALID_ASSET_METADATA", details: registered.errors } });
+      }
+      return;
+    }
+    if (assetId !== null && method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const hash = url.searchParams.get("hash");
+      if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) {
+        sendJson(response, 400, { error: { code: "INVALID_ASSET_IDENTITY" } });
+        return;
+      }
+      const entries = await assetLibrary.listProjectAssets(projectId, false);
+      const entry = entries.find((candidate) => candidate.assetId === assetId && candidate.hash === hash) ?? null;
+      if (!entry) { sendNotFound(response); return; }
+      let stored;
+      try {
+        stored = await assetStorage.read(assetId, hash);
+      } catch (error) {
+        if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
+          sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
+        } else {
+          sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
+        }
+        return;
+      }
+      response.statusCode = 200;
+      response.setHeader("content-type", stored.record.manifest.mimeType);
+      response.setHeader("content-length", String(stored.bytes.byteLength));
+      response.setHeader("cache-control", "public, max-age=31536000, immutable");
+      response.setHeader("x-content-type-options", "nosniff");
+      response.end(stored.bytes);
       return;
     }
     sendNotFound(response);
@@ -1288,6 +1414,74 @@ function isMissionStore(value: ControlStore): value is ControlStore & MissionDoc
     && typeof candidate.createMissionSession === "function"
     && typeof candidate.getMissionSession === "function"
     && typeof candidate.applyMissionTurn === "function";
+}
+
+function isProjectAssetLibrary(value: ControlStore): value is ControlStore & ProjectAssetLibrary {
+  const candidate = value as Partial<ProjectAssetLibrary>;
+  return typeof candidate.registerProjectAsset === "function"
+    && typeof candidate.listProjectAssets === "function"
+    && typeof candidate.setProjectAssetListed === "function";
+}
+
+const MAX_ASSET_TEXT_HEADER_CHARS = 2_000;
+
+function readAssetTextHeader(request: any, name: string, maxChars: number): string | null | undefined {
+  const value = readHeader(request, name);
+  if (value === undefined) return undefined;
+  if (value.length > maxChars) return null;
+  return value;
+}
+
+function readAssetMetadata(request: any): {
+  readonly assetId: string;
+  readonly filename: string | null;
+  readonly claimedMimeType: string | null;
+  readonly altText: string | null;
+  readonly source: string | null;
+  readonly rights: string | null;
+} | null {
+  const assetId = readHeader(request, "x-asset-id");
+  if (typeof assetId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(assetId)) return null;
+  const filename = readAssetTextHeader(request, "x-filename", 255);
+  const claimedMimeType = readAssetTextHeader(request, "x-claimed-mime", 127);
+  const altText = readAssetTextHeader(request, "x-alt-text", MAX_ASSET_TEXT_HEADER_CHARS);
+  const source = readAssetTextHeader(request, "x-source", MAX_ASSET_TEXT_HEADER_CHARS);
+  const rights = readAssetTextHeader(request, "x-rights", MAX_ASSET_TEXT_HEADER_CHARS);
+  if (filename === null || claimedMimeType === null || altText === null || source === null || rights === null) {
+    return null;
+  }
+  return {
+    assetId,
+    filename: filename ?? null,
+    claimedMimeType: claimedMimeType ?? null,
+    altText: altText ?? null,
+    source: source ?? null,
+    rights: rights ?? null
+  };
+}
+
+async function readOctetBody(request: any, maxBytes: number): Promise<
+  | { readonly ok: true; readonly bytes: Uint8Array }
+  | { readonly ok: false; readonly status: number; readonly code: string }
+> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for await (const chunk of request) {
+    const view = chunk instanceof Uint8Array ? chunk : new TextEncoder().encode(String(chunk));
+    total += view.byteLength;
+    if (total > maxBytes) {
+      return Object.freeze({ ok: false, status: 413, code: "ASSET_TOO_LARGE" });
+    }
+    chunks.push(view);
+  }
+  if (total < 1) return Object.freeze({ ok: false, status: 400, code: "ASSET_EMPTY" });
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return Object.freeze({ ok: true, bytes });
 }
 
 function sendMissionSaveResult(response: any, result: SaveMissionResult): void {
