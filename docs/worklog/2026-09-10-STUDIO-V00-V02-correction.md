@@ -173,6 +173,13 @@ K01: добавить failing lifecycle regression against the actually mounted 
 
 Next blocking item: editor/viewer/read-only checks need separate Telegram-gate sessions — one owner session does not prove them. Do not declare GREEN before that evidence.
 
+## M01 — mission schemas, validation, persistence — DONE
+
+- `packages/contracts/src/mission.ts`: `MissionDraft` (identity/listing/story/screens/defaults), `validateMissionDraft` (`mission.*` коды: entry/choices/endings reachability/asset refs/transforms), async `missionContentHash` (sha256 канонического payload без self-reference).
+- `packages/control`: `MissionDocumentStore` (get/save/history/export), SQLite append-only `control_mission_documents` + `control_mission_idempotency`, CAS + replay/key-reuse, migration v2→v3.
+- Tests: contracts `mission.test.mjs` 5/5, control `mission-document.test.mjs` 2/2; suites contracts 57/57, control 101/101; typecheck exit 0.
+- Docs: `docs/migration/2026-09-10-mission-document.md`.
+
 ## M00 — сверка маршрута Studio→сайт — DONE (STATIC)
 
 - SHAs: engine `63ebda8` (`feat/b13-acceptance-closure`, pushed), site `55504e7` (`feat/florence-vertical-slice`, копия clean).

@@ -230,8 +230,12 @@ export type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  MissionDocumentStore,
+  MissionHistoryEntry,
   ProjectRecord,
   RestoreDraftInput,
   RestoreDraftResult,
+  SaveMissionInput,
+  SaveMissionResult,
   ValidateDraftResult
 } from "./types.js";

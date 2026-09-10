@@ -1,4 +1,4 @@
-import type { Block } from "@living-history/contracts";
+import type { Block, MissionDraft } from "@living-history/contracts";
 import type { CompiledQuestArtifact } from "@living-history/core";
 
 export interface BoardPosition {
@@ -33,6 +33,36 @@ export type ApplyBoardChangesResult =
 export interface BoardDocumentStore {
   getBoardDocument(projectId: string, questId: string): Promise<BoardDocument | null>;
   applyBoardChanges(projectId: string, questId: string, input: ApplyBoardChangesInput): Promise<ApplyBoardChangesResult>;
+}
+
+export interface SaveMissionInput {
+  readonly baseRevision: number;
+  readonly mission: MissionDraft;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type SaveMissionResult =
+  | { readonly kind: "saved"; readonly mission: MissionDraft }
+  | { readonly kind: "replay"; readonly mission: MissionDraft }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface MissionHistoryEntry {
+  readonly contentRevision: number;
+  readonly contentHash: string;
+  readonly actorUserId: string;
+  readonly createdAtMs: number;
+}
+
+export interface MissionDocumentStore {
+  getMission(projectId: string, questId: string): Promise<MissionDraft | null>;
+  saveMission(projectId: string, questId: string, input: SaveMissionInput): Promise<SaveMissionResult>;
+  getMissionHistory(projectId: string, questId: string): Promise<readonly MissionHistoryEntry[]>;
+  exportMission(projectId: string, questId: string): Promise<MissionDraft | null>;
 }
 
 export interface ProjectRecord {

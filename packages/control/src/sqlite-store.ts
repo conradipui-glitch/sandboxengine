@@ -6,7 +6,10 @@ import {
   CONTRACT_SCHEMA_VERSION,
   hasValidQuestReleaseReferences,
   isBlock,
+  missionContentHash,
+  validateMissionDraft,
   type Block,
+  type MissionDraft,
   type QuestRelease
 } from "@living-history/contracts";
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
@@ -29,13 +32,17 @@ import type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  MissionDocumentStore,
+  MissionHistoryEntry,
   ProjectRecord,
   RestoreDraftInput,
   RestoreDraftResult,
+  SaveMissionInput,
+  SaveMissionResult,
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 2;
+const CONTROL_SCHEMA_VERSION = 3;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -50,7 +57,7 @@ interface DraftChangeContext {
   readonly entryLocationId: string;
 }
 
-export class SQLiteControlStore implements ControlStore, BoardDocumentStore {
+export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore {
   readonly #db: any;
   #closed = false;
 
@@ -482,6 +489,102 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore {
     });
   }
 
+  async getMission(projectId: string, questId: string): Promise<MissionDraft | null> {
+    this.#assertOpen();
+    if (!this.#projectExists(projectId) || !this.#questExists(projectId, questId)) return null;
+    const row = this.#db.prepare(`
+      SELECT mission_json FROM control_mission_documents
+      WHERE project_id = ? AND quest_id = ?
+      ORDER BY content_revision DESC LIMIT 1
+    `).get(projectId, questId);
+    return row ? missionFromJson(parseJson(row.mission_json)) : null;
+  }
+
+  async saveMission(
+    projectId: string,
+    questId: string,
+    input: SaveMissionInput
+  ): Promise<SaveMissionResult> {
+    const shapeErrors = validateMissionInput(input);
+    if (shapeErrors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(shapeErrors) });
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+    const semanticErrors = validateMissionDraft(input.mission);
+    if (semanticErrors.length > 0) return frozen({ kind: "invalid_request", errors: semanticErrors });
+    if (input.mission.projectId !== projectId || input.mission.questId !== questId) {
+      return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.identity_mismatch"]) });
+    }
+    const requestHash = hashMissionRequest(input.baseRevision, input.mission);
+    const contentHash = await missionContentHash(input.mission);
+    const frozenMission = (revision: number): MissionDraft => cloneAndFreeze({
+      ...JSON.parse(JSON.stringify(input.mission)),
+      contentRevision: revision,
+      contentHash
+    }) as MissionDraft;
+
+    return this.#transaction(() => {
+      const replayRow = this.#db.prepare(`
+        SELECT request_hash, result_json
+        FROM control_mission_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        return frozen({ kind: "replay", mission: missionFromJson(parseJson(replayRow.result_json)) });
+      }
+
+      const currentRow = this.#db.prepare(`
+        SELECT content_revision FROM control_mission_documents
+        WHERE project_id = ? AND quest_id = ?
+        ORDER BY content_revision DESC LIMIT 1
+      `).get(projectId, questId);
+      const currentRevision = currentRow ? Number(currentRow.content_revision) : 0;
+      if (currentRevision !== input.baseRevision) {
+        return frozen({ kind: "revision_conflict", currentRevision });
+      }
+      if (currentRevision === Number.MAX_SAFE_INTEGER) {
+        return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.revision_exhausted"]) });
+      }
+      const mission = frozenMission(currentRevision + 1);
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_mission_documents (
+          project_id, quest_id, content_revision, content_hash, mission_json, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(projectId, questId, mission.contentRevision, contentHash, JSON.stringify(mission), input.actorUserId, now);
+      this.#db.prepare(`
+        INSERT INTO control_mission_idempotency (
+          project_id, quest_id, idempotency_key, request_hash, result_revision, result_json, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(projectId, questId, input.idempotencyKey, requestHash, mission.contentRevision, JSON.stringify(mission), input.actorUserId, now);
+      return frozen({ kind: "saved", mission });
+    });
+  }
+
+  async getMissionHistory(projectId: string, questId: string): Promise<readonly MissionHistoryEntry[]> {
+    this.#assertOpen();
+    if (!this.#projectExists(projectId) || !this.#questExists(projectId, questId)) {
+      return Object.freeze([]);
+    }
+    const rows = this.#db.prepare(`
+      SELECT content_revision, content_hash, actor_user_id, created_at_ms
+      FROM control_mission_documents
+      WHERE project_id = ? AND quest_id = ?
+      ORDER BY content_revision ASC
+    `).all(projectId, questId);
+    return Object.freeze(rows.map((row: any) => Object.freeze({
+      contentRevision: Number(row.content_revision),
+      contentHash: String(row.content_hash),
+      actorUserId: String(row.actor_user_id),
+      createdAtMs: Number(row.created_at_ms)
+    })));
+  }
+
+  async exportMission(projectId: string, questId: string): Promise<MissionDraft | null> {
+    return this.getMission(projectId, questId);
+  }
+
   #initialize(): void {
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS control_meta (
@@ -520,6 +623,30 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore {
         created_at_ms INTEGER NOT NULL,
         PRIMARY KEY (project_id, quest_id, idempotency_key),
         FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_mission_documents (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        content_revision INTEGER NOT NULL CHECK (content_revision >= 1),
+        content_hash TEXT NOT NULL,
+        mission_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, content_revision),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_mission_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_revision INTEGER NOT NULL CHECK (result_revision >= 1),
+        result_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, idempotency_key),
+        FOREIGN KEY (project_id, quest_id, result_revision)
+          REFERENCES control_mission_documents(project_id, quest_id, content_revision)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_draft_snapshots (
         project_id TEXT NOT NULL,
@@ -573,6 +700,9 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore {
         this.#db.prepare("INSERT INTO control_meta (key, value) VALUES ('schema_version', ?)").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) === 1) {
         // v2 adds the board document/idempotency tables; CREATE IF NOT EXISTS above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 2) {
+        // v3 adds the mission document/idempotency tables; CREATE IF NOT EXISTS above is the migration.
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
         throw new Error(`unsupported control schema version ${String(schema.value)}`);
@@ -723,6 +853,30 @@ function normalizeBoardPositions(value: Readonly<Record<string, BoardPosition>>)
 function hashBoardRequest(baseRevision: number, positions: Readonly<Record<string, BoardPosition>>): string {
   const canonical = JSON.stringify({ baseRevision, positions: normalizeBoardPositions(positions) });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function validateMissionInput(input: SaveMissionInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeSafeInteger(input.baseRevision)) errors.push("baseRevision");
+  if (!isRecord(input.mission)) errors.push("mission.shape");
+  if (typeof input.idempotencyKey !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(input.idempotencyKey)) {
+    errors.push("idempotencyKey");
+  }
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
+}
+
+function hashMissionRequest(baseRevision: number, mission: MissionDraft): string {
+  const canonical = JSON.stringify({ baseRevision, mission });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function missionFromJson(value: unknown): MissionDraft {
+  const parsed = typeof value === "string" ? parseJson(value) : value;
+  if (!isRecord(parsed) || parsed.schemaVersion !== "1.0") throw new Error("invalid stored MissionDraft");
+  const errors = validateMissionDraft(parsed as unknown as MissionDraft);
+  if (errors.length > 0) throw new Error(`invalid stored MissionDraft: ${errors.join(",")}`);
+  return cloneAndFreeze(parsed) as unknown as MissionDraft;
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {

@@ -185,6 +185,25 @@ export {
 } from "./presentation-validation.js";
 export { presentationPlanConvergesToTargetFrameV2 } from "./presentation-convergence.js";
 export { hasValidPresentationTransitionV2 } from "./presentation-contract.js";
+export {
+  MISSION_SCHEMA_VERSION,
+  missionContentHash,
+  validateMissionDraft,
+  type MissionChoice,
+  type MissionDefaults,
+  type MissionDialogueLine,
+  type MissionDraft,
+  type MissionEnding,
+  type MissionIntroScreen,
+  type MissionListing,
+  type MissionSchemaVersion,
+  type MissionScene,
+  type MissionSceneScreen,
+  type MissionScreenLayer,
+  type MissionScreens,
+  type MissionStory,
+  type MissionSupportedMode
+} from "./mission.js";
 
 export {
   BLOCK_KINDS,
