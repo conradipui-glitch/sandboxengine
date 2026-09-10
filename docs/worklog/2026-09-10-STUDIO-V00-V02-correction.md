@@ -209,3 +209,14 @@ Next blocking item: editor/viewer/read-only checks need separate Telegram-gate s
 - Замечание: системный node v22 роняет C17 (`process.version startsWith v24`) — environment, не регрессия; все suites гоняются под node 24.19.
 - Thumbnails отложены в M04 (client-side, без выдуманного ресайза); не-ASCII metadata клиент кодирует (граница для M05).
 - Docs: `docs/migration/2026-09-10-project-assets.md`.
+
+## M04 — shared renderer + preview bundle + Studio host — DONE
+
+- Site `src/shared/mission-presentation/`: data-driven `MissionSceneStage`/`MissionChoicePanel`/`MissionIntroScreen`/`MissionEndingScreen`/`MissionCard`, тёмные токены, legacy-адаптер без scenario-ветвлений, bridge protocol v1 (origin/nonce/schema/size, `choice:`/`intro:`/`ending:` selection-конвенции).
+- Authored transform — только outer wrapper, анимация — только inner; reduced-motion гасит ambient, `data-paused` останавливает в редакторе. Проверено в собранном CSS.
+- `src/preview/main.tsx` + `vite.preview.config.ts` + `npm run build:preview`: single bundle (JS `10e862…`, CSS `ac188d…`, dist gitignored, хеши в worklog).
+- Живое доказательство: bundle в изолированном Chrome отрендерил кадр (2 слоя, «Депо», честный screen-статус, маркер renderer 1.0.0/bridge 1).
+- Studio: `preview-bridge.ts` + `PreviewHost` (mount/ready/post/destroy, stale guards, version mismatch fail-closed). Tests 2/2.
+- Suites: site 58/58 (tsc clean), studio 101+1 skip; typecheck engine exit 0.
+- Синхронизация версий: `MISSION_RENDERER_VERSION=1.0.0` + `PREVIEW_BRIDGE_VERSION=1` одинаковы в обоих репозиториях на этих commit; смена — только парой с записью в worklog.
+- `tsconfig.worker.json` получил `jsx: react-jsx` (shared .tsx в include).
