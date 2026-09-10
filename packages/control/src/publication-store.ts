@@ -22,6 +22,34 @@ export interface ControlPublicationRecord {
   readonly publishedAtMs: number;
 }
 
+/**
+ * Durable, immutable mapping from a release id to the exact authored bundle it
+ * publishes. A release never adopts a newer draft: the pin is written once and
+ * every later publish or rollback of that release resolves through it.
+ *
+ * `assetsVerified` is false for pins adopted from records written before pins
+ * existed: the mission revision is provable (it was recorded at publish time),
+ * but the asset manifest of that publication cannot be re-proven, so it is
+ * flagged instead of being silently trusted as a complete bundle.
+ */
+export interface ControlPublicationReleasePin {
+  readonly schemaVersion: "1.0";
+  readonly releaseId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly missionRevision: number;
+  readonly missionContentHash: string;
+  readonly assets: readonly { readonly assetId: string; readonly hash: string }[];
+  readonly assetsVerified: boolean;
+  readonly pinnedAtMs: number;
+}
+
+export type PinReleaseResult =
+  | { readonly kind: "pinned"; readonly pin: ControlPublicationReleasePin }
+  | { readonly kind: "replay"; readonly pin: ControlPublicationReleasePin }
+  | { readonly kind: "pin_conflict"; readonly pin: ControlPublicationReleasePin }
+  | { readonly kind: "invalid_request" };
+
 export type PublishPublicationResult =
   | { readonly kind: "published"; readonly publication: ControlPublicationRecord }
   | { readonly kind: "replay"; readonly publication: ControlPublicationRecord }
@@ -52,12 +80,20 @@ export interface ControlPublicationStore {
     readonly idempotencyKey: string;
     readonly requestHash: string;
   }): Promise<UnpublishPublicationResult>;
+  getReleasePin(projectId: string, questId: string, releaseId: string): Promise<ControlPublicationReleasePin | null>;
+  pinRelease(input: {
+    readonly pin: ControlPublicationReleasePin;
+    readonly idempotencyKey: string;
+    readonly requestHash: string;
+  }): Promise<PinReleaseResult>;
   close?(): void;
 }
 
 export class MemoryControlPublicationStore implements ControlPublicationStore {
   readonly #records = new Map<string, ControlPublicationRecord>();
   readonly #idempotency = new Map<string, { requestHash: string; result: ControlPublicationRecord }>();
+  readonly #pins = new Map<string, ControlPublicationReleasePin>();
+  readonly #pinIdempotency = new Map<string, { requestHash: string; result: ControlPublicationReleasePin }>();
 
   async listPublished(): Promise<readonly ControlPublicationRecord[]> {
     return Object.freeze([...this.#records.values()]
@@ -110,6 +146,31 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     this.#records.set(stored.publicMissionId, stored);
     this.#idempotency.set(key, { requestHash: input.requestHash, result: stored });
     return frozen({ kind: "unpublished", publication: clone(stored) });
+  }
+
+  async getReleasePin(projectId: string, questId: string, releaseId: string): Promise<ControlPublicationReleasePin | null> {
+    if (!isId(projectId) || !isId(questId) || !isId(releaseId)) return null;
+    const pin = this.#pins.get(pinKey(projectId, questId, releaseId));
+    return pin ? clone(pin) : null;
+  }
+
+  async pinRelease(input: { readonly pin: ControlPublicationReleasePin; readonly idempotencyKey: string; readonly requestHash: string }): Promise<PinReleaseResult> {
+    if (!validPin(input.pin) || !isIdempotency(input.idempotencyKey) || !isHash(input.requestHash)) return frozen({ kind: "invalid_request" });
+    const key = `pin\u0000${input.pin.projectId}\u0000${input.pin.questId}\u0000${input.pin.releaseId}\u0000${input.idempotencyKey}`;
+    const replay = this.#pinIdempotency.get(key);
+    if (replay) {
+      if (replay.requestHash !== input.requestHash) return frozen({ kind: "pin_conflict", pin: clone(replay.result) });
+      return frozen({ kind: "replay", pin: clone(replay.result) });
+    }
+    const existing = this.#pins.get(pinKey(input.pin.projectId, input.pin.questId, input.pin.releaseId));
+    if (existing) {
+      if (!samePinIdentity(existing, input.pin)) return frozen({ kind: "pin_conflict", pin: clone(existing) });
+      return frozen({ kind: "replay", pin: clone(existing) });
+    }
+    const stored = clone(input.pin);
+    this.#pins.set(pinKey(stored.projectId, stored.questId, stored.releaseId), stored);
+    this.#pinIdempotency.set(key, { requestHash: input.requestHash, result: stored });
+    return frozen({ kind: "pinned", pin: clone(stored) });
   }
 
   close(): void {}
@@ -206,9 +267,58 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
       operation_kind TEXT NOT NULL CHECK (operation_kind IN ('publish','unpublish')), public_mission_id TEXT NOT NULL,
       idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, result_json TEXT NOT NULL,
       PRIMARY KEY (operation_kind, public_mission_id, idempotency_key)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS control_publication_release_pins (
+      project_id TEXT NOT NULL, quest_id TEXT NOT NULL, release_id TEXT NOT NULL,
+      mission_revision INTEGER NOT NULL, mission_content_hash TEXT NOT NULL,
+      assets_json TEXT NOT NULL, assets_verified INTEGER NOT NULL CHECK (assets_verified IN (0,1)),
+      pinned_at_ms INTEGER NOT NULL,
+      PRIMARY KEY (project_id, quest_id, release_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS control_publication_pin_idempotency (
+      project_id TEXT NOT NULL, quest_id TEXT NOT NULL, release_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, result_json TEXT NOT NULL,
+      PRIMARY KEY (project_id, quest_id, release_id, idempotency_key)
     ) STRICT;`);
     try { this.#db.exec("ALTER TABLE control_publication_records ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0"); } catch {}
     try { this.#db.exec("ALTER TABLE control_publication_records ADD COLUMN draft_content_hash TEXT NOT NULL DEFAULT ''"); } catch {}
+  }
+
+  async getReleasePin(projectId: string, questId: string, releaseId: string): Promise<ControlPublicationReleasePin | null> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId) || !isId(releaseId)) return null;
+    const row = this.#db.prepare("SELECT * FROM control_publication_release_pins WHERE project_id = ? AND quest_id = ? AND release_id = ? LIMIT 1").get(projectId, questId, releaseId);
+    return row ? pinFromRow(row) : null;
+  }
+
+  async pinRelease(input: { readonly pin: ControlPublicationReleasePin; readonly idempotencyKey: string; readonly requestHash: string }): Promise<PinReleaseResult> {
+    this.#assertOpen();
+    if (!validPin(input.pin) || !isIdempotency(input.idempotencyKey) || !isHash(input.requestHash)) return frozen({ kind: "invalid_request" });
+    return this.#transaction(() => {
+      const replayRow = this.#db.prepare("SELECT request_hash, result_json FROM control_publication_pin_idempotency WHERE project_id = ? AND quest_id = ? AND release_id = ? AND idempotency_key = ? LIMIT 1")
+        .get(input.pin.projectId, input.pin.questId, input.pin.releaseId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== input.requestHash) return frozen({ kind: "pin_conflict", pin: pinFromJson(String(replayRow.result_json)) });
+        return frozen({ kind: "replay", pin: pinFromJson(String(replayRow.result_json)) });
+      }
+      const existingRow = this.#db.prepare("SELECT * FROM control_publication_release_pins WHERE project_id = ? AND quest_id = ? AND release_id = ? LIMIT 1")
+        .get(input.pin.projectId, input.pin.questId, input.pin.releaseId);
+      if (existingRow) {
+        const existing = pinFromRow(existingRow);
+        if (!samePinIdentity(existing, input.pin)) return frozen({ kind: "pin_conflict", pin: existing });
+        return frozen({ kind: "replay", pin: existing });
+      }
+      const stored = clone(input.pin);
+      this.#db.prepare(`INSERT INTO control_publication_release_pins
+        (project_id, quest_id, release_id, mission_revision, mission_content_hash, assets_json, assets_verified, pinned_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        stored.projectId, stored.questId, stored.releaseId, stored.missionRevision, stored.missionContentHash,
+        JSON.stringify(stored.assets), stored.assetsVerified ? 1 : 0, stored.pinnedAtMs
+      );
+      this.#db.prepare("INSERT INTO control_publication_pin_idempotency (project_id, quest_id, release_id, idempotency_key, request_hash, result_json) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(stored.projectId, stored.questId, stored.releaseId, input.idempotencyKey, input.requestHash, JSON.stringify(stored));
+      return frozen({ kind: "pinned", pin: stored });
+    });
   }
   #readIdempotency(operation: "publish" | "unpublish", publicMissionId: string, key: string): { requestHash: string; resultJson: string } | null {
     const row = this.#db.prepare("SELECT request_hash, result_json FROM control_publication_idempotency WHERE operation_kind = ? AND public_mission_id = ? AND idempotency_key = ?").get(operation, publicMissionId, key);
@@ -236,6 +346,39 @@ function validListing(listing: MissionListing): boolean {
     && typeof listing.period === "string" && typeof listing.place === "string" && typeof listing.playerRole === "string"
     && Number.isSafeInteger(listing.estimatedMinutes) && listing.estimatedMinutes >= 1 && listing.estimatedMinutes <= 600
     && Array.isArray(listing.supportedModes) && listing.supportedModes.length > 0;
+}
+function validPin(pin: ControlPublicationReleasePin): boolean {
+  if (!pin || typeof pin !== "object" || Array.isArray(pin)) return false;
+  if (pin.schemaVersion !== "1.0" || !isId(pin.projectId) || !isId(pin.questId) || !isId(pin.releaseId)) return false;
+  if (!Number.isSafeInteger(pin.missionRevision) || pin.missionRevision < 1) return false;
+  if (!isHash(pin.missionContentHash)) return false;
+  if (typeof pin.assetsVerified !== "boolean") return false;
+  if (!Number.isSafeInteger(pin.pinnedAtMs) || pin.pinnedAtMs < 0) return false;
+  if (!Array.isArray(pin.assets) || pin.assets.length > 512) return false;
+  return pin.assets.every((asset) => !!asset && typeof asset === "object"
+    && isId((asset as { assetId?: unknown }).assetId) && isHash((asset as { hash?: unknown }).hash));
+}
+function samePinIdentity(left: ControlPublicationReleasePin, right: ControlPublicationReleasePin): boolean {
+  return left.releaseId === right.releaseId && left.missionRevision === right.missionRevision
+    && left.missionContentHash === right.missionContentHash && left.assetsVerified === right.assetsVerified
+    && JSON.stringify(left.assets) === JSON.stringify(right.assets);
+}
+function pinKey(projectId: string, questId: string, releaseId: string): string { return `${projectId}\u0000${questId}\u0000${releaseId}`; }
+function pinFromRow(row: any): ControlPublicationReleasePin { return pinFromJson(JSON.stringify({
+  schemaVersion: "1.0",
+  releaseId: String(row.release_id),
+  projectId: String(row.project_id),
+  questId: String(row.quest_id),
+  missionRevision: Number(row.mission_revision),
+  missionContentHash: String(row.mission_content_hash),
+  assets: JSON.parse(String(row.assets_json)),
+  assetsVerified: Number(row.assets_verified) === 1,
+  pinnedAtMs: Number(row.pinned_at_ms)
+})); }
+function pinFromJson(json: string): ControlPublicationReleasePin {
+  const candidate = JSON.parse(json) as ControlPublicationReleasePin;
+  if (!validPin(candidate)) throw new Error("corrupt publication release pin");
+  return clone(candidate);
 }
 function publicationFromRow(row: any): ControlPublicationRecord { return publicationFromJson(String(row.listing_json), row); }
 function publicationFromJson(json: string, row?: any): ControlPublicationRecord {

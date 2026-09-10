@@ -216,7 +216,9 @@ export {
   MemoryControlPublicationStore,
   SQLiteControlPublicationStore,
   type ControlPublicationRecord,
+  type ControlPublicationReleasePin,
   type ControlPublicationStore,
+  type PinReleaseResult,
   type PublishPublicationResult,
   type UnpublishPublicationResult,
   type SQLiteControlPublicationStoreOptions

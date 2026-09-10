@@ -864,6 +864,10 @@ async function routeControlRequest(
           : { diceCheckDefinitions: body.diceCheckDefinitions as readonly DiceCheckDefinition[] })
       });
       if (result.kind === "created") {
+        // Freezing happens here: the release captures the authored revision that
+        // was current when it was built, so a later publish cannot silently move
+        // it forward and a later rollback returns exactly this content.
+        if (missionStore) await resolveReleaseBundle(releases, missionStore, projectId, questId, body.releaseId, null).catch(() => undefined);
         sendJson(response, 201, { release: releaseSummaryView(result.release, null, false) });
       } else if (result.kind === "replay") {
         const currentReleaseId = await releases.store.getCurrentReleaseId(projectId, questId);
@@ -919,6 +923,10 @@ async function routeControlRequest(
     const publication = await syncPublicationRecord(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth));
     if (publication.kind === "source_stale") {
       sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
       return;
     }
     if (publication.kind === "conflict") {
@@ -982,6 +990,16 @@ async function routeControlRequest(
       sendJson(response, 400, { error: { code: "INVALID_ROLLBACK_REQUEST" } });
       return;
     }
+    // Preflight the target bundle before the pointer moves. A rollback that
+    // cannot prove which content it points at must not detach the catalog from
+    // the release it currently serves.
+    const preflight = missionStore
+      ? await resolveReleaseBundle(releases, missionStore, projectId, questId, body.targetReleaseId, await releases.publicationStore?.getPublicationForQuest(projectId, questId) ?? null, "rollback")
+      : { kind: "not_attempted" as const };
+    if (preflight.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: preflight.code } });
+      return;
+    }
     const result = await rollbackControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
       projectId,
       questId,
@@ -992,10 +1010,14 @@ async function routeControlRequest(
       idempotencyKey
     });
     const publication = result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay"
-      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth))
+      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth), preflight.kind === "resolved" ? preflight : undefined)
       : { kind: "not_attempted" as const };
     if (publication.kind === "conflict" || publication.kind === "source_stale") {
       sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
       return;
     }
     if (publication.kind === "published" || publication.kind === "replay") {
@@ -1527,6 +1549,15 @@ function publicMissionCredential(secret: string, publicMissionId: string, sessio
   return hashControlOpaqueSecret(`${secret}\0${publicMissionId}\0${sessionId}`);
 }
 
+type ResolvedReleaseBundle = {
+  readonly kind: "resolved";
+  readonly missionRevision: number;
+  readonly missionContentHash: string;
+  readonly mission: NonNullable<Awaited<ReturnType<MissionDocumentStore["getMission"]>>>;
+  readonly assets: readonly { readonly assetId: string; readonly hash: string }[];
+  readonly bundleHash: string;
+};
+
 async function syncPublicationRecord(
   releases: ControlReleaseModeOptions,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
@@ -1534,28 +1565,33 @@ async function syncPublicationRecord(
   questId: string,
   releaseId: string,
   idempotencyKey: string,
-  publishedAtMs: number
+  publishedAtMs: number,
+  preResolved?: ResolvedReleaseBundle
 ): Promise<
   | { readonly kind: "published" | "replay"; readonly record: ControlPublicationRecord }
   | { readonly kind: "source_stale" | "conflict" | "not_attempted" }
+  | { readonly kind: "bundle_unavailable"; readonly code: string }
 > {
   const publicationStore = releases.publicationStore;
   if (!publicationStore) return { kind: "not_attempted" };
   const release = await releases.store.getRelease(projectId, questId, releaseId);
-  const mission = missionStore ? await missionStore.getMission(projectId, questId) : null;
-  if (!release || !mission) return { kind: "source_stale" };
+  if (!release || !missionStore) return { kind: "source_stale" };
   const existing = await publicationStore.getPublicationForQuest(projectId, questId);
-  // Publishing a newer authored revision repins the catalog to that revision.
-  // The stable public id and slug are preserved across versions by policy.
-  const bundleHash = await missionBundleHash(mission, await resolveReferencedAssets(missionStore, projectId, mission));
+  // A release owns an immutable bundle: the exact authored revision it publishes
+  // and the digests of the assets that revision references. Resolving through
+  // the pin is what makes rollback truthful — the catalog is repointed, the
+  // content behind it is not re-read from the latest draft.
+  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing);
+  if (resolved.kind !== "resolved") return resolved;
+  const { mission, bundleHash } = resolved;
   const record: ControlPublicationRecord = {
     schemaVersion: "1.0",
     publicMissionId: existing?.publicMissionId ?? `mission:${projectId}:${questId}`,
     slug: existing?.slug ?? mission.listing.slug,
     projectId,
     questId,
-    draftRevision: mission.contentRevision,
-    draftContentHash: mission.contentHash,
+    draftRevision: resolved.missionRevision,
+    draftContentHash: resolved.missionContentHash,
     releaseId,
     contentHash: bundleHash,
     channel: "production",
@@ -1570,6 +1606,108 @@ async function syncPublicationRecord(
   });
   if (result.kind === "published" || result.kind === "replay") return { kind: result.kind, record: result.publication };
   return { kind: "conflict" };
+}
+
+/**
+ * Resolves, and when necessary establishes, the immutable bundle of a release.
+ *
+ *  - An existing pin is authoritative: the mission is read at the pinned
+ *    revision and its digest and asset manifest are re-verified.
+ *  - A publication record that already names this release is accepted as proof
+ *    of its revision (it was written when that release was published) and
+ *    adopted as a pin.
+ *  - Otherwise this is the first publication of the release and the current
+ *    authored revision is pinned. Every referenced asset must exist; a missing
+ *    asset is a loud failure, never a silently hashed null.
+ *
+ * A release whose historical revision cannot be proven is never re-pointed at
+ * the latest draft: it fails closed with `bundle_unavailable`.
+ */
+async function resolveReleaseBundle(
+  releases: ControlReleaseModeOptions,
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  projectId: string,
+  questId: string,
+  releaseId: string,
+  existing: ControlPublicationRecord | null,
+  mode: "publish" | "rollback" = "publish"
+): Promise<
+  | ResolvedReleaseBundle
+  | { readonly kind: "source_stale" | "not_attempted" }
+  | { readonly kind: "bundle_unavailable"; readonly code: string }
+> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return { kind: "not_attempted" };
+  let pin = await publicationStore.getReleasePin(projectId, questId, releaseId);
+  let adopted = false;
+  if (!pin) {
+    if (existing && existing.releaseId === releaseId) {
+      // Provable legacy mapping: this release is the one the record was written
+      // for. Its asset manifest is not provable and stays flagged.
+      pin = {
+        schemaVersion: "1.0",
+        releaseId,
+        projectId,
+        questId,
+        missionRevision: existing.draftRevision,
+        missionContentHash: existing.draftContentHash,
+        assets: [],
+        assetsVerified: false,
+        pinnedAtMs: existing.publishedAtMs
+      };
+      adopted = true;
+    } else {
+      // A release is frozen when it is first published. Rolling back to a
+      // release whose revision cannot be proven must not fall back to the
+      // newest draft: that would serve content the release never published.
+      if (mode === "rollback") return { kind: "bundle_unavailable", code: "LEGACY_PIN_UNPROVABLE" };
+      const draft = await missionStore.getMission(projectId, questId);
+      if (!draft) return { kind: "source_stale" };
+      const manifest = await resolveReferencedAssets(missionStore, projectId, draft);
+      const missing = collectReferencedAssetIds(draft).filter((assetId) => !manifest.some((asset) => asset.assetId === assetId));
+      if (missing.length > 0) return { kind: "bundle_unavailable", code: "ASSET_MISSING" };
+      pin = {
+        schemaVersion: "1.0",
+        releaseId,
+        projectId,
+        questId,
+        missionRevision: draft.contentRevision,
+        missionContentHash: draft.contentHash,
+        assets: manifest,
+        assetsVerified: true,
+        pinnedAtMs: Date.now()
+      };
+    }
+  }
+  const pinnedMission = await missionStore.getMissionAtRevision(projectId, questId, pin.missionRevision);
+  if (!pinnedMission || pinnedMission.contentHash !== pin.missionContentHash) {
+    return { kind: "bundle_unavailable", code: adopted ? "LEGACY_PIN_UNPROVABLE" : "MISSION_REVISION_UNAVAILABLE" };
+  }
+  const mission = pinnedMission.mission;
+  const liveAssets = await resolveReferencedAssets(missionStore, projectId, mission);
+  if (pin.assetsVerified) {
+    for (const assetId of collectReferencedAssetIds(mission)) {
+      const pinnedAsset = pin.assets.find((asset) => asset.assetId === assetId);
+      if (!pinnedAsset) return { kind: "bundle_unavailable", code: "ASSET_MISSING" };
+      const live = liveAssets.find((asset) => asset.assetId === assetId);
+      if (!live || live.hash !== pinnedAsset.hash) return { kind: "bundle_unavailable", code: "ASSET_CHANGED" };
+    }
+  }
+  const bundleHash = await missionBundleHash(mission, liveAssets);
+  const write = await publicationStore.pinRelease({
+    pin,
+    idempotencyKey: `bundle-${releaseId}-${pin.missionRevision}-${bundleHash.slice(0, 16)}`.slice(0, 200),
+    requestHash: bundleHash
+  });
+  if (write.kind === "pin_conflict") return { kind: "bundle_unavailable", code: "RELEASE_PIN_CONFLICT" };
+  return {
+    kind: "resolved",
+    missionRevision: pin.missionRevision,
+    missionContentHash: pin.missionContentHash,
+    mission,
+    assets: liveAssets,
+    bundleHash
+  };
 }
 
 /**
