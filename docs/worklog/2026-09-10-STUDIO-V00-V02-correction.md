@@ -172,3 +172,10 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - C18 owner-scenario on live VPS (2026-09-10, isolated Chrome + fresh gate ticket, owner `lhc_session`): project «C18 Приёмка» + quest «C18 Миссия» created; board visible on open; resource «C18 Краска» / character «C18 Мастер» / action «C18 Рисовать» added via canonical modals; inspector edit title→«C18 Рисовать v2» persisted; valid character→location drag created `character-initial-location`, invalid resource→character drag rejected; node drag y 492→592 saved; reload keeps 4 nodes / 2 edges / moved layout / edited title; validation «Revision 5 валидна», «Квест готов»; frozen `playtest-3` launched, VPS `127.0.0.1:8745` → **200**. «Приёмка VPS» and Florence Workshop untouched.
 
 Next blocking item: editor/viewer/read-only checks need separate Telegram-gate sessions — one owner session does not prove them. Do not declare GREEN before that evidence.
+
+## M00 — сверка маршрута Studio→сайт — DONE (STATIC)
+
+- SHAs: engine `63ebda8` (`feat/b13-acceptance-closure`, pushed), site `55504e7` (`feat/florence-vertical-slice`, копия clean).
+- Проверено чтением кода: site hardcoded `scenarioSummaries` + engine-gate только для florence (`engine-bff.ts:119`); engine presentation-v2 с asset/hash/layerOrder годна к переиспользованию; `authored-scenario.ts:221` кодирует переход номером revision — в M02 заменить на `currentSceneId`.
+- ADR: `docs/decisions/2026-09-10-mission-site-route.md` — канонические `MissionDraft`/`MissionReleaseBundle`/`PublicationRecord`, reuse/new список, черновики контрактов обоих репозиториев.
+- K08 остаётся PARTIAL только по ролевым проверкам (editor/viewer/read-only, отдельные сессии).

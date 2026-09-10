@@ -211,4 +211,4 @@ Blocking item: role-separated checks (editor/viewer/read-only) need their own Te
 - Validation: «Revision 5 валидна. Можно заморозить playtest», «Квест готов».
 - Player: frozen `playtest-3` (revision 5, compiled `6243bb1…1288fb`); VPS loopback `http://127.0.0.1:8745` → **200**.
 
-Следующее: ролевые проверки editor/viewer/read-only отдельными сессиями, затем STUDIO-MISSION-TO-SITE-TASK-RU.md.
+Следующее: M01 — story/screens/listing schemas, validation, Control persistence и migration.
