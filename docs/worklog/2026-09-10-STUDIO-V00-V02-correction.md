@@ -40,7 +40,7 @@
 | R04 | Создание и редактирование четырёх типов блока | **DONE локально + BROWSER/LOCAL** | Library/modal создали location, character, resource и action; type-specific canonical fields подтверждены GET draft. |
 | R05 | Связи, drag/zoom/fit, collision-aware layout | **DONE локально + BROWSER/LOCAL** | `edgeToDraftChange` используется app; SVG edges имеют direction marker; valid/invalid pointer connections, два drag с edge tracking, zoom/pan/fit и collision-free fallback проверены. |
 | R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **DONE локально + BROWSER/LOCAL** | SQLite BoardDocument/idempotency tables, v1→v2 migration, atomic bounds/CAS, GET/POST route, generated registry/OpenAPI, close/reopen and profile A→B readback verified. VPS remains open. |
-| R07 | Read-only/role behavior and V00/Player regression evidence | **PARTIAL** | Access gates и existing Player tests есть, но browser proof of read-only board and independent playtests for this candidate отсутствует. |
+| R07 | Read-only/role behavior and V00/Player regression evidence | **DONE локально + VPS unauthenticated** | K06 authenticated role/CSRF/revoke test, local Studio/Player/launch suites, and public VPS asset/auth matrix verified; logged-in Telegram browser playtest remains unavailable without user session. |
 | R08 | Regression suite C01–C18 and real connected renderer | **OPEN** | Existing `board-model.test.mjs` covers projection only; no suite reaches the renderer lifecycle, browser interactions, or C01–C18 matrix. |
 | R09 | Hosted identity and server-side global provider/project permissions | **DONE локально** | Authenticated Board GET/POST uses session identity and live project role; forged identity headers fail; revoked session returns 401; local provider mutation rejects non-loopback Host and cross-site Origin before body handling. VPS smoke remains open. |
 
@@ -153,3 +153,12 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - Provider lifecycle/security test → **1/1**.
 
 Ограничение: доказательство пока локальное; live Telegram-gate/nginx/VPS identity matrix и C01–C18 переходят в K07/K08. GREEN не объявлен.
+
+## K07 — V00 assets, auth boundary и independent Player — DONE локально + VPS unauthenticated
+
+- Studio static entry and Player asset namespace remain separate: `/studio-assets/*` and `/player-assets/*`; no root `/styles.css`/`/app.js` restoration.
+- Local tests passed: Studio static/shell, Player UI/runtime, Player launch serialization and local Control/Studio boundary — **20/20** selected tests.
+- Public read-only VPS matrix on `https://85.137.95.104.sslip.io:8741`: `/studio-assets/*`, `/player-assets/*`, `/player-meta.json`, `/v1/*` unauthenticated → **401**; legacy `/styles.css` and `/app.js` → **410**; navigation `/` → **200** login fallback. No cookies or state writes used.
+- Logged-in Telegram browser playtest on the public VPS is not claimed: no session was available in this run. Existing local independent frozen Player path is the evidence for runtime behavior.
+
+Не закрыто: C01–C18, full verify and exact-SHA VPS Studio deployment/smoke (K08). GREEN не объявлен.

@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K06 DONE локально; K07 следующий. Identity/session/roles/CSRF/revocation/forged-header и provider local boundary доказаны; C01–C18 и VPS ещё не закрыты**
+Текущий блок: **Studio V00–V02 correction K07 DONE локально + VPS unauthenticated; K08 следующий. Assets/auth boundary и independent local Player доказаны; logged-in VPS browser, C01–C18 и exact-SHA deployment ещё не закрыты**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -176,3 +176,14 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 Не закрыто: live gate/nginx/VPS matrix, K07 assets/auth/player, K08 C01–C18/full verify. GREEN не объявлен.
 
 Следующее: K07 — V00 assets, auth 401 и independent playtest/runtime.
+
+## Studio V00–V02 correction — K07 DONE локально + VPS unauthenticated
+
+- Namespaces `/studio-assets/*` и `/player-assets/*` сохранены; root `/styles.css`/`/app.js` не возвращены.
+- Selected local static/Player/launch/boundary checks: **20/20**.
+- Public VPS без cookie: studio/player assets, player-meta и runtime API → **401**; legacy root assets → **410**; navigation `/` → **200** login fallback.
+- Logged-in Telegram browser playtest на VPS не заявлен: сессии в run не было; local independent frozen Player path проверен.
+
+Не закрыто: K08 C01–C18/full verify/exact-SHA VPS Studio deployment + authenticated smoke. GREEN не объявлен.
+
+Следующее: K08 — C01–C18, full verify, deployment and VPS smoke.
