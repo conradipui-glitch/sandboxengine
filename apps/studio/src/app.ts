@@ -61,14 +61,21 @@ import {
   addStoryChoice,
   addStoryEnding,
   addStoryScene,
+  duplicateStoryChoice,
+  duplicateStoryEnding,
+  duplicateStoryScene,
   missionToStoryBoard,
   removeStoryChoice,
   removeStoryNode,
+  renameStoryChoice,
+  storyDeletionImpact,
   storyRendererPositions,
   storyPositionKey,
   updateStoryNode,
-  type StoryBoardModel
+  type StoryBoardModel,
+  type StoryDeletionImpact
 } from "./story-model.js";
+import { StoryHistory } from "./story-commands.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -137,7 +144,7 @@ interface StudioState {
   missionLoadError: string | null;
   missionSaving: boolean;
   selectedStoryNodeId: string | null;
-  storyUndo: readonly MissionDraft[];
+  storyHistory: StoryHistory<MissionDraft>;
   storyDialog: { readonly kind: "node"; readonly nodeKind: "scene" | "ending" }
     | { readonly kind: "choice"; readonly sourceId: string; readonly targetId: string; readonly targetKind: "scene" | "ending" }
     | null;
@@ -194,7 +201,7 @@ export class StudioApp {
     missionLoadError: null,
     missionSaving: false,
     selectedStoryNodeId: null,
-    storyUndo: [],
+    storyHistory: new StoryHistory<MissionDraft>(),
     storyDialog: null,
     editorMenuOpen: false,
     utilityPanel: null,
@@ -492,12 +499,38 @@ export class StudioApp {
       await this.undoStoryChange();
       return;
     }
+    if (action === "story-redo") {
+      await this.redoStoryChange();
+      return;
+    }
+    if (action === "story-duplicate-node") {
+      const nodeId = target.dataset.nodeId;
+      const mission = this.state.mission;
+      if (typeof nodeId === "string" && nodeId.length > 0 && mission) {
+        const isScene = mission.story.scenes.some((scene) => scene.id === nodeId);
+        const newId = generateStoryId(isScene ? "scene" : "ending");
+        const label = isScene ? "Сцена дублирована." : "Финал дублирован.";
+        const ok = isScene
+          ? await this.saveMissionStory(label, (doc) => duplicateStoryScene(doc, nodeId, newId))
+          : await this.saveMissionStory(label, (doc) => duplicateStoryEnding(doc, nodeId, newId));
+        if (ok) this.state.selectedStoryNodeId = newId;
+        this.render();
+      }
+      return;
+    }
+    if (action === "story-duplicate-choice") {
+      const sceneId = target.dataset.sceneId;
+      const choiceId = target.dataset.choiceId;
+      if (typeof sceneId === "string" && typeof choiceId === "string") {
+        await this.saveMissionStory("Выбор дублирован.", (doc) => duplicateStoryChoice(doc, sceneId, choiceId, generateStoryId("choice")));
+        this.render();
+      }
+      return;
+    }
     if (action === "story-delete-node") {
       const nodeId = target.dataset.nodeId;
       if (typeof nodeId === "string" && nodeId.length > 0) {
-        const ok = await this.saveMissionStory("Узел удалён.", (doc) => removeStoryNode(doc, nodeId));
-        if (ok && this.state.selectedStoryNodeId === nodeId) this.state.selectedStoryNodeId = null;
-        this.render();
+        await this.requestStoryNodeDelete(nodeId);
       }
       return;
     }
@@ -717,6 +750,12 @@ export class StudioApp {
           title: text(data, "title"),
           text: optionalText(data, "text") ?? ""
         }));
+        return;
+      }
+      if (kind === "story-choice-edit") {
+        const sceneId = form.dataset.sceneId ?? "";
+        const choiceId = form.dataset.choiceId ?? "";
+        await this.saveMissionStory("Подпись выбора сохранена.", (doc) => renameStoryChoice(doc, sceneId, choiceId, text(data, "label")));
         return;
       }
       if (kind === "screen-save") {
@@ -1199,7 +1238,7 @@ export class StudioApp {
         this.state.missionLoadError = null;
         this.state.missionSaving = false;
         this.state.selectedStoryNodeId = null;
-        this.state.storyUndo = [];
+        this.state.storyHistory.clear();
         this.state.storyDialog = null;
         this.state.validation = null;
     this.state.playtest = null;
@@ -1949,6 +1988,9 @@ export class StudioApp {
     readonly onSelect: (nodeId: string | null) => void;
     readonly onMove: (nodeId: string, x: number, y: number) => void;
     readonly onConnectPair: (sourceId: string, targetId: string) => void;
+    readonly onUndo: () => void;
+    readonly onRedo: () => void;
+    readonly onDelete: (nodeId: string) => void;
   } {
     return {
       onSelect: (nodeId) => {
@@ -1966,8 +2008,34 @@ export class StudioApp {
       onConnectPair: (sourceId, targetId) => {
         if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
         this.openStoryChoiceDialog(projectId, questId, sourceId, targetId);
+      },
+      onUndo: () => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.undoStoryChange();
+      },
+      onRedo: () => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.redoStoryChange();
+      },
+      onDelete: (nodeId) => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.requestStoryNodeDelete(nodeId);
       }
     };
+  }
+
+  /** Удаление узла с честным предупреждением о зависимостях (кнопка и Delete ведут сюда). */
+  private async requestStoryNodeDelete(nodeId: string): Promise<void> {
+    const mission = this.state.mission;
+    const impact = mission ? storyDeletionImpact(mission, nodeId) : null;
+    if (impact && !impact.safeToDelete) {
+      this.state.message = describeStoryDeletionBlock(impact);
+      this.render();
+      return;
+    }
+    const ok = await this.saveMissionStory("Узел удалён.", (doc) => removeStoryNode(doc, nodeId));
+    if (ok && this.state.selectedStoryNodeId === nodeId) this.state.selectedStoryNodeId = null;
+    this.render();
   }
 
   private openStoryChoiceDialog(projectId: string, questId: string, sourceId: string, targetId: string): void {
@@ -2019,6 +2087,9 @@ export class StudioApp {
         onSelect: callbacks.onSelect,
         onMove: callbacks.onMove,
         onConnectPair: callbacks.onConnectPair,
+        onUndo: callbacks.onUndo,
+        onRedo: callbacks.onRedo,
+        onDelete: callbacks.onDelete,
         onHint: (message) => {
           this.state.message = message;
           this.render();
@@ -2060,7 +2131,7 @@ export class StudioApp {
     this.render();
     try {
       const saved = await this.api.saveMission(projectId, questId, baseRevision, applied.mission);
-      this.state.storyUndo = [...this.state.storyUndo.slice(-49), mission];
+      this.state.storyHistory.push(mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
       this.state.missionSaving = false;
@@ -2109,7 +2180,7 @@ export class StudioApp {
     this.render();
     try {
       const saved = await this.api.saveMission(projectId, questId, baseRevision, next);
-      this.state.storyUndo = [...this.state.storyUndo.slice(-49), mission];
+      this.state.storyHistory.push(mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
       this.state.missionSaving = false;
@@ -2185,7 +2256,7 @@ export class StudioApp {
       const saved = await this.api.saveMission(projectId, questId, 0, mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
-      this.state.storyUndo = [];
+      this.state.storyHistory.clear();
       this.state.selectedStoryNodeId = saved.mission.story.entrySceneId;
       this.state.message = `Миссия создана. Revision ${saved.mission.contentRevision}. Добавьте сцены и свяжите их выборами.`;
     } catch (error) {
@@ -2202,26 +2273,42 @@ export class StudioApp {
   }
 
   private async undoStoryChange(): Promise<void> {
-    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
-    const previous = this.state.storyUndo[this.state.storyUndo.length - 1] ?? null;
-    if (!previous || !this.state.mission) {
+    const previous = this.state.mission ? this.state.storyHistory.undo(this.state.mission) : null;
+    if (!previous) {
       this.state.message = "Нечего отменять.";
       this.render();
       return;
     }
+    await this.applyStorySnapshot(previous, "Отменено.");
+  }
+
+  private async redoStoryChange(): Promise<void> {
+    const next = this.state.mission ? this.state.storyHistory.redo(this.state.mission) : null;
+    if (!next) {
+      this.state.message = "Нечего повторять.";
+      this.render();
+      return;
+    }
+    await this.applyStorySnapshot(next, "Повторено.");
+  }
+
+  /** Пишет готовый снимок сюжета поверх текущей ревизии через тот же CAS-путь /mission. */
+  private async applyStorySnapshot(snapshot: MissionDraft, label: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
     this.state.missionSaving = true;
-    this.state.message = "Отменяем последнее изменение сюжета…";
+    this.state.message = "Сохраняем сюжет…";
     this.render();
     try {
-      const saved = await this.api.saveMission(projectId, questId, this.state.missionRevision, previous);
-      this.state.storyUndo = this.state.storyUndo.slice(0, -1);
+      const saved = await this.api.saveMission(projectId, questId, this.state.missionRevision, snapshot);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
-      this.state.message = `Отменено. Revision ${saved.mission.contentRevision}.`;
+      this.state.message = `${label} Revision ${saved.mission.contentRevision}.`;
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409) {
-        this.state.message = "Отмена невозможна: сюжет изменился на сервере. Обновите квест.";
+        this.state.message = "Сюжет изменился на сервере. Обновите квест и повторите.";
+      } else if (error instanceof ControlApiError && error.status === 422) {
+        this.state.message = `Сервер отклонил сюжет (${error.code ?? "validation_failed"}).`;
       } else {
         this.setError(error);
         return;
@@ -2593,7 +2680,8 @@ export class StudioApp {
         </form>` : `<p class="form-hint">Только чтение: создание миссии недоступно для вашей роли.</p>`}
       </div>`;
     }
-    const undoDepth = this.state.storyUndo.length;
+    const undoDepth = this.state.storyHistory.depth;
+    const canRedo = this.state.storyHistory.canRedo;
     return `<section class="story-panel" aria-label="Сюжет миссии">
       <div class="story-bar">
         <div><strong>Сюжет</strong> <span class="save-state">Revision ${this.state.missionRevision}</span></div>
@@ -2601,9 +2689,10 @@ export class StudioApp {
           <button class="button-secondary" data-action="story-add" data-kind="scene">+ Сцена</button>
           <button class="button-secondary" data-action="story-add" data-kind="ending">+ Финал</button>
           <button class="button-secondary" data-action="story-undo" ${undoDepth === 0 || this.state.missionSaving ? "disabled" : ""}>↩ Отменить${undoDepth > 0 ? ` (${undoDepth})` : ""}</button>
+          <button class="button-secondary" data-action="story-redo" ${!canRedo || this.state.missionSaving ? "disabled" : ""}>↪ Повторить</button>
         </div>` : `<span class="access-note">Только чтение.</span>`}
       </div>
-      <p class="form-hint">Связь: кнопка «Связать» на доске → клик по сцене-источнику → клик по цели → подпись выбора.</p>
+      <p class="form-hint">Связь: кнопка «Связать» на доске → клик по сцене-источнику → клик по цели → подпись выбора. Клавиатура: F — «Вписать всё», Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Delete — удалить выбранное, Esc — снять выделение. Позиция карточки — раскладка и не меняет игровой контент.</p>
       <div class="story-wrap"><div class="story-host" data-story-host aria-label="Доска сюжета"></div></div>
       ${this.renderStoryDialogs()}
     </section>`;
@@ -2619,6 +2708,7 @@ export class StudioApp {
     const ending = scene ? null : mission.story.endings.find((entry) => entry.id === nodeId) ?? null;
     if (!scene && !ending) return `<p class="form-hint">Узел не найден в сюжете.</p>`;
     const isEntry = mission.story.entrySceneId === nodeId;
+    const impact = storyDeletionImpact(mission, nodeId);
     const title = scene ? scene.title : (ending as { readonly title: string }).title;
     const text = scene ? scene.text : (ending as { readonly text: string }).text;
     const choices = scene ? scene.choices : [];
@@ -2630,12 +2720,32 @@ export class StudioApp {
         <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Сохранить</button>
       </form>` : `<div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text) || "—"}</p></div>`}
       ${scene ? `<div class="section-heading-row"><h3>Выборы (${choices.length})</h3></div>
-      ${choices.map((choice) => `<div class="entity-row">
-        <div><strong>${escapeHtml(choice.label)}</strong><small>→ ${escapeHtml(choice.targetSceneId ?? choice.endingId ?? "?")}</small></div>
-        ${allowEdit ? `<button class="danger" data-action="story-delete-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Удалить…</button>` : ""}
-      </div>`).join("") || `<p class="form-hint">Выборов нет — тупик. Добавьте связь с доски.</p>`}` : ""}
-      ${allowEdit && !isEntry ? `<button class="danger" data-action="story-delete-node" data-node-id="${escapeAttr(nodeId)}">Удалить узел…</button>` : ""}
-      ${allowEdit && isEntry ? `<p class="form-hint">Входную сцену удалить нельзя.</p>` : ""}
+      ${choices.map((choice) => {
+        const targetId = choice.targetSceneId ?? choice.endingId ?? "";
+        const targetTitle = mission.story.scenes.find((entry) => entry.id === targetId)?.title
+          ?? mission.story.endings.find((entry) => entry.id === targetId)?.title
+          ?? "?";
+        const targetKind = choice.targetSceneId ? "сцена" : "финал";
+        return `<div class="entity-row story-choice-row">
+        <div><strong>${escapeHtml(choice.label)}</strong><small>→ ${escapeHtml(targetKind)} «${escapeHtml(targetTitle)}»</small></div>
+        ${allowEdit ? `<div class="story-choice-actions">
+          <button class="button-secondary" data-action="story-duplicate-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Дублировать</button>
+          <button class="danger" data-action="story-delete-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Удалить…</button>
+        </div>` : ""}
+        ${allowEdit ? `<form data-form="story-choice-edit" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}" class="story-choice-edit">
+          <label>Подпись <input name="label" maxlength="120" required value="${escapeAttr(choice.label)}"></label>
+          <button class="button-secondary" type="submit">Переименовать</button>
+        </form>` : ""}
+      </div>`;
+      }).join("") || `<p class="form-hint">Выборов нет — тупик. Добавьте связь с доски.</p>`}` : ""}
+      ${allowEdit ? `<div class="story-node-actions">
+        <button class="button-secondary" data-action="story-duplicate-node" data-node-id="${escapeAttr(nodeId)}">Дублировать ${scene ? "сцену" : "финал"}</button>
+        ${!isEntry ? `<button class="danger" data-action="story-delete-node" data-node-id="${escapeAttr(nodeId)}">Удалить узел…</button>` : ""}
+      </div>` : ""}
+      ${allowEdit && isEntry ? `<p class="form-hint">Входную сцену удалить нельзя: с неё начинается история.</p>` : ""}
+      ${allowEdit && !impact.safeToDelete && !impact.isEntry && impact.referencedBy.length > 0
+        ? `<p class="form-hint story-delete-warning">Удаление затронет выборы: ${impact.referencedBy.map((ref) => `«${escapeHtml(ref.label)}» (${escapeHtml(ref.sceneTitle)})`).join(", ")}.</p>`
+        : ""}
       ${this.renderScreenEditor(nodeId, allowEdit)}
     </div>`;
   }
@@ -3079,6 +3189,21 @@ function mutationKey(prefix: string): string {
 function generateStoryId(kind: "scene" | "ending" | "choice"): string {
   const suffix = Math.random().toString(36).slice(2, 8);
   return `${kind}-${suffix}`;
+}
+
+/**
+ * Предупреждение о зависимостях при удалении узла сюжета: называет мешающие
+ * выборы, а не просто «нельзя». Удаление выполняет removeStoryNode (fail-closed).
+ */
+function describeStoryDeletionBlock(impact: StoryDeletionImpact): string {
+  if (impact.isEntry) return "Входную сцену удалить нельзя: с неё начинается история.";
+  if (!impact.exists) return "Узел не найден в сюжете.";
+  const names = impact.referencedBy
+    .slice(0, 3)
+    .map((ref) => `«${ref.label}» (${ref.sceneTitle})`)
+    .join(", ");
+  const more = impact.referencedBy.length > 3 ? ` и ещё ${impact.referencedBy.length - 3}` : "";
+  return `Сцену/финал используют выборы: ${names}${more}. Сначала удалите или переведите эти выборы, затем удалите узел.`;
 }
 
 /** M05 человекочитаемые тексты ошибок сюжетных мутаций. */
