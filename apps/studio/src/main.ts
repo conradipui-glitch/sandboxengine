@@ -7,6 +7,7 @@ import {
   SQLiteAuthorAgentJobStore,
   SQLiteAuthorAgentProposalArtifactStore,
   SQLiteAuthorConversationStore,
+  SQLiteControlPublicationStore,
   SQLiteControlReleaseStore,
   SQLiteControlStore
 } from "@living-history/control";
@@ -24,6 +25,7 @@ await mkdir(dirname(databasePath), { recursive: true });
 
 const store = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
+const publicationStore = new SQLiteControlPublicationStore({ path: databasePath });
 const playtestTrace = new SQLitePlaytestTraceReader({ path: databasePath });
 const authorJobs = new SQLiteAuthorAgentJobStore({ path: databasePath });
 const authorArtifacts = new SQLiteAuthorAgentProposalArtifactStore(authorJobs, { path: databasePath });
@@ -37,6 +39,8 @@ const control = controlServerModule.createControlHttpServer({
   store,
   releases: {
     store: releaseStore,
+    publicationStore,
+    publicMissionSessionSecret: String(process.env.LH_PUBLIC_MISSION_SESSION_SECRET ?? ""),
     pluginRegistry: builtPluginRegistry.registry,
     nowMs: () => Date.now()
   },
@@ -94,6 +98,7 @@ const shutdown = async () => {
   authorArtifacts.close();
   authorJobs.close();
   playtestTrace.close();
+  publicationStore.close();
   releaseStore.close();
   store.close();
   process.exit(0);
