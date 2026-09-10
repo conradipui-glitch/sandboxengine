@@ -58,8 +58,20 @@ export interface MissionHistoryEntry {
   readonly createdAtMs: number;
 }
 
+export interface MissionDocumentRevision {
+  readonly mission: MissionDraft;
+  readonly contentRevision: number;
+  readonly contentHash: string;
+}
+
 export interface MissionDocumentStore {
   getMission(projectId: string, questId: string): Promise<MissionDraft | null>;
+  /**
+   * Resolves one immutable authored revision. Published content and open
+   * sessions resolve through this method so that later draft edits can never
+   * change what a player is already running.
+   */
+  getMissionAtRevision(projectId: string, questId: string, contentRevision: number): Promise<MissionDocumentRevision | null>;
   saveMission(projectId: string, questId: string, input: SaveMissionInput): Promise<SaveMissionResult>;
   getMissionHistory(projectId: string, questId: string): Promise<readonly MissionHistoryEntry[]>;
   exportMission(projectId: string, questId: string): Promise<MissionDraft | null>;

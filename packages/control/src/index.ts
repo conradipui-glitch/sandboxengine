@@ -244,6 +244,7 @@ export type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  MissionDocumentRevision,
   MissionDocumentStore,
   MissionHistoryEntry,
   MissionSessionState,

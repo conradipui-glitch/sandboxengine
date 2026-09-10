@@ -48,7 +48,11 @@ test("M06 owner publish automatically creates catalog record from the current Mi
     assert.equal(body.catalog.listing.title, "Груз");
     const catalog = await fetch(`http://${address.host}:${address.port}/public/v1/missions/cargo`);
     assert.equal(catalog.status, 200);
-    assert.equal((await catalog.json()).mission.contentHash, release.release.compiledContentHash);
+    const catalogBody = await catalog.json();
+    // The catalog identity covers the authored mission document, not the
+    // quest-board compile artifact: those are different content domains.
+    assert.match(catalogBody.mission.contentHash, /^[0-9a-f]{64}$/);
+    assert.notEqual(catalogBody.mission.contentHash, release.release.compiledContentHash);
   } finally {
     await control.close();
     publications.close();

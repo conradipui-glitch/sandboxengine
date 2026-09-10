@@ -1,5 +1,8 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { createServer } from "node:http";
+// @ts-ignore — Node 24.19.0 provides node:crypto; repository intentionally has no @types/node dependency yet.
+import { createHash } from "node:crypto";
+import { canonicalStringify } from "@living-history/core";
 import {
   MAX_LHQUEST_ARCHIVE_BYTES,
   createControlOpaqueSecret,
@@ -899,6 +902,21 @@ async function routeControlRequest(
       sendJson(response, 400, { error: { code: "INVALID_PUBLISH_REQUEST" } });
       return;
     }
+    // The catalog record is written first: a failure there leaves the release
+    // pointer untouched. If the promotion then fails, the catalog is reverted
+    // so no path can observe a catalog pointing at a release that is not live.
+    const previousPublication = releases.publicationStore
+      ? await releases.publicationStore.getPublicationForQuest(projectId, questId)
+      : null;
+    const publication = await syncPublicationRecord(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth));
+    if (publication.kind === "source_stale") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "conflict") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
+      return;
+    }
     const result = await publishControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
       projectId,
       questId,
@@ -908,22 +926,22 @@ async function routeControlRequest(
       createdAtMs: releaseNowMs(releases, auth),
       idempotencyKey
     });
-    const publication = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay"
-      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth))
-      : { kind: "not_attempted" as const };
-    if (publication.kind === "source_stale") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
-      return;
+    const promoted = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay";
+    if (!promoted) {
+      await revertPublicationRecord(
+        releases,
+        projectId,
+        questId,
+        previousPublication,
+        publication.kind === "published" || publication.kind === "replay" ? publication.record : null,
+        idempotencyKey
+      );
     }
-    if (publication.kind === "conflict") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
-      return;
-    }
-    if (publication.kind === "published" || publication.kind === "replay") {
+    if (promoted && (publication.kind === "published" || publication.kind === "replay")) {
       sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
       return;
     }
-    if (result.kind === "published" || result.kind === "unchanged" || result.kind === "replay") {
+    if (promoted) {
       sendJson(response, 200, { publication: result });
     } else if (result.kind === "release_not_found") {
       sendNotFound(response);
@@ -1357,20 +1375,25 @@ async function routePublicMissionSession(
   const identifier = match[1] ?? "";
   const sessionId = match[2] ?? null;
   const isTurns = match[3] === "/turns";
-  const publication = await releases.publicationStore?.getPublicMission(identifier);
-  if (!publication) { sendNotFound(response); return; }
   const secret = releases.publicMissionSessionSecret ?? "";
   if (typeof secret !== "string" || secret.length < 16) {
     sendJson(response, 503, { error: { code: "PUBLIC_MISSION_RUNTIME_UNAVAILABLE" } });
     return;
   }
-  const release = await releases.store.getRelease(publication.projectId, publication.questId, publication.releaseId);
-  const mission = await missionStore.getMission(publication.projectId, publication.questId);
-  if (!release || !mission || mission.contentRevision !== publication.draftRevision || mission.contentHash !== publication.draftContentHash) {
-    sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
-    return;
-  }
-  if (sessionId === null && !isTurns && method === "POST") {
+
+  // Starting a new game is gated by an active publication. Continuing a game
+  // that was already started is not: the session carries its own immutable
+  // revision pin, so unpublishing or editing the draft never interrupts play.
+  if (sessionId === null && !isTurns) {
+    if (method !== "POST") { sendNotFound(response); return; }
+    const publication = await releases.publicationStore?.getPublicMission(identifier);
+    if (!publication) { sendNotFound(response); return; }
+    const pinned = await missionStore.getMissionAtRevision(publication.projectId, publication.questId, publication.draftRevision);
+    if (!pinned || pinned.contentHash !== publication.draftContentHash) {
+      sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
+      return;
+    }
+    const mission = pinned.mission;
     const idempotencyKey = requireIdempotencyKey(request, response);
     if (idempotencyKey === null) return;
     const body = await requireJsonObject(request, response);
@@ -1383,6 +1406,7 @@ async function routePublicMissionSession(
       sessionId: body.sessionId,
       idempotencyKey,
       actorUserId: `public:${publication.publicMissionId}`,
+      contentRevision: publication.draftRevision,
       initialWorld: body.initialWorld as never
     });
     if (result.kind === "created" || result.kind === "replay") {
@@ -1396,17 +1420,28 @@ async function routePublicMissionSession(
     }
     return;
   }
+
   if (sessionId === null || !isId(sessionId)) { sendNotFound(response); return; }
-  const credential = publicMissionCredential(secret, publication.publicMissionId, sessionId);
+  const existing = await missionStore.getMissionSession(sessionId);
+  if (!existing) { sendNotFound(response); return; }
+  const sessionPublicMissionId = `mission:${existing.projectId}:${existing.questId}`;
+  let identifierMatches = identifier === sessionPublicMissionId;
+  if (!identifierMatches) {
+    const questPublication = await releases.publicationStore?.getPublicationForQuest(existing.projectId, existing.questId);
+    identifierMatches = !!questPublication && questPublication.slug === identifier;
+  }
+  if (!identifierMatches) { sendNotFound(response); return; }
+  const credential = publicMissionCredential(secret, sessionPublicMissionId, sessionId);
   if (readHeader(request, "authorization") !== `Bearer ${credential}`) {
     sendJson(response, 401, { error: { code: "PUBLIC_MISSION_CREDENTIAL_REQUIRED" } });
     return;
   }
-  const existing = await missionStore.getMissionSession(sessionId);
-  if (!existing || existing.projectId !== publication.projectId || existing.questId !== publication.questId || existing.contentRevision !== publication.draftRevision) {
-    sendNotFound(response);
+  const pinned = await missionStore.getMissionAtRevision(existing.projectId, existing.questId, existing.contentRevision);
+  if (!pinned || pinned.contentHash !== existing.contentHash) {
+    sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
     return;
   }
+  const mission = pinned.mission;
   if (!isTurns && method === "GET") {
     sendJson(response, 200, { mission, session: existing });
     return;
@@ -1423,7 +1458,7 @@ async function routePublicMissionSession(
       baseTurn: body.baseTurn,
       choiceId: body.choiceId,
       idempotencyKey,
-      actorUserId: `public:${publication.publicMissionId}`
+      actorUserId: `public:${sessionPublicMissionId}`
     });
     if (result.kind === "applied" || result.kind === "replay") {
       sendJson(response, 200, { mission, session: result.session, target: result.target, ...(result.kind === "replay" ? { replay: true } : {}) });
@@ -1460,40 +1495,120 @@ async function syncPublicationRecord(
   const mission = missionStore ? await missionStore.getMission(projectId, questId) : null;
   if (!release || !mission) return { kind: "source_stale" };
   const existing = await publicationStore.getPublicationForQuest(projectId, questId);
-  let record: ControlPublicationRecord;
-  if (existing) {
-    if (existing.draftRevision !== mission.contentRevision || existing.draftContentHash !== mission.contentHash) return { kind: "source_stale" };
-    record = {
-      ...existing,
-      releaseId,
-      contentHash: release.compiledContentHash,
-      status: "published",
-      publishedAtMs
-    };
-  } else {
-    record = {
-      schemaVersion: "1.0",
-      publicMissionId: `mission:${projectId}:${questId}`,
-      slug: mission.listing.slug,
-      projectId,
-      questId,
-      draftRevision: mission.contentRevision,
-      draftContentHash: mission.contentHash,
-      releaseId,
-      contentHash: release.compiledContentHash,
-      channel: "production",
-      status: "published",
-      listing: mission.listing,
-      publishedAtMs
-    };
-  }
+  // Publishing a newer authored revision repins the catalog to that revision.
+  // The stable public id and slug are preserved across versions by policy.
+  const bundleHash = await missionBundleHash(mission, await resolveReferencedAssets(missionStore, projectId, mission));
+  const record: ControlPublicationRecord = {
+    schemaVersion: "1.0",
+    publicMissionId: existing?.publicMissionId ?? `mission:${projectId}:${questId}`,
+    slug: existing?.slug ?? mission.listing.slug,
+    projectId,
+    questId,
+    draftRevision: mission.contentRevision,
+    draftContentHash: mission.contentHash,
+    releaseId,
+    contentHash: bundleHash,
+    channel: "production",
+    status: "published",
+    listing: mission.listing,
+    publishedAtMs
+  };
   const result = await publicationStore.publish({
     record,
     idempotencyKey: `catalog-${idempotencyKey}`.slice(0, 200),
-    requestHash: release.compiledContentHash
+    requestHash: bundleHash
   });
   if (result.kind === "published" || result.kind === "replay") return { kind: result.kind, record: result.publication };
   return { kind: "conflict" };
+}
+
+/**
+ * Identity of everything a player can execute and see: the authored mission
+ * document (story, screens, listing, defaults), the digest of every asset the
+ * document references, and the renderer contract the release was authored for.
+ * A board/compile hash is deliberately not used here — it cannot cover the
+ * authored mission document.
+ */
+const RENDERER_CONTRACT_VERSION = "mission-renderer-v1";
+
+async function missionBundleHash(
+  mission: any,
+  assets: readonly { readonly assetId: string; readonly hash: string }[]
+): Promise<string> {
+  const byId = new Map(assets.map((asset) => [asset.assetId, asset.hash]));
+  const referenced = collectReferencedAssetIds(mission);
+  return createHash("sha256").update(canonicalStringify({
+    renderer: RENDERER_CONTRACT_VERSION,
+    missionContentHash: String(mission.contentHash ?? ""),
+    assets: referenced.map((assetId) => ({ assetId, hash: byId.get(assetId) ?? null }))
+  }), "utf8").digest("hex");
+}
+
+function collectReferencedAssetIds(value: any, found = new Set<string>()): string[] {
+  if (typeof value === "string") return [...found].sort();
+  if (value === null || typeof value !== "object") return [...found].sort();
+  if (Array.isArray(value)) {
+    for (const child of value) collectReferencedAssetIds(child, found);
+    return [...found].sort();
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (/assetId$/i.test(key) && isId(child)) found.add(child as string);
+    else collectReferencedAssetIds(child, found);
+  }
+  return [...found].sort();
+}
+
+async function resolveReferencedAssets(
+  missionStore: (MissionDocumentStore & MissionSessionStore) | null,
+  projectId: string,
+  mission: any
+): Promise<readonly { readonly assetId: string; readonly hash: string }[]> {
+  const library = missionStore as unknown as Partial<ProjectAssetLibrary> | null;
+  if (!library || typeof library.listProjectAssets !== "function") return Object.freeze([]);
+  const referenced = new Set(collectReferencedAssetIds(mission));
+  if (referenced.size === 0) return Object.freeze([]);
+  const assets = await library.listProjectAssets(projectId, false);
+  return Object.freeze(assets
+    .filter((asset) => referenced.has(asset.assetId))
+    .map((asset) => Object.freeze({ assetId: asset.assetId, hash: asset.hash })));
+}
+
+/**
+ * Compensating revert of the catalog pointer when the release promotion fails
+ * after the catalog record was already written.
+ */
+async function revertPublicationRecord(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  previous: ControlPublicationRecord | null,
+  written: ControlPublicationRecord | null,
+  idempotencyKey: string
+): Promise<void> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return;
+  try {
+    if (previous) {
+      await publicationStore.publish({
+        record: { ...previous, status: "published" },
+        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
+        requestHash: previous.contentHash
+      });
+      return;
+    }
+    if (written) {
+      await publicationStore.unpublish({
+        publicMissionId: written.publicMissionId,
+        expectedReleaseId: written.releaseId,
+        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
+        requestHash: written.contentHash
+      });
+    }
+  } catch {
+    // The revert is best effort: the caller still reports the original failure.
+  }
+  void projectId;
+  void questId;
 }
 
 function publicPublicationView(record: ControlPublicationRecord): object {
@@ -1659,6 +1774,7 @@ function isBoardDocumentStore(value: ControlStore): value is ControlStore & Boar
 function isMissionStore(value: ControlStore): value is ControlStore & MissionDocumentStore & MissionSessionStore {
   const candidate = value as Partial<MissionDocumentStore & MissionSessionStore>;
   return typeof candidate.getMission === "function"
+    && typeof candidate.getMissionAtRevision === "function"
     && typeof candidate.saveMission === "function"
     && typeof candidate.createMissionSession === "function"
     && typeof candidate.getMissionSession === "function"

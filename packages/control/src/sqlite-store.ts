@@ -38,6 +38,7 @@ import type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  MissionDocumentRevision,
   MissionDocumentStore,
   MissionHistoryEntry,
   MissionSessionState,
@@ -595,6 +596,19 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
 
   async exportMission(projectId: string, questId: string): Promise<MissionDraft | null> {
     return this.getMission(projectId, questId);
+  }
+
+  async getMissionAtRevision(projectId: string, questId: string, contentRevision: number): Promise<MissionDocumentRevision | null> {
+    this.#assertOpen();
+    if (!Number.isSafeInteger(contentRevision) || contentRevision < 1) return null;
+    if (!this.#projectExists(projectId) || !this.#questExists(projectId, questId)) return null;
+    const resolved = this.#missionDocAtRevision(projectId, questId, contentRevision);
+    if (!resolved) return null;
+    return Object.freeze({
+      mission: resolved.doc,
+      contentRevision: resolved.contentRevision,
+      contentHash: resolved.contentHash
+    });
   }
 
   async registerProjectAsset(
