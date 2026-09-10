@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K07 DONE локально + VPS unauthenticated; K08 следующий. Assets/auth boundary и independent local Player доказаны; logged-in VPS browser, C01–C18 и exact-SHA deployment ещё не закрыты**
+Текущий блок: **K08 in progress. C01–C17 local/static/browser evidence pass; C18 exact-SHA VPS deployment/authenticated smoke OPEN. Full `npm run verify` running; GREEN запрещён до live proof**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -187,3 +187,14 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 Не закрыто: K08 C01–C18/full verify/exact-SHA VPS Studio deployment + authenticated smoke. GREEN не объявлен.
 
 Следующее: K08 — C01–C18, full verify, deployment and VPS smoke.
+
+## Studio V00–V02 correction — K08 in progress
+
+- `apps/studio/test/correction-acceptance.test.mjs`: **18 tests, 17 passed, 1 skipped (C18)**; skipped only because live exact-SHA candidate is not deployed yet.
+- `docs/acceptance/studio-c01-c18.md` maps every C criterion to STATIC/LOCAL/BROWSER/VPS evidence and keeps C18 OPEN.
+- `npm run verify` is running under Node 24.19.0; result will be recorded only after the process exits.
+- Next state-changing scope is Studio-only: exact candidate deploy/rebuild, loopback/public/auth smoke, then authenticated browser scenario. Engine, gate, production and auth mechanics stay untouched.
+
+GREEN is not declared.
+
+Следующее: exact-SHA Studio-only deployment, VPS smoke, C18 execution and final delivery verification.

@@ -41,7 +41,7 @@
 | R05 | Связи, drag/zoom/fit, collision-aware layout | **DONE локально + BROWSER/LOCAL** | `edgeToDraftChange` используется app; SVG edges имеют direction marker; valid/invalid pointer connections, два drag с edge tracking, zoom/pan/fit и collision-free fallback проверены. |
 | R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **DONE локально + BROWSER/LOCAL** | SQLite BoardDocument/idempotency tables, v1→v2 migration, atomic bounds/CAS, GET/POST route, generated registry/OpenAPI, close/reopen and profile A→B readback verified. VPS remains open. |
 | R07 | Read-only/role behavior and V00/Player regression evidence | **DONE локально + VPS unauthenticated** | K06 authenticated role/CSRF/revoke test, local Studio/Player/launch suites, and public VPS asset/auth matrix verified; logged-in Telegram browser playtest remains unavailable without user session. |
-| R08 | Regression suite C01–C18 and real connected renderer | **OPEN** | Existing `board-model.test.mjs` covers projection only; no suite reaches the renderer lifecycle, browser interactions, or C01–C18 matrix. |
+| R08 | Regression suite C01–C18 and real connected renderer | **PARTIAL — C18 OPEN** | Added `apps/studio/test/correction-acceptance.test.mjs`: C01–C17 pass; C18 is an explicit live-SHA test skipped until deployment. Browser/CDP evidence is linked in `docs/acceptance/studio-c01-c18.md`; full verify/deployment still running. |
 | R09 | Hosted identity and server-side global provider/project permissions | **DONE локально** | Authenticated Board GET/POST uses session identity and live project role; forged identity headers fail; revoked session returns 401; local provider mutation rejects non-loopback Host and cross-site Origin before body handling. VPS smoke remains open. |
 
 ## Evidence at K00
@@ -162,3 +162,12 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - Logged-in Telegram browser playtest on the public VPS is not claimed: no session was available in this run. Existing local independent frozen Player path is the evidence for runtime behavior.
 
 Не закрыто: C01–C18, full verify and exact-SHA VPS Studio deployment/smoke (K08). GREEN не объявлен.
+
+## K08 — acceptance matrix in progress
+
+- Added `apps/studio/test/correction-acceptance.test.mjs` with named C01–C18 tests against real projection, lifecycle, SQLite BoardDocument, authenticated Control and static server paths.
+- Current local result: **18 tests, 17 passed, 1 skipped (C18)**. C18 is intentionally skipped without `CORRECTION_VPS_URL`; it requires exact candidate deployment and live checks.
+- Added evidence ledger: `docs/acceptance/studio-c01-c18.md`, with STATIC/LOCAL/BROWSER/VPS scope per criterion. It explicitly forbids GREEN while C18 is open.
+- `npm run verify` is running under Node 24.19.0 as the final local regression gate; no result is claimed before completion.
+
+Next: verify exact output, commit the acceptance ledger, deploy **Studio only** at the candidate SHA, then run loopback/public/authenticated smoke and execute C18. Engine and Telegram gate must remain unchanged.
