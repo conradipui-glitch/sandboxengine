@@ -212,6 +212,20 @@
       "successStatus": 200
     },
     {
+      "id": "control.board.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/board",
+      "summary": "Получение server-authoritative layout BoardDocument отдельно от canonical draft",
+      "successStatus": 200
+    },
+    {
+      "id": "control.board.changes",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/board/changes",
+      "summary": "Owner/editor atomic CAS layout update with required idempotency-key",
+      "successStatus": 200
+    },
+    {
       "id": "control.draft.history",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",

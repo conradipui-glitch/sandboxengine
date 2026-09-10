@@ -94,6 +94,8 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests` — Owner/editor создание квеста с начальным draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot доступного проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/board` — Получение server-authoritative layout BoardDocument отдельно от canonical draft
+- `POST /control/v1/projects/{projectId}/quests/{questId}/board/changes` — Owner/editor atomic CAS layout update with required idempotency-key
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/history` — Постраничная история immutable draft revisions доступного проекта
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/compare` — Серверное сравнение двух конкретных draft revisions без автоматического merge
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления
