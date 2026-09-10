@@ -60,9 +60,9 @@ ode-v24.19.0-win-x64`), npm `11.17.0`. Hermes-овский Node `v22.23.2` да�
 | Site tests | `npx vitest run` | 18 файлов, 82/82, fail 0 |
 | Site build | `npm run build` | exit 0 |
 
-## R04 — воспроизводимое размещение (F07), commit `83f5cbf`
+## R04 — воспроизводимое размещение (F07), commit `83f5cbf` — ДОСТАВЛЕНО И ПРОВЕРЕНО HOSTED
 
-Кандидат подготовлен, live-рестарт не выполнялся.
+Live lifecycle выполнен 2026-09-11 (санкция владельца получена, «всё по плану»).
 
 - `deploy/vps/docker-compose.yml`: добавлен сервис `authored` (`lhc-authored`) с `restart: unless-stopped`, `working_dir: /engine`, `command: node /engine/deploy/vps/authored-server.mjs`, собственным healthcheck на `127.0.0.1:8746/healthz` и общим томом `engine-data`. Раньше runtime :8746 запускался вручную через `docker exec -d`, поэтому пересоздание `lhc-engine` его теряло (nginx начинал отдавать 502).
 - `engine` получает `LH_PUBLIC_MISSION_SESSION_SECRET` из `deploy/vps/.env` через `--env-file` вместо `/tmp/lhc-m06-compose-override.yml` (файл 0644 в `/tmp`, не переживал перезагрузку и был читаем локальным пользователям).
@@ -71,9 +71,39 @@ ode-v24.19.0-win-x64`), npm `11.17.0`. Hermes-овский Node `v22.23.2` да�
 
 Проверка кандидата: `docker-compose.yml` разобран парсером — 4 сервиса, команда и healthcheck `authored` на месте, интерполяция секрета присутствует; полный lifecycle (`compose up` с нуля, restart, reload) требует VPS и не выполнялся.
 
+## Доставка exact-SHA и hosted-подтверждение (2026-09-11)
+
+Доставка выполнена скриптом, а не руками: `/root/m06-r04-delivery.sh` (fail-closed по полному SHA) и подготовленный `/root/m06-r04-rollback.sh` (не выполнялся — откат не потребовался).
+
+| Шаг | Команда/факт | Результат |
+|---|---|---|
+| Fast-forward | `git fetch` + `git reset --hard 7e61f98…` (ancestor-проверка `b1546da` → `7e61f98`) | VPS HEAD = `7e61f9889724f01a5f5c1c2e511093c177ceac6b`, worktree чист |
+| Секрет | `deploy/vps/.env` (0600, ровно 1 запись, значение [REDACTED]) | `/tmp/lhc-m06-compose-override.yml` удалён |
+| Сборка | `docker compose build engine authored` | exit 0 |
+| Подъём | `docker compose up -d --no-deps --force-recreate engine authored` | `lhc-engine` healthy, `lhc-authored` healthy (новый контейнер) |
+| Порты | `ss -ltnp` | 8742+8788 → контейнер engine, 8746 → контейнер authored (ручного процесса больше нет) |
+| Надзор | `docker restart lhc-authored` | снова healthy; создание публичной сессии после рестарта — 201 |
+| Site | workflow run `34536157061` на `db7cbe8` | completed/success |
+
+Live-приёмка через реальный HTTPS и site BFF (`living-history-florence-preview.conradipui.workers.dev`):
+
+1. `GET /public/v1/missions` → 200 с опубликованной миссией; detail по slug/id → 200.
+2. `POST /api/games` опубликованной миссии → **201** (до исправления: `MISSION_SESSION_CREATE_FAILED` / `CONTROL_INTERNAL_ERROR` из-за `INVALID_RELEASE`); в ответе `presentation.kind = "published-mission"` и кадр авторской сцены («Палатка лагеря», `contentRevision 1`, `contentHash b05ba76…`).
+3. Ход 1 → «Бастион» (turn 1); ход 2 → финал «Отчёт написан», `status: victory` (turn 2).
+4. `GET /api/games/:id` после финала → `frame.kind = ending`, финал сохранён (F04 live).
+5. `POST /api/games` с неизвестным `mission:`-ref → **404 `PUBLIC_MISSION_NOT_FOUND`**, без отката в legacy (F06 live).
+6. `GET /api/scenarios` → 6 карточек: опубликованная миссия **плюс** 5 legacy (аддитивность, F06 live).
+7. Legacy-путь (без published-ссылки) по-прежнему отдаёт исторический сценарий `russia-1917` — регрессии нет.
+
+Не подтверждено live (честно):
+
+- F01/F03 в живом сценарии «правка черновика / unpublish при открытой сессии» — требует owner-сессии Control; сессия не создавалась, чужие cookies не использовались, поэтому проверка остаётся на уровне integration-теста `m06-immutable-release.test.mjs` 4/4;
+- браузерный проход глазами игрока (проверялось HTTP/BFF-уровнем, не UI);
+- C18 editor/viewer/read-only — нужны отдельные Telegram-аккаунты;
+- rollback-скрипт синтаксически проверен, но не исполнялся.
+
 ## Открыто
 
-- **F07/R04** — кандидат готов (см. выше), но live lifecycle не прогонялся: сервис `authored` не поднимался на VPS, `compose up` с нуля, restart и reload на стенде не проверялись. Секрет всё ещё существует в `/tmp/lhc-m06-compose-override.yml` до доставки нового compose и переноса значения в `deploy/vps/.env`.
-- Повторная exact-SHA доставка engine/site и live-приёмка (два браузерных прохода, unpublish, каталог) — не выполнялись.
+- **M06 — PARTIAL**: локальная регрессия зелёная, исправления доставлены и hosted happy-path подтверждён; полная приёмка (F01/F03 live, браузер, C18, повторный независимый прогон) не закрыта.
+- Повторный независимый аудит по новым SHA (`7e61f98` engine / `db7cbe8` site) — не выполнялся.
 - C18 editor/viewer/read-only — нужны отдельные Telegram-аккаунты; локальные серверные проверки разрешений не подменяют живой вход.
-- M06 — **PARTIAL**, не завершён.

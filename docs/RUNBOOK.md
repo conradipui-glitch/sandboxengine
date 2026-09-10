@@ -223,6 +223,8 @@ Configuration:
 - `LH_PUBLIC_MISSION_SESSION_SECRET` is required by `engine` for public mission sessions. Do not place it in `/tmp` overrides: the file would be world-readable and would not survive a reboot;
 - `authored` uses `SQLitePublishedSessionBindingStore`, so a container restart no longer drops already started legacy authored sessions.
 
+Delivered state (2026-09-11): `/opt/lhc/engine` is at `7e61f9889724f01a5f5c1c2e511093c177ceac6b`; `lhc-engine`, `lhc-authored`, `lhc-studio` and `lhc-gate` are healthy; the legacy `/tmp/lhc-m06-compose-override.yml` override is removed and the public session secret lives only in `deploy/vps/.env` (mode 600).
+
 Recovery procedure after recreating a container:
 
 1. `docker compose --env-file deploy/vps/.env -f deploy/vps/docker-compose.yml up -d` (start/reconcile all services);

@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-11
 
-Текущий блок: **M06 PARTIAL (независимая проверка + корректирующие R01–R03 выполнены локально). OPEN: R04 воспроизводимое размещение (F07), повторная доставка exact-SHA и live-приёмка, R05 закрытие, C18 ролевые проверки.**
+Текущий блок: **M06 PARTIAL → исправления F01–F07 доставлены и подтверждены hosted. OPEN: R05 закрытие, C18 ролевые проверки, браузерный проход глазами игрока, второй независимый прогон.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## Независимая проверка M06 и корректирующие работы (2026-09-11)
@@ -17,7 +17,7 @@
 | F04 финал теряется при reload сайта | P1 | site `f7f1233` | `src/worker/public-mission-recovery.test.ts`, `b11-public-route.test.ts` |
 | F05 опубликованные миссии не идут через общий renderer | P1 | site `db7cbe8` + engine `8ebe741` | `frame-build.test.ts`, `published-mission-stage.test.tsx`, `b11-public-route.test.ts` |
 | F06 отсутствующая миссия падает в legacy, каталог теряет legacy-карточки | P2 | site `db7cbe8` | `b11-catalog-route.test.ts` 4/4 |
-| F07 authored-runtime не восстановится штатным перезапуском | P1 | **НЕ исправлено** | — |
+| F07 authored-runtime не восстановится штатным перезапуском | P1 | `83f5cbf` | hosted: `lhc-authored` — supervised compose service, healthy, переживает `docker restart` |
 
 Ключевые решения:
 
@@ -35,7 +35,22 @@
 - Control 106/106, Server 133/133, Contracts 57/57, fail 0;
 - Site `npm run check` — exit 0; Vitest 18 файлов / 82 теста, fail 0; production build — exit 0.
 
-Не выполнено в этом этапе (честно): F07/R04 (отдельный управляемый authored-service, healthcheck, вынос `/tmp`-конфигурации), повторная доставка новых SHA на VPS, браузерный проход двух непохожих миссий на живом сайте, C18 ролевые входы. M06 остаётся PARTIAL до live-подтверждения.
+### Доставка exact-SHA и hosted-подтверждение (2026-09-11)
+
+- Engine доставлен: `/opt/lhc/engine` → `7e61f9889724f01a5f5c1c2e511093c177ceac6b`, worktree чист (fast-forward от `b1546da`; скрипт доставки fail-closed по полному SHA).
+- `lhc-authored` — новый supervised compose-сервис (`restart: unless-stopped`, собственный healthcheck на `127.0.0.1:8746/healthz`, отдельный контейнер); прежний ручной процесс `docker exec -d … authored-server.mjs` больше не используется. Проверено: `docker restart lhc-authored` → снова `healthy`, создание публичной сессии после рестарта — **201**.
+- Конфигурация: `LH_PUBLIC_MISSION_SESSION_SECRET` перенесён в `deploy/vps/.env` (`600`, ровно одна запись, значение [REDACTED]); `/tmp/lhc-m06-compose-override.yml` удалён.
+- Site Worker для `db7cbe8` задеплоен workflow run `34536157061` (completed/success).
+- Live-проверки (реальный HTTPS + site BFF):
+  1. `GET /public/v1/missions` и slug/detail — 200, каталог отдаёт опубликованную миссию;
+  2. `POST /api/games` (published ref) — **201**, `presentation.kind = published-mission`, кадр авторской сцены с `contentRevision 1` / `contentHash b05ba76…`;
+  3. ход 1 → сцена «Бастион», ход 2 → финал «Отчёт написан», `status: victory`;
+  4. `GET /api/games/:id` после финала — финал сохранён (`frame.kind = ending`), сессия не потеряна;
+  5. `POST /api/games` с неизвестным `mission:`-ref — **404 `PUBLIC_MISSION_NOT_FOUND`**, без отката в legacy;
+  6. `GET /api/scenarios` — 6 карточек: опубликованная миссия **плюс** 5 legacy (каталог аддитивный).
+- Rollback подготовлен (`/root/m06-r04-rollback.sh`): возврат worktree на `b1546da`, пересборка engine, снятие `authored`, восстановление ручного процесса и `/tmp`-override. Скрипт проверен синтаксически, **не выполнялся** (откат не потребовался).
+
+Не подтверждено live: F01/F03 в сценарии «правка черновика / unpublish при открытой сессии» (требует owner-сессии Control — не создавалась, чужие сессии не использовались); браузерный проход глазами игрока; C18 editor/viewer/read-only. M06 остаётся PARTIAL: live happy-path подтверждён, полная приёмка нет.
 
 ## M06 hosted acceptance (2026-09-11, до независимой проверки)
 
