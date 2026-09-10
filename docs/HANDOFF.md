@@ -192,7 +192,7 @@ Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE
 
 - Acceptance harness: C01–C17 pass; C18 public boundary passes after deploy, authenticated Telegram browser is not verified.
 - `npm run verify` under Node 24.19.0 → exit 0 after updating the registry count from 42 to 44 for the two board endpoints.
-- Studio-only VPS delivery: remote SHA `fb0483c`, rebuilt image digest `sha256:5411…`, `lhc-studio` recreated with `--no-deps`; Engine health 200 and gate/Engine uptime remained unchanged.
+- Studio-only VPS delivery: remote SHA `72ad9a3`, rebuilt image digest `sha256:870704…`, `lhc-studio` recreated with `--no-deps`; Engine health 200 and gate/Engine uptime remained unchanged.
 - Public unauthenticated checks: `/` 200 login fallback; namespaced assets/player-meta/runtime 401; legacy root assets 410. No credentials, ticket or cookie was guessed.
 - Local browser/CDP scenario remains the completed interaction evidence for C01–C17.
 

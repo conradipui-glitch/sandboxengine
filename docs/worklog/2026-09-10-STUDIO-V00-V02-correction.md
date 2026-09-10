@@ -167,7 +167,7 @@ K01: добавить failing lifecycle regression against the actually mounted 
 
 - Added `apps/studio/test/correction-acceptance.test.mjs`: local result **18 tests, 17 passed, 1 skipped (C18 without live URL)**; with `CORRECTION_VPS_URL`, C18 boundary check passed for public `/` 200, protected asset/runtime 401 and legacy roots 410.
 - Full `npm run verify` initially caught the expected registry count drift `42→44`; `b10-registry.test.mjs` was corrected and focused test passed. The rerun of full verify exited **0**, including docs/boundaries.
-- Candidate `fb0483c` was delivered through the branch, remote worktree reset exactly to that SHA, Studio image rebuilt (`sha256:5411…`) and only `lhc-studio` recreated with `--no-deps`. Remote readback: Studio loopback 200, Engine health 200, gate/Engine remained running.
+- Candidate `72ad9a3` was delivered through the branch, remote worktree reset exactly to that SHA, Studio image rebuilt (`sha256:870704…`) and only `lhc-studio` recreated with `--no-deps`. Remote readback: Studio loopback 200, Engine health 200, gate/Engine remained running.
 - Public unauthenticated VPS matrix after deploy: `/studio-assets/*`, `/player-assets/*`, `/player-meta.json`, `/v1/*` → 401; `/styles.css`/`/app.js` → 410; `/` → 200 login fallback.
 - Authenticated Telegram browser smoke remains OPEN: no usable session was available, local-cookie browser probe timed out, and no credentials/tickets were guessed. Local Chromium/CDP scenario is complete and recorded for C01–C17.
 
