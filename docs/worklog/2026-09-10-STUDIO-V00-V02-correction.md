@@ -14,7 +14,23 @@
 - Авторизация `@living_history_gate_bot` не меняется.
 - V00 namespaces `/studio-assets/*` и `/player-assets/*` сохраняются.
 
-## Матрица R01–R09 на актуальном коде
+## K01 — единый renderer и lifecycle — DONE
+
+- Активный renderer: `apps/studio/src/board-dom.ts` через `mountBoard`.
+- `apps/studio/src/board-render.ts` удалён после проверки импортов и полного Studio suite.
+- `apps/studio/src/board-lifecycle.ts` держит один handle на project/quest и предоставляет update, selection, viewport get/set, fit, destroy.
+- `app.ts` сохраняет host/handle между shell renders: вкладка inspector, save/validation и status не перемонтируют canvas и не вызывают fit.
+- На выходе из проекта/квеста/logout вызывается destroy; root listeners также снимаются публичным `StudioApp.destroy()`.
+- Callback wrappers получают generation token; async draft save проверяет project/quest context после ответа и не применяет stale result к новому квесту.
+
+Проверено:
+- K01 RED: `node@24.19.0 --test apps/studio/test/board-lifecycle.test.mjs` → отсутствовал `dist/src/board-lifecycle.js`.
+- K01 GREEN: тот же suite → **2/2 passed**.
+- `npm run typecheck` через Node 24.19.0 → exit 0.
+- `node@24.19.0 --test apps/studio/test/*.test.mjs` → **78/78 passed**.
+
+Ограничение, перенесённое в K02/K04: layout пока localStorage, а inspector и серверный BoardDocument ещё не реализованы.
+
 
 | R | Проверка на входе | Статус | Фактическое основание |
 |---|---|---|---|

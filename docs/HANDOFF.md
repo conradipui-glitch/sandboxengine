@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K00 завершён, K01 следующий; предыдущие V01/V02 acceptance claims переведены в PARTIAL до C01–C18 и browser/VPS доказательств**
+Текущий блок: **Studio V00–V02 correction K01 DONE; K02 следующий. Единый `board-dom` renderer/lifecycle принят локально, C01–C18 и VPS ещё не закрыты**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)

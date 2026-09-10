@@ -46,10 +46,10 @@ import {
 } from "./access.js";
 import {
   draftToBoard,
-  edgeToDraftChange,
-  type BoardModel
+  edgeToDraftChange
 } from "./board-model.js";
-import { createBoardView, type BoardViewCallbacks } from "./board-render.js";
+import { mountBoard } from "./board-dom.js";
+import { BoardLifecycle } from "./board-lifecycle.js";
 import { loadBoardPositions, saveBoardPosition } from "./board-storage.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
@@ -144,13 +144,35 @@ export class StudioApp {
         boardPositions: new Map()
       };
 
+  private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
+  private boardHost: HTMLElement | null = null;
+  private boardContext: { readonly projectId: string; readonly questId: string } | null = null;
+  private readonly rootDisposers: Array<() => void> = [];
+  private destroyed = false;
+
   constructor(
     private readonly root: HTMLElement,
     private readonly api = new ControlApiClient()
   ) {
-    root.addEventListener("click", (event) => void this.onClick(event));
-    root.addEventListener("submit", (event) => void this.onSubmit(event));
-    root.addEventListener("input", (event) => this.onInput(event));
+    const onClick = (event: Event): void => { void this.onClick(event); };
+    const onSubmit = (event: Event): void => { void this.onSubmit(event); };
+    const onInput = (event: Event): void => this.onInput(event);
+    root.addEventListener("click", onClick);
+    root.addEventListener("submit", onSubmit);
+    root.addEventListener("input", onInput);
+    this.rootDisposers.push(
+      () => root.removeEventListener("click", onClick),
+      () => root.removeEventListener("submit", onSubmit),
+      () => root.removeEventListener("input", onInput)
+    );
+  }
+
+  /** Останавливает board gestures/listeners и корневые Studio listeners. */
+  public destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.destroyBoard();
+    for (const dispose of this.rootDisposers.splice(0)) dispose();
   }
 
   async start(): Promise<void> {
@@ -304,6 +326,7 @@ export class StudioApp {
       return;
     }
     if (action === "back-projects") {
+      this.destroyBoard();
       this.state.view = "projects";
       this.state.selectedProjectId = null;
       this.state.selectedQuestId = null;
@@ -796,6 +819,7 @@ export class StudioApp {
   private async logout(): Promise<void> {
     try {
       await this.api.logout();
+      this.destroyBoard();
       this.state.access = await probeStudioAccess(this.api);
       this.state.projects = [];
       this.state.selectedProjectId = null;
@@ -824,6 +848,7 @@ export class StudioApp {
   }
 
   private async selectProject(projectId: string): Promise<void> {
+    this.destroyBoard();
     this.state.phase = "loading";
     this.state.message = "Загружаем квесты…";
     this.state.selectedProjectId = projectId;
@@ -900,6 +925,7 @@ export class StudioApp {
 
   private async selectQuest(questId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Сначала выберите проект.");
+    if (this.state.selectedQuestId !== questId) this.destroyBoard();
     this.state.phase = "loading";
     this.state.message = "Загружаем draft с сервера…";
     this.state.selectedQuestId = questId;
@@ -932,19 +958,25 @@ export class StudioApp {
     this.render();
   }
 
-  private async saveChanges(changes: readonly DraftChange[]): Promise<void> {
+  private async saveChanges(
+    changes: readonly DraftChange[],
+    expectedContext?: { readonly projectId: string; readonly questId: string }
+  ): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
     const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    if (expectedContext && (expectedContext.projectId !== projectId || expectedContext.questId !== questId)) return;
     const draft = requireDraft(this.state.draft);
     this.state.phase = "saving";
     this.state.message = `Сохраняем изменения…`;
     this.render();
 
     try {
-      this.state.draft = await this.api.applyDraftChanges(projectId, questId, {
+      const savedDraft = await this.api.applyDraftChanges(projectId, questId, {
         baseRevision: draft.draftRevision,
         changes
       });
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
+      this.state.draft = savedDraft;
       this.state.phase = "saved";
       this.state.message = `Сохранено.`;
       this.state.conflict = null;
@@ -952,8 +984,11 @@ export class StudioApp {
       this.state.releaseBuildIntent = null;
       this.state.publishReport = null;
       await this.refreshVersions(projectId, questId);
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
       await this.refreshAuthorAssistant(projectId, questId);
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
     } catch (error) {
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
@@ -1389,6 +1424,20 @@ export class StudioApp {
   }
 
   private render(): void {
+    const canKeepBoard = this.state.view === "editor"
+      && this.state.boardView === "board"
+      && this.state.draft !== null
+      && this.state.selectedProjectId !== null
+      && this.state.selectedQuestId !== null;
+    const sameBoardContext = canKeepBoard
+      && this.boardContext !== null
+      && this.boardContext.projectId === this.state.selectedProjectId
+      && this.boardContext.questId === this.state.selectedQuestId;
+    if (!canKeepBoard || (this.boardContext !== null && !sameBoardContext)) {
+      this.destroyBoard();
+    }
+
+    const preservedBoardHost = canKeepBoard ? this.boardHost : null;
     const focusKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.focusKey : undefined;
     if (this.state.view === "projects" && this.state.access.mode !== "anonymous") {
       this.root.innerHTML = this.renderProjects();
@@ -1396,103 +1445,104 @@ export class StudioApp {
       this.root.innerHTML = this.renderEditor();
     }
 
+    if (preservedBoardHost) {
+      const freshHost = this.root.querySelector<HTMLElement>("[data-board-host]");
+      if (freshHost && freshHost !== preservedBoardHost) freshHost.replaceWith(preservedBoardHost);
+    }
     if (focusKey) {
-          const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
-          const element = this.root.querySelector<HTMLElement>(selector);
-          element?.focus();
-        }
+      const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
+      const element = this.root.querySelector<HTMLElement>(selector);
+      element?.focus();
+    }
 
-        this.mountBoardIfNeeded();
-      }
+    this.mountBoardIfNeeded();
+  }
 
-      /** Монтирует доску в host после каждого полного перерендера редактора. */
-      private mountBoardIfNeeded(): void {
-        if (this.state.view !== "editor" || this.state.boardView !== "board") return;
-        if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
-        const host = this.root.querySelector<HTMLElement>("[data-board-host]");
-        if (!host) return;
+  /** Монтирует или обновляет единственный живой canvas после shell render. */
+  private mountBoardIfNeeded(): void {
+    if (this.state.view !== "editor" || this.state.boardView !== "board") return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-board-host]");
+    const draft = this.state.draft;
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    if (!host || !draft || !projectId || !questId) return;
+    const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+    const editable = canEditProject(this.state.access, project);
+    const model = draftToBoard(draft, this.state.boardPositions);
+
+    if (this.boardHost === host && this.boardContext?.projectId === projectId && this.boardContext.questId === questId) {
+      this.boardLifecycle.update(projectId, questId, model, this.state.selectedBoardNodeId, editable);
+      return;
+    }
+    this.destroyBoard();
+    this.boardHost = host;
+    this.boardContext = { projectId, questId };
+    this.boardLifecycle.mount({
+      projectId,
+      questId,
+      container: host,
+      model,
+      editable,
+      selectedNodeId: this.state.selectedBoardNodeId,
+      ...this.boardCallbacks(projectId, questId)
+    });
+  }
+
+  private destroyBoard(): void {
+    this.boardLifecycle.destroy();
+    this.boardHost = null;
+    this.boardContext = null;
+  }
+
+  private isStudioContextCurrent(context: { readonly projectId: string; readonly questId: string }): boolean {
+    return !this.destroyed
+      && this.state.selectedProjectId === context.projectId
+      && this.state.selectedQuestId === context.questId;
+  }
+
+  private boardCallbacks(projectId: string, questId: string): {
+    readonly onMove: (nodeId: string, x: number, y: number) => void;
+    readonly onSelect: (nodeId: string | null) => void;
+    readonly onConnect: (sourceId: string, targetId: string) => void;
+  } {
+    return {
+      onMove: (nodeId, x, y) => {
+        if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
+        saveBoardPosition(questId, nodeId, x, y);
+        const next = new Map(this.state.boardPositions);
+        next.set(nodeId, { x, y });
+        this.state.boardPositions = next;
+      },
+      onSelect: (nodeId) => {
+        if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
+        this.state.selectedBoardNodeId = nodeId;
+        this.state.selectedBoardEdgeId = null;
+        this.render();
+      },
+      onConnect: (sourceId, targetId) => {
+        if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
         const draft = this.state.draft;
-        if (!draft) return;
-        const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
-        try {
-          const model = draftToBoard(draft, this.state.boardPositions);
-          const options = {
-            callbacks: this.boardCallbacks(),
-            selectedNodeId: this.state.selectedBoardNodeId,
-            selectedEdgeId: this.state.selectedBoardEdgeId
-          };
-          const view = createBoardView(model, options);
-          host.innerHTML = view.render(model, options);
-          view.attach(host, model, options);
-          // показываем все карточки после сборки (zoom/pan живут внутри attach)
-          host.querySelector<HTMLElement>('[data-board-action="fit"]')?.click();
-        } catch (error) {
-          host.innerHTML = `<div class="board-error">${escapeHtml(error instanceof Error ? error.message : "Не удалось показать доску квеста.")}</div>`;
+        const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+        if (!draft || !canEditProject(this.state.access, project)) {
+          this.state.phase = "idle";
+          this.state.message = "Связи между карточками может менять редактор. Ваша роль — наблюдение.";
+          this.render();
+          return;
         }
+        const model = draftToBoard(draft, this.state.boardPositions);
+        const change = edgeToDraftChange(draft, model, sourceId, targetId);
+        if (!change) {
+          this.state.phase = "idle";
+          this.state.message = "Такая связь не поддерживается: персонаж соединяется с местом начала, действие — с расходуемым ресурсом.";
+          this.render();
+          return;
+        }
+        void this.saveChanges([change], { projectId, questId });
       }
+    };
+  }
 
-      private boardCallbacks(): BoardViewCallbacks {
-        return {
-          onNodeMove: (nodeId, x, y) => {
-            const questId = this.state.selectedQuestId;
-            if (!questId) return;
-            saveBoardPosition(questId, nodeId, x, y);
-            const next = new Map(this.state.boardPositions);
-            next.set(nodeId, { x, y });
-            this.state.boardPositions = next;
-          },
-          onNodeSelect: (nodeId) => {
-            this.state.selectedBoardNodeId = nodeId;
-            this.state.selectedBoardEdgeId = null;
-            this.paintBoardSelection();
-          },
-          onEdgeSelect: (edgeId) => {
-            this.state.selectedBoardEdgeId = edgeId;
-            this.state.selectedBoardNodeId = null;
-            this.paintBoardSelection();
-          },
-          onBackgroundClick: () => {
-            this.state.selectedBoardNodeId = null;
-            this.state.selectedBoardEdgeId = null;
-            this.paintBoardSelection();
-          },
-          onConnect: (sourceId, targetId) => {
-            const draft = this.state.draft;
-            const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
-            if (!draft) return;
-            if (!canEditProject(this.state.access, project)) {
-              this.state.phase = "idle";
-              this.state.message = "Связи между карточками может менять редактор. Ваша роль — наблюдение.";
-              this.render();
-              return;
-            }
-            const model = draftToBoard(draft, this.state.boardPositions);
-            const change = edgeToDraftChange(draft, model, sourceId, targetId);
-            if (!change) {
-              this.state.phase = "idle";
-              this.state.message = "Такая связь не поддерживается: персонаж соединяется с местом начала, действие — с расходуемым ресурсом.";
-              this.render();
-              return;
-            }
-            void this.saveChanges([change]);
-          }
-        };
-      }
-
-      /** Обновляет классы выделения на живой доске без полного перерендера. */
-      private paintBoardSelection(): void {
-        if (typeof this.root.querySelector !== "function") return;
-        const host = this.root.querySelector<HTMLElement>("[data-board-host]");
-        if (!host) return;
-        host.querySelectorAll<HTMLElement>(".board-node.selected").forEach((el) => el.classList.remove("selected"));
-        host.querySelectorAll<SVGPathElement>("path.selected").forEach((el) => el.classList.remove("selected"));
-        if (this.state.selectedBoardNodeId) {
-          host.querySelector<HTMLElement>(`.board-node[data-node-id="${cssEscape(this.state.selectedBoardNodeId)}"]`)?.classList.add("selected");
-        }
-        if (this.state.selectedBoardEdgeId) {
-          host.querySelector<SVGPathElement>(`path[data-edge-id="${cssEscape(this.state.selectedBoardEdgeId)}"]`)?.classList.add("selected");
-        }
-      }
 
   private profileLabel(): string {
     const access = this.state.access;

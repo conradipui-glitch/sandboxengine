@@ -50,6 +50,16 @@ export interface BoardDomOptions {
 export interface BoardDomHandle {
   /** Заменяет модель (перестраивает карточки и связи), сохраняя pan/zoom. */
   update(model: BoardModel): void;
+  /** Синхронизирует выделение с инспектором без перемонтирования доски. */
+  updateSelection(nodeId: string | null): void;
+  /** Возвращает текущий viewport в координатах доски. */
+  getViewport(): { readonly scale: number; readonly panX: number; readonly panY: number };
+  /** Восстанавливает viewport, не меняя модель и layout. */
+  setViewport(viewport: { readonly scale: number; readonly panX: number; readonly panY: number }): void;
+  /** Явно подгоняет доску под актуальные узлы. */
+  fit(): void;
+  /** Меняет права без уничтожения canvas. */
+  setEditable?(editable: boolean): void;
   /** Снимает все слушатели и удаляет разметку и стили из контейнера. */
   destroy(): void;
 }
@@ -212,7 +222,7 @@ const BOARD_DOM_CSS = `
 
 /** Монтирует интерактивную доску в контейнер. */
 export function mountBoard(container: HTMLElement, options: BoardDomOptions): BoardDomHandle {
-  const editable = options.editable;
+  let editable = options.editable;
 
   // ── Состояние ────────────────────────────────────────────────────────────
   let destroyed = false;
@@ -855,6 +865,30 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       gesture?.();
       gesture = null;
       currentModel = model;
+      render();
+    },
+    updateSelection(nodeId: string | null): void {
+      if (destroyed) return;
+      select(nodeId !== null && positions.has(nodeId) ? nodeId : null, false);
+    },
+    getViewport(): { readonly scale: number; readonly panX: number; readonly panY: number } {
+      return { scale, panX, panY };
+    },
+    setViewport(next: { readonly scale: number; readonly panX: number; readonly panY: number }): void {
+      if (destroyed) return;
+      scale = clampZoom(next.scale);
+      panX = Number.isFinite(next.panX) ? next.panX : 0;
+      panY = Number.isFinite(next.panY) ? next.panY : 0;
+      applyTransform();
+    },
+    fit(): void {
+      if (!destroyed) fitView();
+    },
+    setEditable(nextEditable: boolean): void {
+      if (destroyed || editable === nextEditable) return;
+      editable = nextEditable;
+      gesture?.();
+      gesture = null;
       render();
     },
     destroy(): void {
