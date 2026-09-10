@@ -34,10 +34,10 @@
 
 | R | Проверка на входе | Статус | Фактическое основание |
 |---|---|---|---|
-| R01 | Один renderer и lifecycle mount/update/selection/viewport/destroy | **OPEN** | `app.ts` импортирует `createBoardView` из `board-render.ts`; `board-dom.ts` с `mountBoard/update/destroy` не подключён. `render()` пересоздаёт root и `mountBoardIfNeeded()` заново fit/attach после каждого render. |
-| R02 | Доска — главный экран, рабочие размеры и рабочие кнопки | **OPEN** | Доска есть, но перед ней в основном потоке выводятся versions/portability; `board-render.ts` содержит дублирующий toolbar и видимую кнопку `layout-list` с пустым действием; CSS/DOM acceptance для 1440/1280/360 не закрыт. |
-| R03 | Настоящий inspector выбранного canonical block | **OPEN** | Вкладка «Свойства» сейчас показывает проект/access/ID; selected block не формирует поля редактора. |
-| R04 | Создание и редактирование четырёх типов блока | **PARTIAL** | Есть создание стартовой location, resource и paint action через формы; character и полноценные location/action/resource inspector fields отсутствуют; serializer должен сохранять полный block. |
+| R01 | Один renderer и lifecycle mount/update/selection/viewport/destroy | **DONE локально** | `app.ts` uses `mountBoard`/`BoardLifecycle`; `board-render.ts` removed after import/test check; browser lifecycle evidence remains in C09. |
+| R02 | Доска — главный экран, рабочие размеры и рабочие кнопки | **DONE локально + BROWSER/LOCAL** | K02 viewport shell, board-main workspace, utility menu and one board/list toggle are implemented; local browser smoke confirms board remains mounted while utility panels open. |
+| R03 | Настоящий inspector выбранного canonical block | **DONE локально + BROWSER/LOCAL** | `block-inspector.ts` + app inspector, полный `block.replace`, debounce и conflict preservation проверены browser smoke. |
+| R04 | Создание и редактирование четырёх типов блока | **DONE локально + BROWSER/LOCAL** | Library/modal создали location, character, resource и action; type-specific canonical fields подтверждены GET draft. |
 | R05 | Связи, drag/zoom/fit, collision-aware layout | **OPEN** | Интерактивное подключение есть только в неиспользуемом `board-dom.ts`; подключённый `board-render.ts` не вызывает `onConnect`; fallback `floor(index/3)` может накладывать узлы одного типа. |
 | R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **OPEN** | `board-storage.ts` прямо признаёт localStorage по одному `questId`; endpoint `/board` и Control persistence не найдены. |
 | R07 | Read-only/role behavior and V00/Player regression evidence | **PARTIAL** | Access gates и existing Player tests есть, но browser proof of read-only board and independent playtests for this candidate отсутствует. |
@@ -79,4 +79,30 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - R02 **DONE локально + BROWSER/LOCAL**, VPS для candidate ещё не обновлён.
 - R03/R04/R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
 
-Следующая точная операция: K03 — настоящий canonical inspector и создание/редактирование всех четырёх типов.
+## K03 — canonical inspector и четыре типа — DONE локально + BROWSER/LOCAL
+
+- Добавлен `apps/studio/src/block-inspector.ts`: `createBlockForKind` строит только canonical `location/character/resource/action`, `replaceBlockWithPatch` выпускает полный `block.replace`; исходные `description` и неизменённые `data`-поля сохраняются, `block.update` не используется.
+- Библиотека редактора получила создание всех четырёх типов. Для action форма требует существующий resource и не создаёт dangling reference; character поддерживает `initialLocationId`/`initialStatus`, resource — unit/range/value, action — resource/cost/duration/allowPartial.
+- Inspector выбранного узла редактирует canonical title/description и type-specific data; ввод хранится локально до ответа сервера, debounce — 700 ms, есть явное «Сохранить карточку», read-only поля отключаются по access state.
+- Добавлен lifecycle focus после создания и отдельное сохранение inspector без перемонтирования доски.
+
+Проверено:
+- RED: `node@24.19.0 --test apps/studio/test/block-inspector.test.mjs` → отсутствовал `dist/src/block-inspector.js`.
+- GREEN: тот же тест после сборки → **3/3 passed**.
+- `npm run typecheck` через Node 24.19.0 → exit 0; Studio suite после K03 → **81/81 passed**.
+- BROWSER/LOCAL на `http://127.0.0.1:4184` с отдельной SQLite: реальный Chromium/CDP создал location, character, resource и action; после открытия квеста все пять узлов (включая start) видны на доске.
+- BROWSER/LOCAL inspector изменил title/description resource/action; Control GET подтвердил server draft revision `5` и canonical data.
+- BROWSER/LOCAL conflict: внешний `block.replace` поднял revision `5→6`; локальный inspector получил «Ничего не перезаписано», локальное имя осталось в поле, GET подтвердил серверную внешнюю description без overwrite.
+- BROWSER/LOCAL переключение «Свойства → ИИ-помощник → Свойства» не потеряло сохранённое содержимое и доску.
+
+Ограничения: это доказательство локального браузера и Control persistence; серверный BoardDocument/restart/другой браузер ещё относятся к K05, live VPS candidate не обновлялся.
+
+### R status after K03
+
+- R01 **DONE локально** (K01; browser lifecycle C09 ещё открыт).
+- R02 **DONE локально + BROWSER/LOCAL**, VPS для candidate ещё не обновлён.
+- R03 **DONE локально + BROWSER/LOCAL** (canonical inspector + full replace + conflict preservation).
+- R04 **DONE локально + BROWSER/LOCAL** (4 block kinds and type-specific fields).
+- R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+
+Следующая точная операция: K04 — допустимые связи, ports, drag/zoom/fit и collision-aware layout.

@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **Studio V00–V02 correction K02 DONE; K03 следующий. Доска — главный экран, utility panels за меню, browser/local smoke доказан; C01–C18 и VPS ещё не закрыты**
+Текущий блок: **Studio V00–V02 correction K03 DONE локально + BROWSER/LOCAL; K04 следующий. Inspector и четыре canonical block types доказаны, conflict не перезаписывает сервер; C01–C18 и VPS ещё не закрыты**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -132,3 +132,15 @@ B13.0–B13.c1 приняты на уровне адаптеров: policy фи�
 Последние проверки: CI success `34315990935` на `9f17250` (b1), `34317405839` на `14a1619` (b2); локальный `npm run verify` exit 0, builder 24/24.
 
 Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE-MATRIX.md`. Evidence ledger: `docs/RELEASE-REPORT.md`.
+
+## Studio V00–V02 correction — K03 DONE локально + BROWSER/LOCAL
+
+- `apps/studio/src/block-inspector.ts` реализует canonical create/replace helper; для edit используется только полный `block.replace`.
+- Library/modal создаёт location, character, resource и action; action требует существующий resource.
+- Реальный Chromium/CDP на изолированном `127.0.0.1:4184` создал все четыре типа; Control GET подтвердил revision `5` и canonical `data`.
+- Inspector edit + 700 ms debounce сохранили title/description на сервере; переключение Properties/AI/Properties не потеряло состояние.
+- Conflict smoke: внешний write `r5→r6` оставил server state нетронутым локальной правкой, показал conflict panel, локальный input сохранился.
+- Static: Node 24.19.0 `npm run typecheck` exit 0; Studio tests **81/81**.
+- Не закрыто этим этапом: K04 connections/layout, K05 BoardDocument/other-browser restart, C01–C18 full matrix и VPS exact-SHA smoke.
+
+Следующее: K04 — valid/invalid connections, ports, drag/zoom/fit и collision-aware layout.

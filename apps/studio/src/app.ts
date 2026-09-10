@@ -4,7 +4,7 @@ import {
   renderConflictPanel,
   type ConflictState
 } from "./conflict.js";
-import type { ActionBlock } from "@living-history/contracts";
+import type { ActionBlock, Block } from "@living-history/contracts";
 import {
   ControlApiClient,
   ControlApiError,
@@ -50,6 +50,12 @@ import {
 } from "./board-model.js";
 import { mountBoard } from "./board-dom.js";
 import { BoardLifecycle } from "./board-lifecycle.js";
+import {
+  createBlockForKind,
+  replaceBlockWithPatch,
+  type InspectorBlockKind,
+  type InspectorPatch
+} from "./block-inspector.js";
 import { loadBoardPositions, saveBoardPosition } from "./board-storage.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
@@ -104,6 +110,9 @@ interface StudioState {
   boardPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
   editorMenuOpen: boolean;
   utilityPanel: "versions" | "portability" | "settings" | null;
+  blockModalKind: InspectorBlockKind | null;
+  inspectorDraft: { readonly blockId: string; readonly fields: Readonly<Record<string, string | boolean>>; readonly dirty: boolean } | null;
+  focusAfterRender: string | null;
 }
 
 export class StudioApp {
@@ -145,13 +154,17 @@ export class StudioApp {
     selectedBoardEdgeId: null,
     boardPositions: new Map(),
     editorMenuOpen: false,
-    utilityPanel: null
+    utilityPanel: null,
+    blockModalKind: null,
+    inspectorDraft: null,
+    focusAfterRender: null
   };
 
   private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
   private boardHost: HTMLElement | null = null;
   private boardContext: { readonly projectId: string; readonly questId: string } | null = null;
   private readonly rootDisposers: Array<() => void> = [];
+  private inspectorSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
   constructor(
@@ -161,13 +174,19 @@ export class StudioApp {
     const onClick = (event: Event): void => { void this.onClick(event); };
     const onSubmit = (event: Event): void => { void this.onSubmit(event); };
     const onInput = (event: Event): void => this.onInput(event);
+    const onChange = (event: Event): void => this.onInspectorChange(event);
+    const onFocusOut = (event: Event): void => this.onInspectorBlur(event);
     root.addEventListener("click", onClick);
     root.addEventListener("submit", onSubmit);
     root.addEventListener("input", onInput);
+    root.addEventListener("change", onChange);
+    root.addEventListener("focusout", onFocusOut);
     this.rootDisposers.push(
       () => root.removeEventListener("click", onClick),
       () => root.removeEventListener("submit", onSubmit),
-      () => root.removeEventListener("input", onInput)
+      () => root.removeEventListener("input", onInput),
+      () => root.removeEventListener("change", onChange),
+      () => root.removeEventListener("focusout", onFocusOut)
     );
   }
 
@@ -175,6 +194,8 @@ export class StudioApp {
   public destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.inspectorSaveTimer !== null) clearTimeout(this.inspectorSaveTimer);
+    this.inspectorSaveTimer = null;
     this.destroyBoard();
     for (const dispose of this.rootDisposers.splice(0)) dispose();
   }
@@ -233,6 +254,21 @@ export class StudioApp {
     if (action === "author-apply") {
       const proposalId = target.dataset.proposalId;
       if (proposalId) await this.applyAuthorProposal(proposalId);
+      return;
+    }
+    if (action === "add-block") {
+      const kind = target.dataset.blockKind;
+      if (kind === "location" || kind === "character" || kind === "resource" || kind === "action") {
+        this.state.blockModalKind = kind;
+        this.state.message = `Добавьте карточку: ${blockKindLabel(kind)}.`;
+        this.render();
+      }
+      return;
+    }
+    if (action === "close-block-modal") {
+      this.state.blockModalKind = null;
+      this.state.message = "Создание карточки отменено.";
+      this.render();
       return;
     }
     if (action === "prepare-delete-block") {
@@ -438,6 +474,14 @@ export class StudioApp {
     const data = new FormData(form);
 
     try {
+      if (kind === "block-add") {
+        await this.addBlockFromForm(form, data);
+        return;
+      }
+      if (kind === "inspector-save") {
+        await this.flushInspectorSave();
+        return;
+      }
       if (kind === "author-message") {
         await this.sendAuthorMessage(
           text(data, "jobId"),
@@ -909,6 +953,10 @@ export class StudioApp {
 
   private onInput(event: Event): void {
     const target = event.target;
+    if (isInspectorControl(target) && target.dataset.inspectorField) {
+      this.updateInspectorField(target);
+      return;
+    }
     if (!(target instanceof HTMLInputElement)) return;
     if (target.dataset.input === "project-search") {
       this.state.projectSearch = target.value;
@@ -920,6 +968,18 @@ export class StudioApp {
       }
       const count = this.root.querySelector("[data-project-count]");
       if (count) count.textContent = String(this.filteredProjects().length);
+    }
+  }
+
+  private onInspectorChange(event: Event): void {
+    const target = event.target;
+    if (isInspectorControl(target) && target.dataset.inspectorField) this.updateInspectorField(target);
+  }
+
+  private onInspectorBlur(event: Event): void {
+    const target = event.target;
+    if (isInspectorControl(target) && target.dataset.inspectorField && this.state.inspectorDraft?.dirty) {
+      this.scheduleInspectorSave();
     }
   }
 
@@ -956,6 +1016,8 @@ export class StudioApp {
         this.state.boardView = "board";
         this.state.selectedBoardNodeId = null;
         this.state.selectedBoardEdgeId = null;
+        this.state.inspectorDraft = null;
+        this.state.blockModalKind = null;
         this.state.boardPositions = loadBoardPositions(questId);
         this.state.validation = null;
     this.state.playtest = null;
@@ -985,10 +1047,10 @@ export class StudioApp {
   private async saveChanges(
     changes: readonly DraftChange[],
     expectedContext?: { readonly projectId: string; readonly questId: string }
-  ): Promise<void> {
+  ): Promise<boolean> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
     const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
-    if (expectedContext && (expectedContext.projectId !== projectId || expectedContext.questId !== questId)) return;
+    if (expectedContext && (expectedContext.projectId !== projectId || expectedContext.questId !== questId)) return false;
     const draft = requireDraft(this.state.draft);
     this.state.phase = "saving";
     this.state.message = `Сохраняем изменения…`;
@@ -999,7 +1061,7 @@ export class StudioApp {
         baseRevision: draft.draftRevision,
         changes
       });
-      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return false;
       this.state.draft = savedDraft;
       this.state.phase = "saved";
       this.state.message = `Сохранено.`;
@@ -1008,11 +1070,13 @@ export class StudioApp {
       this.state.releaseBuildIntent = null;
       this.state.publishReport = null;
       await this.refreshVersions(projectId, questId);
-      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return false;
       await this.refreshAuthorAssistant(projectId, questId);
-      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return false;
+      this.render();
+      return true;
     } catch (error) {
-      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return;
+      if (expectedContext && !this.isStudioContextCurrent(expectedContext)) return false;
       if (error instanceof ControlApiError && error.status === 409 && error.code === "DRAFT_REVISION_CONFLICT") {
         const fresh = await this.api.getDraft(projectId, questId);
         this.state.draft = fresh;
@@ -1034,6 +1098,108 @@ export class StudioApp {
       }
     }
     this.render();
+    return false;
+  }
+
+  private async addBlockFromForm(form: HTMLFormElement, data: FormData): Promise<void> {
+    const kind = form.dataset.blockKind;
+    if (kind !== "location" && kind !== "character" && kind !== "resource" && kind !== "action") {
+      throw new Error("Неизвестный тип карточки.");
+    }
+    const title = text(data, "title");
+    const description = optionalText(data, "description") ?? "";
+    const id = generateTechnicalId(title);
+    let block: Block;
+    if (kind === "location") {
+      block = createBlockForKind("location", { id, title, description });
+    } else if (kind === "character") {
+      const locationId = optionalText(data, "initialLocationId");
+      block = createBlockForKind("character", {
+        id,
+        title,
+        description,
+        initialLocationId: locationId,
+        initialStatus: text(data, "initialStatus")
+      });
+    } else if (kind === "resource") {
+      block = createBlockForKind("resource", {
+        id,
+        title,
+        description,
+        unit: text(data, "unit"),
+        initialValue: integer(data, "initialValue"),
+        min: integer(data, "min"),
+        max: integer(data, "max")
+      });
+    } else {
+      block = createBlockForKind("action", {
+        id,
+        title,
+        description,
+        resourceId: text(data, "resourceId"),
+        resourceUnitsPerUnit: integer(data, "resourceUnitsPerUnit"),
+        durationSecondsPerUnit: integer(data, "durationSecondsPerUnit"),
+        allowPartial: data.get("allowPartial") === "on"
+      });
+    }
+    const saved = await this.saveChanges([{ kind: "block.add", block }]);
+    if (!saved || !this.state.draft?.blocks.some((item) => item.id === id)) return;
+    this.state.blockModalKind = null;
+    this.state.selectedBoardNodeId = id;
+    this.state.selectedBoardEdgeId = null;
+    this.state.inspectorDraft = null;
+    this.state.focusAfterRender = `inspector-title-${id}`;
+    this.state.message = `Карточка «${title}» добавлена и выделена.`;
+    this.render();
+  }
+
+  private updateInspectorField(target: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): void {
+    const blockId = target.dataset.inspectorBlockId;
+    const field = target.dataset.inspectorField;
+    if (!blockId || !field) return;
+    const value = target instanceof HTMLInputElement && target.type === "checkbox" ? target.checked : target.value;
+    const current = this.state.inspectorDraft?.blockId === blockId
+      ? this.state.inspectorDraft.fields
+      : {};
+    this.state.inspectorDraft = {
+      blockId,
+      fields: Object.freeze({ ...current, [field]: value }),
+      dirty: true
+    };
+    this.scheduleInspectorSave();
+  }
+
+  private scheduleInspectorSave(): void {
+    if (this.inspectorSaveTimer !== null) clearTimeout(this.inspectorSaveTimer);
+    this.inspectorSaveTimer = setTimeout(() => {
+      this.inspectorSaveTimer = null;
+      void this.flushInspectorSave();
+    }, 700);
+  }
+
+  private async flushInspectorSave(): Promise<void> {
+    const local = this.state.inspectorDraft;
+    const draft = this.state.draft;
+    if (!local?.dirty || !draft) return;
+    const block = draft.blocks.find((item) => item.id === local.blockId);
+    if (!block) {
+      this.state.inspectorDraft = null;
+      this.state.selectedBoardNodeId = null;
+      this.state.message = "Выбранная карточка больше не существует; инспектор закрыт.";
+      this.render();
+      return;
+    }
+    try {
+      const change = replaceBlockWithPatch(block, inspectorPatch(local.fields));
+      const saved = await this.saveChanges([change]);
+      if (saved && this.state.inspectorDraft?.blockId === local.blockId) {
+        this.state.inspectorDraft = null;
+        this.render();
+      }
+    } catch (error) {
+      this.setError(error);
+      this.render();
+    }
   }
 
   private async retryConflict(): Promise<void> {
@@ -1478,6 +1644,12 @@ export class StudioApp {
       const element = this.root.querySelector<HTMLElement>(selector);
       element?.focus();
     }
+    if (this.state.focusAfterRender) {
+      const selector = `[data-focus-key="${cssEscape(this.state.focusAfterRender)}"]`;
+      const element = this.root.querySelector<HTMLElement>(selector);
+      element?.focus();
+      this.state.focusAfterRender = null;
+    }
 
     this.mountBoardIfNeeded();
   }
@@ -1542,6 +1714,7 @@ export class StudioApp {
         if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
         this.state.selectedBoardNodeId = nodeId;
         this.state.selectedBoardEdgeId = null;
+        this.state.inspectorDraft = null;
         this.render();
       },
       onConnect: (sourceId, targetId) => {
@@ -1626,7 +1799,9 @@ export class StudioApp {
     const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
     const draft = this.state.draft;
     const resources = draft ? resourceBlocks(draft.blocks) : [];
+    const locations = draft ? draft.blocks.filter((block) => block.kind === "core.location") : [];
     const actions = draft ? paintActionBlocks(draft.blocks) : [];
+    const selectedBlock = draft?.blocks.find((block) => block.id === this.state.selectedBoardNodeId) ?? null;
     const allowEdit = canEditProject(this.state.access, project);
     const allowTest = canTestProject(this.state.access, project);
     const allowPublish = allowEdit && project?.role === "owner";
@@ -1693,6 +1868,16 @@ export class StudioApp {
                   </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
                 ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
               </section>
+              ${draft && allowEdit ? `<section class="sidebar-section block-library" aria-label="Добавить блок">
+                <div class="section-heading-row"><h2>Добавить карточку</h2></div>
+                <div class="library-add-grid">
+                  <button class="button-secondary" data-action="add-block" data-block-kind="location">Место</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="character">Персонаж</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="resource">Ресурс</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="action">Действие</button>
+                </div>
+                <p class="form-hint">Действию нужен существующий ресурс; dangling reference не сохраняется.</p>
+              </section>` : ``}
             </div>
           </aside>
 
@@ -1771,9 +1956,13 @@ export class StudioApp {
             ${this.state.inspectorTab === "props" ? `
               <section class="inspector-section" aria-label="Инспектор карточки">
                 <div class="section-heading-row"><h2>Свойства карточки</h2></div>
-                ${this.state.selectedBoardNodeId
-                  ? `<div class="inspector-placeholder"><strong>Выбрана карточка</strong><code>${escapeHtml(this.state.selectedBoardNodeId)}</code><p>Поля карточки загружаются в инспекторе.</p></div>`
-                  : `<p class="inspector-empty">Выберите карточку на доске</p>`}
+                ${renderBlockInspector(
+                  selectedBlock,
+                  locations,
+                  resources,
+                  allowEdit,
+                  this.state.inspectorDraft
+                )}
                 <button class="button-secondary settings-link" data-action="open-utility-panel" data-panel="settings">Настройки доступа и проекта</button>
               </section>
             ` : `
@@ -1790,6 +1979,7 @@ export class StudioApp {
           </aside>
         </div>
 
+        ${this.state.blockModalKind && draft ? renderBlockCreationModal(this.state.blockModalKind, draft.blocks, this.state.message) : ""}
         ${this.renderUtilityPanel(draft, project, allowEdit)}
       </div>`;
   }
@@ -1835,6 +2025,138 @@ export class StudioApp {
       <div class="ed-utility-body">${body}</div>
     </section>`;
   }
+}
+
+function renderBlockCreationModal(kind: InspectorBlockKind, blocks: readonly Block[], message: string): string {
+  const locations = blocks.filter((block) => block.kind === "core.location");
+  const resources = blocks.filter((block) => block.kind === "core.resource");
+  if (kind === "action" && resources.length === 0) {
+    return `<div class="modal-backdrop" data-modal="block">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Новое действие">
+        <h2>Новое действие</h2>
+        <p class="form-hint">Действие текущего профиля требует ресурс. Сначала создайте ресурс, затем вернитесь к действию.</p>
+        <div class="modal-actions">
+          <button class="button-secondary" type="button" data-action="close-block-modal">Отмена</button>
+          <button class="primary" type="button" data-action="add-block" data-block-kind="resource">Создать ресурс</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  const title = blockKindLabel(kind);
+  const body = kind === "location"
+    ? `<label>Название<input data-focus-key="block-title" name="title" required maxlength="200" placeholder="Мастерская"></label>
+       <label>Описание<textarea name="description" maxlength="2000" rows="4"></textarea></label>`
+    : kind === "character"
+      ? `<label>Имя<input data-focus-key="block-title" name="title" required maxlength="200" placeholder="Герой"></label>
+         <label>Описание<textarea name="description" maxlength="2000" rows="3"></textarea></label>
+         <label>Начальное место<select name="initialLocationId"><option value="">Без начального места</option>${locations.map((location) => `<option value="${escapeAttr(location.id)}">${escapeHtml(location.title)}</option>`).join("")}</select></label>
+         <label>Начальное состояние<input name="initialStatus" required maxlength="100" value="idle"></label>`
+      : kind === "resource"
+        ? `<label>Название<input data-focus-key="block-title" name="title" required maxlength="200" placeholder="Синяя краска"></label>
+           <label>Описание<textarea name="description" maxlength="2000" rows="3"></textarea></label>
+           <label>Единица<input name="unit" required maxlength="100" value="порция"></label>
+           <div class="form-grid three"><label>Начальное значение<input name="initialValue" type="number" step="1" required value="2"></label>
+           <label>Минимум<input name="min" type="number" step="1" required value="0"></label>
+           <label>Максимум<input name="max" type="number" step="1" required value="8"></label></div>`
+        : `<label>Название<input data-focus-key="block-title" name="title" required maxlength="200" value="Рисовать"></label>
+           <label>Описание<textarea name="description" maxlength="2000" rows="3"></textarea></label>
+           <label>Ресурс<select name="resourceId" required>${resources.map((resource) => `<option value="${escapeAttr(resource.id)}">${escapeHtml(resource.title)}</option>`).join("")}</select></label>
+           <div class="form-grid two"><label>Расход на единицу<input name="resourceUnitsPerUnit" type="number" min="1" step="1" required value="1"></label>
+           <label>Длительность, секунд<input name="durationSecondsPerUnit" type="number" min="0" step="1" required value="300"></label></div>
+           <label class="checkbox"><input name="allowPartial" type="checkbox" checked> Разрешить частичное выполнение</label>`;
+  return `<div class="modal-backdrop" data-modal="block">
+    <form class="modal block-modal" data-form="block-add" data-block-kind="${escapeAttr(kind)}">
+      <h2>Добавить: ${escapeHtml(title)}</h2>
+      <p class="form-hint">ID создаст Studio и проверит Control API. ${escapeHtml(message)}</p>
+      ${body}
+      <div class="modal-actions"><button class="button-secondary" type="button" data-action="close-block-modal">Отмена</button><button class="primary" type="submit">Добавить карточку</button></div>
+    </form>
+  </div>`;
+}
+
+function renderBlockInspector(
+  block: Block | null,
+  locations: readonly Block[],
+  resources: readonly Block[],
+  editable: boolean,
+  local: StudioState["inspectorDraft"]
+): string {
+  if (!block) return `<p class="inspector-empty">Выберите карточку на доске</p>`;
+  const values = (field: string, fallback: string | boolean): string | boolean => {
+    if (local?.blockId === block.id && local.fields[field] !== undefined) return local.fields[field];
+    if (field === "title") return block.title;
+    if (field === "description") return block.description;
+    if (block.kind === "core.character") return field === "initialLocationId" ? block.data.initialLocationId ?? "" : block.data.initialStatus;
+    if (block.kind === "core.resource") {
+      if (field === "unit") return block.data.unit;
+      if (field === "initialValue") return String(block.data.initialValue);
+      if (field === "min") return String(block.data.min);
+      if (field === "max") return String(block.data.max);
+    }
+    if (block.kind === "core.action") {
+      if (field === "resourceId") return block.data.resourceId;
+      if (field === "resourceUnitsPerUnit") return String(block.data.resourceUnitsPerUnit);
+      if (field === "durationSecondsPerUnit") return String(block.data.durationSecondsPerUnit);
+      if (field === "allowPartial") return block.data.allowPartial;
+    }
+    return fallback;
+  };
+  const common = `data-inspector-block-id="${escapeAttr(block.id)}" ${editable ? "" : "disabled"}`;
+  const title = String(values("title", ""));
+  const description = String(values("description", ""));
+  const fields = block.kind === "core.location"
+    ? `<p class="form-hint">Стартовое место: ${block.id === "" ? "нет" : "отдельный блок"}. Его нельзя удалить или переназначить из этого inspector.</p>`
+    : block.kind === "core.character"
+      ? `<label>Начальное место<select ${common} data-inspector-field="initialLocationId"><option value="">Без начального места</option>${locations.map((location) => `<option value="${escapeAttr(location.id)}" ${String(values("initialLocationId", "")) === location.id ? "selected" : ""}>${escapeHtml(location.title)}</option>`).join("")}</select></label>
+         <label>Начальное состояние<input ${common} data-inspector-field="initialStatus" maxlength="100" value="${escapeAttr(String(values("initialStatus", "idle")))}"></label>`
+      : block.kind === "core.resource"
+        ? `<label>Единица<input ${common} data-inspector-field="unit" maxlength="100" value="${escapeAttr(String(values("unit", "")))}"></label>
+           <div class="form-grid three"><label>Начальное значение<input ${common} data-inspector-field="initialValue" type="number" step="1" value="${escapeAttr(String(values("initialValue", "0")))}"></label>
+           <label>Минимум<input ${common} data-inspector-field="min" type="number" step="1" value="${escapeAttr(String(values("min", "0")))}"></label>
+           <label>Максимум<input ${common} data-inspector-field="max" type="number" step="1" value="${escapeAttr(String(values("max", "0")))}"></label></div>`
+        : `<label>Ресурс<select ${common} data-inspector-field="resourceId">${resources.map((resource) => `<option value="${escapeAttr(resource.id)}" ${String(values("resourceId", "")) === resource.id ? "selected" : ""}>${escapeHtml(resource.title)}</option>`).join("") || `<option value="">Нет доступного ресурса</option>`}</select></label>
+           <div class="form-grid two"><label>Расход на единицу<input ${common} data-inspector-field="resourceUnitsPerUnit" type="number" min="1" step="1" value="${escapeAttr(String(values("resourceUnitsPerUnit", "1")))}"></label>
+           <label>Длительность, секунд<input ${common} data-inspector-field="durationSecondsPerUnit" type="number" min="0" step="1" value="${escapeAttr(String(values("durationSecondsPerUnit", "0")))}"></label></div>
+           <label class="checkbox"><input ${common} data-inspector-field="allowPartial" type="checkbox" ${values("allowPartial", false) === true || values("allowPartial", false) === "true" ? "checked" : ""}> Разрешить частичное выполнение</label>`;
+  return `<form class="inspector-form" data-form="inspector-save" data-block-id="${escapeAttr(block.id)}">
+    <div class="inspector-kind">${escapeHtml(blockKindLabel(blockKindFromCanonical(block)))} · <code>${escapeHtml(block.id)}</code></div>
+    <label>Название<input ${common} data-focus-key="inspector-title-${escapeAttr(block.id)}" data-inspector-field="title" maxlength="200" value="${escapeAttr(title)}"></label>
+    <label>Описание<textarea ${common} data-inspector-field="description" maxlength="2000" rows="4">${escapeHtml(description)}</textarea></label>
+    ${fields}
+    ${editable ? `<button class="primary" type="submit">Сохранить карточку</button>` : `<p class="form-hint">Только чтение: серверная роль не разрешает редактирование.</p>`}
+  </form>`;
+}
+
+function blockKindFromCanonical(block: Block): InspectorBlockKind {
+  return block.kind === "core.location" ? "location" : block.kind === "core.character" ? "character" : block.kind === "core.resource" ? "resource" : "action";
+}
+
+function inspectorPatch(fields: Readonly<Record<string, string | boolean>>): InspectorPatch {
+  const patch: Record<string, string | number | boolean | null> = {};
+  for (const field of ["title", "description", "unit", "initialStatus"] as const) {
+    if (typeof fields[field] === "string") patch[field] = fields[field];
+  }
+  if (fields.initialLocationId !== undefined) patch.initialLocationId = typeof fields.initialLocationId === "string" && fields.initialLocationId.length > 0 ? fields.initialLocationId : null;
+  if (fields.resourceId !== undefined) patch.resourceId = String(fields.resourceId);
+  for (const field of ["initialValue", "min", "max", "resourceUnitsPerUnit", "durationSecondsPerUnit"] as const) {
+    if (fields[field] !== undefined) {
+      const value = Number(fields[field]);
+      if (!Number.isSafeInteger(value)) throw new Error(`${field} must be an integer`);
+      patch[field] = value;
+    }
+  }
+  if (fields.allowPartial !== undefined) patch.allowPartial = fields.allowPartial === true || fields.allowPartial === "true";
+  return patch;
+}
+
+function blockKindLabel(kind: InspectorBlockKind): string {
+  return kind === "location" ? "Место" : kind === "character" ? "Персонаж" : kind === "resource" ? "Ресурс" : "Действие";
+}
+
+function isInspectorControl(value: EventTarget | null): value is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+  return (typeof HTMLInputElement !== "undefined" && value instanceof HTMLInputElement)
+    || (typeof HTMLTextAreaElement !== "undefined" && value instanceof HTMLTextAreaElement)
+    || (typeof HTMLSelectElement !== "undefined" && value instanceof HTMLSelectElement);
 }
 
 function isAuthorAssistantBusy(phase: StudioState["phase"]): boolean {
