@@ -1,10 +1,18 @@
 import type { StoryBoardModel, StoryEdge, StoryNode } from "./story-model.js";
+import { storyEdgeCaption } from "./story-model.js";
+import {
+  STORY_CONNECT_LABEL,
+  STORY_FIT_LABEL,
+  STORY_NODE_H,
+  STORY_NODE_W,
+  fitStoryViewport,
+  storyKeyAction,
+  zoomStoryViewportAt
+} from "./story-commands.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const NODE_W = 248;
-const NODE_H = 112;
-const MIN_SCALE = 0.25;
-const MAX_SCALE = 2;
+const NODE_W = STORY_NODE_W;
+const NODE_H = STORY_NODE_H;
 
 export interface StoryDomOptions {
   readonly model: StoryBoardModel;
@@ -12,6 +20,9 @@ export interface StoryDomOptions {
   readonly onSelect?: (nodeId: string | null) => void;
   readonly onMove?: (nodeId: string, x: number, y: number) => void;
   readonly onConnectPair?: (sourceId: string, targetId: string) => void;
+  readonly onUndo?: () => void;
+  readonly onRedo?: () => void;
+  readonly onDelete?: (nodeId: string) => void;
   readonly onHint?: (message: string) => void;
 }
 
@@ -21,11 +32,6 @@ export interface StoryDomHandle {
   setConnectMode(enabled: boolean): void;
   fit(): void;
   destroy(): void;
-}
-
-function clampScale(value: number): number {
-  if (!Number.isFinite(value)) return 1;
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 }
 
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -94,12 +100,13 @@ export function mountStoryBoard(container: HTMLElement, options: StoryDomOptions
   toolbar.className = "story-toolbar";
   const fitButton = document.createElement("button");
   fitButton.type = "button";
-  fitButton.textContent = "Показать всё";
-  fitButton.setAttribute("aria-label", "Показать всё");
+  fitButton.textContent = STORY_FIT_LABEL;
+  fitButton.setAttribute("aria-label", STORY_FIT_LABEL);
+  fitButton.title = "Показать всю доску целиком (F)";
   toolbar.appendChild(fitButton);
   const connectButton = document.createElement("button");
   connectButton.type = "button";
-  connectButton.textContent = "Связать";
+  connectButton.textContent = STORY_CONNECT_LABEL;
   connectButton.setAttribute("aria-label", "Режим соединения");
   connectButton.setAttribute("aria-pressed", "false");
   connectButton.disabled = !editable;
@@ -150,7 +157,7 @@ export function mountStoryBoard(container: HTMLElement, options: StoryDomOptions
       const my = (from.y + to.y + NODE_H) / 2 - 8;
       label.setAttribute("x", String(mx));
       label.setAttribute("y", String(my));
-      label.textContent = edge.label;
+      label.textContent = storyEdgeCaption(edge);
       edgesGroup.appendChild(label);
     }
   };
@@ -294,47 +301,53 @@ export function mountStoryBoard(container: HTMLElement, options: StoryDomOptions
     event.preventDefault();
     const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
     const rect = viewport.getBoundingClientRect();
-    const cx = event.clientX - rect.left;
-    const cy = event.clientY - rect.top;
-    const next = clampScale(scale * factor);
-    panX = cx - ((cx - panX) / scale) * next;
-    panY = cy - ((cy - panY) / scale) * next;
-    scale = next;
+    const next = zoomStoryViewportAt({ scale, panX, panY }, factor, {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    });
+    scale = next.scale;
+    panX = next.panX;
+    panY = next.panY;
     applyTransform();
     paintEdges();
   };
 
   const fit = (): void => {
-    if (model.nodes.length === 0) {
-      scale = 1;
-      panX = 0;
-      panY = 0;
-    } else {
-      const rect = viewport.getBoundingClientRect();
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (const node of model.nodes) {
-        const at = positions.get(node.id) ?? { x: node.x, y: node.y };
-        minX = Math.min(minX, at.x);
-        minY = Math.min(minY, at.y);
-        maxX = Math.max(maxX, at.x + NODE_W);
-        maxY = Math.max(maxY, at.y + NODE_H);
-      }
-      const pad = 48;
-      const needW = maxX - minX + pad * 2;
-      const needH = maxY - minY + pad * 2;
-      scale = clampScale(Math.min(rect.width / Math.max(1, needW), rect.height / Math.max(1, needH), 1));
-      panX = (rect.width - (maxX - minX) * scale) / 2 - minX * scale;
-      panY = (rect.height - (maxY - minY) * scale) / 2 - minY * scale;
-    }
+    const rect = viewport.getBoundingClientRect();
+    const nodePositions = model.nodes.map((node) => positions.get(node.id) ?? { x: node.x, y: node.y });
+    const next = fitStoryViewport(nodePositions, { width: rect.width, height: rect.height });
+    scale = next.scale;
+    panX = next.panX;
+    panY = next.panY;
     applyTransform();
     paintEdges();
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape") {
+    const action = storyKeyAction(event);
+    if (action === null) return;
+    if (action === "undo") {
+      event.preventDefault();
+      options.onUndo?.();
+      return;
+    }
+    if (action === "redo") {
+      event.preventDefault();
+      options.onRedo?.();
+      return;
+    }
+    if (action === "fit") {
+      event.preventDefault();
+      fit();
+      return;
+    }
+    if (action === "delete") {
+      if (!selectedId) return;
+      event.preventDefault();
+      options.onDelete?.(selectedId);
+      return;
+    }
+    if (action === "deselect") {
       selectedId = null;
       connectSource = null;
       options.onSelect?.(null);
