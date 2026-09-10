@@ -96,6 +96,15 @@ export {
   type TaskProjectionSuccess
 } from "./tasks.js";
 export {
+  applyMissionChoice,
+  availableMissionChoices,
+  sidecarBeatsToMissionStory,
+  type ApplyMissionChoiceResult,
+  type AvailableMissionChoice,
+  type MissionTurnState,
+  type MissionTurnTarget
+} from "./mission-execution.js";
+export {
   DETERMINISTIC_RNG_ALGORITHM,
   UINT32_MAX,
   createDeterministicRngState,

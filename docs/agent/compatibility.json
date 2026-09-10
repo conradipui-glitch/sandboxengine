@@ -5,11 +5,11 @@
   "pluginManifestSchemaVersion": "1.0",
   "enginePluginApiVersion": "1.0.0",
   "registryVersion": "1.0",
-  "registryHash": "f07498608988b3aed4868a8f6649fa55278979ac18df6520ca6f5a015a371650",
+  "registryHash": "524157e281515dac30e15fdc650d3a4b7c5383ab94145cddbdf8ba55ab0d1030",
   "pluginRegistryVersion": "1.0",
   "pluginRegistryHash": "6caca8938c7ae20e20b4568dfefb5b66ccabbd5776351cf3c109e6b90da8dac4",
-  "apiHash": "2a84b3c0589363827f198a66b0ef2f2565ac00b921e672b9434c134a0f23aeba",
-  "docsHash": "8dec400fbe823fbfb9b0d66acdb5c673fc3755c5608120245977599e90ed3a0d",
+  "apiHash": "10d9768fdbb46463221fd8442a0d8a392ee36629741ddd680678357dea71eb3a",
+  "docsHash": "f4954efbaf92e4a456788e3099613ebec2a986f581a2a8fb641a42a6d713df58",
   "installedPluginCount": 1,
-  "availableOperationCount": 44
+  "availableOperationCount": 49
 }

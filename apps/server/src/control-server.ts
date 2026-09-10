@@ -18,7 +18,10 @@ import {
   type ControlUserRecord,
   type DraftSnapshot,
   type DraftValidationRecord,
-  type FrozenPlaytestRecord
+  type FrozenPlaytestRecord,
+  type MissionDocumentStore,
+  type MissionSessionStore,
+  type SaveMissionResult
 } from "@living-history/control";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import type { DiceCheckDefinition } from "@living-history/plugins/dice-check";
@@ -66,6 +69,7 @@ export interface ControlReleaseModeOptions {
 export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly boardStore?: BoardDocumentStore;
+  readonly missionStore?: MissionDocumentStore & MissionSessionStore;
   readonly releases?: ControlReleaseModeOptions;
   readonly playtestTrace?: PlaytestTraceReader;
   readonly authorAssistant?: Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore };
@@ -105,6 +109,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
   const boardStore = dependencies.boardStore ?? (isBoardDocumentStore(dependencies.store) ? dependencies.store as BoardDocumentStore : null);
+  const missionStore = dependencies.missionStore ?? (isMissionStore(dependencies.store) ? dependencies.store as MissionDocumentStore & MissionSessionStore : null);
   const authorAssistant = dependencies.authorAssistant
     ? Object.freeze({
         ...dependencies.authorAssistant,
@@ -120,6 +125,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         response,
         dependencies.store,
         boardStore,
+        missionStore,
         releases,
         dependencies.playtestTrace ?? null,
         authorAssistant,
@@ -178,6 +184,7 @@ async function routeControlRequest(
   response: any,
   store: ControlStore,
   boardStore: BoardDocumentStore | null,
+  missionStore: (MissionDocumentStore & MissionSessionStore) | null,
   releases: ControlReleaseModeOptions | null,
   playtestTrace: PlaytestTraceReader | null,
   authorAssistant: (Omit<AuthorAssistantDependencies, "store"> & { readonly conversation: AuthorConversationStore }) | null,
@@ -447,6 +454,122 @@ async function routeControlRequest(
         sendJson(response, 409, { error: { code: "BOARD_IDEMPOTENCY_KEY_REUSED" } });
       } else {
         sendJson(response, 422, { error: { code: "INVALID_BOARD_CHANGE_SET", details: result.errors } });
+      }
+      return;
+    }
+    sendNotFound(response);
+    return;
+  }
+
+  const missionMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/mission(\/sessions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})(\/turns)?)?)?$/.exec(url.pathname);
+  if (missionMatch) {
+    const projectId = missionMatch[1];
+    const questId = missionMatch[2];
+    const sessionsPart = missionMatch[3] ?? "";
+    const sessionId = missionMatch[4] ?? null;
+    const isTurns = (missionMatch[5] ?? "") === "/turns";
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (missionStore === null) {
+      sendJson(response, 501, { error: { code: "MISSION_STORAGE_UNAVAILABLE" } });
+      return;
+    }
+    if (sessionsPart === "" && method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const mission = await missionStore.getMission(projectId, questId);
+      if (!mission) sendNotFound(response);
+      else sendJson(response, 200, { mission });
+      return;
+    }
+    if (sessionsPart === "" && method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      if (!hasExactKeys(body, ["baseRevision", "mission"])
+        || !isRevision(body.baseRevision) || !isPlainObject(body.mission)) {
+        sendJson(response, 400, { error: { code: "INVALID_MISSION_DOCUMENT" } });
+        return;
+      }
+      const result = await missionStore.saveMission(projectId, questId, {
+        baseRevision: body.baseRevision,
+        mission: body.mission as never,
+        idempotencyKey,
+        actorUserId: identity?.user.userId ?? "local-owner"
+      });
+      sendMissionSaveResult(response, result);
+      return;
+    }
+    if (sessionsPart === "/sessions" && method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      if (!hasExactKeys(body, ["sessionId", "initialWorld"])
+        || !isPlainObject(body.initialWorld)) {
+        sendJson(response, 400, { error: { code: "INVALID_MISSION_SESSION_REQUEST" } });
+        return;
+      }
+      const result = await missionStore.createMissionSession(projectId, questId, {
+        sessionId: body.sessionId,
+        idempotencyKey,
+        actorUserId: identity?.user.userId ?? "local-owner",
+        initialWorld: body.initialWorld as never
+      });
+      if (result.kind === "created") sendJson(response, 201, { session: result.session });
+      else if (result.kind === "replay") sendJson(response, 200, { session: result.session, replay: true });
+      else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "mission_not_found") {
+        sendNotFound(response);
+      } else if (result.kind === "session_binding_conflict" || result.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: "MISSION_SESSION_CONFLICT" } });
+      } else {
+        sendJson(response, 422, { error: { code: "INVALID_MISSION_SESSION_REQUEST", details: result.errors } });
+      }
+      return;
+    }
+    if (sessionId && !isTurns && method === "GET") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const session = await missionStore.getMissionSession(sessionId);
+      if (!session || session.projectId !== projectId || session.questId !== questId) sendNotFound(response);
+      else sendJson(response, 200, { session });
+      return;
+    }
+    if (sessionId && isTurns && method === "POST") {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return;
+      if (!hasExactKeys(body, ["baseTurn", "choiceId"]) || !isRevision(body.baseTurn)) {
+        sendJson(response, 400, { error: { code: "INVALID_MISSION_TURN" } });
+        return;
+      }
+      const existing = await missionStore.getMissionSession(sessionId);
+      if (!existing || existing.projectId !== projectId || existing.questId !== questId) {
+        sendNotFound(response);
+        return;
+      }
+      const result = await missionStore.applyMissionTurn(sessionId, {
+        baseTurn: body.baseTurn,
+        choiceId: body.choiceId,
+        idempotencyKey,
+        actorUserId: identity?.user.userId ?? "local-owner"
+      });
+      if (result.kind === "applied") sendJson(response, 200, { session: result.session, target: result.target });
+      else if (result.kind === "replay") sendJson(response, 200, { session: result.session, target: result.target, replay: true });
+      else if (result.kind === "session_not_found") sendNotFound(response);
+      else if (result.kind === "turn_conflict") {
+        sendJson(response, 409, { error: { code: "MISSION_TURN_CONFLICT", currentTurn: result.currentTurn } });
+      } else if (result.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: "MISSION_IDEMPOTENCY_KEY_REUSED" } });
+      } else if (result.kind === "choice_not_in_scene" || result.kind === "choice_blocked" || result.kind === "effect_failed" || result.kind === "mission_ended") {
+        sendJson(response, 422, { error: { code: `MISSION_TURN_${result.kind.toUpperCase()}` } });
+      } else {
+        sendJson(response, 422, { error: { code: "INVALID_MISSION_TURN", details: result.errors } });
       }
       return;
     }
@@ -1156,6 +1279,28 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 function isBoardDocumentStore(value: ControlStore): value is ControlStore & BoardDocumentStore {
   return typeof (value as Partial<BoardDocumentStore>).getBoardDocument === "function"
     && typeof (value as Partial<BoardDocumentStore>).applyBoardChanges === "function";
+}
+
+function isMissionStore(value: ControlStore): value is ControlStore & MissionDocumentStore & MissionSessionStore {
+  const candidate = value as Partial<MissionDocumentStore & MissionSessionStore>;
+  return typeof candidate.getMission === "function"
+    && typeof candidate.saveMission === "function"
+    && typeof candidate.createMissionSession === "function"
+    && typeof candidate.getMissionSession === "function"
+    && typeof candidate.applyMissionTurn === "function";
+}
+
+function sendMissionSaveResult(response: any, result: SaveMissionResult): void {
+  if (result.kind === "saved") sendJson(response, 200, { mission: result.mission });
+  else if (result.kind === "replay") sendJson(response, 200, { mission: result.mission, replay: true });
+  else if (result.kind === "project_not_found" || result.kind === "quest_not_found") sendNotFound(response);
+  else if (result.kind === "revision_conflict") {
+    sendJson(response, 409, { error: { code: "MISSION_REVISION_CONFLICT", currentRevision: result.currentRevision } });
+  } else if (result.kind === "idempotency_key_reused") {
+    sendJson(response, 409, { error: { code: "MISSION_IDEMPOTENCY_KEY_REUSED" } });
+  } else {
+    sendJson(response, 422, { error: { code: "INVALID_MISSION_DOCUMENT", details: result.errors } });
+  }
 }
 
 function isId(value: unknown): value is string {

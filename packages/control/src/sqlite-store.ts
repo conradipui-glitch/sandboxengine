@@ -5,23 +5,29 @@ import { DatabaseSync } from "node:sqlite";
 import {
   CONTRACT_SCHEMA_VERSION,
   hasValidQuestReleaseReferences,
+  hasValidWorldStateReferences,
   isBlock,
   missionContentHash,
   validateMissionDraft,
   type Block,
   type MissionDraft,
-  type QuestRelease
+  type QuestRelease,
+  type WorldState
 } from "@living-history/contracts";
-import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
+import { applyMissionChoice, compileQuest, type CompiledQuestArtifact } from "@living-history/core";
 import { analyzeDraftBlockReferences } from "./draft-history.js";
 import type {
   ApplyBoardChangesInput,
   ApplyBoardChangesResult,
   ApplyDraftChangesResult,
+  ApplyMissionTurnInput,
+  ApplyMissionTurnResult,
   BoardDocument,
   BoardDocumentStore,
   BoardPosition,
   ControlStore,
+  CreateMissionSessionInput,
+  CreateMissionSessionResult,
   CreatePlaytestResult,
   CreateProjectInput,
   CreateProjectResult,
@@ -34,6 +40,8 @@ import type {
   FrozenPlaytestRecord,
   MissionDocumentStore,
   MissionHistoryEntry,
+  MissionSessionState,
+  MissionSessionStore,
   ProjectRecord,
   RestoreDraftInput,
   RestoreDraftResult,
@@ -42,7 +50,7 @@ import type {
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 3;
+const CONTROL_SCHEMA_VERSION = 4;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -57,7 +65,7 @@ interface DraftChangeContext {
   readonly entryLocationId: string;
 }
 
-export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore {
+export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore, MissionSessionStore {
   readonly #db: any;
   #closed = false;
 
@@ -585,6 +593,167 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     return this.getMission(projectId, questId);
   }
 
+  async createMissionSession(
+    projectId: string,
+    questId: string,
+    input: CreateMissionSessionInput
+  ): Promise<CreateMissionSessionResult> {
+    const shapeErrors = validateMissionSessionInput(input);
+    if (shapeErrors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(shapeErrors) });
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+    if (!hasValidWorldStateReferences(input.initialWorld)) {
+      return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.invalid_world"]) });
+    }
+    const requestHash = hashMissionSessionRequest(projectId, questId, input);
+    return this.#transaction((): CreateMissionSessionResult => {
+      const replayRow = this.#db.prepare(`
+        SELECT session_id, request_hash FROM control_mission_session_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        const existing = this.#missionSessionFromRow(this.#db.prepare(`
+          SELECT * FROM control_mission_sessions WHERE session_id = ?
+        `).get(String(replayRow.session_id)));
+        if (!existing) return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.session_lost"]) });
+        return frozen({ kind: "replay", session: existing });
+      }
+
+      const pinned = this.#missionDocAtRevision(
+        projectId,
+        questId,
+        typeof input.contentRevision === "number" ? input.contentRevision : null
+      );
+      if (!pinned) return frozen({ kind: "mission_not_found" });
+      const clash = this.#db.prepare(`
+        SELECT session_id FROM control_mission_sessions WHERE session_id = ?
+      `).get(input.sessionId);
+      if (clash) return frozen({ kind: "session_binding_conflict" });
+
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_mission_sessions (
+          session_id, project_id, quest_id, content_revision, content_hash,
+          current_scene_id, world_json, turn, actor_user_id, created_at_ms, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        input.sessionId, projectId, questId, pinned.contentRevision, pinned.contentHash,
+        pinned.entrySceneId, JSON.stringify(input.initialWorld), 0, input.actorUserId, now, now
+      );
+      this.#db.prepare(`
+        INSERT INTO control_mission_session_idempotency (
+          project_id, quest_id, idempotency_key, session_id, request_hash, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(projectId, questId, input.idempotencyKey, input.sessionId, requestHash, input.actorUserId, now);
+      const session = this.#missionSessionFromRow(this.#db.prepare(`
+        SELECT * FROM control_mission_sessions WHERE session_id = ?
+      `).get(input.sessionId));
+      if (!session) return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.session_lost"]) });
+      return frozen({ kind: "created", session });
+    });
+  }
+
+  async getMissionSession(sessionId: string): Promise<MissionSessionState | null> {
+    this.#assertOpen();
+    if (!isId(sessionId)) return null;
+    return this.#missionSessionFromRow(this.#db.prepare(`
+      SELECT * FROM control_mission_sessions WHERE session_id = ?
+    `).get(sessionId));
+  }
+
+  async applyMissionTurn(sessionId: string, input: ApplyMissionTurnInput): Promise<ApplyMissionTurnResult> {
+    const shapeErrors = validateMissionTurnInput(input);
+    if (shapeErrors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(shapeErrors) });
+    this.#assertOpen();
+    if (!isId(sessionId)) return frozen({ kind: "session_not_found" });
+    const requestHash = hashMissionTurnRequest(sessionId, input);
+    return this.#transaction((): ApplyMissionTurnResult => {
+      const replayRow = this.#db.prepare(`
+        SELECT request_hash, result_json FROM control_mission_turn_idempotency
+        WHERE session_id = ? AND idempotency_key = ?
+      `).get(sessionId, input.idempotencyKey);
+      if (replayRow) {
+        if (String(replayRow.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        const replayed = missionTurnResultFromJson(parseJson(replayRow.result_json));
+        return frozen({ kind: "replay", session: replayed.session, target: replayed.target });
+      }
+
+      const sessionRow = this.#db.prepare(`
+        SELECT * FROM control_mission_sessions WHERE session_id = ?
+      `).get(sessionId);
+      const session = this.#missionSessionFromRow(sessionRow);
+      if (!session) return frozen({ kind: "session_not_found" });
+      if (session.turn !== input.baseTurn) {
+        return frozen({ kind: "turn_conflict", currentTurn: session.turn });
+      }
+      const pinned = this.#missionDocAtRevision(session.projectId, session.questId, session.contentRevision);
+      if (!pinned) return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.pinned_not_found"]) });
+
+      const outcome = applyMissionChoice(pinned.doc, {
+        currentSceneId: session.currentSceneId,
+        world: session.world,
+        turn: session.turn
+      }, { choiceId: input.choiceId });
+      if (!outcome.ok) return frozen({ kind: outcome.reason });
+      const now = Date.now();
+      const updated = this.#db.prepare(`
+        UPDATE control_mission_sessions
+        SET current_scene_id = ?, world_json = ?, turn = ?, updated_at_ms = ?
+        WHERE session_id = ? AND turn = ?
+      `).run(outcome.state.currentSceneId, JSON.stringify(outcome.state.world), outcome.state.turn, now, sessionId, input.baseTurn);
+      if (Number(updated.changes) !== 1) {
+        const fresh = this.#missionSessionFromRow(this.#db.prepare(`
+          SELECT * FROM control_mission_sessions WHERE session_id = ?
+        `).get(sessionId));
+        return frozen({ kind: "turn_conflict", currentTurn: fresh ? fresh.turn : session.turn });
+      }
+      const next: MissionSessionState = {
+        ...session,
+        currentSceneId: outcome.state.currentSceneId,
+        world: outcome.state.world,
+        turn: outcome.state.turn
+      };
+      this.#db.prepare(`
+        INSERT INTO control_mission_turn_idempotency (
+          session_id, idempotency_key, request_hash, base_turn, result_json, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(sessionId, input.idempotencyKey, requestHash, input.baseTurn, JSON.stringify({ session: next, target: outcome.target }), input.actorUserId, now);
+      return frozen({ kind: "applied", session: next, target: outcome.target });
+    });
+  }
+
+  #missionDocAtRevision(
+    projectId: string,
+    questId: string,
+    revision: number | null
+  ): { readonly doc: MissionDraft; readonly contentRevision: number; readonly contentHash: string; readonly entrySceneId: string } | null {
+    const row = revision === null
+      ? this.#db.prepare(`
+        SELECT mission_json, content_revision, content_hash FROM control_mission_documents
+        WHERE project_id = ? AND quest_id = ?
+        ORDER BY content_revision DESC LIMIT 1
+      `).get(projectId, questId)
+      : this.#db.prepare(`
+        SELECT mission_json, content_revision, content_hash FROM control_mission_documents
+        WHERE project_id = ? AND quest_id = ? AND content_revision = ?
+      `).get(projectId, questId, revision);
+    if (!row) return null;
+    const doc = missionFromJson(parseJson(row.mission_json));
+    return {
+      doc,
+      contentRevision: Number(row.content_revision),
+      contentHash: String(row.content_hash),
+      entrySceneId: doc.story.entrySceneId
+    };
+  }
+
+  #missionSessionFromRow(row: any): MissionSessionState | null {
+    if (!row) return null;
+    return missionSessionFromRow(row);
+  }
+
   #initialize(): void {
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS control_meta (
@@ -648,6 +817,43 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         FOREIGN KEY (project_id, quest_id, result_revision)
           REFERENCES control_mission_documents(project_id, quest_id, content_revision)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_mission_sessions (
+        session_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        content_revision INTEGER NOT NULL CHECK (content_revision >= 1),
+        content_hash TEXT NOT NULL,
+        current_scene_id TEXT NOT NULL,
+        world_json TEXT NOT NULL,
+        turn INTEGER NOT NULL CHECK (turn >= 0),
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        FOREIGN KEY (project_id, quest_id, content_revision)
+          REFERENCES control_mission_documents(project_id, quest_id, content_revision)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_mission_session_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, idempotency_key),
+        FOREIGN KEY (session_id) REFERENCES control_mission_sessions(session_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_mission_turn_idempotency (
+        session_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        base_turn INTEGER NOT NULL CHECK (base_turn >= 0),
+        result_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (session_id, idempotency_key),
+        FOREIGN KEY (session_id) REFERENCES control_mission_sessions(session_id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS control_draft_snapshots (
         project_id TEXT NOT NULL,
         quest_id TEXT NOT NULL,
@@ -703,6 +909,9 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) === 2) {
         // v3 adds the mission document/idempotency tables; CREATE IF NOT EXISTS above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 3) {
+        // v4 adds the mission session/turn tables; CREATE IF NOT EXISTS above is the migration.
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
         throw new Error(`unsupported control schema version ${String(schema.value)}`);
@@ -877,6 +1086,73 @@ function missionFromJson(value: unknown): MissionDraft {
   const errors = validateMissionDraft(parsed as unknown as MissionDraft);
   if (errors.length > 0) throw new Error(`invalid stored MissionDraft: ${errors.join(",")}`);
   return cloneAndFreeze(parsed) as unknown as MissionDraft;
+}
+
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+function validateMissionSessionInput(input: CreateMissionSessionInput): string[] {
+  const errors: string[] = [];
+  if (!isId(input.sessionId)) errors.push("sessionId");
+  if (typeof input.idempotencyKey !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(input.idempotencyKey)) {
+    errors.push("idempotencyKey");
+  }
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  if (input.contentRevision !== undefined && !isNonNegativeSafeInteger(input.contentRevision)) {
+    errors.push("contentRevision");
+  }
+  if (!isRecord(input.initialWorld)) errors.push("initialWorld");
+  return errors;
+}
+
+function validateMissionTurnInput(input: ApplyMissionTurnInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeSafeInteger(input.baseTurn)) errors.push("baseTurn");
+  if (!isId(input.choiceId)) errors.push("choiceId");
+  if (typeof input.idempotencyKey !== "string" || !IDEMPOTENCY_KEY_PATTERN.test(input.idempotencyKey)) {
+    errors.push("idempotencyKey");
+  }
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
+}
+
+function hashMissionSessionRequest(projectId: string, questId: string, input: CreateMissionSessionInput): string {
+  const canonical = JSON.stringify({
+    projectId,
+    questId,
+    sessionId: input.sessionId,
+    contentRevision: input.contentRevision ?? null,
+    initialWorld: input.initialWorld
+  });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function hashMissionTurnRequest(sessionId: string, input: ApplyMissionTurnInput): string {
+  const canonical = JSON.stringify({
+    sessionId,
+    baseTurn: input.baseTurn,
+    choiceId: input.choiceId
+  });
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function missionSessionFromRow(row: any): MissionSessionState | null {
+  if (!row) return null;
+  return cloneAndFreeze({
+    sessionId: String(row.session_id),
+    projectId: String(row.project_id),
+    questId: String(row.quest_id),
+    contentRevision: Number(row.content_revision),
+    contentHash: String(row.content_hash),
+    currentSceneId: String(row.current_scene_id),
+    world: parseJson(row.world_json) as WorldState,
+    turn: Number(row.turn)
+  });
+}
+
+function missionTurnResultFromJson(value: unknown): { readonly session: MissionSessionState; readonly target: { readonly kind: "scene"; readonly sceneId: string } | { readonly kind: "ending"; readonly endingId: string } } {
+  const parsed = typeof value === "string" ? parseJson(value) : value;
+  if (!isRecord(parsed)) throw new Error("invalid stored mission turn result");
+  return parsed as unknown as { readonly session: MissionSessionState; readonly target: { readonly kind: "scene"; readonly sceneId: string } | { readonly kind: "ending"; readonly endingId: string } };
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {

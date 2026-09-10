@@ -1,5 +1,5 @@
-import type { Block, MissionDraft } from "@living-history/contracts";
-import type { CompiledQuestArtifact } from "@living-history/core";
+import type { Block, MissionDraft, WorldState } from "@living-history/contracts";
+import type { CompiledQuestArtifact, MissionTurnTarget } from "@living-history/core";
 
 export interface BoardPosition {
   readonly x: number;
@@ -63,6 +63,60 @@ export interface MissionDocumentStore {
   saveMission(projectId: string, questId: string, input: SaveMissionInput): Promise<SaveMissionResult>;
   getMissionHistory(projectId: string, questId: string): Promise<readonly MissionHistoryEntry[]>;
   exportMission(projectId: string, questId: string): Promise<MissionDraft | null>;
+}
+
+export interface MissionSessionState {
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly contentRevision: number;
+  readonly contentHash: string;
+  readonly currentSceneId: string;
+  readonly world: WorldState;
+  readonly turn: number;
+}
+
+export interface CreateMissionSessionInput {
+  readonly sessionId: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly contentRevision?: number;
+  readonly initialWorld: WorldState;
+}
+
+export type CreateMissionSessionResult =
+  | { readonly kind: "created"; readonly session: MissionSessionState }
+  | { readonly kind: "replay"; readonly session: MissionSessionState }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "mission_not_found" }
+  | { readonly kind: "session_binding_conflict" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface ApplyMissionTurnInput {
+  readonly baseTurn: number;
+  readonly choiceId: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type ApplyMissionTurnResult =
+  | { readonly kind: "applied"; readonly session: MissionSessionState; readonly target: MissionTurnTarget }
+  | { readonly kind: "replay"; readonly session: MissionSessionState; readonly target: MissionTurnTarget }
+  | { readonly kind: "turn_conflict"; readonly currentTurn: number }
+  | { readonly kind: "session_not_found" }
+  | { readonly kind: "choice_not_in_scene" }
+  | { readonly kind: "choice_blocked" }
+  | { readonly kind: "effect_failed" }
+  | { readonly kind: "mission_ended" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface MissionSessionStore {
+  createMissionSession(projectId: string, questId: string, input: CreateMissionSessionInput): Promise<CreateMissionSessionResult>;
+  getMissionSession(sessionId: string): Promise<MissionSessionState | null>;
+  applyMissionTurn(sessionId: string, input: ApplyMissionTurnInput): Promise<ApplyMissionTurnResult>;
 }
 
 export interface ProjectRecord {

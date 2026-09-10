@@ -186,3 +186,14 @@ Next blocking item: editor/viewer/read-only checks need separate Telegram-gate s
 - Проверено чтением кода: site hardcoded `scenarioSummaries` + engine-gate только для florence (`engine-bff.ts:119`); engine presentation-v2 с asset/hash/layerOrder годна к переиспользованию; `authored-scenario.ts:221` кодирует переход номером revision — в M02 заменить на `currentSceneId`.
 - ADR: `docs/decisions/2026-09-10-mission-site-route.md` — канонические `MissionDraft`/`MissionReleaseBundle`/`PublicationRecord`, reuse/new список, черновики контрактов обоих репозиториев.
 - K08 остаётся PARTIAL только по ролевым проверкам (editor/viewer/read-only, отдельные сессии).
+
+## M02 — mission execution + sessions — DONE (engine + BFF module)
+
+- `packages/core/src/mission-execution.ts`: `applyMissionChoice` (choice+effects+transition одним коммитом, `currentSceneId` вместо revision-индекса, финал ставит `terminal`), `availableMissionChoices`, legacy-адаптер `sidecarBeatsToMissionStory`. Tests 5/5.
+- `packages/control`: `MissionSessionStore` — сессии с pin `(contentRevision, contentHash)`, CAS по `turn`, idempotency create/turn, resume после reopen. SQLite v4 (`control_mission_sessions` + 2 idempotency tables). Tests 2/2.
+- `apps/server`: Control HTTP `mission` (GET/POST) + `mission/sessions` (POST 201) + session GET + `turns` (POST) с ролями tester/editor, mutation proof, idempotency-key. Test 1/1.
+- Registry +5 (`control.mission.*`), `docs:generate`, b10 count 44→49.
+- Site copy: `src/worker/mission-bff.ts` — generic preview-BFF без per-quest ifs (registry map → Control mission endpoints, binding хранит pinned doc). Vitest 3/3; full site suite 52/52. Live wiring — M06 (нужен publication registry).
+- Suites: core 64/64, control 103/103, contracts 57/57, server 124/124; typecheck exit 0.
+- Docs: `docs/migration/2026-09-10-mission-sessions.md`. VPS prod уже durable (`main.ts` → SQLite binding на общем volume; Memory store только в legacy `authored-server.mjs` вне compose).
+- OPEN в M02: live two-mission play через BFF на VPS (нужен engine deploy с mission endpoints + M06 publication wiring).

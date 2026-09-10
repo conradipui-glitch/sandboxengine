@@ -96,6 +96,11 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
 - `GET /control/v1/projects/{projectId}/quests/{questId}/board` — Получение server-authoritative layout BoardDocument отдельно от canonical draft
 - `POST /control/v1/projects/{projectId}/quests/{questId}/board/changes` — Owner/editor atomic CAS layout update with required idempotency-key
+- `GET /control/v1/projects/{projectId}/quests/{questId}/mission` — Получение server-authoritative MissionDraft отдельно от canonical draft
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission` — Owner/editor atomic CAS mission save with validation and required idempotency-key
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions` — Owner/editor mission session bound to an exact content revision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}` — Чтение состояния mission session, привязанной к pinned release
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns` — Owner/editor idempotent mission turn: choice effects and scene transition commit together
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/history` — Постраничная история immutable draft revisions доступного проекта
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/compare` — Серверное сравнение двух конкретных draft revisions без автоматического merge
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления

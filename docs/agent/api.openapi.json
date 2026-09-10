@@ -208,6 +208,59 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission": {
+      "get": {
+        "operationId": "control_mission_get",
+        "summary": "Получение server-authoritative MissionDraft отдельно от canonical draft",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_mission_save",
+        "summary": "Owner/editor atomic CAS mission save with validation and required idempotency-key",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions": {
+      "post": {
+        "operationId": "control_mission_sessions_create",
+        "summary": "Owner/editor mission session bound to an exact content revision",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}": {
+      "get": {
+        "operationId": "control_mission_sessions_get",
+        "summary": "Чтение состояния mission session, привязанной к pinned release",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns": {
+      "post": {
+        "operationId": "control_mission_turns_apply",
+        "summary": "Owner/editor idempotent mission turn: choice effects and scene transition commit together",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
       "get": {
         "operationId": "control_draft_history",

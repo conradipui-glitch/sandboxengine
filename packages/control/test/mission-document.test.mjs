@@ -145,13 +145,13 @@ test("M01 SQLite mission: save/get/history/export/import with CAS and idempotenc
   }
 });
 
-test("M01 SQLite mission: schema migrates to v3", async () => {
+test("M01 SQLite mission: schema migrates past v3", async () => {
   const { dir, store } = await makeStore();
   try {
     const db = new DatabaseSync(join(dir, "control.sqlite"));
     const row = db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
     db.close();
-    assert.equal(Number(row.value), 3);
+    assert.ok(Number(row.value) >= 3);
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });

@@ -161,6 +161,46 @@
       "summary": "Owner/editor atomic CAS layout update with required idempotency-key"
     },
     {
+      "id": "control.mission.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/mission",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Получение server-authoritative MissionDraft отдельно от canonical draft"
+    },
+    {
+      "id": "control.mission.save",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/mission",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor atomic CAS mission save with validation and required idempotency-key"
+    },
+    {
+      "id": "control.mission.sessions.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Owner/editor mission session bound to an exact content revision"
+    },
+    {
+      "id": "control.mission.sessions.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Чтение состояния mission session, привязанной к pinned release"
+    },
+    {
+      "id": "control.mission.turns.apply",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor idempotent mission turn: choice effects and scene transition commit together"
+    },
+    {
       "id": "control.draft.history",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/draft/history",
