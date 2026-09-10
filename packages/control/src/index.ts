@@ -212,6 +212,16 @@ export {
   SQLiteControlReleaseStore,
   type SQLiteControlReleaseStoreOptions
 } from "./release-stores.js";
+export {
+  MemoryControlPublicationStore,
+  SQLiteControlPublicationStore,
+  type ControlPublicationRecord,
+  type ControlPublicationStore,
+  type PublishPublicationResult,
+  type UnpublishPublicationResult,
+  type SQLiteControlPublicationStoreOptions
+} from "./publication-store.js";
+
 export type {
   ApplyBoardChangesInput,
   ApplyBoardChangesResult,

@@ -2,7 +2,7 @@
 
 Обновлено: 2026-09-10
 
-Текущий блок: **M05 DONE локально + BROWSER/LOCAL (story board + screen editor). Следующее: M06 — публикация и generic site catalog/BFF. OPEN: engine deploy на VPS и ролевые C18-проверки.**
+Текущий блок: **M06 DONE локально (publication registry + public catalog + credential-bound generic BFF). OPEN: live engine/site delivery, VPS exact-SHA smoke и ролевые C18-проверки.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
@@ -212,3 +212,14 @@ Blocking item: role-separated checks (editor/viewer/read-only) need their own Te
 - Player: frozen `playtest-3` (revision 5, compiled `6243bb1…1288fb`); VPS loopback `http://127.0.0.1:8745` → **200**.
 
 Следующее: M06 — публикация и generic site catalog/BFF.
+
+## M06 — publication registry + generic site route DONE локально (2026-09-10)
+
+- `packages/control/src/publication-store.ts`: Memory/SQLite publication registry, stable `publicMissionId`/slug, release/content hash + draft revision pin, idempotent publish/replay, owner unpublish и SQLite reopen/migration coverage.
+- Existing owner `POST /control/v1/.../publish` теперь синхронизирует published catalog record только при exact current mission revision/hash; rollback repins the same public identity to the selected release. Existing auth/session mechanics unchanged.
+- Public engine routes: `GET /public/v1/missions`, slug/id detail, credential-bound session create/get/turn; public payload excludes project/quest internals. Unpublish uses owner role, expected release CAS and idempotency.
+- Site worker consumes the catalog through `ENGINE_PUBLIC_CATALOG_URL`; generic `/api/games`/reload/turn path uses a `PublishedMissionRouteSession` Durable Object and keeps engine credential server-side. Florence/legacy route remains fallback for non-published IDs.
+- Site runtime wiring includes `PUBLIC_MISSION_ROUTE_SESSIONS` binding and v4 migration in `wrangler.jsonc`; deploy variables and reverse-proxy exposure are intentionally not changed yet.
+- Engine tests: M06 publication store **2/2**, owner publish→catalog sync **1/1**, public catalog/unpublish **1/1** and public runtime **1/1**; engine `npm run typecheck` passed. Full Control + Server + Contracts regression: **290/290 pass, 0 fail, 0 skipped** under Node 24.19.0.
+- Site: `npm run check` passed; full Vitest **63/63**; production `npm run build` passed; M06 worker/presentation tests included.
+- Still OPEN: live deployment of the new engine/control public routes and site worker config, exact-SHA VPS smoke, real two-mission play through the deployed BFF, and C18 editor/viewer/read-only Telegram-gate sessions. No production Engine/gate restart was performed.

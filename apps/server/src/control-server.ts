@@ -9,6 +9,8 @@ import {
   isControlProjectRole,
   type AuthorConversationStore,
   type ControlProjectRole,
+  type ControlPublicationRecord,
+  type ControlPublicationStore,
   type ControlReleaseRecord,
   type ControlReleaseStore,
   type ControlSecurityStore,
@@ -69,6 +71,8 @@ export interface ControlAuthenticatedModeOptions {
 
 export interface ControlReleaseModeOptions {
   readonly store: ControlReleaseStore;
+  readonly publicationStore?: ControlPublicationStore;
+  readonly publicMissionSessionSecret?: string;
   readonly pluginRegistry: PluginRegistrySnapshot;
   readonly nowMs?: () => number;
 }
@@ -208,12 +212,13 @@ async function routeControlRequest(
 ): Promise<void> {
   const method = String(request.method ?? "GET").toUpperCase();
   const url = new URL(String(request.url ?? "/"), "http://control.local");
+  const isPublicMissionEndpoint = url.pathname.startsWith("/public/v1/missions");
 
-  if (!auth && !isAllowedLocalHttpRequest(request)) {
+  if (!isPublicMissionEndpoint && !auth && !isAllowedLocalHttpRequest(request)) {
     sendJson(response, 403, { error: { code: "CONTROL_LOCAL_ORIGIN_DENIED" } });
     return;
   }
-  if (auth && !originAllowed(request, auth)) {
+  if (!isPublicMissionEndpoint && auth && !originAllowed(request, auth)) {
     sendJson(response, 403, { error: { code: "CONTROL_ORIGIN_DENIED" } });
     return;
   }
@@ -224,6 +229,30 @@ async function routeControlRequest(
       sendCorsPreflight(response);
       return;
     }
+  }
+
+  const publicMissionMatch = /^\/public\/v1\/missions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(url.pathname);
+  if (method === "GET" && releases?.publicationStore && publicMissionMatch) {
+    if (url.searchParams.size !== 0) {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLIC_CATALOG_REQUEST" } });
+      return;
+    }
+    const identifier = publicMissionMatch[1];
+    if (identifier) {
+      const mission = await releases.publicationStore.getPublicMission(identifier);
+      if (!mission) sendNotFound(response);
+      else sendJson(response, 200, { mission: publicPublicationView(mission) });
+    } else {
+      const missions = await releases.publicationStore.listPublished();
+      sendJson(response, 200, { missions: missions.map(publicPublicationView) });
+    }
+    return;
+  }
+
+  const publicSessionMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})(\/turns)?)?$/.exec(url.pathname);
+  if (publicSessionMatch && releases?.publicationStore && missionStore) {
+    await routePublicMissionSession(request, response, method, publicSessionMatch, releases, missionStore);
+    return;
   }
 
   if (auth && url.pathname === "/control/v1/auth/login" && method === "POST") {
@@ -472,6 +501,32 @@ async function routeControlRequest(
       return;
     }
     sendNotFound(response);
+    return;
+  }
+
+  const publicationUnpublishMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/publication\/unpublish$/.exec(url.pathname);
+  if (publicationUnpublishMatch) {
+    if (!releases?.publicationStore || method !== "POST") { sendNotFound(response); return; }
+    const projectId = publicationUnpublishMatch[1];
+    const questId = publicationUnpublishMatch[2];
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "owner"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null || !hasExactKeys(body, ["publicMissionId", "expectedReleaseId"]) || !isId(body.publicMissionId) || !isId(body.expectedReleaseId)) {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLICATION_UNPUBLISH_REQUEST" } });
+      return;
+    }
+    const current = await releases.publicationStore.getPublicationForQuest(projectId, questId);
+    if (!current || current.publicMissionId !== body.publicMissionId) { sendNotFound(response); return; }
+    const result = await releases.publicationStore.unpublish({ publicMissionId: body.publicMissionId, expectedReleaseId: body.expectedReleaseId, idempotencyKey, requestHash: current.contentHash });
+    if (result.kind === "unpublished" || result.kind === "replay") sendJson(response, 200, { publication: publicPublicationView(result.publication), ...(result.kind === "replay" ? { replay: true } : {}) });
+    else if (result.kind === "not_found") sendNotFound(response);
+    else if (result.kind === "current_release_conflict") sendJson(response, 409, { error: { code: "CURRENT_RELEASE_CONFLICT", currentReleaseId: result.currentReleaseId } });
+    else if (result.kind === "idempotency_key_reused") sendJson(response, 409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    else sendJson(response, 400, { error: { code: "INVALID_PUBLICATION_UNPUBLISH_REQUEST" } });
     return;
   }
 
@@ -847,6 +902,21 @@ async function routeControlRequest(
       createdAtMs: releaseNowMs(releases, auth),
       idempotencyKey
     });
+    const publication = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay"
+      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth))
+      : { kind: "not_attempted" as const };
+    if (publication.kind === "source_stale") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "conflict") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
+      return;
+    }
+    if (publication.kind === "published" || publication.kind === "replay") {
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
+      return;
+    }
     if (result.kind === "published" || result.kind === "unchanged" || result.kind === "replay") {
       sendJson(response, 200, { publication: result });
     } else if (result.kind === "release_not_found") {
@@ -889,6 +959,17 @@ async function routeControlRequest(
       createdAtMs: releaseNowMs(releases, auth),
       idempotencyKey
     });
+    const publication = result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay"
+      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth))
+      : { kind: "not_attempted" as const };
+    if (publication.kind === "conflict" || publication.kind === "source_stale") {
+      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "published" || publication.kind === "replay") {
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
+      return;
+    }
     if (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay") {
       sendJson(response, 200, { publication: result });
     } else if (result.kind === "release_not_found") {
@@ -1256,6 +1337,168 @@ function playtestView(playtest: FrozenPlaytestRecord): object {
     contentHash: playtest.contentHash,
     validationId: playtest.validationId,
     compiledContentHash: playtest.compiledContentHash
+  });
+}
+
+async function routePublicMissionSession(
+  request: any,
+  response: any,
+  method: string,
+  match: RegExpExecArray,
+  releases: ControlReleaseModeOptions,
+  missionStore: MissionDocumentStore & MissionSessionStore
+): Promise<void> {
+  const identifier = match[1] ?? "";
+  const sessionId = match[2] ?? null;
+  const isTurns = match[3] === "/turns";
+  const publication = await releases.publicationStore?.getPublicMission(identifier);
+  if (!publication) { sendNotFound(response); return; }
+  const secret = releases.publicMissionSessionSecret ?? "";
+  if (typeof secret !== "string" || secret.length < 16) {
+    sendJson(response, 503, { error: { code: "PUBLIC_MISSION_RUNTIME_UNAVAILABLE" } });
+    return;
+  }
+  const release = await releases.store.getRelease(publication.projectId, publication.questId, publication.releaseId);
+  const mission = await missionStore.getMission(publication.projectId, publication.questId);
+  if (!release || !mission || mission.contentRevision !== publication.draftRevision || mission.contentHash !== publication.draftContentHash) {
+    sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
+    return;
+  }
+  if (sessionId === null && !isTurns && method === "POST") {
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null || !hasExactKeys(body, ["sessionId", "initialWorld"]) || !isId(body.sessionId) || !isPlainObject(body.initialWorld)) {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLIC_MISSION_SESSION_REQUEST" } });
+      return;
+    }
+    const credential = publicMissionCredential(secret, publication.publicMissionId, body.sessionId);
+    const result = await missionStore.createMissionSession(publication.projectId, publication.questId, {
+      sessionId: body.sessionId,
+      idempotencyKey,
+      actorUserId: `public:${publication.publicMissionId}`,
+      initialWorld: body.initialWorld as never
+    });
+    if (result.kind === "created" || result.kind === "replay") {
+      sendJson(response, result.kind === "created" ? 201 : 200, { mission, session: result.session, credential, ...(result.kind === "replay" ? { replay: true } : {}) });
+    } else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "mission_not_found") {
+      sendNotFound(response);
+    } else if (result.kind === "session_binding_conflict" || result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "PUBLIC_MISSION_SESSION_CONFLICT" } });
+    } else {
+      sendJson(response, 422, { error: { code: "INVALID_PUBLIC_MISSION_SESSION_REQUEST", details: result.errors } });
+    }
+    return;
+  }
+  if (sessionId === null || !isId(sessionId)) { sendNotFound(response); return; }
+  const credential = publicMissionCredential(secret, publication.publicMissionId, sessionId);
+  if (readHeader(request, "authorization") !== `Bearer ${credential}`) {
+    sendJson(response, 401, { error: { code: "PUBLIC_MISSION_CREDENTIAL_REQUIRED" } });
+    return;
+  }
+  const existing = await missionStore.getMissionSession(sessionId);
+  if (!existing || existing.projectId !== publication.projectId || existing.questId !== publication.questId || existing.contentRevision !== publication.draftRevision) {
+    sendNotFound(response);
+    return;
+  }
+  if (!isTurns && method === "GET") {
+    sendJson(response, 200, { mission, session: existing });
+    return;
+  }
+  if (isTurns && method === "POST") {
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null || !hasExactKeys(body, ["baseTurn", "choiceId"]) || !isRevision(body.baseTurn) || !isId(body.choiceId)) {
+      sendJson(response, 400, { error: { code: "INVALID_PUBLIC_MISSION_TURN" } });
+      return;
+    }
+    const result = await missionStore.applyMissionTurn(sessionId, {
+      baseTurn: body.baseTurn,
+      choiceId: body.choiceId,
+      idempotencyKey,
+      actorUserId: `public:${publication.publicMissionId}`
+    });
+    if (result.kind === "applied" || result.kind === "replay") {
+      sendJson(response, 200, { mission, session: result.session, target: result.target, ...(result.kind === "replay" ? { replay: true } : {}) });
+    } else if (result.kind === "session_not_found") sendNotFound(response);
+    else if (result.kind === "turn_conflict") sendJson(response, 409, { error: { code: "MISSION_TURN_CONFLICT", currentTurn: result.currentTurn } });
+    else if (result.kind === "idempotency_key_reused") sendJson(response, 409, { error: { code: "MISSION_IDEMPOTENCY_KEY_REUSED" } });
+    else if (result.kind === "choice_not_in_scene" || result.kind === "choice_blocked" || result.kind === "effect_failed" || result.kind === "mission_ended") {
+      sendJson(response, 422, { error: { code: `MISSION_TURN_${result.kind.toUpperCase()}` } });
+    } else sendJson(response, 422, { error: { code: "INVALID_PUBLIC_MISSION_TURN", details: result.errors } });
+    return;
+  }
+  sendNotFound(response);
+}
+
+function publicMissionCredential(secret: string, publicMissionId: string, sessionId: string): string {
+  return hashControlOpaqueSecret(`${secret}\0${publicMissionId}\0${sessionId}`);
+}
+
+async function syncPublicationRecord(
+  releases: ControlReleaseModeOptions,
+  missionStore: (MissionDocumentStore & MissionSessionStore) | null,
+  projectId: string,
+  questId: string,
+  releaseId: string,
+  idempotencyKey: string,
+  publishedAtMs: number
+): Promise<
+  | { readonly kind: "published" | "replay"; readonly record: ControlPublicationRecord }
+  | { readonly kind: "source_stale" | "conflict" | "not_attempted" }
+> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return { kind: "not_attempted" };
+  const release = await releases.store.getRelease(projectId, questId, releaseId);
+  const mission = missionStore ? await missionStore.getMission(projectId, questId) : null;
+  if (!release || !mission) return { kind: "source_stale" };
+  const existing = await publicationStore.getPublicationForQuest(projectId, questId);
+  let record: ControlPublicationRecord;
+  if (existing) {
+    if (existing.draftRevision !== mission.contentRevision || existing.draftContentHash !== mission.contentHash) return { kind: "source_stale" };
+    record = {
+      ...existing,
+      releaseId,
+      contentHash: release.compiledContentHash,
+      status: "published",
+      publishedAtMs
+    };
+  } else {
+    record = {
+      schemaVersion: "1.0",
+      publicMissionId: `mission:${projectId}:${questId}`,
+      slug: mission.listing.slug,
+      projectId,
+      questId,
+      draftRevision: mission.contentRevision,
+      draftContentHash: mission.contentHash,
+      releaseId,
+      contentHash: release.compiledContentHash,
+      channel: "production",
+      status: "published",
+      listing: mission.listing,
+      publishedAtMs
+    };
+  }
+  const result = await publicationStore.publish({
+    record,
+    idempotencyKey: `catalog-${idempotencyKey}`.slice(0, 200),
+    requestHash: release.compiledContentHash
+  });
+  if (result.kind === "published" || result.kind === "replay") return { kind: result.kind, record: result.publication };
+  return { kind: "conflict" };
+}
+
+function publicPublicationView(record: ControlPublicationRecord): object {
+  return Object.freeze({
+    publicMissionId: record.publicMissionId,
+    slug: record.slug,
+    releaseId: record.releaseId,
+    contentHash: record.contentHash,
+    channel: record.channel,
+    listing: record.listing,
+    publishedAtMs: record.publishedAtMs
   });
 }
 

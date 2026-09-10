@@ -128,6 +128,12 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/cancel` — Owner/editor cancellation of a durable author job including abort of the exact in-flight backend signal and rejection of late output
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply` — Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint
 - `GET /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}` — Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets
+- `GET /public/v1/missions` — Публичный каталог опубликованных миссий без авторских project/quest данных
+- `GET /public/v1/missions/{publicMissionIdOrSlug}` — Публичная карточка опубликованной миссии по стабильному id или slug
+- `POST /public/v1/missions/{publicMissionIdOrSlug}/sessions` — Создание server-bound гостевой сессии опубликованной миссии
+- `GET /public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}` — Получение состояния server-bound гостевой миссии по credential
+- `POST /public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}/turns` — Применение выбора опубликованной миссии с credential и idempotency
+- `POST /control/v1/projects/{projectId}/quests/{questId}/publication/unpublish` — Owner-only снятие миссии с публичного каталога с CAS по release
 - `GET /control/v1/agent-kit` — Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

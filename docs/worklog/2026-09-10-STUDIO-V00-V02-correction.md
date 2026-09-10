@@ -232,4 +232,24 @@ Next blocking item: editor/viewer/read-only checks need separate Telegram-gate s
 - Browser route на чистой локальной SQLite/Chrome: mission create → scene add → 2 choice edges → text edit, server read-back revision `4`/hash/text, reload/reopen восстановил 3 nodes + 2 edges.
 - Browser screen route: background asset ref сохранён Revision `5`, layer transform сохранён Revision `6`; server read-back подтвердил `background`, `inherit=false`, layer `x=.4,y=.6,scale=1.2,opacity=.8,z=3`; reload восстановил hash и 1 layer.
 - `node@24.19.0 --test apps/studio/test/*.test.mjs` — **111 pass, 0 fail, 1 skip (C18)**. `packages/control + apps/server + packages/contracts` — **286/286**. Полный `npx --yes -p node@24.19.0 -p npm@11.9.0 -c "npm run verify"` — exit 0.
-- No VPS deploy in M05. M06 starts with publication record/release wiring and generic site catalog/BFF; role-separated C18 Telegram sessions remain OPEN.
+
+## M06 — publication registry + generic catalog/BFF — DONE локально
+
+### Engine
+
+- Added `packages/control/src/publication-store.ts`: Memory/SQLite records with stable `publicMissionId`, slug uniqueness, channel/status, release/content hash, exact draft revision, idempotent publish/replay and unpublish; SQLite reopen and legacy-table migration are covered.
+- Existing owner publish route now creates/repins the public record only when the current mission exactly matches the release draft revision/hash. Existing authorization/session mechanics remain unchanged. Rollback repins the same public identity; owner unpublish uses expected release CAS.
+- Public routes are read-only catalog/detail plus credential-bound session create/get/turn. Public JSON omits project/quest internals; a deterministic credential derived from the server secret is accepted only by the public session routes.
+- Contract registry/OpenAPI/capabilities/compatibility regenerated: available operations `52→58`; `npm run docs:generate` and `npm run docs:check` passed.
+
+### Site
+
+- Added `public-catalog.ts`: validates the published catalog and maps it to existing `ScenarioSummary`; catalog upstream errors return explicit 503 instead of stale hardcoded data when configured.
+- Added `public-mission-bff.ts`: public engine session binding, server-side credential, mission scene/ending projection to the existing generic `GameState`.
+- `b11-entry.ts` now wires generic `/api/scenarios`, `/api/games`, reload and `/turn` through `PublishedMissionRouteSession`; Florence/legacy IDs still fall back to existing engine/legacy route. Added Durable Object binding + v4 migration in `wrangler.jsonc`.
+
+### Verification
+
+- Engine M06 focused: publication store **2/2**, owner publish→catalog sync **1/1**, public catalog/unpublish **1/1**, public runtime session/credential/turn **1/1**; engine `npm run typecheck` passed; full Control + Server + Contracts regression **290/290 pass, 0 fail, 0 skipped** under Node 24.19.0; full `npm run verify` exit 0 (including boundaries and docs-check).
+- Site M06 focused: catalog + public BFF + worker route **5/5**; site `npm run check` passed; full Vitest **63/63**; `npm run build` and `npm run build:preview` passed.
+- Live VPS/Cloudflare delivery was not performed: public catalog/runtime URL variables and reverse-proxy exposure still require a read-only port/config check and explicit deployment step. C18 editor/viewer/read-only role sessions and deployed two-mission play remain OPEN.

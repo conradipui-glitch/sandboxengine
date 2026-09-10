@@ -552,6 +552,72 @@
         }
       }
     },
+    "/public/v1/missions": {
+      "get": {
+        "operationId": "control_public_missions_list",
+        "summary": "Публичный каталог опубликованных миссий без авторских project/quest данных",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}": {
+      "get": {
+        "operationId": "control_public_missions_get",
+        "summary": "Публичная карточка опубликованной миссии по стабильному id или slug",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions": {
+      "post": {
+        "operationId": "control_public_missions_sessions_create",
+        "summary": "Создание server-bound гостевой сессии опубликованной миссии",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}": {
+      "get": {
+        "operationId": "control_public_missions_sessions_get",
+        "summary": "Получение состояния server-bound гостевой миссии по credential",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}/turns": {
+      "post": {
+        "operationId": "control_public_missions_sessions_turn",
+        "summary": "Применение выбора опубликованной миссии с credential и idempotency",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/publication/unpublish": {
+      "post": {
+        "operationId": "control_public_missions_unpublish",
+        "summary": "Owner-only снятие миссии с публичного каталога с CAS по release",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/agent-kit": {
       "get": {
         "operationId": "control_agent_kit",
