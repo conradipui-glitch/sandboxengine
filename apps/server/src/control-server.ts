@@ -264,6 +264,14 @@ async function routeControlRequest(
     return;
   }
 
+  // Public, credentialless bytes of an asset that belongs to the *pinned*
+  // published revision. Anything else stays private.
+  const publicAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
+  if (method === "GET" && publicAssetMatch && releases?.publicationStore && missionStore) {
+    await routePublicMissionAsset(response, publicAssetMatch, releases, missionStore, assetStorage, assetLibrary);
+    return;
+  }
+
   if (auth && url.pathname === "/control/v1/auth/login" && method === "POST") {
     await handleLogin(request, response, auth, failures);
     return;
@@ -1471,6 +1479,48 @@ async function routePublicMissionSession(
     return;
   }
   sendNotFound(response);
+}
+
+async function routePublicMissionAsset(
+  response: any,
+  match: RegExpExecArray,
+  releases: ControlReleaseModeOptions,
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  assetStorage: LocalAssetStore | null,
+  assetLibrary: ProjectAssetLibrary | null
+): Promise<void> {
+  const identifier = match[1] ?? "";
+  const assetId = match[2] ?? "";
+  const publication = await releases.publicationStore?.getPublicMission(identifier);
+  if (!publication) { sendNotFound(response); return; }
+  const pinned = await missionStore.getMissionAtRevision(publication.projectId, publication.questId, publication.draftRevision);
+  if (!pinned || pinned.contentHash !== publication.draftContentHash) { sendNotFound(response); return; }
+  if (assetStorage === null || assetLibrary === null) {
+    sendJson(response, 501, { error: { code: "ASSET_STORAGE_UNAVAILABLE" } });
+    return;
+  }
+  // Only assets actually referenced by the pinned revision are published.
+  if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
+  const entries = await assetLibrary.listProjectAssets(publication.projectId, false);
+  const entry = entries.find((candidate) => candidate.assetId === assetId) ?? null;
+  if (!entry) { sendNotFound(response); return; }
+  let stored;
+  try {
+    stored = await assetStorage.read(assetId, entry.hash);
+  } catch (error) {
+    if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
+      sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
+    } else {
+      sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
+    }
+    return;
+  }
+  response.statusCode = 200;
+  response.setHeader("content-type", stored.record.manifest.mimeType);
+  response.setHeader("content-length", String(stored.bytes.byteLength));
+  response.setHeader("cache-control", "public, max-age=31536000, immutable");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end(stored.bytes);
 }
 
 function publicMissionCredential(secret: string, publicMissionId: string, sessionId: string): string {
