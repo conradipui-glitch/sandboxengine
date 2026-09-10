@@ -1,9 +1,9 @@
 # Передача работы
 
-Обновлено: 2026-09-09
+Обновлено: 2026-09-10
 
-Текущий блок: **B13 принят (B13.0–B13.c1 GREEN, adapter-level); L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
-Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L09 закрыт локальным verify и Linux CI. B13.0–B13.c1 приняты на уровне адаптеров; живые preview/production dispatch — отдельные шаги приёмки по разрешению оператора.
+Текущий блок: **Studio V00–V02 correction K00 завершён, K01 следующий; предыдущие V01/V02 acceptance claims переведены в PARTIAL до C01–C18 и browser/VPS доказательств**
+Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
 ## L00 — baseline review (2026-09-09)
 
