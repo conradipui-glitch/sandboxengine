@@ -42,7 +42,7 @@
 | R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **DONE локально + BROWSER/LOCAL** | SQLite BoardDocument/idempotency tables, v1→v2 migration, atomic bounds/CAS, GET/POST route, generated registry/OpenAPI, close/reopen and profile A→B readback verified. VPS remains open. |
 | R07 | Read-only/role behavior and V00/Player regression evidence | **PARTIAL** | Access gates и existing Player tests есть, но browser proof of read-only board and independent playtests for this candidate отсутствует. |
 | R08 | Regression suite C01–C18 and real connected renderer | **OPEN** | Existing `board-model.test.mjs` covers projection only; no suite reaches the renderer lifecycle, browser interactions, or C01–C18 matrix. |
-| R09 | Hosted identity and server-side global provider/project permissions | **OPEN** | Current task explicitly requires this correction; UI access state cannot be treated as security. Need trace gate→nginx→Studio→Control and add server tests for forged identity/revoke/global provider mutation. |
+| R09 | Hosted identity and server-side global provider/project permissions | **DONE локально** | Authenticated Board GET/POST uses session identity and live project role; forged identity headers fail; revoked session returns 401; local provider mutation rejects non-loopback Host and cross-site Origin before body handling. VPS smoke remains open. |
 
 ## Evidence at K00
 
@@ -139,4 +139,17 @@ K01: добавить failing lifecycle regression against the actually mounted 
 - `npm run typecheck` exit 0; `npm run docs:generate` exit 0; `loadInstalledAgentKit()` hash guard passed.
 - BROWSER/LOCAL profile A on fresh server `4186`/isolated SQLite: drag persisted through real board POST; profile B on separate Chrome profile with empty localStorage read `boardRevision=1`, `positions.item-tp6n7a={x:451,y:77}`, and DOM `translate(451px,77px)`.
 
-Ограничение: VPS exact-SHA deployment/smoke и C01–C18 remain open; K06 is next.
+Следующее: K06 — hosted identity, project/global permissions и provider mutation security.
+
+## K06 — hosted identity, permissions и provider mutation security — DONE локально
+
+- Existing `control-server.ts` identity path verified: HttpOnly session token → server-side session lookup → user lookup; project role is read live per request, not accepted from UI/header.
+- Added `apps/server/test/board-permissions-http.test.mjs`: tester can GET board but cannot POST; editor with CSRF can POST; missing/forged owner headers do not elevate tester; changing editor→tester blocks the existing session; revoked session returns 401.
+- Existing `apps/studio/test/live-author-provider-lifecycle.test.mjs` extended with non-loopback Host and cross-site Origin/Fetch-Metadata cases; both return 403 before provider body/mutation. Provider credential remains process-memory and is never returned.
+
+Проверено:
+- Node 24.19.0 `npm run typecheck` → exit 0.
+- K06 role/revocation test → **1/1**.
+- Provider lifecycle/security test → **1/1**.
+
+Ограничение: доказательство пока локальное; live Telegram-gate/nginx/VPS identity matrix и C01–C18 переходят в K07/K08. GREEN не объявлен.
