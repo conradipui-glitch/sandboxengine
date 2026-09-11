@@ -97,10 +97,14 @@ export {
 } from "./tasks.js";
 export {
   applyMissionChoice,
+  assertMissionTerminal,
   availableMissionChoices,
+  missionTerminalStatus,
+  MissionTerminalValidationError,
   sidecarBeatsToMissionStory,
   type ApplyMissionChoiceResult,
   type AvailableMissionChoice,
+  type MissionTerminalStatus,
   type MissionTurnState,
   type MissionTurnTarget
 } from "./mission-execution.js";

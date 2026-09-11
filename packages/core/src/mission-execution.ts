@@ -3,7 +3,7 @@ import type {
   MissionDraft,
   MissionStory
 } from "@living-history/contracts";
-import type { WorldState } from "@living-history/contracts";
+import type { WorldState, WorldTerminal } from "@living-history/contracts";
 import { evaluateCondition } from "./conditions.js";
 import { tryApplyEffectBatch } from "./effects.js";
 
@@ -12,6 +12,61 @@ export interface MissionTurnState {
   readonly world: WorldState;
   readonly turn: number;
 }
+
+export type MissionTerminalStatus =
+  | { readonly kind: "active" }
+  | { readonly kind: "ended"; readonly terminal: WorldTerminal }
+  | { readonly kind: "invalid"; readonly error: string };
+
+/**
+ * A world whose `terminal` key is missing (undefined) or explicitly null is an
+ * active story. The story ends only on an explicit WorldTerminal object
+ * ({reason, outcome} as non-empty strings). Anything else is a data error, not
+ * a silent dead end.
+ */
+export function missionTerminalStatus(world: WorldState): MissionTerminalStatus {
+  const terminal = (world as { readonly terminal?: unknown }).terminal;
+  if (terminal === undefined || terminal === null) return { kind: "active" };
+  if (typeof terminal !== "object" || Array.isArray(terminal)) {
+    return {
+      kind: "invalid",
+      error: `terminal must be null or an object {reason, outcome}, got ${describeValue(terminal)}`
+    };
+  }
+  const { reason, outcome } = terminal as { readonly reason?: unknown; readonly outcome?: unknown };
+  if (typeof reason !== "string" || reason.length === 0) {
+    return { kind: "invalid", error: "terminal.reason must be a non-empty string" };
+  }
+  if (typeof outcome !== "string" || outcome.length === 0) {
+    return { kind: "invalid", error: "terminal.outcome must be a non-empty string" };
+  }
+  return { kind: "ended", terminal: Object.freeze({ reason, outcome }) };
+}
+
+/** Validation failures are not game outcomes: they raise instead of degrading. */
+export class MissionTerminalValidationError extends Error {
+  readonly code = "invalid_world_terminal" as const;
+  readonly detail: string;
+  constructor(detail: string) {
+    super(`invalid world terminal: ${detail}`);
+    this.name = "MissionTerminalValidationError";
+    this.detail = detail;
+  }
+}
+
+export function assertMissionTerminal(world: WorldState): MissionTerminalStatus {
+  const status = missionTerminalStatus(world);
+  if (status.kind === "invalid") throw new MissionTerminalValidationError(status.error);
+  return status;
+}
+
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return "string";
+  if (typeof value === "number" || typeof value === "boolean") return typeof value;
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
 
 export type MissionTurnTarget =
   | { readonly kind: "scene"; readonly sceneId: string }
@@ -63,13 +118,15 @@ function conditionsPass(world: WorldState, choice: MissionChoice): boolean {
 
 /**
  * Choices of the current scene with live condition status.
- * Terminal world state yields no choices.
+ * A finished story (explicit terminal object) yields no choices; a world with
+ * a missing or null terminal is still playable. An invalid terminal value
+ * raises MissionTerminalValidationError instead of silently yielding nothing.
  */
 export function availableMissionChoices(
   doc: MissionDraft,
   state: MissionTurnState
 ): readonly AvailableMissionChoice[] {
-  if (state.world.terminal !== null) return Object.freeze([]);
+  if (assertMissionTerminal(state.world).kind === "ended") return Object.freeze([]);
   const scene = sceneById(doc.story, state.currentSceneId);
   if (!scene) return Object.freeze([]);
   return Object.freeze(scene.choices.flatMap((choice) => {
@@ -94,7 +151,7 @@ export function applyMissionChoice(
   state: MissionTurnState,
   input: { readonly choiceId: string }
 ): ApplyMissionChoiceResult {
-  if (state.world.terminal !== null) return { ok: false, reason: "mission_ended" };
+  if (assertMissionTerminal(state.world).kind === "ended") return { ok: false, reason: "mission_ended" };
   const scene = sceneById(doc.story, state.currentSceneId);
   if (!scene) return { ok: false, reason: "choice_not_in_scene" };
   const choice = scene.choices.find((candidate) => candidate.id === input.choiceId) ?? null;
