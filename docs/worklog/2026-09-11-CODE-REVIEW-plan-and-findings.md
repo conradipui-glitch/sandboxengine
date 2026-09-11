@@ -345,3 +345,29 @@ contracts 68 · core 75 · runtime 31 · player 29 · ai 48 · control 141 · se
 | R-30 | `parseJson` снова отдаёт `null` на пустом теле 200 | `tests 5 / pass 4 / fail 1` → откат → `5/5 pass` |
 
 Отдельно зафиксирован урок: **восстанавливать файлы после мутации только из cp-бэкапа**. Попытка восстановления через `git checkout --` в этом прогоне уничтожила незакоммиченные фиксы R-25/R-26 (они были восстановлены заново и закоммичены). Мутационные скрипты также обязаны проверять факт мутации и код сборки: при `TSC!=0` прогон невалиден (тесты видят старый `dist`).
+
+## Приёмка волны рефакторинга (8 зон) и личные мутации на смёрженном HEAD
+
+Все 8 веток рефакторинга влиты в `feat/b13-acceptance-closure` **без конфликтов**: `refactor/contracts-primitives` (`3d63a1b`), `refactor/core-terminal-paths` (`1cd988f`), `refactor/control-json-primitives` (`eadda28`), `refactor/runtime-shared` (`178874b`), `refactor/server-http-primitives` (`59a01ca`), `refactor/player-guards` (`7139a52`), `refactor/scripts-drill-harness` (`f3737a2`), `refactor/studio-dom-helpers` (`881af78`). Итоговый SHA приёмки: `63dd706`.
+
+Прогон на `63dd706`: `tsc -b --force` = 0; contracts 77, core 81, runtime 56, player-pkg 29, ai 48, control 160, server 238 (237 + 1 skip), studio 251 (250 + 1 skip), apps/player 40, builder-runner 26, scripts 27 → **1033 теста, 0 падений**; `check:boundaries` ok; `docs:check` ok. До рефакторинга было 928 тестов.
+
+Личные мутации по одной на зону (сборка → красный прогон → откат из cp-бэкапа → зелёный):
+
+| # | Зона | Мутация | Результат |
+|---|---|---|---|
+| M1 | contracts | `hasOnlyKeys` → `return true` | `77 / pass 66 / fail 11` → откат → `77/77` |
+| M2 | core | гейт терминала в `scheduler.ts` возвращён к `state.terminal !== null` | `81 / pass 78 / fail 3` → откат → `81/81` |
+| M3 | server | `sendNotFound` отдаёт 200 вместо 404 | `238 / pass 233 / fail 4` → откат → `237 pass, 1 skip, 0 fail` |
+| M4 | runtime | `isSafeNonNegativeInteger` без `Number.isSafeInteger` | `56 / pass 55 / fail 1` → откат → `56/56` |
+| M5 | scripts | `exitCodeForResult` всегда 0 | `27 / pass 23 / fail 4` → откат → `27/27` |
+| M6 | control | `isHash` принимает любую строку | `160 / pass 159 / fail 1` → откат → `160/160` |
+| M7 | apps/player | `escapeHtml` больше не экранирует `&` | `40 / pass 39 / fail 1` → откат → `40/40` |
+| M8 | studio | `escapeHtml` без `&` и кавычек | `251 / pass 243 / fail 7` → откат → `250 pass, 1 skip, 0 fail` |
+
+Финальное состояние дерева после приёмки: `HEAD=63dd706`, `git status` пуст.
+
+Честные остатки рефакторинга (зафиксированы, намеренно не тронуты):
+- `apps/studio/src/app.ts` и `apps/player/app.js` сохраняют собственные копии `escapeHtml`/`isId`/`isTurnPosition`. Для `app.js` вынос **заблокирован тестом** `apps/player/test/fin05-player-turn-race.test.mjs`: он вырезает из исходника все строки импорта и запрещает сам токен `import`, поэтому внешний импорт стражей ломает харнесс (`ReferenceError: isTurnPosition is not defined`). Разблокировка требует правки теста и не делалась.
+- `apps/server/src/control-server.ts` (горячий файл) остаётся с 10 локальными копиями помощников (`readCookie`/`readJsonBody`/`readHeader`/`sendNotFound`/`sendJson`/`isPlainObject`/`hasExactKeys`/`isId`/`isTitle`/`isRevision`).
+- Не слиты осознанно (разная семантика, снабжены комментариями): `result.isRecord` vs строгий plain-record; `isPositiveInteger`/`isNonNegativeInteger` vs `isSafeNonNegativeInteger`; `shortHash` 7 vs 8 символов; три семантики `parseJson` (байты-пакет / сырой SyntaxError / fail-closed `invalid stored JSON`); `parseJsonColumn` vs `playtest-trace.parseJson`; `nextFencingToken` memory vs sqlite; проекции строк операций.
