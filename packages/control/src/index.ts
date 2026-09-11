@@ -256,6 +256,32 @@ export {
   type UpdateProviderConnectionStateInput,
   type UpdateProviderConnectionStateResult
 } from "./provider-connections-store.js";
+  BOARD_PRESENCE_SCHEMA_VERSION,
+  DEFAULT_BOARD_PRESENCE_TTL_MS,
+  MAX_BOARD_NODES,
+  MAX_BOARD_PRESENCE_PARTICIPANTS,
+  MAX_BOARD_PRESENCE_TTL_MS,
+  MIN_BOARD_PRESENCE_TTL_MS,
+  MemoryControlBoardPresenceStore,
+  SQLiteControlBoardPresenceStore,
+  type BoardCursor,
+  type BoardPresenceHeartbeatInput,
+  type BoardPresenceHeartbeatResult,
+  type BoardPresenceJoinInput,
+  type BoardPresenceJoinResult,
+  type BoardPresenceLeaveInput,
+  type BoardPresenceLeaveResult,
+  type BoardPresenceListInput,
+  type BoardPresenceParticipant,
+  type BoardPresencePruneInput,
+  type BoardPresencePruneResult,
+  type BoardSaveInput,
+  type BoardSaveResult,
+  type BoardSnapshot,
+  type ControlBoardPresenceStore,
+  type MemoryControlBoardPresenceStoreOptions,
+  type SQLiteControlBoardPresenceStoreOptions
+} from "./board-presence-store.js";
 
 export type {
   ApplyBoardChangesInput,
