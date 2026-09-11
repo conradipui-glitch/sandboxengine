@@ -1,0 +1,395 @@
+/*
+ * UI-Collab — стили панели совместной работы Studio.
+ *
+ * Правила владельца, зашитые сюда:
+ *   • НИКАКОЙ обрезки многоточием: тексты (первая реплика, ответы, имена)
+ *     переносятся (`overflow-wrap: anywhere`, `white-space: normal`); свойства
+ *     обрезки вроде text-overflow и clamp здесь не используются вовсе.
+ *   • Курсоры не закрывают рабочую область: слой `pointer-events: none`,
+ *     метка маленькая, стоит ниже-правее своей точки, фон полупрозрачный.
+ *   • В углу доски — компактный счётчик курсов, не карточка поверх полотна.
+ *   • Статус обсуждения читается не цветом: текст «Открыто»/«Закрыто»
+ *     всегда рядом с бейджем.
+ *   • Клавиатура: у всех интерактивных элементов видимый focus-visible.
+ *
+ * Классы с префиксом `collab-ui-` не пересекаются с существующими
+ * `.collab-*` из styles.css (панель заметок FIN-12).
+ */
+
+.collab-ui-host {
+  display: block;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.collab-ui-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ── Шапка ─────────────────────────────────────────────────────────────── */
+
+.collab-ui-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collab-ui-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.collab-ui-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  padding-top: 8px;
+}
+
+.collab-ui-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collab-ui-section-head h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.collab-ui-count {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.collab-ui-empty,
+.collab-ui-notice,
+.collab-ui-error {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-empty {
+  opacity: 0.75;
+}
+
+.collab-ui-notice {
+  background: color-mix(in srgb, #059669 16%, transparent);
+}
+
+.collab-ui-error {
+  background: color-mix(in srgb, #dc2626 18%, transparent);
+}
+
+/* ── Участники ─────────────────────────────────────────────────────────── */
+
+.collab-ui-participant-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collab-ui-participant {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-left: 3px solid var(--collab-ui-color, #2563eb);
+  border-radius: 999px;
+}
+
+.collab-ui-participant.is-you {
+  background: color-mix(in srgb, var(--collab-ui-color, #2563eb) 12%, transparent);
+}
+
+.collab-ui-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--collab-ui-color, #2563eb);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.collab-ui-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-you {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.collab-ui-activity,
+.collab-ui-seen {
+  font-size: 11px;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* ── Курсоры поверх доски ──────────────────────────────────────────────── */
+
+.collab-ui-cursor-layer {
+  position: absolute;
+  inset: 0;
+  /* Слой не перехватывает мышь: рабочая область доски остаётся доступной. */
+  pointer-events: none;
+  overflow: hidden;
+  contain: paint;
+}
+
+.collab-ui-cursor-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: 45%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #111827 72%, transparent);
+  color: #f9fafb;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-cursor {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 140px;
+  /* Смещение от точки: метка не закрывает то, на что указывает курсор. */
+  transform: translate(10px, 10px);
+  padding: 1px 6px 1px 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 82%, var(--collab-ui-color, #2563eb));
+  color: #111827;
+  font-size: 11px;
+  line-height: 1.5;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+}
+
+.collab-ui-cursor-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--collab-ui-color, #2563eb);
+}
+
+.collab-ui-cursor-name {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* ── Обсуждения ────────────────────────────────────────────────────────── */
+
+.collab-ui-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collab-ui-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 8px;
+}
+
+.collab-ui-thread[data-collab-ui-thread-status="closed"] {
+  opacity: 0.85;
+}
+
+.collab-ui-thread-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.collab-ui-thread-focus {
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-thread-focus:hover {
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.collab-ui-status {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid currentColor;
+}
+
+.collab-ui-status.open {
+  color: #b45309;
+}
+
+.collab-ui-status.closed {
+  color: #047857;
+}
+
+.collab-ui-replies,
+.collab-ui-updated {
+  font-size: 11px;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-first-message {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.collab-ui-reply-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  opacity: 0.9;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-reply textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.collab-ui-reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.collab-ui-hint {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+/* ── Кнопки ────────────────────────────────────────────────────────────── */
+
+.collab-ui-primary,
+.collab-ui-secondary {
+  padding: 3px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.collab-ui-primary {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.collab-ui-secondary {
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  background: transparent;
+  color: inherit;
+}
+
+.collab-ui-primary:disabled,
+.collab-ui-secondary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ── Конфликт ревизий ──────────────────────────────────────────────────── */
+
+.collab-ui-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.collab-ui-conflict p {
+  margin: 0;
+}
+
+.collab-ui-conflict-hint {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* ── Клавиатура ────────────────────────────────────────────────────────── */
+
+.collab-ui-panel :is(button, textarea, a[href]):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
