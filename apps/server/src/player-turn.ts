@@ -7,6 +7,9 @@
 // который пинит опубликованную ревизию и хранит идемпотентность по ключу хода.
 //
 // Инварианты:
+//  - сессия хода принадлежит участнику: читать и вести её может только тот,
+//    чей `actorUserId` совпадает с закреплённым при открытии сессии; чужой
+//    sessionId неотличим от несуществующего;
 //  - недоступный/чужой выбор — честная ошибка, позиция и ревизия не меняются;
 //  - повтор с тем же ключом хода — `replay` той же позиции, а не второй ход;
 //  - возвращаемая позиция всегда прочитана из состояния стора после применения,
@@ -174,7 +177,15 @@ export function createPlayerTurnService(
     projectPlayerTurnState(store, session, target);
 
   function belongsToBinding(session: MissionSessionState | null): session is MissionSessionState {
-    return session !== null && session.projectId === binding.projectId && session.questId === binding.questId;
+    // Владелец хода — участник, за которым сессия закреплена при открытии.
+    // Одного совпадения проект+миссия мало: иначе игрок того же квеста, зная
+    // только sessionId, читал бы и вёл чужую игру. Чужая сессия неотличима от
+    // отсутствующей (`state` → null, `applyTurn` → session_not_found), что
+    // совпадает с 404-семантикой соседних маршрутов.
+    return session !== null
+      && session.projectId === binding.projectId
+      && session.questId === binding.questId
+      && session.actorUserId === binding.actorUserId;
   }
 
   return Object.freeze({

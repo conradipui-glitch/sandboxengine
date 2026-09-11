@@ -81,6 +81,8 @@ export interface MissionSessionState {
   readonly sessionId: string;
   readonly projectId: string;
   readonly questId: string;
+  /** Участник, за которым закреплена сессия (владелец хода). */
+  readonly actorUserId: string;
   readonly contentRevision: number;
   readonly contentHash: string;
   readonly currentSceneId: string;
