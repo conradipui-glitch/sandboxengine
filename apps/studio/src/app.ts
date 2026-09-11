@@ -109,6 +109,7 @@ import {
 import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
+import { renderAiPanel } from "./ai-panel.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -291,6 +292,10 @@ export class StudioApp {
   /** Живая панель материалов: dispose снимается при закрытии панели или смене проекта. */
   private materialsDispose: (() => void) | null = null;
   private materialsHost: HTMLElement | null = null;
+  /** Живая панель ИИ-помощника и документ, который она собрала (до «Принять»). */
+  private aiPanelDispose: (() => void) | null = null;
+  private aiPanelHost: HTMLElement | null = null;
+  private pendingAiDocument: MissionDraft | null = null;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -2543,6 +2548,102 @@ export class StudioApp {
     this.mountScreenIfNeeded();
     this.mountLibraryIfNeeded();
     this.mountMaterialsIfNeeded();
+    this.mountAiPanelIfNeeded();
+  }
+
+  /**
+   * ИИ-помощник как пользовательский путь: описать идею → прогресс → сводка сцен и
+   * авто-починок → принять. Служебный журнал того же помощника остаётся в «Дополнительно».
+   */
+  private mountAiPanelIfNeeded(): void {
+    if (this.state.view !== "editor" || this.state.inspectorTab !== "coauthor") return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-ai-panel-host]");
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    if (!host || !projectId || !questId) return;
+    if (this.aiPanelHost === host) return;
+    if (this.aiPanelDispose) {
+      this.aiPanelDispose();
+      this.aiPanelDispose = null;
+    }
+    this.aiPanelHost = host;
+    this.aiPanelDispose = renderAiPanel({
+      root: host,
+      readiness: async () => {
+        try {
+          const response = await fetch("/local/author-provider", { headers: { "x-lh-local-settings": "1" } });
+          if (!response.ok) return { available: false, reason: "Подключение к ИИ не настроено.", model: null };
+          const body: any = await response.json().catch(() => null);
+          const state = typeof body?.state === "string" ? body.state : "not_configured";
+          return {
+            available: state === "connected",
+            reason: state === "connected" ? null : "Подключение к ИИ не настроено или ключ отклонён.",
+            model: typeof body?.model === "string" ? body.model : null
+          };
+        } catch {
+          return { available: false, reason: "Не удалось проверить подключение к ИИ.", model: null };
+        }
+      },
+      generate: async (idea, onProgress) => {
+        onProgress({ stage: "connecting", message: "Проверяем подключение к ИИ…" });
+        let payload: any = null;
+        try {
+          const response = await fetch("/local/mission-draft", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ idea, projectId, questId })
+          });
+          payload = await response.json().catch(() => null);
+          if (!response.ok) payload = payload ?? { kind: "failed" };
+        } catch {
+          return { ok: false as const, message: "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ» и повторите.", retryable: true };
+        }
+        if (payload?.kind !== "ok" || !payload.document) {
+          return { ok: false as const, message: aiDraftFailureMessage(payload?.kind), retryable: true };
+        }
+        onProgress({ stage: "repairing", message: "Собираем сцены, связи и финалы…" });
+        const document = payload.document as MissionDraft;
+        this.pendingAiDocument = document;
+        const scenes = document.story?.scenes ?? [];
+        const endings = document.story?.endings ?? [];
+        const choiceCount = scenes.reduce((total, scene) => total + (scene.choices?.length ?? 0), 0);
+        const repairs: string[] = Array.isArray(payload.repairs)
+          ? payload.repairs.map((code: unknown) => aiRepairMessage(String(code)))
+          : [];
+        onProgress({ stage: "ready", message: "Миссия собрана. Просмотрите сцены и примите результат." });
+        return { ok: true as const, sceneCount: scenes.length, endingCount: endings.length, choiceCount, repairs };
+      },
+      preview: async () => {
+        const document = this.pendingAiDocument ?? this.state.mission;
+        const scenes = document?.story?.scenes ?? [];
+        return { scenes: scenes.map((scene) => ({ id: scene.id, title: scene.title, lights: scene.choices?.length ?? 0 })) };
+      },
+      accept: async () => {
+        const document = this.pendingAiDocument;
+        if (!document) return { ok: false, message: "Сначала соберите миссию." };
+        try {
+          await this.api.saveMission(projectId, questId, this.state.missionRevision, document);
+        } catch (error) {
+          return { ok: false, message: describeControlError(error) };
+        }
+        this.pendingAiDocument = null;
+        try {
+          const mission = await this.api.getMission(projectId, questId);
+          this.state.mission = mission;
+          this.state.missionRevision = mission === null ? 0 : mission.contentRevision;
+        } catch {
+          // Сохранение уже прошло: не теряем сообщение об успехе из-за перечитки.
+        }
+        this.state.message = "Миссия сохранена: правьте сцены и экраны как обычно.";
+        this.render();
+        return { ok: true, message: "Миссия сохранена." };
+      },
+      onError: (error) => {
+        this.state.message = describeControlError(error);
+        this.render();
+      }
+    });
   }
 
   /**
@@ -3634,13 +3735,18 @@ export class StudioApp {
             ` : this.state.inspectorTab === "coauthor" ? `
               <section class="inspector-section">
                 <div class="section-heading-row"><h2>ИИ-помощник</h2></div>
-                <p class="paint-note">ИИ-помощник помогает с текстом и структурой. Рисование и игровые действия добавляются автором.</p>
+                <p class="paint-note">Опишите идею — помощник соберёт сцены, развилки и финалы. Текст и структуру потом правите теми же инструментами, что и ручной квест.</p>
+                <div class="ai-panel-host" data-ai-panel-host></div>
+                <details class="diagnostics">
+                  <summary>Дополнительно: служебный журнал помощника</summary>
+                  <p class="paint-note">Технические сведения для разработчика: профиль, состояние задачи и счётчики сегментов.</p>
+                  ${renderAuthorAssistantPanel(this.state.authorAssistant, {
+                    canMutate: allowEdit,
+                    hasMutationProof: this.state.access.mutationProof,
+                    busy: isAuthorAssistantBusy(this.state.phase)
+                  })}
+                </details>
               </section>
-              ${renderAuthorAssistantPanel(this.state.authorAssistant, {
-                canMutate: allowEdit,
-                hasMutationProof: this.state.access.mutationProof,
-                busy: isAuthorAssistantBusy(this.state.phase)
-              })}
             ` : `
               ${renderCollaborationPanel(this.state.collaboration, this.collaborationOptions(project))}
             `}
@@ -4088,6 +4194,21 @@ function isAcceptanceProject(projectId: string, title: string): boolean {
 }
 
 /** Материал → ссылка в документе миссии: адрес неизменяем, поэтому хеш обязателен. */
+/** Почему генерация не дала миссию — словами, которые автор может выполнить. */
+function aiDraftFailureMessage(kind: unknown): string {
+  if (kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
+  if (kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
+  return "ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+}
+
+/** Автопочинка плана — человеческой фразой, без служебных кодов. */
+function aiRepairMessage(code: string): string {
+  if (code.startsWith("duplicate_scene")) return "Две сцены получили одинаковый идентификатор — вторая переименована, история не потеряна.";
+  if (code.startsWith("dangling_choice_target")) return "Выбор вёл в несуществующую сцену — он направлен в ближайший подходящий финал.";
+  if (code.startsWith("dangling_")) return "Найдена висячая ссылка в структуре — она исправлена автоматически.";
+  return `Структура исправлена автоматически (${code}).`;
+}
+
 function assetRefFromMaterial(item: MaterialItem): { readonly assetId: string; readonly hash: string } {
   const hash = assetHashFromUrl(item.url);
   return { assetId: item.assetId, hash };
