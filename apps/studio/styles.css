@@ -285,9 +285,9 @@ h1, h2, .brand, .brand-name, .projects-head h1, .draft-header h1,
   letter-spacing: var(--letter-display);
 }
 
-/* Надстрочная малоформатная подпись (eyebrow сайта). */
-.topbar-status,
-.ed-save-state,
+/* Надстрочная малоформатная подпись (eyebrow сайта). Статусные строки сюда не
+   входят: сообщение и состояние сохранения — предложения, а не надписи, и
+   капслоком они читаются как служебная метка. */
 .projects-profile,
 .section-heading-row h2,
 .brand-sub,
@@ -906,7 +906,14 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .ed-topbar .crumbs { display: flex; align-items: center; gap: var(--gap-2); color: var(--muted); font-size: 13px; white-space: nowrap; }
 .ed-topbar .crumbs button { min-height: 40px; padding: 0 10px; }
 .ed-rename { display: flex; gap: var(--gap-2); align-items: center; min-width: 0; flex: 1 1 auto; max-width: 480px; }
-.ed-rename input { min-height: 36px; }
+.ed-rename input {
+  min-height: 36px;
+  /* Название миссии — не многоточие на усмотрение ширины: поле растёт по тексту,
+     а при нехватке места шапка переносит строку, а не режет название. */
+  field-sizing: content;
+  min-width: 16ch;
+  max-width: 52ch;
+}
 .ed-save-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .ed-topbar .spacer { flex: 1 1 auto; }
 .ed-topbar .actions { display: flex; gap: var(--gap-2); align-items: center; flex: 0 0 auto; }

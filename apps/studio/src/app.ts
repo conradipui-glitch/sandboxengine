@@ -76,7 +76,6 @@ import {
   edgeToDraftChange
 } from "./board-model.js";
 import { mountBoard } from "./board-dom.js";
-import { fitBoardContent } from "./board-viewport.js";
 import {
   createPresenceClient,
   mountPresence,
@@ -4083,7 +4082,7 @@ export class StudioApp {
             <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название миссии">
             <button type="submit" title="Сохранить название" aria-label="Сохранить название">${icon("check", 20)}</button>
           </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
-          <span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>
+          ${saveStateLabel(this.state.phase) === "" ? "" : `<span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>`}
           <span class="spacer"></span>
           <div class="actions">
             ${this.renderThemeToggle()}
@@ -4650,7 +4649,9 @@ function saveStateLabel(phase: StudioState["phase"]): string {
   if (phase === "publishing") return "Ждём подтверждение публикации…";
   if (phase === "conflict") return "Конфликт — черновик сервера сохранён";
   if (phase === "error") return "Проверьте сообщение о статусе";
-  return "Состояние сервера";
+  // Покой — это не «состояние сервера» без значения: когда сообщать нечего,
+  // строка статуса не рисуется вовсе (см. render-шапку).
+  return "";
 }
 
 function projectForm(): string {

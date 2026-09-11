@@ -35,8 +35,8 @@ export const THEME_ORDER: readonly ThemeName[] = ["dark", "light", "graphite"];
 
 /** Человекочитаемые подписи тем (для кнопки переключения и тестов). */
 export const THEME_LABELS: Readonly<Record<ThemeName, string>> = {
-  dark: "Тёмная: Петроград",
-  light: "Светлая: Флоренция",
+  dark: "Тёмная (Петроград)",
+  light: "Светлая (Флоренция)",
   graphite: "Графит"
 };
 
