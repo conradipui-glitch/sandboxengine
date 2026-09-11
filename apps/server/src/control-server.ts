@@ -29,8 +29,13 @@ import {
   type MissionDocumentStore,
   type MissionSessionStore,
   type ProjectAssetLibrary,
-  type SaveMissionResult
+  type SaveMissionResult,
+  collectMissionAssetReferences,
+  evaluateMissionAssetReferences,
+  missionAssetRefErrorCode,
+  type MissionAssetRefViolation
 } from "@living-history/control";
+import type { MissionDraft } from "@living-history/contracts";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import {
   AssetBoundaryError,
@@ -861,6 +866,26 @@ async function routeControlRequest(
       if (!hasExactKeys(body, ["baseRevision", "mission"])
         || !isRevision(body.baseRevision) || !isPlainObject(body.mission)) {
         sendJson(response, 400, { error: { code: "INVALID_MISSION_DOCUMENT" } });
+        return;
+      }
+      // The owner requirement: a document may only assign materials the project
+      // actually owns. Structural validation above proves the *format* of a
+      // reference; here we prove existence, project ownership and content
+      // identity. Unassigned (null) references stay legal.
+      const assetViolations = await verifyMissionAssetReferences(
+        store,
+        assetLibrary,
+        assetStorage,
+        projectId,
+        body.mission as unknown as MissionDraft
+      );
+      if (assetViolations.length > 0) {
+        sendJson(response, 422, {
+          error: {
+            code: missionAssetRefErrorCode(assetViolations),
+            details: assetViolations.map((violation) => ({ path: violation.path, kind: violation.kind, assetId: violation.assetId }))
+          }
+        });
         return;
       }
       const result = await missionStore.saveMission(projectId, questId, {
@@ -2867,6 +2892,74 @@ async function readOctetBody(request: any, maxBytes: number): Promise<
     offset += chunk.byteLength;
   }
   return Object.freeze({ ok: true, bytes });
+}
+
+/**
+ * Server-side material closure for a mission document save. Combines the clean
+ * rules module (`packages/control/mission-asset-refs`) with the two IO sources
+ * the server owns:
+ *  - ProjectAssetLibrary — what the project registered: existence, ownership and
+ *    the claimed content hash;
+ *  - LocalAssetStore — whether the bytes for that exact identity are present.
+ *
+ * When no asset library is wired into a server, verification is skipped: a
+ * deployment without materials must not start refusing mission saves.
+ */
+async function verifyMissionAssetReferences(
+  store: ControlStore,
+  assetLibrary: ProjectAssetLibrary | null,
+  assetStorage: LocalAssetStore | null,
+  projectId: string,
+  mission: MissionDraft
+): Promise<readonly MissionAssetRefViolation[]> {
+  if (assetLibrary === null) return Object.freeze([]);
+  const references = collectMissionAssetReferences(mission);
+  if (references.length === 0) return Object.freeze([]);
+  const projectAssets = await assetLibrary.listProjectAssets(projectId, false);
+  const foreignAssetIds = await collectForeignAssetIds(store, assetLibrary, projectId);
+  const violations: MissionAssetRefViolation[] = [
+    ...evaluateMissionAssetReferences(references, { projectAssets, foreignAssetIds })
+  ];
+  if (assetStorage !== null) {
+    const registered = new Map(projectAssets.map((entry) => [entry.assetId, entry.hash]));
+    for (const reference of references) {
+      if (registered.get(reference.assetId) !== reference.hash) continue;
+      if (!(await assetBytesReadable(assetStorage, reference.assetId, reference.hash))) {
+        violations.push(Object.freeze({ ...reference, kind: "unknown_asset" as const }));
+      }
+    }
+  }
+  return Object.freeze(violations);
+}
+
+/** assetIds that are registered to some *other* project (best effort). */
+async function collectForeignAssetIds(
+  store: ControlStore,
+  assetLibrary: ProjectAssetLibrary,
+  projectId: string
+): Promise<readonly string[]> {
+  const ids = new Set<string>();
+  try {
+    const projects = await store.listProjects();
+    for (const project of projects) {
+      if (project.projectId === projectId) continue;
+      const entries = await assetLibrary.listProjectAssets(project.projectId, false);
+      for (const entry of entries) ids.add(entry.assetId);
+    }
+  } catch {
+    // Best effort: without the foreign index an unregistered asset is reported
+    // as unknown rather than silently accepted.
+  }
+  return Object.freeze([...ids]);
+}
+
+async function assetBytesReadable(assetStorage: LocalAssetStore, assetId: string, hash: string): Promise<boolean> {
+  try {
+    await assetStorage.read(assetId, hash);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sendMissionSaveResult(response: any, result: SaveMissionResult): void {

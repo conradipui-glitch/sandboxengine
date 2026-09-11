@@ -1,4 +1,13 @@
 export {
+  collectMissionAssetReferences,
+  evaluateMissionAssetReferences,
+  missionAssetRefErrorCode,
+  type MissionAssetInventory,
+  type MissionAssetReference,
+  type MissionAssetRefKind,
+  type MissionAssetRefViolation
+} from "./mission-asset-refs.js";
+export {
   LHQUEST_FORMAT_VERSION,
   LHQUEST_MEDIA_TYPE,
   buildDraftQuestExport,
