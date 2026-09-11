@@ -231,6 +231,18 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     const existing = this.#operations.get(key);
     if (existing) {
       if (existing.requestHash !== operation.requestHash) return frozen({ kind: "operation_conflict", operation: clone(existing) });
+      // R-03: усиленная переигровка уже отменённой операции опасна. `aborted`
+      // означает, что попытка не сделала видимым ничего, поэтому повтор ТОГО ЖЕ
+      // запроса — это перезапуск неслучившейся попытки, а не replay готовой
+      // операции. Возвращая здесь `replay`, магазин заставлял сервер двигать
+      // указатель выпуска, а затем падать на коммите (`not_pending`) — ответ
+      // `500 PUBLICATION_COMMIT_FAILED` при уже сдвинутом указателе и каталоге,
+      // который так и не был перезаписан.
+      if (existing.state === "aborted") {
+        const restarted = clone({ ...operation, state: "pending" as const, finishedAtMs: null });
+        this.#operations.set(key, restarted);
+        return frozen({ kind: "pending", operation: clone(restarted) });
+      }
       return frozen({ kind: "replay", operation: clone(existing) });
     }
     const stored = clone(operation);
@@ -446,6 +458,20 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
       if (row) {
         const existing = operationFromRow(row);
         if (existing.requestHash !== operation.requestHash) return frozen({ kind: "operation_conflict", operation: existing });
+        // R-03: см. MemoryControlPublicationStore.beginPublicationOperation —
+        // отменённая операция не сделала ничего видимым, поэтому повтор того же
+        // запроса перезапускает её, а не переигрывается как готовая.
+        if (existing.state === "aborted") {
+          this.#db.prepare(`UPDATE control_publication_operations
+            SET state = 'pending', finished_at_ms = NULL, started_at_ms = ?, candidate_json = ?
+            WHERE project_id = ? AND quest_id = ? AND operation_key = ?`).run(
+            operation.startedAtMs, JSON.stringify(operation.candidate),
+            operation.projectId, operation.questId, operation.operationKey
+          );
+          const restarted = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1")
+            .get(operation.projectId, operation.questId, operation.operationKey);
+          return frozen({ kind: "pending", operation: restarted ? operationFromRow(restarted) : clone(operation) });
+        }
         return frozen({ kind: "replay", operation: existing });
       }
       this.#db.prepare(`INSERT INTO control_publication_operations
