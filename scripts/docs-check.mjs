@@ -22,6 +22,11 @@ const required = [
   "docs/MVP.md",
   "docs/BASELINE.md",
   "docs/TEAM.md",
+  // Эти документы объявляют себя реестром и маршрутом состояния проекта, поэтому
+  // их исчезновение обязано ломать проверку, а не проходить молча.
+  "docs/CAPABILITY-MATRIX.md",
+  "docs/FIN-CHECKLIST.md",
+  "docs/PLAN-FIN-RU.md",
   "docs/agent/README.md"
 ];
 

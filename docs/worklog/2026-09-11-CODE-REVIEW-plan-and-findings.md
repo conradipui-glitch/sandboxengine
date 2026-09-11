@@ -26,7 +26,7 @@
 
 ## Собственные находки (до отчётов ревьюеров)
 
-### R-01. «Проверено ✓», но выпуск собрать нельзя (высокая)
+### R-01. «Проверено ✓», но выпуск собрать нельзя (высокая, исправлено)
 
 Живой прогон мастерской (`http://127.0.0.1:4185`, чистая temp-БД, headless Chrome CDP):
 
@@ -48,6 +48,25 @@
 и говорить это прямо, либо сообщение о `RELEASE_FREEZE_FAILED` обязано показывать
 `detailCode` по-русски с указанием, что сделать. Сейчас нарушен целевой сценарий
 владельца: «проверил → собрал выпуск → опубликовал».
+
+**Исправлено и доказано живьём.**
+
+1. Сервер: доступность authored-ревизии вынесена в одну функцию
+   `resolveAuthoredMissionRevision` (`apps/server/src/control-server.ts`), которой
+   пользуются и сборка выпуска, и проверка. Ответ `POST /validations` теперь несёт
+   `releaseReadiness: {status:"ready"|"blocked", code?}`; коды — те же, что вернула бы
+   сборка (`MISSION_REVISION_UNAVAILABLE`, `ASSET_MISSING`).
+2. Мастерская: панель проверки показывает предупреждение
+   `[data-release-blocked]`, а сообщения об отказах переведены на русский с
+   действием автора (`apps/studio/src/control-errors.ts`, `describeControlError`,
+   `describeReleaseReadiness`); сырое `Control API: <CODE>.` из интерфейса убрано.
+3. Доказательства: `apps/server/test/fin-validate-freeze-consistency-http.test.mjs`
+   (проверка говорит `blocked` + сборка отвечает тем же кодом; после сохранения
+   сюжета — `ready` и выпуск собирается; мутация «всегда ready» краснит тест),
+   `apps/studio/test/control-errors.test.mjs` (9 тестов; мутация условия краснит),
+   живой прогон CDP `step43/step44` — в панели «Проверка квеста» видно
+   «Квест готов. Выпуск пока не собрать: У миссии нет сохранённой истории…»,
+   консольных ошибок 0, скриншот `43-r01-notice.png`.
 
 ### R-02. Кнопка публикации была неотличима от отсутствующей (высокая, исправлено в этой сессии)
 
@@ -72,3 +91,42 @@
 `apps/server/src/control-server.ts` (`beginPublicationCandidate`) либо в
 `packages/control/src/publication-store.ts` — оба файла сейчас в работе других зон,
 внесение правки отложено до агрегации находок.
+
+### R-04. Мёртвая проверка «чужой цели деплоя» (высокая, исправлено)
+
+Найдено ревьюером зоны инфраструктуры, проверено и воспроизведено оркестратором.
+
+`apps/builder-runner/src/preview-deployment.ts`, конструктор `PreviewDeploymentAdapter`
+(строка 103 до правки):
+
+```ts
+if (policy.target.repositoryId !== policy.target.repositoryId) {
+  throw new PreviewDeploymentError("deployment_not_authorized", "target mismatch");
+}
+```
+
+Тавтология: `x !== x` ложно всегда, поэтому проверка не срабатывала никогда, а код
+`deployment_not_authorized` в этом месте был мёртвым. При этом `gh`-шлюз знает свой
+репозиторий только для `run view` (`this.repositoryId = repositoryId`), а `dispatched`
+и `listRuns` ходили по `policy.target.repositoryId` — рукописная политика с чужим
+`repositoryId` уезжала в незапланированный репозиторий.
+
+Исправлено:
+1. Конструктор адаптера проверяет политику фабричным `createPreviewDeploymentPolicy`
+   (пересборка/валидация) и отказывает, если `gateway.repositoryId` не совпадает с
+   `policy.target.repositoryId` (`deployment_not_authorized`).
+2. В `PreviewDeploymentGateway` добавлено поле `repositoryId`, `createGhPreviewDeploymentGateway`
+   его объявляет, а `dispatchWorkflow` отказывает чужой цели до вызова `gh`.
+
+Доказательство: `apps/builder-runner/test/preview-deployment.test.mjs`, тест
+«B13.b2 adapter refuses a hand-assembled target and a foreign repository».
+Мутация: возврат тавтологии на место → 4 pass / 1 fail; с правкой → 5 pass / 0 fail.
+
+### R-05. Реестровые документы не охранялись `docs-check` (средняя, исправлено)
+
+`scripts/docs-check.mjs` объявляет `required`-список «документов-навигаторов», но в нём
+не было `docs/CAPABILITY-MATRIX.md`, `docs/FIN-CHECKLIST.md`, `docs/PLAN-FIN-RU.md` —
+документы, объявляющие себя реестром и маршрутом состояния проекта, могли исчезнуть
+молча. Доказательство: удаление `docs/FIN-CHECKLIST.md` при старом списке не меняло
+код возврата; после добавления — `docs-check` падает (exit 1), с файлом — 0.
+

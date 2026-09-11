@@ -80,6 +80,11 @@ export function createPreviewDeploymentPolicy(input: PreviewDeploymentPolicyInpu
 
 /** Environment-provided deployment operations; implemented with `gh` per environment. */
 export interface PreviewDeploymentGateway {
+  /**
+   * The repository this gateway is authorized to act on ("owner/repo"). When present, a
+   * policy targeting any other repository is refused before dispatch.
+   */
+  readonly repositoryId?: string;
   dispatchWorkflow(target: PreviewDeploymentTarget, commitSha: string): Promise<string>;
   waitForRunConclusion(runId: string, commitSha: string, timeoutMs: number): Promise<"success" | "failure">;
   fetchText(url: string, timeoutMs: number): Promise<string>;
@@ -100,8 +105,14 @@ export class PreviewDeploymentAdapter {
     private readonly policy: PreviewDeploymentPolicy,
     private readonly gateway: PreviewDeploymentGateway
   ) {
-    if (policy.target.repositoryId !== policy.target.repositoryId) {
-      throw new PreviewDeploymentError("deployment_not_authorized", "target mismatch");
+    // A dead tautology lived here (`policy.target.repositoryId !== policy.target.repositoryId`
+    // is never true), so an adapter happily accepted any hand-assembled target. The target is
+    // re-validated through the one authorized factory and the gateway must be bound to the very
+    // repository the target names: a policy pointing at another repository can no longer be
+    // dispatched, because the run lookup would otherwise reconcile a different repository's run.
+    createPreviewDeploymentPolicy(policy);
+    if (gateway.repositoryId !== undefined && gateway.repositoryId !== policy.target.repositoryId) {
+      throw new PreviewDeploymentError("deployment_not_authorized", "target repository is not the authorized one");
     }
   }
 
@@ -199,7 +210,11 @@ export function createGhPreviewDeploymentGateway(repositoryId: string): PreviewD
     }
   }
   return Object.freeze({
+    repositoryId,
     async dispatchWorkflow(target: PreviewDeploymentTarget, commitSha: string) {
+      if (target.repositoryId !== repositoryId) {
+        throw new Error("target repository is not the repository this gateway is authorized for");
+      }
       // workflow_dispatch has no input to pin a SHA, so the adapter dispatches the
       // fixed ref and later reconciles headSha === requiredCommitSha; a ref move
       // between push and dispatch fails reconciliation instead of deploying drift.

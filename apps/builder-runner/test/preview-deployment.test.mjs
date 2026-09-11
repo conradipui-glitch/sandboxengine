@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPreviewDeploymentPolicy, PreviewDeploymentAdapter, PreviewDeploymentError } from "../dist/preview-deployment.js";
+import { createPreviewDeploymentPolicy, createGhPreviewDeploymentGateway, PreviewDeploymentAdapter, PreviewDeploymentError } from "../dist/preview-deployment.js";
 
 const SHA = "b".repeat(40);
 
@@ -162,5 +162,33 @@ test("B13.b2 policy rejects malformed targets and smoke expectations", () => {
       smokeExpectSubstring: ""
     }),
     (error) => error instanceof PreviewDeploymentError && error.code === "deployment_invalid_input"
+  );
+});
+
+// Находка полного ревью: в конструкторе адаптера стояла тавтология
+// `policy.target.repositoryId !== policy.target.repositoryId` — никогда не истинна,
+// то есть проверка не работала вообще. Здесь она доказана живой.
+test("B13.b2 adapter refuses a hand-assembled target and a foreign repository", () => {
+  assert.throws(
+    () => new PreviewDeploymentAdapter(
+      { target: { repositoryId: "owner/repo", workflowFile: "deploy-preview.yml", ref: "../escape" }, requiredCommitSha: SHA, smokeUrl: "https://preview.example.com/healthz", smokeExpectSubstring: "ok" },
+      fakeGateway()
+    ),
+    (error) => error instanceof PreviewDeploymentError && error.code === "deployment_invalid_input"
+  );
+
+  assert.throws(
+    () => new PreviewDeploymentAdapter(policy(), { ...fakeGateway(), repositoryId: "other/repo" }),
+    (error) => error instanceof PreviewDeploymentError && error.code === "deployment_not_authorized"
+  );
+
+  // Шлюз `gh` знает свой репозиторий и отказывает чужой цели до вызова gh.
+  const gateway = createGhPreviewDeploymentGateway("owner/repo");
+  assert.equal(gateway.repositoryId, "owner/repo");
+  const runner = new PreviewDeploymentAdapter(policy(), gateway);
+  assert.ok(runner instanceof PreviewDeploymentAdapter);
+  return assert.rejects(
+    () => gateway.dispatchWorkflow({ repositoryId: "other/repo", workflowFile: "deploy-preview.yml", ref: "main" }, SHA),
+    /not the repository this gateway is authorized for/
   );
 });
