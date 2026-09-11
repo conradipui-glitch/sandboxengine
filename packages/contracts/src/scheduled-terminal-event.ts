@@ -1,5 +1,6 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isRecord } from "./result.js";
+import { hasOnlyKeys, isBoundedId, isSafeNonNegativeInteger } from "./primitives.js";
 
 export const SCHEDULED_TERMINAL_EVENT_KIND = "core.terminal" as const;
 
@@ -43,17 +44,4 @@ function isTerminalPayload(value: unknown): value is ScheduledTerminalEventPaylo
     && hasOnlyKeys(value, ["reason", "outcome"])
     && isBoundedId(value.reason, 200)
     && isBoundedId(value.outcome, 500);
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isBoundedId(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= maxLength;
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

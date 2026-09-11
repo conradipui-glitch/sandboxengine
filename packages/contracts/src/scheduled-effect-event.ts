@@ -1,6 +1,7 @@
 import { isGameplayEffect, type GameplayEffect } from "./gameplay-effect.js";
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isRecord } from "./result.js";
+import { hasOnlyKeys, isBoundedId, isSafeNonNegativeInteger } from "./primitives.js";
 import { isScheduledEvent, type ScheduledEvent } from "./scheduled-event.js";
 import {
   isScheduledTerminalEvent,
@@ -38,10 +39,10 @@ export function isScheduledEffectEvent(value: unknown): value is ScheduledEffect
   ])) return false;
 
   return value.schemaVersion === CONTRACT_SCHEMA_VERSION
-    && isBoundedId(value.eventId)
+    && isBoundedId(value.eventId, 200)
     && isSafeNonNegativeInteger(value.atElapsedSeconds)
     && isSafeNonNegativeInteger(value.order)
-    && isBoundedId(value.sourceId)
+    && isBoundedId(value.sourceId, 200)
     && value.kind === SCHEDULED_EFFECT_EVENT_KIND
     && isEffectPayload(value.payload);
 }
@@ -59,17 +60,4 @@ function isEffectPayload(value: unknown): value is ScheduledEffectEventPayload {
     && value.effects.length >= 1
     && value.effects.length <= MAX_EFFECTS_PER_SCHEDULED_EVENT
     && value.effects.every(isGameplayEffect);
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isBoundedId(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }
