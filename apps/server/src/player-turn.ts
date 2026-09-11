@@ -137,7 +137,11 @@ export async function projectPlayerTurnState(
     status: choice.status,
     target: choice.target
   }));
-  const endingId = session.world.terminal === null ? null : session.world.terminal.outcome;
+  // R-26: отсутствующий ключ `terminal` — активный мир (та же семантика, что в core,
+  // `missionTerminalStatus`). Раньше проекция читала `session.world.terminal.outcome`
+  // напрямую и падала TypeError на мире без ключа → 500 вместо ответа.
+  const terminal = session.world.terminal ?? null;
+  const endingId = terminal === null ? null : terminal.outcome;
   return Object.freeze({
     sessionId: session.sessionId,
     projectId: session.projectId,
@@ -148,7 +152,7 @@ export async function projectPlayerTurnState(
       sceneId: session.currentSceneId,
       endingId,
       turn: session.turn,
-      terminal: session.world.terminal !== null,
+      terminal: terminal !== null,
       target
     }),
     options: Object.freeze(options),
@@ -249,7 +253,7 @@ export function createPlayerTurnService(
       // Доступность проверяется движком до записи: ход с текущей ревизией
       // обязан принадлежать текущей сцене и проходить свои условия.
       if (session.turn === input.baseTurn) {
-        if (session.world.terminal !== null) return Object.freeze({ kind: "mission_ended" as const });
+        if ((session.world.terminal ?? null) !== null) return Object.freeze({ kind: "mission_ended" as const });
         const options = availableMissionChoices(pinned.mission, {
           currentSceneId: session.currentSceneId,
           world: session.world,
