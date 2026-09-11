@@ -240,6 +240,11 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
     relative = "index.html";
   } else if (pathname === "/studio-assets/styles.css") {
     relative = "styles.css";
+  } else if (/^\/studio-assets\/styles\/[a-z0-9-]+\.css$/.test(pathname)) {
+    // Стили панелей редактора лежат отдельными листами (styles/<имя>.css): их
+    // подключают сами модули по явному пути. Имя ограничено строчными буквами,
+    // цифрами и дефисом — вложенность и обход каталога невозможны.
+    relative = pathname.slice("/studio-assets/".length);
   } else if (pathname.startsWith("/studio-assets/dist/")) {
     relative = pathname.slice("/studio-assets/".length);
   } else {
@@ -249,6 +254,7 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "").replace(/\\/g, "/");
   const allowed = normalized === "index.html"
     || normalized === "styles.css"
+    || /^styles\/[a-z0-9-]+\.css$/.test(normalized)
     || normalized.startsWith("dist/");
   if (!allowed) {
     sendText(response, 404, "Not found");
