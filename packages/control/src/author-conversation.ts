@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { canonicalStringify } from "@living-history/core";
 import type { AuthorAgentJobStore } from "./author-agent-jobs.js";
 import { DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS, type SQLiteControlStoreOptions } from "./sqlite-store.js";
+import { cloneJson, isHash, isNonNegativeSafeInteger, isTimestamp } from "./json-primitives.js";
 
 export const MAX_AUTHOR_CONVERSATION_TEXT_CHARS = 20_000;
 export const MAX_AUTHOR_CONVERSATION_MESSAGES = 2_000;
@@ -236,24 +237,8 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
 
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
-function isTimestamp(value: unknown): value is number {
-  return isNonNegativeSafeInteger(value);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
 function safeRollback(db: any): void {
   try { db.exec("ROLLBACK"); } catch {}
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {

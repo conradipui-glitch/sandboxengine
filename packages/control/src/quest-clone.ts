@@ -11,6 +11,7 @@ import {
   type SQLiteControlStoreOptions
 } from "./sqlite-store.js";
 import type { ControlStore, DraftSnapshot } from "./types.js";
+import { isTitle } from "./json-primitives.js";
 
 export interface CloneQuestInput {
   readonly newQuestId: string;
@@ -370,10 +371,6 @@ function isCloneQuestInput(value: unknown): value is CloneQuestInput {
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

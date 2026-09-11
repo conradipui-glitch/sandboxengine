@@ -1,5 +1,6 @@
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
+import { parseStoredJson as parseJson } from "./json-primitives.js";
 import {
   cloneAndFreezeRelease,
   isControlReleaseHash,
@@ -424,10 +425,6 @@ function eventFromRow(row: any): ControlPublicationEvent {
     || (event.fromReleaseId !== null && !isControlReleaseId(event.fromReleaseId)) || !isControlReleaseId(event.toReleaseId)
     || !isControlReleaseId(event.actorUserId) || !isReleaseTimestamp(event.createdAtMs)) throw new Error("corrupt control publication event");
   return cloneAndFreezeRelease(event) as ControlPublicationEvent;
-}
-function parseJson(value: unknown): any {
-  if (typeof value !== "string") throw new Error("invalid stored JSON");
-  try { return JSON.parse(value); } catch { throw new Error("invalid stored JSON"); }
 }
 function scopeKey(projectId: string, questId: string): string { return `${projectId}\u0000${questId}`; }
 function idemKey(operation: OperationKind, projectId: string, questId: string, key: string): string { return `${operation}\u0000${projectId}\u0000${questId}\u0000${key}`; }

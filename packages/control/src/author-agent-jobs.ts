@@ -1,6 +1,7 @@
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS, type SQLiteControlStoreOptions } from "./sqlite-store.js";
+import { cloneJson, isHash, isNonNegativeSafeInteger, isTimestamp } from "./json-primitives.js";
 
 export const AUTHOR_AGENT_JOB_STATES = Object.freeze([
   "queued",
@@ -1053,18 +1054,6 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
 
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
-function isTimestamp(value: unknown): value is number {
-  return isNonNegativeSafeInteger(value);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
 function isRecord(value: unknown): value is Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -1077,10 +1066,6 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 
 function safeRollback(db: any): void {
   try { db.exec("ROLLBACK"); } catch {}
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {

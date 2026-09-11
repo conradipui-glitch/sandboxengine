@@ -7,6 +7,7 @@ import { compareDraftSnapshots, type DraftComparison } from "./draft-history.js"
 import { MemoryControlStore as PreviewMemoryControlStore } from "./memory-store.js";
 import { DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS, type SQLiteControlStoreOptions } from "./sqlite-store.js";
 import type { ControlStore, DraftChange, DraftSnapshot } from "./types.js";
+import { cloneJson, isHash, isNonNegativeSafeInteger } from "./json-primitives.js";
 
 export const MAX_AUTHORING_PROPOSAL_CHANGES = 100;
 export const MAX_AUTHORING_PROPOSAL_MISSING_CAPABILITIES = 20;
@@ -552,20 +553,12 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
 
 function isIdempotencyKey(value: unknown): value is string {
   return isId(value);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -580,10 +573,6 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 
 function invalidProposal(errors: readonly string[]): { readonly kind: "invalid_proposal"; readonly errors: readonly string[] } {
   return frozen({ kind: "invalid_proposal" as const, errors: Object.freeze([...errors]) });
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {
