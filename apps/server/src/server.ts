@@ -540,7 +540,14 @@ async function handleAction(
       return;
     }
     sendJson(response, 200, committed.operation.publicResponse);
-  } catch {
+  } catch (error) {
+    if (error instanceof SQLiteStorageBusyError) {
+      // Busy — транзиентный сбой стора, а не ошибка исполнения действия.
+      // Не фиксируем ход как failed: операция остаётся processing, проверка
+      // повторима после истечения аренды (тот же idempotency-key). Верхний
+      // обработчик превратит это в 503 STORAGE_BUSY с подсказкой повтора.
+      throw error;
+    }
     const failedResponse = buildFailedPublicResponse(claim.operation.operationId);
     const finished = await deps.storage.finishWithoutTurn({
       sessionId,
