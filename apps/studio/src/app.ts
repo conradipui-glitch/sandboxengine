@@ -1,5 +1,6 @@
 import type { DraftChange } from "@living-history/control";
-import { initTheme } from "./theme.js";
+import { initTheme, currentTheme, toggleTheme, THEME_LABELS, nextThemeName, type ThemeName } from "./theme.js";
+import { icon } from "./icons.js";
 import {
   loadConflictState,
   renderConflictPanel,
@@ -623,6 +624,15 @@ export class StudioApp {
     }
     if (action === "toggle-editor-menu") {
       this.state.editorMenuOpen = !this.state.editorMenuOpen;
+      this.render();
+      return;
+    }
+    if (action === "cycle-theme") {
+      // Тема меняется на следующую из реестра (theme.ts): разметка имён тем не знает.
+      const applied = toggleTheme();
+      this.state.message = applied === null
+        ? "Тему не удалось переключить: корень документа недоступен."
+        : `Тема: ${THEME_LABELS[applied]}.`;
       this.render();
       return;
     }
@@ -3978,6 +3988,18 @@ export class StudioApp {
     return "Гость";
   }
 
+  /**
+   * Кнопка смены темы: одна и та же на экране проектов и в редакторе.
+   * Разметка не знает имён тем — берётся следующая из реестра (theme.ts).
+   */
+  private renderThemeToggle(): string {
+    const active = currentTheme() ?? "dark";
+    const next = nextThemeLabel(active);
+    const glyph = active === "light" ? "sun" : "moon";
+    const label = `Тема: ${THEME_LABELS[active]}. Переключить на «${next}»`;
+    return `<button class="button-secondary theme-toggle" data-action="cycle-theme" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">${icon(glyph, 20)}</button>`;
+  }
+
   private renderProjects(): string {
     const allowProjectCreate = canCreateProject(this.state.access);
     return `
@@ -3986,6 +4008,7 @@ export class StudioApp {
           <div class="brand"><span class="brand-mark">М</span><span><span class="brand-name">Мастерская</span><br><span class="brand-sub">Living History Studio</span></span></div>
           <nav>
             <button data-action="help-projects" title="Помощь">Помощь</button>
+            ${this.renderThemeToggle()}
             <span class="projects-profile" title="Профиль: роль и короткий ID">${escapeHtml(this.profileLabel())}</span>
           </nav>
         </header>
@@ -4051,24 +4074,25 @@ export class StudioApp {
       <div class="ed-shell">
         <header class="ed-topbar">
           <nav class="crumbs" aria-label="Навигация">
-            <button data-action="back-projects" title="К списку проектов и миссий">← К миссиям</button>
+            <button data-action="back-projects" title="К списку проектов и миссий">${icon("arrow-left", 20)}<span>К миссиям</span></button>
             <span>${escapeHtml(project.title)}</span>
             ${quest ? `<span>· ${escapeHtml(quest.title)}</span>` : ``}
           </nav>
           ${draft && allowEdit ? `
           <form class="ed-rename" data-form="quest-rename" title="Переименовать миссию">
             <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название миссии">
-            <button type="submit" title="Сохранить название">✓</button>
+            <button type="submit" title="Сохранить название" aria-label="Сохранить название">${icon("check", 20)}</button>
           </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
           <span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>
           <span class="spacer"></span>
           <div class="actions">
+            ${this.renderThemeToggle()}
             ${draft ? `
             <button class="primary" data-action="play-quest" title="Проверить текущую revision и сразу запустить плеер на замороженной версии" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
             ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">
               <button class="button-secondary" data-action="start-tour" title="Показать тур по главному сценарию">Тур по Studio</button>
-                <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
+                <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" aria-label="Дополнительные панели" title="Дополнительные панели">${icon("menu", 20)}</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
                 <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
                 <button data-action="open-utility-panel" data-panel="publish" role="menuitem">Публикация</button>
@@ -4082,7 +4106,7 @@ export class StudioApp {
 
         <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}${this.state.inspectorTab === "notes" ? " notes-open" : ""}">
           <aside class="ed-library" aria-label="Библиотека миссий">
-            <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? "»" : "« Библиотека"}</button>
+            <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? `${icon("chevron-right", 20)}<span>Библиотека</span>` : `${icon("chevron-left", 20)}<span>Библиотека</span>`}</button>
             <div class="library-content">
               <section class="sidebar-section">
                 <div class="section-heading-row"><h2>Миссии</h2><span>${this.state.quests.length}</span></div>
@@ -4635,6 +4659,11 @@ function projectForm(): string {
     <label>Название<input data-focus-key="project-title" name="title" required maxlength="200" placeholder="Моя история"></label>
     <button type="submit">Создать проект</button>
   </form>`;
+}
+
+/** Подпись следующей темы — доступное имя кнопки переключения (без имён тем в разметке). */
+function nextThemeLabel(active: ThemeName): string {
+  return THEME_LABELS[nextThemeName(active)];
 }
 
 function projectModal(error: string | null): string {

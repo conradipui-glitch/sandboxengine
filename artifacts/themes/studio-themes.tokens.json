@@ -1,0 +1,147 @@
+{
+  "$description": "Темы Мастерской Studio, снятые с сайта Living History: светлая «Флоренция» и тёмная «Петроград».",
+  "semantic": {
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "#e9d6ae"
+      },
+      "card": {
+        "$type": "color",
+        "$value": "#f5e7c8"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "#f9f0d9"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "#352217"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "#4d3a28"
+      },
+      "tertiary": {
+        "$type": "color",
+        "$value": "#6a5738"
+      },
+      "link": {
+        "$type": "color",
+        "$value": "#8d3b2b"
+      },
+      "on-action": {
+        "$type": "color",
+        "$value": "#fff4df"
+      }
+    },
+    "action": {
+      "primary": {
+        "$type": "color",
+        "$value": "#a4442f"
+      }
+    },
+    "border": {
+      "strong": {
+        "$type": "color",
+        "$value": "#80654a"
+      },
+      "default": {
+        "$type": "color",
+        "$value": "#d4c2a5"
+      }
+    },
+    "extra": {
+      "muted": {
+        "$type": "color",
+        "$value": "#705a44"
+      },
+      "muted-strong": {
+        "$type": "color",
+        "$value": "#6e5843"
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "#315f76"
+      },
+      "primary-hover": {
+        "$type": "color",
+        "$value": "#8d3b2b"
+      }
+    }
+  },
+  "dark": {
+    "surface": {
+      "page": {
+        "$type": "color",
+        "$value": "#12110f"
+      },
+      "card": {
+        "$type": "color",
+        "$value": "#1b1a17"
+      },
+      "raised": {
+        "$type": "color",
+        "$value": "#232019"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "#ded7c8"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "#c1b8a9"
+      },
+      "tertiary": {
+        "$type": "color",
+        "$value": "#8f8a7d"
+      },
+      "link": {
+        "$type": "color",
+        "$value": "#e0705a"
+      },
+      "on-action": {
+        "$type": "color",
+        "$value": "#ffffff"
+      }
+    },
+    "action": {
+      "primary": {
+        "$type": "color",
+        "$value": "#c94c36"
+      }
+    },
+    "border": {
+      "strong": {
+        "$type": "color",
+        "$value": "#747068"
+      },
+      "default": {
+        "$type": "color",
+        "$value": "#363430"
+      }
+    },
+    "extra": {
+      "muted": {
+        "$type": "color",
+        "$value": "#938c7d"
+      },
+      "muted-strong": {
+        "$type": "color",
+        "$value": "#a9a294"
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "#e07660"
+      },
+      "primary-hover": {
+        "$type": "color",
+        "$value": "#e0705a"
+      }
+    }
+  }
+}

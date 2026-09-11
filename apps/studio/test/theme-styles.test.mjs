@@ -74,10 +74,22 @@ test("§2.4 стили: базовый :root объявляет тёмную п�
   // Тёмные значения живут в блоке с селектором `:root,` — он применяется и без data-theme.
   const darkSelector = dark.selector.replace(/\s+/g, " ");
   assert.match(darkSelector, /^:root,/);
-  // Графитовая основа и единственный изумрудный акцент (направление 2026-09-11).
-  assert.equal(darkVars.canvas, "#14171a");
-  assert.equal(darkVars.text, "#e8edf2");
-  assert.equal(darkVars.primary, "#31a473");
+  // «Последний поезд из Петрограда»: почти чёрный фон, кирпично-красный акцент,
+  // кремовый текст (значения сняты с сайта, см. theme-palettes.ts).
+  assert.equal(darkVars.canvas, "#12110f");
+  assert.equal(darkVars.text, "#ded7c8");
+  assert.equal(darkVars.primary, "#c94c36");
+});
+
+test("§2.4 стили: третья тема (графит) объявлена тем же контрактом переменных", () => {
+  const graphite = blocks.find((b) => b.selector.includes('data-theme="graphite"'));
+  assert.ok(graphite, 'нет третьего набора (:root[data-theme="graphite"])');
+  const graphiteVars = variablesOf(graphite.body);
+  const darkNames = Object.keys(darkVars).filter((n) => !isGeometry(n)).sort();
+  const graphiteNames = Object.keys(graphiteVars).filter((n) => !isGeometry(n)).sort();
+  assert.deepEqual(graphiteNames, darkNames, "наборы переменных всех тем должны совпадать");
+  assert.equal(graphiteVars.canvas, "#14171a");
+  assert.equal(graphiteVars.primary, "#31a473");
 });
 
 test("§2.4 стили: тёмный и светлый наборы объявляют ровно одни и те же имена цветов", () => {
@@ -107,16 +119,16 @@ test("§2.4 стили: обязательные токены темы прис�
   }
 });
 
-test("§2.4 стили: светлая мастерская сохранена (обратимость)", () => {
-  assert.equal(lightVars.canvas, "#F5F3EE");
-  assert.equal(lightVars.primary, "#176B56");
-  assert.equal(lightVars["primary-hover"], "#125642");
-  assert.equal(lightVars.selected, "#EAF4EF");
-  assert.equal(lightVars.focus, "#245BD7");
-  assert.equal(lightVars.danger, "#B42332");
-  assert.equal(lightVars.warning, "#8A5200");
-  for (const legacy of ["#F5F3EE", "#176B56", "#125642", "#EAF4EF", "#245BD7", "#B42332", "#8A5200"]) {
-    assert.ok(css.includes(legacy), `styles.css потерял светлый токен ${legacy}`);
+test("§2.4 стили: светлая тема «Флоренция» сохранена (обратимость)", () => {
+  assert.equal(lightVars.canvas, "#e9d6ae");
+  assert.equal(lightVars.primary, "#a4442f");
+  assert.equal(lightVars["primary-hover"], "#8d3b2b");
+  assert.equal(lightVars.selected, "#f7e1b6");
+  assert.equal(lightVars.focus, "#315f76");
+  assert.equal(lightVars.danger, "#8a3025");
+  assert.equal(lightVars.warning, "#624114");
+  for (const legacy of ["#e9d6ae", "#a4442f", "#8d3b2b", "#f7e1b6", "#315f76", "#8a3025", "#624114"]) {
+    assert.ok(css.includes(legacy), `styles.css потерял светлый (флорентийский) токен ${legacy}`);
   }
 });
 

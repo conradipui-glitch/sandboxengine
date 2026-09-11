@@ -11,7 +11,42 @@
  * `test/theme-styles.test.mjs`).
  */
 
-export type ThemeName = "dark" | "light";
+/**
+ * Тема Studio: палитра и типографика Мастерской сняты с сайта Living History.
+ *
+ * ЕДИНЫЙ ИСТОЧНИК ЗНАЧЕНИЙ — `theme-palettes.ts` (SITE_THEMES + SITE_TYPOGRAPHY).
+ * Этот модуль отвечает только за ВЫБОР и ПРИМЕНЕНИЕ темы: атрибут `data-theme` на
+ * корне + CSS-переменные. Так же устроен сайт: различие между тёмной и светлой темой
+ * живёт в наборе значений одних и тех же переменных, а не в отдельной разметке.
+ *
+ * Тёмная («Последний поезд из Петрограда») — основная; светлая («Флоренция») и
+ * третья (графит) — доступны тем же механизмом: добавление темы не требует правок
+ * компонентов и разметки.
+ *
+ * Чистый vanilla-TS модуль: безопасен к «фейковому» root (SSR, node-тесты) — при
+ * отсутствии настоящего корня операции становятся no-op.
+ */
+
+import {
+  SITE_THEMES,
+  SITE_TYPOGRAPHY,
+  THEME_ORDER,
+  THEME_LABELS,
+  DARK_PALETTE,
+  LIGHT_PALETTE,
+  GRAPHITE_PALETTE,
+  THEME_VARIABLES,
+  TEXT_ROLES,
+  ACCENT_TEXT_ROLES,
+  SURFACES,
+  nextThemeName,
+  isThemeName,
+  normalizeTheme,
+  type ThemeName
+} from "./theme-palettes.js";
+
+export type { ThemeName, ThemePalette } from "./theme-palettes.js";
+export { SITE_THEMES, SITE_TYPOGRAPHY, THEME_ORDER, THEME_LABELS, DARK_PALETTE, LIGHT_PALETTE, GRAPHITE_PALETTE, THEME_VARIABLES, TEXT_ROLES, ACCENT_TEXT_ROLES, SURFACES, isThemeName, normalizeTheme, nextThemeName };
 
 /** Ключ, под которым запоминается выбор пользователя. */
 export const THEME_STORAGE_KEY = "lh-studio-theme";
@@ -39,264 +74,8 @@ export type ThemeToken = (typeof THEME_TOKENS)[number];
 /** Числовые/геометрические токены: не зависят от темы, но входят в список токенов. */
 export const THEME_GEOMETRY: readonly ThemeToken[] = ["radius-m", "gap-4"];
 
-/** CSS-переменные, которые модуль выставляет на корне. */
-export const THEME_VARIABLES: readonly string[] = [
-  "canvas",
-  "surface",
-  "surface-soft",
-  "surface-sunken",
-  "surface-code",
-  "text-code",
-  "border",
-  "border-strong",
-  "border-subtle",
-  "border-accent",
-  "border-success",
-  "border-danger",
-  "border-warning",
-  "border-admin",
-  "text",
-  "text-strong",
-  "text-secondary",
-  "muted",
-  "muted-strong",
-  "muted-soft",
-  "primary",
-  "primary-hover",
-  "selected",
-  "on-accent",
-  "focus",
-  "info",
-  "info-strong",
-  "info-bg",
-  "success",
-  "success-strong",
-  "success-bg",
-  "success-muted",
-  "danger",
-  "danger-strong",
-  "danger-bg",
-  "danger-muted",
-  "warning",
-  "warning-strong",
-  "warning-bg",
-  "node-location",
-  "node-character",
-  "node-resource",
-  "overlay",
-  "shadow-xs",
-  "shadow-node",
-  "shadow-sm",
-  "shadow-md",
-  "shadow-lg",
-  "shadow-xl",
-  "shadow-drag",
-  "focus-ring",
-  "focus-ring-soft",
-  "focus-blue",
-  "focus-blue-soft",
-  "tour-ring",
-  "board-dot",
-  "board-selected",
-  "board-valid",
-  "conflict-tint",
-  "presence-shadow",
-  "presence-shadow-strong",
-  "radius-s",
-  "radius-m",
-  "radius-l",
-  "gap-1",
-  "gap-2",
-  "gap-3",
-  "gap-4",
-  "gap-6",
-  "gap-8",
-  "stage-surface",
-  "stage-handle",
-  "stage-checker",
-  "stage-layer-border",
-  "stage-layer",
-  "stage-layer-actor",
-  "stage-layer-item",
-  "stage-layer-text",
-  "stage-layer-locked",
-  "admin-bg",
-];
-
-export type ThemePalette = Readonly<Record<string, string>>;
-
-/** Тёмная палитра — основная (§2.4). */
-export const DARK_PALETTE: ThemePalette = {
-  "canvas": "#14171a",  // графитовый фон
-  "surface": "#1b2024",  // карточки и панели
-  "surface-soft": "#20262b",  // вложенные подложки
-  "surface-sunken": "#262d33",  // поля кода и бейджи
-  "surface-code": "#0e1114",  // терминал/JSON-вывод
-  "text-code": "#c3ccd6",  // текст на surface-code
-  "border": "#313a42",  // тихие границы
-  "border-strong": "#43505c",  // границы кнопок
-  "border-subtle": "#262d34",  // внутренние разделители
-  "border-accent": "#2c4a63",  // граница info
-  "border-success": "#2c4a37",  // граница success
-  "border-danger": "#5a3330",  // граница danger
-  "border-warning": "#5a4526",  // граница warning
-  "border-admin": "#4a3b63",  // граница admin
-  "text": "#e8edf2",  // основной текст
-  "text-strong": "#f6f9fc",  // заголовки/сильные подписи
-  "text-secondary": "#c0c9d3",  // вторичный текст
-  "muted": "#a9b4bf",  // приглушённый текст
-  "muted-strong": "#b6c1cc",  // метки и подписи полей
-  "muted-soft": "#8b96a1",  // самый тихий текст
-  "primary": "#31a473",  // единственный акцент — изумрудный
-  "primary-hover": "#3cbc88",  // акцент, наведение
-  "selected": "#16302a",  // выбранное состояние (изумрудная подложка)
-  "on-accent": "#0b0d0f",  // текст на акценте: тёмный, контраст 6.2:1
-  "focus": "#3fbf85",  // фокус-контур
-  "info": "#74a8e8",  // информационный акцент
-  "info-strong": "#a8c8ff",  // info-текст
-  "info-bg": "#232a3d",  // info-подложка
-  "success": "#7cc576",  // успех
-  "success-strong": "#97d78f",  // успех, сильный текст
-  "success-bg": "#16251c",  // успех-подложка
-  "success-muted": "#8fae9b",  // успех, тихий текст
-  "danger": "#ef6b62",  // опасность
-  "danger-strong": "#f5a09a",  // danger-текст
-  "danger-bg": "#2a1b1b",  // danger-подложка
-  "danger-muted": "#c59b93",  // danger, тихий текст
-  "warning": "#e0a63c",  // предупреждение
-  "warning-strong": "#ecc06a",  // warning-текст
-  "warning-bg": "#2a2418",  // warning-подложка
-  "node-location": "#5b8bf0",  // узел «локация» — смысловая метка, не акцент
-  "node-character": "#a07cf5",  // узел «персонаж» — смысловая метка, не акцент
-  "node-resource": "#d98a3c",  // узел «ресурс» — смысловая метка, не акцент
-  "overlay": "rgba(0, 0, 0, .62)",  // затемнение модалок
-  "shadow-xs": "rgba(0, 0, 0, .30)",  // тень-xs
-  "shadow-node": "rgba(0, 0, 0, .35)",  // тень узла
-  "shadow-sm": "rgba(0, 0, 0, .40)",  // тень-sm
-  "shadow-md": "rgba(0, 0, 0, .45)",  // тень-md
-  "shadow-lg": "rgba(0, 0, 0, .50)",  // тень-lg
-  "shadow-xl": "rgba(0, 0, 0, .55)",  // тень-xl
-  "shadow-drag": "rgba(0, 0, 0, .60)",  // тень перетаскивания
-  "focus-ring": "rgba(63, 191, 133, .45)",  // фокус, плотный
-  "focus-ring-soft": "rgba(63, 191, 133, .32)",  // фокус, мягкий
-  "focus-blue": "rgba(63, 191, 133, .28)",  // фокус полей
-  "focus-blue-soft": "rgba(63, 191, 133, .34)",  // фокус кнопок
-  "tour-ring": "rgba(63, 191, 133, .55)",  // подсветка тура
-  "board-dot": "rgba(232, 237, 242, .10)",  // сетка доски
-  "board-selected": "rgba(49, 164, 115, .40)",  // кольцо выбранного узла
-  "board-valid": "rgba(49, 164, 115, .60)",  // валидная связь
-  "conflict-tint": "rgba(229, 112, 95, .12)",  // тон конфликта
-  "presence-shadow": "rgba(0, 0, 0, .50)",  // тень панели присутствия
-  "presence-shadow-strong": "rgba(0, 0, 0, .60)",  // тень курсоров
-  "radius-s": "8px",
-  "radius-m": "12px",
-  "radius-l": "16px",
-  "gap-1": "4px",
-  "gap-2": "8px",
-  "gap-3": "12px",
-  "gap-4": "16px",
-  "gap-6": "24px",
-  "gap-8": "32px",
-  "stage-surface": "#101418",  // сцена (тёмная всегда)
-  "stage-handle": "#FFFFFF",  // сцена (тёмная всегда)
-  "stage-checker": "rgba(0, 0, 0, 0.18)",  // сцена (тёмная всегда)
-  "stage-layer-border": "rgba(255, 255, 255, 0.35)",  // сцена (тёмная всегда)
-  "stage-layer": "rgba(120, 160, 210, 0.18)",  // сцена (тёмная всегда)
-  "stage-layer-actor": "rgba(120, 200, 150, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-item": "rgba(220, 190, 120, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-text": "rgba(180, 150, 220, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-locked": "rgba(255, 160, 160, 0.8)",  // сцена (тёмная всегда)
-  "admin-bg": "#241f30",  // подложка admin-подсказки
-};
-
-/** Светлая палитра — сохранена для обратимости. */
-export const LIGHT_PALETTE: ThemePalette = {
-  "canvas": "#F5F3EE",  // фон сайта
-  "surface": "#FFFFFF",  // карточки и панели
-  "surface-soft": "#F8F9FB",  // вложенные подложки
-  "surface-sunken": "#F0F2F5",  // поля кода и бейджи
-  "surface-code": "#111827",  // терминал/JSON-вывод
-  "text-code": "#E5E7EB",  // текст на surface-code
-  "border": "#E3E6EB",  // тихие границы
-  "border-strong": "#CBD2DC",  // границы кнопок
-  "border-subtle": "#EDF0F4",  // внутренние разделители
-  "border-accent": "#CBD8F6",  // граница info
-  "border-success": "#B9D4BF",  // граница success
-  "border-danger": "#EFC7C1",  // граница danger
-  "border-warning": "#EFD2A6",  // граница warning
-  "border-admin": "#D8C9F0",  // граница admin
-  "text": "#202B29",  // основной текст (сайт)
-  "text-strong": "#253047",  // заголовки/сильные подписи
-  "text-secondary": "#465166",  // вторичный текст
-  "muted": "#687386",  // приглушённый текст
-  "muted-strong": "#566174",  // метки и подписи полей
-  "muted-soft": "#8992A1",  // самый тихий текст
-  "primary": "#176B56",  // акцент сайта
-  "primary-hover": "#125642",  // акцент, наведение
-  "selected": "#EAF4EF",  // выбранное состояние
-  "on-accent": "#FFFFFF",  // текст на акценте
-  "focus": "#245BD7",  // фокус-контур
-  "info": "#285FD6",  // информационный акцент
-  "info-strong": "#244A91",  // info-текст
-  "info-bg": "#EEF3FF",  // info-подложка
-  "success": "#246B42",  // успех
-  "success-strong": "#23673F",  // успех, сильный текст
-  "success-bg": "#EDF8F1",  // успех-подложка
-  "success-muted": "#597063",  // успех, тихий текст
-  "danger": "#B42332",  // опасность
-  "danger-strong": "#8D382E",  // danger-текст
-  "danger-bg": "#FFF5F3",  // danger-подложка
-  "danger-muted": "#805A54",  // danger, тихий текст
-  "warning": "#8A5200",  // предупреждение
-  "warning-strong": "#775D18",  // warning-текст
-  "warning-bg": "#FFF6DD",  // warning-подложка
-  "node-location": "#2563EB",  // узел «локация»
-  "node-character": "#7C3AED",  // узел «персонаж»
-  "node-resource": "#B45309",  // узел «ресурс»
-  "overlay": "rgba(32, 43, 41, .45)",  // затемнение модалок
-  "shadow-xs": "rgba(29, 41, 57, .05)",  // тень-xs
-  "shadow-node": "rgba(25, 40, 32, .08)",  // тень узла
-  "shadow-sm": "rgba(25, 40, 32, .10)",  // тень-sm
-  "shadow-md": "rgba(25, 40, 32, .14)",  // тень-md
-  "shadow-lg": "rgba(25, 40, 32, .16)",  // тень-lg
-  "shadow-xl": "rgba(25, 40, 32, .22)",  // тень-xl
-  "shadow-drag": "rgba(25, 40, 32, .24)",  // тень перетаскивания
-  "focus-ring": "rgba(36, 91, 215, .35)",  // фокус, плотный
-  "focus-ring-soft": "rgba(36, 91, 215, .25)",  // фокус, мягкий
-  "focus-blue": "rgba(49, 102, 255, .22)",  // фокус полей
-  "focus-blue-soft": "rgba(49, 102, 255, .28)",  // фокус кнопок
-  "tour-ring": "rgba(40, 95, 214, .48)",  // подсветка тура
-  "board-dot": "rgba(101, 113, 107, .18)",  // сетка доски
-  "board-selected": "rgba(23, 107, 86, .22)",  // кольцо выбранного узла
-  "board-valid": "rgba(23, 107, 86, .4)",  // валидная связь
-  "conflict-tint": "rgba(176, 58, 46, .06)",  // тон конфликта
-  "presence-shadow": "rgba(18, 26, 46, .12)",  // тень панели присутствия
-  "presence-shadow-strong": "rgba(18, 26, 46, .28)",  // тень курсоров
-  "radius-s": "8px",
-  "radius-m": "12px",
-  "radius-l": "16px",
-  "gap-1": "4px",
-  "gap-2": "8px",
-  "gap-3": "12px",
-  "gap-4": "16px",
-  "gap-6": "24px",
-  "gap-8": "32px",
-  "stage-surface": "#101418",  // сцена (тёмная всегда)
-  "stage-handle": "#FFFFFF",  // сцена (тёмная всегда)
-  "stage-checker": "rgba(0, 0, 0, 0.18)",  // сцена (тёмная всегда)
-  "stage-layer-border": "rgba(255, 255, 255, 0.35)",  // сцена (тёмная всегда)
-  "stage-layer": "rgba(120, 160, 210, 0.18)",  // сцена (тёмная всегда)
-  "stage-layer-actor": "rgba(120, 200, 150, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-item": "rgba(220, 190, 120, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-text": "rgba(180, 150, 220, 0.22)",  // сцена (тёмная всегда)
-  "stage-layer-locked": "rgba(255, 160, 160, 0.8)",  // сцена (тёмная всегда)
-  "admin-bg": "#FAF7FF",  // подложка admin-подсказки
-};
-
-export const THEMES: Readonly<Record<ThemeName, ThemePalette>> = {
-  dark: DARK_PALETTE,
-  light: LIGHT_PALETTE
-};
+/** Реестр тем: имя → палитра (единый источник значений). */
+export const THEMES: Readonly<Record<ThemeName, Readonly<Record<string, string>>>> = SITE_THEMES;
 
 export interface ThemeEnvironment {
   /** localStorage-совместимое хранилище (может отсутствовать). */
@@ -305,18 +84,6 @@ export interface ThemeEnvironment {
   media?: Pick<MediaQueryList, "matches"> | null;
   /** Корневой элемент (обычно document.documentElement). */
   root?: Element | null;
-}
-
-/** Строгая проверка значения на имя темы. */
-export function isThemeName(value: unknown): value is ThemeName {
-  return value === "dark" || value === "light";
-}
-
-/** Приводит произвольное значение к имени темы или возвращает null. */
-export function normalizeTheme(value: unknown): ThemeName | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
-  return isThemeName(trimmed) ? trimmed : null;
 }
 
 function safeStorage(env?: ThemeEnvironment): Pick<Storage, "getItem" | "setItem"> | null {
@@ -445,7 +212,7 @@ export function initTheme(env: ThemeEnvironment = {}): ThemeName | null {
  */
 export function toggleTheme(env: ThemeEnvironment = {}): ThemeName | null {
   const current = currentTheme(undefined, env) ?? resolveInitialTheme(env);
-  const next: ThemeName = current === "dark" ? "light" : "dark";
+  const next: ThemeName = nextThemeName(current);
   const applied = applyTheme(next, undefined, env);
   if (applied) persistTheme(applied, undefined, env);
   return applied;

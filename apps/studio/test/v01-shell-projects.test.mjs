@@ -91,7 +91,7 @@ test("V01 project create/list/open cycle works with Studio-generated IDs (no use
 
 test("V01 design tokens are present in Studio styles", async () => {
   const css = await readFile(join(here, "..", "styles.css"), "utf8");
-  for (const token of ["#F5F3EE", "#176B56", "#125642", "#EAF4EF", "#245BD7", "#B42332", "#8A5200", "--canvas", "--primary", "--radius-s", "--radius-m", "--radius-l"]) {
+  for (const token of ["#12110f", "#c94c36", "#ded7c8", "#e9d6ae", "#a4442f", "#8d3b2b", "#f7e1b6", "#315f76", "#8a3025", "--canvas", "--primary", "--radius-s", "--radius-m", "--radius-l"]) {
     assert.ok(css.includes(token), `missing token ${token}`);
   }
   assert.match(css, /\.project-grid/);
