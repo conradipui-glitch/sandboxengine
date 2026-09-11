@@ -33,6 +33,13 @@ const state = {
 const renderer = new BrowserPresentationRenderer(() => state.session);
 const executor = new PresentationExecutor(renderer);
 
+/**
+ * Порядок ходов. Пока ход в полёте, новый ввод игнорируется, а ответ
+ * применяется только если он принадлежит последнему запросу той же серверной
+ * сессии. Устаревший ответ (предыдущий ход/сессия) не трогает состояние.
+ */
+const storyTurn = { inFlight: false, sequence: 0, subject: null };
+
 root.addEventListener("submit", (event) => void onSubmit(event));
 root.addEventListener("click", (event) => void onClick(event));
 window.addEventListener("keydown", (event) => void onStoryKey(event));
@@ -109,6 +116,10 @@ async function onStoryKey(event) {
 
 async function applyStory(input) {
   if (!state.story) return;
+  // «Повторить историю» — единственный ввод, разрешённый во время хода: он
+  // аннулирует полёт (resetStorySession), чтобы поздний ответ не вернулся.
+  const restarts = input.kind === "restart";
+  if (storyTurn.inFlight && !restarts) return;
   const result = storyScreensInput(state.story.screens, state.story.mission, input);
   if (!result.handled) return;
   // Ход не применяется локально: позицию назначает ответ сервера.
@@ -123,51 +134,101 @@ async function applyStory(input) {
 }
 
 /**
- * Отправляет ход на сервер и переходит ровно по его ответу. Недоступный выбор
- * и недоступный сервер оставляют позицию неизменной с понятным сообщением.
+ * Отправляет ход на сервер и переходит ровно по его ответу. Пока ход в полёте,
+ * повторная отправка невозможна; устаревший ответ (другой запрос/сессия)
+ * отбрасывается и не откатывает уже применённое состояние.
  */
 async function commitStoryTurn(turnRequest) {
-  if (!state.story) return;
-  const base = state.story.screens;
+  const story = state.story;
+  if (!story || storyTurn.inFlight) return;
+  const base = story.screens;
+  const sessionId = storySessionId();
+  const sequence = storyTurn.sequence + 1;
+  storyTurn.sequence = sequence;
+  storyTurn.inFlight = true;
+  storyTurn.subject = Object.freeze({ sequence, sessionId });
   state.message = "Сервер применяет ход…";
   render();
 
-  let resolution;
+  let resolution = null;
+  let superseded = false;
   try {
     const response = await fetch("/player-turn.json", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({
-        sessionId: storySessionId(),
+        sessionId,
         choiceId: turnRequest.choiceId,
         baseTurn: turnRequest.baseTurn,
         idempotencyKey: makeTurnIdempotencyKey()
       })
     });
     const body = await response.json().catch(() => null);
-    const position = body?.state?.position ?? null;
-    if (response.ok && position !== null) {
-      resolution = storyScreensTurnApplied(base, {
-        turn: position.turn,
-        sceneId: position.sceneId,
-        endingId: position.endingId
-      });
-      state.story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: position.turn });
+    if (!isCurrentStoryTurn(sequence, sessionId)) {
+      // Ответ предыдущего хода/сессии: применять его нельзя.
+      superseded = true;
     } else {
-      resolution = storyScreensTurnRejected(base, {
-        network: false,
-        status: response.status,
-        code: typeof body?.error?.code === "string" ? body.error.code : null
-      });
+      const position = readTurnPosition(body);
+      if (response.ok && position !== null) {
+        // Позиция берётся только из типизированного ответа сервера.
+        resolution = storyScreensTurnApplied(base, position);
+        if (resolution.ok) {
+          story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: resolution.state.turns });
+        }
+      } else {
+        resolution = storyScreensTurnRejected(base, {
+          network: false,
+          status: response.status,
+          code: response.ok ? "INVALID_TURN_REPLY" : (typeof body?.error?.code === "string" ? body.error.code : null)
+        });
+      }
     }
   } catch {
-    resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
+    if (isCurrentStoryTurn(sequence, sessionId)) {
+      resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
+    } else {
+      superseded = true;
+    }
+  } finally {
+    if (storyTurn.sequence === sequence) {
+      storyTurn.inFlight = false;
+      storyTurn.subject = null;
+    }
   }
 
-  state.story.screens = resolution.state;
+  if (superseded) {
+    state.message = "Устаревший ответ сервера проигнорирован: позиция не изменена.";
+    render();
+    return;
+  }
+  if (resolution === null) return;
+  story.screens = resolution.state;
   state.message = resolution.message;
   render();
   await renderStoryScreen();
+}
+
+/** Ход всё ещё последний и принадлежит той же серверной сессии. */
+function isCurrentStoryTurn(sequence, sessionId) {
+  if (!storyTurn.inFlight || storyTurn.subject === null) return false;
+  if (storyTurn.sequence !== sequence || storyTurn.subject.sessionId !== sessionId) return false;
+  if (!state.story) return false;
+  return state.storySessionId === sessionId;
+}
+
+/**
+ * Разбор позиции из ответа сервера: недоверенный вход принимается только с
+ * целым ходом и ID-подобными sceneId/endingId (типы проверяет
+ * storyScreensTurnApplied). Мусор отклоняется целиком и никогда не попадает
+ * в состояние или innerHTML.
+ */
+function readTurnPosition(body) {
+  if (body === null || typeof body !== "object") return null;
+  const turnState = body.state;
+  if (turnState === null || typeof turnState !== "object") return null;
+  const position = turnState.position;
+  if (position === null || typeof position !== "object") return null;
+  return position;
 }
 
 async function renderStoryScreen() {
@@ -470,7 +531,7 @@ function renderStoryShell() {
   const lastTurn = story.lastTurn;
   const lastTurnText = lastTurn === null || lastTurn === undefined
     ? ""
-    : `<p class="story-turn">Сервер зафиксировал ход ${lastTurn.turn}: выбор ${escapeHtml(lastTurn.choiceId)}.</p>`;
+    : `<p class="story-turn">Сервер зафиксировал ход ${escapeHtml(lastTurn.turn)}: выбор ${escapeHtml(lastTurn.choiceId)}.</p>`;
 
   // Story shell uses only local metadata; SceneFrame/story content is never
   // interpolated here — the shared renderer below builds it with createElement.
@@ -482,7 +543,7 @@ function renderStoryShell() {
           <div class="brand-subtitle">Frozen playtest · экраны истории</div>
         </div>
         <div class="session-state">
-          <strong>Ходы: ${story.screens.turns}</strong>
+          <strong>Ходы: ${escapeHtml(story.screens.turns)}</strong>
           ${escapeHtml(state.message)}
         </div>
       </header>
@@ -597,6 +658,10 @@ function storySessionId() {
 }
 
 function resetStorySession() {
+  // Новый предмет хода: ответы по старой сессии становятся устаревшими.
+  storyTurn.sequence += 1;
+  storyTurn.inFlight = false;
+  storyTurn.subject = null;
   state.storySessionId = null;
   try { sessionStorage.removeItem(STORY_SESSION_STORAGE_KEY); } catch { /* no-op */ }
 }
