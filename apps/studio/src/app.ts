@@ -2323,11 +2323,12 @@ export class StudioApp {
       const value = await response.json().catch(() => null);
       if (!response.ok || !value?.ok) {
         const code = typeof value?.error?.code === "string" ? value.error.code : `HTTP ${response.status}`;
+        const detail = typeof value?.error?.message === "string" ? value.error.message : "";
         this.state.playerUrl = null;
         this.state.playerError = code === "playtest_not_found"
           ? "Frozen playtest не найден на сервере. Создайте playtest заново."
           : code === "unsupported_playtest"
-            ? "Player поддерживает ровно одно действие core.paint; этот playtest не подходит."
+            ? `Этот frozen playtest нельзя сыграть: в нём нет ни сюжетной миссии (сцен и выборов), ни ровно одного действия core.paint${detail.length > 0 ? ` (${detail})` : ""}.`
             : `Не удалось запустить Player: ${code}`;
       } else {
         this.state.playerUrl = String(value.url);
