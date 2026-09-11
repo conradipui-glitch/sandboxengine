@@ -113,6 +113,7 @@ import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import { renderAiPanel } from "./ai-panel.js";
 import { renderPublishPanel } from "./publish-panel.js";
+import { renderSceneInspector } from "./scene-inspector.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -307,6 +308,9 @@ export class StudioApp {
   /** Живая панель публикации: одна кнопка «Проверить и опубликовать» с рабочей ссылкой. */
   private publishHandle: { dispose: () => void; refresh: () => Promise<void> } | null = null;
   private publishHost: HTMLElement | null = null;
+  /** Живой инспектор сцены: разделы «Текст», «Выборы», «Оформление», «Условия». */
+  private sceneInspectorHandle: { dispose: () => void } | null = null;
+  private sceneInspectorHost: HTMLElement | null = null;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -4360,6 +4364,28 @@ const TRANSLITERATION: Readonly<Record<string, string>> = Object.freeze({
  * Адрес сайта для ссылки игрокам. В сборку он не зашит: если страница его не объявила
  * (meta name="lh-site-base"), панель публикации честно не показывает ссылку.
  */
+/** Структурный вид сцены для инспектора: совпадает с SceneDraftView модуля. */
+type SceneDraftViewLike = {
+  readonly sceneId: string;
+  readonly title: string;
+  readonly text: string;
+  readonly dialogue: readonly { readonly id: string; readonly speaker: string; readonly line: string }[];
+  readonly choices: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly targetSceneId: string | null;
+    readonly endingId: string | null;
+    readonly conditionSummary: string | null;
+    readonly effectSummary: string | null;
+  }[];
+  readonly screen: {
+    readonly backgroundAssetId: string | null;
+    readonly musicAssetId: string | null;
+    readonly layers: readonly { readonly assetId: string; readonly kind: string; readonly x: number; readonly y: number; readonly scale: number }[];
+  };
+  readonly technical: { readonly draftRevision: number; readonly contentHash: string; readonly blockIds: readonly string[] };
+};
+
 function studioSiteBaseUrl(): string | null {
   if (typeof document === "undefined") return null;
   const declared = document.querySelector?.('meta[name="lh-site-base"]') as HTMLMetaElement | null;
