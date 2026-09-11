@@ -10,10 +10,12 @@
 // Поведение:
 //   - карточка 248px, min-height 112px: подпись типа (Место/Персонаж/Ресурс/
 //     Действие), название, до 3 строк описания, ключевые значения по типу;
-//   - перетаскивание ТОЛЬКО за шапку карточки; ввод текста не двигает карточку;
-//   - создание связи — drag от карточки (порт на правом ребре либо тело
-//     карточки) к карточке; валидация по EDGE_RULES; невалидная связь не
-//     создаётся, briefly мигает подсказка;
+//   - перетаскивание — за ЛЮБУЮ часть карточки (шапка, название, описание):
+//     ввод текста и кнопки жестов не запускают;
+//   - создание связи — drag ТОЛЬКО от точки соединения (порт): выход справа и
+//     снизу, вход слева и сверху; у узла с несколькими связями они расходятся
+//     по разным сторонам и слотам вдоль ребра; проверка по EDGE_RULES;
+//     невалидная связь не создаётся, briefly мигает подсказка;
 //   - wheel-zoom 25–200% с центрированием на курсоре; pan — Space+drag или
 //     средняя кнопка; кнопки «− / масштаб% / + / Показать всё» внизу слева;
 //   - клик по карточке — onSelect(id), по фону — onSelect(null), Escape
@@ -66,8 +68,8 @@ export interface BoardDomHandle {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Габариты карточки — синхронизированы с .board-node в styles.css. */
-const NODE_WIDTH = 248;
-const NODE_HEIGHT = 112;
+export const NODE_WIDTH = 248;
+export const NODE_HEIGHT = 112;
 /** Размер мира (и viewBox SVG связей) — синхронизирован с .board-world. */
 const WORLD_SIZE = 4000;
 const MIN_ZOOM = 0.25;
@@ -108,18 +110,106 @@ export function clampZoom(value: number): number {
 
 /**
  * SVG-путь связи: кубическая кривая Безье из точки выхода (x1,y1) в точку
- * входа (x2,y2). Отступ управляющих точек адаптивный, но детерминированный.
+ * входа (x2,y2). Направление управляющих точек зависит от стороны, с которой
+ * выходит/входит связь, поэтому линия уходит вниз или вверх, а не только
+ * вправо. Длина отступа адаптивная, но детерминированная.
  */
-export function boardEdgePath(x1: number, y1: number, x2: number, y2: number): string {
-  const curve = Math.min(120, Math.max(40, Math.abs(x2 - x1) / 2));
+export function boardEdgePath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  sourceSide: PortSide = "right",
+  targetSide: PortSide = "left"
+): string {
+  const distance = Math.hypot(x2 - x1, y2 - y1);
+  const curve = Math.min(140, Math.max(40, distance / 2.5));
   const round = (value: number): number => Math.round(value * 100) / 100;
-  return `M ${round(x1)} ${round(y1)} C ${round(x1 + curve)} ${round(y1)}, ${round(x2 - curve)} ${round(y2)}, ${round(x2)} ${round(y2)}`;
+  const normal = (side: PortSide, length: number): { x: number; y: number } => {
+    switch (side) {
+      case "right":
+        return { x: length, y: 0 };
+      case "left":
+        return { x: -length, y: 0 };
+      case "bottom":
+        return { x: 0, y: length };
+      case "top":
+        return { x: 0, y: -length };
+    }
+  };
+  const out = normal(sourceSide, curve);
+  const into = normal(targetSide, curve);
+  return `M ${round(x1)} ${round(y1)} C ${round(x1 + out.x)} ${round(y1 + out.y)}, ${round(x2 + into.x)} ${round(y2 + into.y)}, ${round(x2)} ${round(y2)}`;
 }
 
 /** Разрешена ли типизированная связь source→target по EDGE_RULES (ТЗ §6.2). */
 export function canConnect(sourceType: BoardBlock["kind"], targetType: BoardBlock["kind"]): boolean {
   if (sourceType === targetType) return false;
   return EDGE_RULES.some((rule) => rule.from === sourceType && rule.to === targetType);
+}
+
+/** Сторона карточки, на которой живёт точка соединения. */
+export type PortSide = "right" | "left" | "bottom" | "top";
+
+/** Выход связи: вправо и вниз — ветка читается слева-направо и вниз. */
+export const OUT_PORT_SIDES: readonly PortSide[] = Object.freeze(["right", "bottom"] as const);
+/** Вход связи: слева и сверху. */
+export const IN_PORT_SIDES: readonly PortSide[] = Object.freeze(["left", "top"] as const);
+
+/** Доля вдоль ребра для N-го слота стороны: 1 слот — центр, дальше разносим. */
+export function portSlotFraction(
+  index: number,
+  count: number
+): { readonly index: number; readonly count: number; readonly fraction: number } {
+  const safeCount = Math.max(1, Math.floor(count));
+  const safeIndex = Math.min(Math.max(0, Math.floor(index)), safeCount - 1);
+  const step = safeCount === 1 ? 0 : Math.min(0.34, 0.68 / (safeCount - 1));
+  const fraction = safeCount === 1 ? 0.5 : 0.5 + (safeIndex - (safeCount - 1) / 2) * step;
+  return { index: safeIndex, count: safeCount, fraction: Math.round(fraction * 1000) / 1000 };
+}
+
+/**
+ * Раскладывает N связей одного узла по сторонам и слотам: чётные — первая
+ * сторона списка, нечётные — вторая, внутри стороны слоты разнесены, чтобы
+ * ветки не слипались в одну линию.
+ */
+export function distributePortSides(
+  direction: "out" | "in",
+  count: number
+): ReadonlyArray<{ readonly side: PortSide; readonly index: number; readonly count: number; readonly fraction: number }> {
+  const sides = direction === "out" ? OUT_PORT_SIDES : IN_PORT_SIDES;
+  const safeCount = Math.max(0, Math.floor(count));
+  const perSide = new Map<PortSide, number>();
+  const planned: Array<{ side: PortSide; slot: number }> = [];
+  for (let i = 0; i < safeCount; i += 1) {
+    const side: PortSide = sides[i % sides.length] ?? "right";
+    const slot = perSide.get(side) ?? 0;
+    perSide.set(side, slot + 1);
+    planned.push({ side, slot });
+  }
+  return planned.map(({ side, slot }) => ({ side, ...portSlotFraction(slot, perSide.get(side) ?? 1) }));
+}
+
+/** Точка соединения на ребре карточки; height — фактическая высота карточки. */
+export function portAnchor(
+  x: number,
+  y: number,
+  side: PortSide,
+  fraction: number,
+  height: number = NODE_HEIGHT
+): { readonly x: number; readonly y: number } {
+  const safeFraction = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0.5;
+  const safeHeight = Number.isFinite(height) && height > 0 ? height : NODE_HEIGHT;
+  switch (side) {
+    case "right":
+      return { x: x + NODE_WIDTH, y: y + safeHeight * safeFraction };
+    case "left":
+      return { x, y: y + safeHeight * safeFraction };
+    case "bottom":
+      return { x: x + NODE_WIDTH * safeFraction, y: y + safeHeight };
+    case "top":
+      return { x: x + NODE_WIDTH * safeFraction, y };
+  }
 }
 
 /** Ключевые значения карточки по типу блока; у location отдельной строки нет. */
@@ -153,6 +243,10 @@ function isTextInput(target: EventTarget | null): boolean {
 
 /** Локальные стили модуля: шапка карточки, порт связи, ghost-линия, подсказка. */
 const BOARD_DOM_CSS = `
+/* Порты выходят за габарит карточки, поэтому обрезку содержимого снимаем. */
+.board-node { overflow: visible; }
+.board-node .node-head,
+.board-node .node-body { cursor: grab; }
 .node-head {
   display: flex;
   align-items: center;
@@ -174,19 +268,28 @@ const BOARD_DOM_CSS = `
 }
 .board-port {
   position: absolute;
-  right: 5px;
-  top: 50%;
   width: 14px;
   height: 14px;
-  transform: translateY(-50%);
   border-radius: 50%;
   background: var(--surface, #fff);
   border: 2px solid var(--primary, #245BD7);
   cursor: crosshair;
   z-index: 3;
   touch-action: none;
+  opacity: .65;
+  transition: opacity .15s ease, box-shadow .15s ease;
 }
-.board-node:hover .board-port { box-shadow: 0 0 0 4px rgba(36, 91, 215, .14); }
+.board-port:hover { opacity: 1; box-shadow: 0 0 0 5px rgba(36, 91, 215, .18); }
+.board-node:hover .board-port { opacity: 1; }
+.board-port--out { background: var(--primary, #245BD7); }
+.board-port--in { border-color: var(--muted, #65716B); }
+.board-port--right { right: -7px; top: 50%; transform: translateY(-50%); }
+.board-port--left { left: -7px; top: 50%; transform: translateY(-50%); }
+.board-port--top { top: -7px; left: 50%; transform: translateX(-50%); }
+.board-port--bottom { bottom: -7px; left: 50%; transform: translateX(-50%); }
+/* Во время создания связи все входы видны: понятно, куда можно бросить. */
+.board-viewport.lhbd-connecting .board-port--in { opacity: 1; box-shadow: 0 0 0 4px rgba(46, 125, 50, .16); }
+.board-node.lhbd-node-dragging { z-index: 6; box-shadow: 0 16px 40px rgba(25, 40, 32, .24); }
 .board-node.connect-source { outline: 2px dashed var(--primary, #245BD7); outline-offset: 2px; }
 .board-node.connect-target-ok { outline: 2px solid #2E7D32; outline-offset: 2px; }
 .board-node.connect-target-bad { outline: 2px solid #B3261E; outline-offset: 2px; }
@@ -427,24 +530,107 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     }, HINT_VISIBLE_MS);
   };
 
-  /** Точка выхода связи из source — правое ребро, вход в target — левое ребро. */
-  const anchorFor = (nodeId: string, side: "out" | "in"): { x: number; y: number } | null => {
+  /** Фактическая высота карточки в мире: текст может растянуть её сверх номинала. */
+  const nodeHeight = (nodeId: string): number => {
+    for (const element of Array.from(world.querySelectorAll(".board-node"))) {
+      const card = element as HTMLElement;
+      if (card.dataset.nodeId !== nodeId) continue;
+      return card.offsetHeight > 0 ? card.offsetHeight : NODE_HEIGHT;
+    }
+    return NODE_HEIGHT;
+  };
+
+  /** Точка соединения узла: сторона + слот + фактическая геометрия карточки. */
+  const anchorFor = (
+    nodeId: string,
+    slot: { readonly side: PortSide; readonly fraction: number }
+  ): { x: number; y: number } | null => {
     const position = positions.get(nodeId);
     if (!position) return null;
-    return side === "out"
-      ? { x: position.x + NODE_WIDTH, y: position.y + NODE_HEIGHT / 2 }
-      : { x: position.x, y: position.y + NODE_HEIGHT / 2 };
+    return portAnchor(position.x, position.y, slot.side, slot.fraction, nodeHeight(nodeId));
+  };
+
+  /**
+   * Раскладка рёбер по точкам соединения: при нескольких связях одного узла
+   * они уходят с разных сторон (правая/нижняя на выходе, левая/верхняя на
+   * входе) и с разных слотов вдоль ребра — ветвление видно, линии не слипаются.
+   */
+  const edgeSlots = new Map<
+    string,
+    { source: { side: PortSide; fraction: number }; target: { side: PortSide; fraction: number } }
+  >();
+  /** Сторона, с которой автор фактически потянул связь (живёт до перезагрузки). */
+  const preferredSourceSide = new Map<string, PortSide>();
+
+  const defaultSlot = (side: PortSide): { side: PortSide; fraction: number } => ({ side, fraction: 0.5 });
+
+  const computeEdgeSlots = (): void => {
+    edgeSlots.clear();
+    const outgoing = new Map<string, BoardEdge[]>();
+    const incoming = new Map<string, BoardEdge[]>();
+    for (const edge of currentModel.edges) {
+      const out = outgoing.get(edge.source);
+      if (out) out.push(edge);
+      else outgoing.set(edge.source, [edge]);
+      const into = incoming.get(edge.target);
+      if (into) into.push(edge);
+      else incoming.set(edge.target, [edge]);
+    }
+    for (const list of outgoing.values()) {
+      const slots = distributePortSides("out", list.length);
+      list.forEach((edge, index) => {
+        const current = edgeSlots.get(edge.id) ?? { source: defaultSlot("right"), target: defaultSlot("left") };
+        const preferred = preferredSourceSide.get(`${edge.source}->${edge.target}`);
+        const slot = slots[index] ?? { side: "right" as PortSide, ...portSlotFraction(index, list.length) };
+        edgeSlots.set(edge.id, {
+          ...current,
+          source: { side: preferred ?? slot.side, fraction: slot.fraction }
+        });
+      });
+    }
+    for (const list of incoming.values()) {
+      const slots = distributePortSides("in", list.length);
+      list.forEach((edge, index) => {
+        const current = edgeSlots.get(edge.id) ?? { source: defaultSlot("right"), target: defaultSlot("left") };
+        const slot = slots[index] ?? { side: "left" as PortSide, ...portSlotFraction(index, list.length) };
+        edgeSlots.set(edge.id, {
+          ...current,
+          target: { side: slot.side, fraction: slot.fraction }
+        });
+      });
+    }
   };
 
   const refreshEdgeGeometry = (): void => {
     for (const ref of edgeRefs) {
-      const source = anchorFor(ref.edge.source, "out");
-      const target = anchorFor(ref.edge.target, "in");
+      const slot = edgeSlots.get(ref.edge.id) ?? { source: defaultSlot("right"), target: defaultSlot("left") };
+      const source = anchorFor(ref.edge.source, slot.source);
+      const target = anchorFor(ref.edge.target, slot.target);
       if (!source || !target) continue;
-      ref.path.setAttribute("d", boardEdgePath(source.x, source.y, target.x, target.y));
+      ref.path.setAttribute(
+        "d",
+        boardEdgePath(source.x, source.y, target.x, target.y, slot.source.side, slot.target.side)
+      );
       ref.label.setAttribute("x", String(Math.round((source.x + target.x) / 2)));
       ref.label.setAttribute("y", String(Math.round((source.y + target.y) / 2)));
     }
+  };
+
+  /**
+   * Точка соединения на ребре карточки. Выход (out) — сплошная: от неё тянут
+   * связь; вход (in) — контурная: в неё связь приходит.
+   */
+  const makePort = (side: PortSide, direction: "out" | "in"): HTMLElement => {
+    const port = document.createElement("span");
+    port.className = `board-port board-port--${side} board-port--${direction}`;
+    port.dataset.connectHandle = "";
+    port.dataset.portSide = side;
+    port.dataset.portDirection = direction;
+    port.title =
+      direction === "out"
+        ? "Потяните от этой точки к другой карточке, чтобы создать связь"
+        : "В эту точку приходит связь от другой карточки";
+    return port;
   };
 
   const buildNode = (node: BoardNode): HTMLElement => {
@@ -456,7 +642,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     const position = positions.get(node.id) ?? { x: node.x, y: node.y };
     card.style.transform = `translate(${position.x}px, ${position.y}px)`;
 
-    // Шапка — единственная ручка перетаскивания (drag ТОЛЬКО за шапку).
+    // Шапка — обычная часть карточки: тянется вместе с телом.
     const head = document.createElement("div");
     head.className = "node-head";
     head.dataset.dragHandle = "";
@@ -496,12 +682,9 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
 
     card.append(head, body);
     if (editable) {
-      // Порт связи: drag от него (или от тела карточки) создаёт связь.
-      const port = document.createElement("span");
-      port.className = "board-port";
-      port.dataset.connectHandle = "";
-      port.title = "Потяните к другой карточке, чтобы создать связь";
-      card.appendChild(port);
+      // Точки соединения по сторонам карточки: связи не привязаны к одному ребру.
+      for (const side of OUT_PORT_SIDES) card.appendChild(makePort(side, "out"));
+      for (const side of IN_PORT_SIDES) card.appendChild(makePort(side, "in"));
     }
     return card;
   };
@@ -514,10 +697,9 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   const renderEdges = (): void => {
     while (edgesGroup.firstChild) edgesGroup.firstChild.remove();
     edgeRefs.length = 0;
+    computeEdgeSlots();
     for (const edge of currentModel.edges) {
-      const source = anchorFor(edge.source, "out");
-      const target = anchorFor(edge.target, "in");
-      if (!source || !target) continue;
+      if (!positions.has(edge.source) || !positions.has(edge.target)) continue;
       const path = document.createElementNS(SVG_NS, "path");
       path.setAttribute("class", "board-edge");
       path.setAttribute("data-edge-id", edge.id);
@@ -575,7 +757,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     return cancel;
   };
 
-  /** Перетаскивание карточки за шапку: live-обновление позиции и связей. */
+  /** Перетаскивание карточки: ручка — любая её часть, кроме портов и полей ввода. */
   const startNodeDrag = (event: PointerEvent, card: HTMLElement): void => {
     const nodeId = card.dataset.nodeId ?? "";
     const base = positions.get(nodeId);
@@ -589,7 +771,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     const controller = new AbortController();
     const cancel = makeGesture(() => {
       controller.abort();
-      card.classList.remove("dragging");
+      card.classList.remove("lhbd-node-dragging");
     });
 
     const onPointerMove = (moveEvent: PointerEvent): void => {
@@ -616,22 +798,23 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     };
 
     capturePointer(event, card);
-    card.classList.add("dragging");
+    card.classList.add("lhbd-node-dragging");
     card.addEventListener("pointermove", onPointerMove, { signal: controller.signal });
     card.addEventListener("pointerup", onPointerUp, { signal: controller.signal });
     card.addEventListener("pointercancel", onPointerCancel, { signal: controller.signal });
   };
 
   /**
-   * Создание связи: drag от карточки-источника к карточке-цели. Живая линия
-   * следует за курсором, цель под курсором подсвечивается по валидности.
-   * Невалидная связь не создаётся — briefly мигает подсказка.
+   * Создание связи: drag от точки соединения (порт) карточки-источника к
+   * карточке-цели. Живая линия следует за курсором, цель под курсором
+   * подсвечивается по валидности. Невалидная связь не создаётся — мигает подсказка.
    */
-  const startConnectDrag = (event: PointerEvent, card: HTMLElement): void => {
+  const startConnectDrag = (event: PointerEvent, card: HTMLElement, sourceSide: PortSide = "right"): void => {
     const sourceNode = nodeById(card.dataset.nodeId ?? "");
     if (!sourceNode) return;
     const sourceId = sourceNode.id;
-    const source = anchorFor(sourceId, "out") ?? { x: sourceNode.x + NODE_WIDTH, y: sourceNode.y + NODE_HEIGHT / 2 };
+    const sourcePosition = positions.get(sourceId) ?? { x: sourceNode.x, y: sourceNode.y };
+    const source = portAnchor(sourcePosition.x, sourcePosition.y, sourceSide, 0.5, nodeHeight(sourceId));
     let hovered: HTMLElement | null = null;
 
     const controller = new AbortController();
@@ -639,6 +822,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       controller.abort();
       ghostPath.setAttribute("visibility", "hidden");
       card.classList.remove("connect-source");
+      viewport.classList.remove("lhbd-connecting");
       if (hovered) {
         hovered.classList.remove("connect-target-ok", "connect-target-bad");
         hovered = null;
@@ -673,44 +857,18 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       if (targetId === null || targetId === sourceId) return;
       const targetNode = nodeById(targetId);
       if (!targetNode) return;
-      if (canConnect(sourceNode.type, targetNode.type)) options.onConnect?.(sourceId, targetNode.id);
-      else showHint(INVALID_CONNECTION_HINT);
+      if (canConnect(sourceNode.type, targetNode.type)) {
+        // Запоминаем, с какой стороны автор потянул: ветка останется на этом порту.
+        preferredSourceSide.set(`${sourceId}->${targetNode.id}`, sourceSide);
+        options.onConnect?.(sourceId, targetNode.id);
+      } else {
+        showHint(INVALID_CONNECTION_HINT);
+      }
     };
 
     capturePointer(event, card);
     card.classList.add("connect-source");
-    card.addEventListener("pointermove", onPointerMove, { signal: controller.signal });
-    card.addEventListener("pointerup", onPointerUp, { signal: controller.signal });
-    card.addEventListener("pointercancel", cancel, { signal: controller.signal });
-  };
-
-  /**
-   * Drag от тела карточки (не от шапки): движение превращает жест в создание
-   * связи, отпускание без движения — это выбор карточки.
-   */
-  const startConnectMaybe = (event: PointerEvent, card: HTMLElement): void => {
-    const nodeId = card.dataset.nodeId ?? "";
-    const startClientX = event.clientX;
-    const startClientY = event.clientY;
-    let promoted = false;
-
-    const controller = new AbortController();
-    const cancel = makeGesture(() => controller.abort());
-
-    const onPointerMove = (moveEvent: PointerEvent): void => {
-      if (promoted) return;
-      const distance = Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY);
-      if (distance < CLICK_THRESHOLD_PX) return;
-      promoted = true;
-      cancel();
-      startConnectDrag(moveEvent, card);
-    };
-    const onPointerUp = (): void => {
-      cancel();
-      if (!promoted) select(nodeId, true);
-    };
-
-    capturePointer(event, card);
+    viewport.classList.add("lhbd-connecting");
     card.addEventListener("pointermove", onPointerMove, { signal: controller.signal });
     card.addEventListener("pointerup", onPointerUp, { signal: controller.signal });
     card.addEventListener("pointercancel", cancel, { signal: controller.signal });
@@ -795,19 +953,23 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       return;
     }
     if (!nodeById(card.dataset.nodeId ?? "")) return;
+    // Кнопки и ссылки внутри карточки работают как обычно, без жестов доски.
+    if (target.closest("button, a, [data-no-drag]")) return;
     event.preventDefault();
 
-    if (editable && target.closest("[data-connect-handle]")) {
-      startConnectDrag(event, card);
-      return;
-    }
-    if (editable && target.closest("[data-drag-handle]")) {
-      startNodeDrag(event, card);
-      return;
-    }
     if (editable) {
-      // Тело карточки: движение → создание связи, клик → выбор.
-      startConnectMaybe(event, card);
+      const port = target.closest<HTMLElement>("[data-connect-handle]");
+      if (port && port.dataset.portDirection !== "in") {
+        startConnectDrag(event, card, (port.dataset.portSide as PortSide | undefined) ?? "right");
+        return;
+      }
+      if (port) {
+        // Вход: связь сюда приходит, но не начинается — считаем это выбором карточки.
+        startCardSelect(event, card);
+        return;
+      }
+      // Любая часть карточки — ручка перетаскивания (шапка, название, описание).
+      startNodeDrag(event, card);
       return;
     }
     startCardSelect(event, card);
