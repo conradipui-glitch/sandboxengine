@@ -19,6 +19,16 @@ export function hasValidWorldStateReferences(state: WorldState): boolean {
   const resources = candidate.resources as readonly (Record<string, unknown> | null)[];
   const items = candidate.items as readonly (Record<string, unknown> | null)[];
 
+  // Every element of every collection must be a present object: consumers in
+  // core dereference `.id` on each entry, so a bare `null` element is a
+  // definition error rather than an absent record. One pass covers all four
+  // collections so the guard cannot drift out of sync between them.
+  for (const collection of [locations, entities, resources, items]) {
+    for (const element of collection) {
+      if (element === null || typeof element !== "object") return false;
+    }
+  }
+
   const locationIds = new Set(locations.map((location) => location?.id));
   const entityIds = new Set(entities.map((entity) => entity?.id));
   const resourceIds = new Set(resources.map((resource) => resource?.id));
@@ -29,14 +39,12 @@ export function hasValidWorldStateReferences(state: WorldState): boolean {
     || resourceIds.size !== resources.length
     || itemIds.size !== items.length) return false;
 
-  for (const entity of entities) {
-    if (entity === null || typeof entity !== "object") return false;
+  for (const entity of entities as readonly Record<string, unknown>[]) {
     const locationId = entity.locationId;
     if (locationId !== null && !locationIds.has(locationId)) return false;
   }
 
-  for (const item of items) {
-    if (item === null || typeof item !== "object") return false;
+  for (const item of items as readonly Record<string, unknown>[]) {
     const position = item.position as Record<string, unknown> | null | undefined;
     if (position === null || typeof position !== "object") return false;
     if (position.kind === "location" && !locationIds.has(position.locationId)) return false;

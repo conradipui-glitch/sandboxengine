@@ -57,3 +57,38 @@ test("FACT-1: null elements inside arrays are rejected without throwing", () => 
   assert.doesNotThrow(() => hasValidWorldStateReferences(state));
   assert.equal(hasValidWorldStateReferences(state), false);
 });
+
+test("FACT-1: a lone null element is rejected in each collection on its own", () => {
+  // R-31: locations/resources previously slipped through because the guard
+  // only ran for entities/items, so {locations:[null]} and {resources:[null]}
+  // returned true and core consumers crashed on `.id`. Each collection is
+  // tested in isolation here so that early exit in another collection cannot
+  // mask the hole again.
+  const base = {
+    schemaVersion: "1.0",
+    revision: 0,
+    clock: { elapsedSeconds: 0 },
+    locations: [],
+    entities: [],
+    resources: [],
+    items: [],
+    terminal: null
+  };
+  const cases = [
+    { name: "locations", world: { ...base, locations: [null] } },
+    { name: "entities", world: { ...base, entities: [null] } },
+    { name: "resources", world: { ...base, resources: [null] } },
+    { name: "items", world: { ...base, items: [null] } }
+  ];
+  for (const { name, world } of cases) {
+    assert.doesNotThrow(
+      () => hasValidWorldStateReferences(world),
+      `no throw for null element in ${name}`
+    );
+    assert.equal(
+      hasValidWorldStateReferences(world),
+      false,
+      `false for null element in ${name}`
+    );
+  }
+});
