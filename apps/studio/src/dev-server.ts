@@ -33,6 +33,10 @@ const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
   "vary"
 ] as const);
 const STUDIO_PROXY_BODY_LIMIT_BYTES = 262_144;
+// Импорт .lhquest.zip несёт base64 ресурсов, поэтому общий JSON-лимит для него
+// мал (ФАКТ-2). 64 МиБ хватает архиву с ресурсами; значение настраивается
+// через StudioDevServerOptions.importBodyLimitBytes.
+const STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = 64 * 1024 * 1024;
 const STUDIO_PROXY_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]);
 
 export type PlayerLaunchOutcome =
@@ -45,6 +49,8 @@ export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
   readonly playerLauncher?: PlayerLauncher;
+  /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
+  readonly importBodyLimitBytes?: number;
 }
 
 export interface StudioDevServer {
@@ -64,6 +70,9 @@ function launchPlayerSerialized(launcher: PlayerLauncher, playtestId: string): P
 export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
   const control = new URL(options.controlOrigin);
   if (!isLoopbackHost(control.hostname)) throw new Error("Studio proxy may target loopback Control only in B05-02");
+  const importLimitBytes = Number.isSafeInteger(options.importBodyLimitBytes) && (options.importBodyLimitBytes as number) > 0
+    ? (options.importBodyLimitBytes as number)
+    : STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -112,7 +121,7 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
       }
       if (url.pathname.startsWith("/control/")) {
         if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
-        await proxyControl(request, response, control, url);
+        await proxyControl(request, response, control, url, importLimitBytes);
         return;
       }
       await serveStatic(response, url.pathname);
@@ -153,13 +162,13 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   });
 }
 
-async function proxyControl(request: any, response: any, control: URL, url: URL): Promise<void> {
+async function proxyControl(request: any, response: any, control: URL, url: URL, importLimitBytes: number): Promise<void> {
   const target = new URL(url.pathname + url.search, control);
   const method = String(request.method ?? "GET").toUpperCase();
   if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
   let body: ArrayBuffer | undefined;
   try {
-    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname));
+    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname, importLimitBytes));
   } catch (error) {
     if (error instanceof StudioProxyRequestError) {
       sendJson(response, error.status, { error: { code: error.code } });
@@ -260,9 +269,12 @@ async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_
 // @living-history/assets; Control re-validates, the proxy only forwards.
 const STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES = 20 * 1024 * 1024 + 1;
 
-function proxyBodyLimit(pathname: string): number {
+function proxyBodyLimit(pathname: string, importLimitBytes: number): number {
   if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/assets$/.test(pathname)) {
     return STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES;
+  }
+  if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/.test(pathname)) {
+    return Math.max(STUDIO_PROXY_BODY_LIMIT_BYTES, importLimitBytes);
   }
   return STUDIO_PROXY_BODY_LIMIT_BYTES;
 }

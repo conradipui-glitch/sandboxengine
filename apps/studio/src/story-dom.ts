@@ -138,9 +138,15 @@ export function mountStoryBoard(container: HTMLElement, options: StoryDomOptions
   const paintEdges = (): void => {
     while (edgesGroup.firstChild) edgesGroup.removeChild(edgesGroup.firstChild);
     const rect = viewport.getBoundingClientRect();
-    svg.setAttribute("width", String(Math.max(1, rect.width)));
-    svg.setAttribute("height", String(Math.max(1, rect.height)));
-    svg.setAttribute("viewBox", `${-panX / scale} ${-panY / scale} ${rect.width / scale} ${rect.height / scale}`);
+    // SVG — дитя трансформированного .story-world, поэтому он обязан работать
+    // РОВНО в world-координатах: user unit = world px (viewBox 1:1, начало 0 0).
+    // pan/zoom применяет только world.transform, второй раз их учитывать нельзя,
+    // иначе рёбра уезжают от карточек (ФАКТ-1).
+    const worldWidth = Math.max(1, rect.width) / scale;
+    const worldHeight = Math.max(1, rect.height) / scale;
+    svg.setAttribute("width", String(worldWidth));
+    svg.setAttribute("height", String(worldHeight));
+    svg.setAttribute("viewBox", `0 0 ${worldWidth} ${worldHeight}`);
     for (const edge of model.edges) {
       const from = positions.get(edge.source);
       const to = positions.get(edge.target);
