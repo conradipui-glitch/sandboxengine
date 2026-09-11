@@ -3,7 +3,8 @@
 // ревизии 1 (никакого «призрака» прежнего ключа).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryControlProviderConnectionStore, SQLiteControlProviderConnectionStore } from "@living-history/control";
@@ -11,6 +12,9 @@ import { MemoryControlProviderConnectionStore, SQLiteControlProviderConnectionSt
 // Значение намеренно не похоже на настоящий ключ провайдера: тест проверяет маску
 // и стирание, а не работу с живым секретом (сканирование секретов это подтверждает).
 const API_KEY = "local-test-credential-for-mask-and-clear";
+
+/** Стор принимает только sha256-хэши в requestHash. */
+const sha256Text = (text) => createHash("sha256").update(text, "utf8").digest("hex");
 
 function saveInput(overrides = {}) {
   return {
@@ -22,7 +26,7 @@ function saveInput(overrides = {}) {
     model: "openai/gpt-4o-mini",
     apiKey: API_KEY,
     idempotencyKey: "save-1",
-    requestHash: "hash-save-1",
+    requestHash: sha256Text("save-1"),
     updatedAtMs: 1,
     ...overrides
   };
@@ -34,7 +38,7 @@ for (const [label, make] of [
 ]) {
   test(`FIN-07: отключение стирает ключ (${label})`, async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "fin07-clear-"));
-    const store = await make(dir);
+    let store = await make(dir);
     t.after(async () => { store.close?.(); await rm(dir, { recursive: true, force: true }); });
 
     const saved = await store.saveConnection(saveInput());
@@ -56,10 +60,10 @@ for (const [label, make] of [
       const reopened = new SQLiteControlProviderConnectionStore({ path: join(dir, "connections.sqlite") });
       assert.equal(await reopened.getConnection("local-operator", "local-owner"), null);
       assert.equal(await reopened.revealApiKey({ projectId: "local-operator", userId: "local-owner" }), null);
-      reopened.close();
+      store = reopened;
     }
 
-    const again = await store.saveConnection(saveInput({ idempotencyKey: "save-2", requestHash: "hash-save-2", updatedAtMs: 2 }));
+    const again = await store.saveConnection(saveInput({ idempotencyKey: "save-2", requestHash: sha256Text("save-2"), updatedAtMs: 2 }));
     assert.equal(again.kind, "saved");
     assert.equal(again.connection.revision, 1, "после удаления запись начинается заново");
   });
