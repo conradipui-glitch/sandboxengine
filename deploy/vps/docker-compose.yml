@@ -62,13 +62,15 @@ services:
       - LH_DATABASE_PATH=/data/living-history.sqlite
       - LH_STUDIO_PORT=8740
       - LH_PLAYER_FIXED_PORT=8745
-      # Единый вход: Studio доверяет только подписанному ассерту gate, парольного
-      # входа в этом режиме нет, права берутся из членства проекта. Без этих строк
-      # прод-Studio остаётся в local-режиме и раздаёт всем роль владельца.
-      - CONTROL_AUTH_MODE=authenticated
-      - CONTROL_SECURE_COOKIES=true
-      - CONTROL_ALLOWED_ORIGINS=https://85.137.95.104.sslip.io:8741
-      - LH_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET}
+      # Единый вход включается на стенде одной строкой в deploy/vps/.env:
+      #   LHC_STUDIO_AUTH_MODE=authenticated
+      #   LH_GATE_IDENTITY_SECRET=<тот же секрет, что у gate: >=32 символов>
+      # Пока они не заданы, Studio работает в прежнем локальном режиме, поэтому
+      # доставка кода сама по себе не может запереть владельца вне мастерской.
+      - CONTROL_AUTH_MODE=${LHC_STUDIO_AUTH_MODE:-local}
+      - CONTROL_SECURE_COOKIES=${LHC_STUDIO_SECURE_COOKIES:-false}
+      - CONTROL_ALLOWED_ORIGINS=${LHC_STUDIO_ALLOWED_ORIGINS:-}
+      - LH_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET:-}
     volumes:
       - engine-data:/data
     depends_on:
@@ -87,7 +89,6 @@ services:
       - LHC_STUDIO_ORIGIN=https://85.137.95.104.sslip.io:8741
       - LHC_STORE=/data/lhc-gate-state.json
       - LHC_GATE_SECRET=${LHC_GATE_SECRET}
-      - LHC_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET}
       - LHC_TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
       - LHC_OWNER_TELEGRAM_ID=${LHC_OWNER_TELEGRAM_ID:-332664273}
     volumes:
