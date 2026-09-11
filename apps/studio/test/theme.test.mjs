@@ -7,6 +7,9 @@ import {
   THEME_VARIABLES,
   DARK_PALETTE,
   LIGHT_PALETTE,
+  GRAPHITE_PALETTE,
+  THEMES,
+  THEME_ORDER,
   isThemeName,
   normalizeTheme,
   readStoredTheme,
@@ -100,15 +103,26 @@ test("§2.4 тема: есть оба набора переменных и он�
   }
 });
 
-test("§2.4 тема: тёмная палитра — графит и один изумрудный акцент (#14171a / #e8edf2 / #31a473)", () => {
-  // Направление изменено владельцем 2026-09-11: графитовая нейтральная основа и один
-  // изумрудный акцент вместо тёплого фона сайта и оранжево-красного акцента.
-  assert.equal(DARK_PALETTE.canvas, "#14171a");
-  assert.equal(DARK_PALETTE.text, "#e8edf2");
-  assert.equal(DARK_PALETTE.primary, "#31a473");
-  // Светлая мастерская остаётся прежней.
-  assert.equal(LIGHT_PALETTE.canvas, "#F5F3EE");
-  assert.equal(LIGHT_PALETTE.primary, "#176B56");
+test("§2.4 тема: тёмная палитра — «Петроград» (#12110f / #ded7c8 / #c94c36), светлая — «Флоренция»", () => {
+  // Направление изменено: палитра снята с сайта Living History.
+  // Тёмная — «Последний поезд из Петрограда», светлая — «Флоренция».
+  assert.equal(DARK_PALETTE.canvas, "#12110f");
+  assert.equal(DARK_PALETTE.text, "#ded7c8");
+  assert.equal(DARK_PALETTE.primary, "#c94c36");
+  assert.equal(LIGHT_PALETTE.canvas, "#e9d6ae");
+  assert.equal(LIGHT_PALETTE.primary, "#a4442f");
+});
+
+test("§2.4 тема: реестр тем расширяем — третья тема объявлена тем же контрактом", () => {
+  assert.deepEqual([...THEME_ORDER], ["dark", "light", "graphite"]);
+  for (const name of THEME_ORDER) {
+    assert.deepEqual(Object.keys(THEMES[name]).sort(), [...THEME_VARIABLES].sort(), `тема ${name} разошлась по составу токенов`);
+  }
+  assert.equal(GRAPHITE_PALETTE.canvas, "#14171a");
+  assert.equal(GRAPHITE_PALETTE.primary, "#31a473");
+  // Мусор в хранилище и чужие имена тем по-прежнему отвергаются.
+  assert.equal(isThemeName("graphite"), true);
+  assert.equal(isThemeName("neon"), false);
 });
 
 /* ------------------------------------------------------------------ */
@@ -186,8 +200,8 @@ test("§2.4 тема: applyTheme ставит data-theme и все CSS-пере�
 
   assert.equal(applyTheme("light", root), "light");
   assert.equal(root.attributes.get("data-theme"), "light");
-  assert.equal(root.vars.get("--canvas"), "#F5F3EE");
-  assert.equal(root.vars.get("--primary"), "#176B56");
+  assert.equal(root.vars.get("--canvas"), "#e9d6ae");
+  assert.equal(root.vars.get("--primary"), "#a4442f");
 });
 
 test("§2.4 тема: переключение тёмная↔светлая обратимо", () => {
@@ -236,18 +250,22 @@ test("§2.4 тема: initTheme применяет выбранную тему �
   const theme = initTheme({ storage: fakeStorage({ [THEME_STORAGE_KEY]: "light" }), media: null, root });
   assert.equal(theme, "light");
   assert.equal(root.attributes.get("data-theme"), "light");
-  assert.equal(root.vars.get("--canvas"), "#F5F3EE");
+  assert.equal(root.vars.get("--canvas"), "#e9d6ae");
 });
 
-test("§2.4 тема: toggleTheme меняет тему, применяет и запоминает её", () => {
+test("§2.4 тема: toggleTheme идёт по кругу всех тем, применяет и запоминает выбор", () => {
   const root = fakeRoot();
   const storage = fakeStorage({ [THEME_STORAGE_KEY]: "dark" });
   applyTheme("dark", root);
   // toggleTheme читает текущую тему из корня и сохраняет выбор в переданное хранилище.
-  const next = toggleTheme({ root, storage, media: null });
-  assert.equal(next, "light");
+  // Порядок круга — THEME_ORDER: dark → light → graphite → dark.
+  const first = toggleTheme({ root, storage, media: null });
+  assert.equal(first, "light");
   assert.equal(root.attributes.get("data-theme"), "light");
   assert.equal(storage.getItem(THEME_STORAGE_KEY), "light");
+  assert.equal(toggleTheme({ root, storage, media: null }), "graphite");
+  assert.equal(root.attributes.get("data-theme"), "graphite");
+  assert.equal(storage.getItem(THEME_STORAGE_KEY), "graphite");
   assert.equal(toggleTheme({ root, storage, media: null }), "dark");
   assert.equal(storage.getItem(THEME_STORAGE_KEY), "dark");
 });

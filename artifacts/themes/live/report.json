@@ -1,0 +1,268 @@
+{
+  "ok": true,
+  "generatedAt": "2026-09-11T19:10:51.991Z",
+  "repo": "C:\\Users\\kato55\\lhc-themes",
+  "checks": [
+    {
+      "id": "setup.chrome",
+      "ok": true,
+      "detail": "свой headless Chrome на http://127.0.0.1:9345"
+    },
+    {
+      "id": "setup.db-copy",
+      "ok": true,
+      "detail": "C:\\Users\\kato55\\Documents\\Codex\\2026-09-09-live-author-studio\\data\\living-history.sqlite -> C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\themes.sqlite"
+    },
+    {
+      "id": "setup.seed",
+      "ok": true,
+      "detail": "контент Florence загружен"
+    },
+    {
+      "id": "setup.studio",
+      "ok": true,
+      "detail": "Studio http://127.0.0.1:4189"
+    },
+    {
+      "id": "setup.cdp",
+      "ok": true,
+      "detail": "сессия B424357D9FD130279B624FA7F48E7535"
+    },
+    {
+      "id": "theme.default-is-dark",
+      "ok": true,
+      "detail": "тема по умолчанию — тёмная «Петроград»"
+    },
+    {
+      "id": "projects.dark",
+      "ok": true,
+      "detail": "canvas=#12110f body=rgb(18, 17, 15)"
+    },
+    {
+      "id": "projects.light-via-click",
+      "ok": true,
+      "detail": "клик по «Тема: Тёмная: Петроград. Переключить на «Светлая: Флоренция»» -> data-theme=light, canvas=#e9d6ae"
+    },
+    {
+      "id": "themes.differ",
+      "ok": true,
+      "detail": "фон тёмной rgb(18, 17, 15) против светлой rgb(233, 214, 174)"
+    },
+    {
+      "id": "projects.third-theme",
+      "ok": true,
+      "detail": "третья тема доступна кликом: data-theme=graphite, canvas=#14171a"
+    },
+    {
+      "id": "editor.header-fits-primary",
+      "ok": true,
+      "detail": "панель 69px, главное действие 48px (перелив сверху: false)"
+    },
+    {
+      "id": "editor.dark",
+      "ok": true,
+      "detail": "редактор в тёмной теме, доска на экране"
+    },
+    {
+      "id": "icons.svg-zoom",
+      "ok": true,
+      "detail": "иконки масштаба: 3 шт, штрих 1.75, коробка 20"
+    },
+    {
+      "id": "typography.serif-heading",
+      "ok": true,
+      "detail": "заголовок: Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif"
+    },
+    {
+      "id": "editor.light-via-click",
+      "ok": true,
+      "detail": "canvas=#e9d6ae, кнопка-граница=rgba(79, 48, 27, 0.68)"
+    },
+    {
+      "id": "inspector.both-themes",
+      "ok": true,
+      "detail": "инспектор открыт, после клика тема=graphite"
+    },
+    {
+      "id": "browser.no-console-errors",
+      "ok": true,
+      "detail": "нет ошибок консоли"
+    }
+  ],
+  "screenshots": [
+    {
+      "step": "01-projects-dark",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\01-projects-dark.png"
+    },
+    {
+      "step": "02-projects-light",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\02-projects-light.png"
+    },
+    {
+      "step": "03-projects-graphite",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\03-projects-graphite.png"
+    },
+    {
+      "step": "04-editor-dark",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\04-editor-dark.png"
+    },
+    {
+      "step": "05-editor-light",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\05-editor-light.png"
+    },
+    {
+      "step": "06-inspector-light",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\06-inspector-light.png"
+    },
+    {
+      "step": "07-inspector-dark",
+      "path": "C:\\Users\\kato55\\lhc-themes\\artifacts\\themes\\live\\shots\\07-inspector-dark.png"
+    }
+  ],
+  "notes": [
+    "Иконки зума на экране проектов не видны (доска не открыта) — проверяются в редакторе."
+  ],
+  "tokens": {
+    "projectsDark": {
+      "theme": "dark",
+      "canvas": "#12110f",
+      "surface": "#1b1a17",
+      "text": "#ded7c8",
+      "primary": "#c94c36",
+      "borderStrong": "rgba(222, 215, 200, .48)",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(18, 17, 15)",
+      "buttonBorder": "rgba(222, 215, 200, 0.48)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": []
+    },
+    "projectsLight": {
+      "theme": "light",
+      "canvas": "#e9d6ae",
+      "surface": "#f5e7c8",
+      "text": "#352217",
+      "primary": "#a4442f",
+      "borderStrong": "rgba(79, 48, 27, .68)",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(233, 214, 174)",
+      "buttonBorder": "rgba(79, 48, 27, 0.68)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": []
+    },
+    "projectsGraphite": {
+      "theme": "graphite",
+      "canvas": "#14171a",
+      "surface": "#1b2024",
+      "text": "#e8edf2",
+      "primary": "#31a473",
+      "borderStrong": "#697783",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(20, 23, 26)",
+      "buttonBorder": "rgb(105, 119, 131)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": []
+    },
+    "editorDark": {
+      "theme": "dark",
+      "canvas": "#12110f",
+      "surface": "#1b1a17",
+      "text": "#ded7c8",
+      "primary": "#c94c36",
+      "borderStrong": "rgba(222, 215, 200, .48)",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(18, 17, 15)",
+      "buttonBorder": "rgba(222, 215, 200, 0.48)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": [
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        }
+      ]
+    },
+    "editorTopbarMetrics": {
+      "found": true,
+      "topbar": {
+        "top": 0,
+        "height": 69
+      },
+      "primary": {
+        "top": 10,
+        "height": 48,
+        "width": 188,
+        "lines": 2
+      },
+      "overflowsTop": false,
+      "overflowsBottom": false
+    },
+    "editorLight": {
+      "theme": "light",
+      "canvas": "#e9d6ae",
+      "surface": "#f5e7c8",
+      "text": "#352217",
+      "primary": "#a4442f",
+      "borderStrong": "rgba(79, 48, 27, .68)",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(233, 214, 174)",
+      "buttonBorder": "rgba(79, 48, 27, 0.68)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": [
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        }
+      ]
+    },
+    "inspectorDark": {
+      "theme": "graphite",
+      "canvas": "#14171a",
+      "surface": "#1b2024",
+      "text": "#e8edf2",
+      "primary": "#31a473",
+      "borderStrong": "#697783",
+      "fontDisplay": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "bodyBackground": "rgb(20, 23, 26)",
+      "buttonBorder": "rgb(105, 119, 131)",
+      "h1Family": "Prata, Georgia, \"Times New Roman\", \"Noto Serif\", serif",
+      "zoomIcons": [
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        },
+        {
+          "stroke": "currentColor",
+          "width": "1.75",
+          "box": "20"
+        }
+      ]
+    }
+  }
+}

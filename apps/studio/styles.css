@@ -1,17 +1,9 @@
 /* ==== theme tokens: start ==== */
-/* §2.4: тёмная тема — графитовая нейтральная основа и ОДИН изумрудный акцент
-   (фон #14171a, поверхности #1b2024/#20262b, акцент #31a473, текст #e8edf2).
-   Токены-эталон для новых панелей — apps/studio/src/theme-graphite.ts.
-   Светлая мастерская остаётся рабочей через :root[data-theme="light"] — переключение обратимо. */
+/* Сгенерировано из apps/studio/src/theme-palettes.ts (единый источник тем).
+   Значения сняты с сайта Living History: тёмная — «Петроград», светлая — «Флоренция».
+   Совпадение с модулем проверяет apps/studio/test/theme-styles.test.mjs. */
 
 :root {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "DejaVu Sans", Arial, sans-serif;
-  color: var(--text);
-  background: var(--canvas);
-  font-size: 15px;
-  line-height: 1.5;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
   --radius-s: 8px;
   --radius-m: 12px;
   --radius-l: 16px;
@@ -23,159 +15,307 @@
   --gap-8: 32px;
 }
 
-/* Тёмная тема — по умолчанию (в т.ч. без JavaScript и до выбора пользователя). */
+/* Тёмная тема — основная (в т.ч. без JavaScript и до выбора пользователя). */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #14171a;  /* графитовый фон */
-  --surface: #1b2024;  /* карточки и панели */
-  --surface-soft: #20262b;  /* вложенные подложки */
-  --surface-sunken: #262d33;  /* поля кода и бейджи */
-  --surface-code: #0e1114;  /* терминал/JSON-вывод */
-  --text-code: #c3ccd6;  /* текст на surface-code */
-  --border: #313a42;  /* тихие границы */
-  --border-strong: #43505c;  /* границы кнопок */
-  --border-subtle: #262d34;  /* внутренние разделители */
-  --border-accent: #2c4a63;  /* граница info */
-  --border-success: #2c4a37;  /* граница success */
-  --border-danger: #5a3330;  /* граница danger */
-  --border-warning: #5a4526;  /* граница warning */
-  --border-admin: #4a3b63;  /* граница admin */
-  --admin-bg: #241f30;  /* подложка admin-подсказки */
-  --text: #e8edf2;  /* основной текст */
-  --text-strong: #f6f9fc;  /* заголовки/сильные подписи */
-  --text-secondary: #c0c9d3;  /* вторичный текст */
-  --muted: #a9b4bf;  /* приглушённый текст */
-  --muted-strong: #b6c1cc;  /* метки и подписи полей */
-  --muted-soft: #8b96a1;  /* самый тихий текст */
-  --primary: #31a473;  /* единственный акцент — изумрудный */
-  --primary-hover: #3cbc88;  /* акцент, наведение */
-  --selected: #16302a;  /* выбранное состояние (изумрудная подложка) */
-  --on-accent: #0b0d0f;  /* текст на акценте: тёмный, контраст 6.2:1 */
-  --focus: #3fbf85;  /* фокус-контур */
-  --info: #74a8e8;  /* информационный акцент */
-  --info-strong: #a8c8ff;  /* info-текст */
-  --info-bg: #232a3d;  /* info-подложка */
-  --success: #7cc576;  /* успех */
-  --success-strong: #97d78f;  /* успех, сильный текст */
-  --success-bg: #16251c;  /* успех-подложка */
-  --success-muted: #8fae9b;  /* успех, тихий текст */
-  --danger: #ef6b62;  /* опасность */
-  --danger-strong: #f5a09a;  /* danger-текст */
-  --danger-bg: #2a1b1b;  /* danger-подложка */
-  --danger-muted: #c59b93;  /* danger, тихий текст */
-  --warning: #e0a63c;  /* предупреждение */
-  --warning-strong: #ecc06a;  /* warning-текст */
-  --warning-bg: #2a2418;  /* warning-подложка */
-  --node-location: #5b8bf0;  /* узел «локация» — смысловая метка, не акцент */
-  --node-character: #a07cf5;  /* узел «персонаж» — смысловая метка, не акцент */
-  --node-resource: #d98a3c;  /* узел «ресурс» — смысловая метка, не акцент */
-  --overlay: rgba(0, 0, 0, .62);  /* затемнение модалок */
-  --shadow-xs: rgba(0, 0, 0, .30);  /* тень-xs */
-  --shadow-node: rgba(0, 0, 0, .35);  /* тень узла */
-  --shadow-sm: rgba(0, 0, 0, .40);  /* тень-sm */
-  --shadow-md: rgba(0, 0, 0, .45);  /* тень-md */
-  --shadow-lg: rgba(0, 0, 0, .50);  /* тень-lg */
-  --shadow-xl: rgba(0, 0, 0, .55);  /* тень-xl */
-  --shadow-drag: rgba(0, 0, 0, .60);  /* тень перетаскивания */
-  --focus-ring: rgba(63, 191, 133, .45);  /* фокус, плотный */
-  --focus-ring-soft: rgba(63, 191, 133, .32);  /* фокус, мягкий */
-  --focus-blue: rgba(63, 191, 133, .28);  /* фокус полей */
-  --focus-blue-soft: rgba(63, 191, 133, .34);  /* фокус кнопок */
-  --tour-ring: rgba(63, 191, 133, .55);  /* подсветка тура */
-  --board-dot: rgba(232, 237, 242, .10);  /* сетка доски */
-  --board-selected: rgba(49, 164, 115, .40);  /* кольцо выбранного узла */
-  --board-valid: rgba(49, 164, 115, .60);  /* валидная связь */
-  --conflict-tint: rgba(229, 112, 95, .12);  /* тон конфликта */
-  --presence-shadow: rgba(0, 0, 0, .50);  /* тень панели присутствия */
-  --presence-shadow-strong: rgba(0, 0, 0, .60);  /* тень курсоров */
-  --stage-surface: #101418;  /* сцена (тёмная всегда) */
-  --stage-handle: #FFFFFF;  /* сцена (тёмная всегда) */
-  --stage-checker: rgba(0, 0, 0, 0.18);  /* сцена (тёмная всегда) */
-  --stage-layer-border: rgba(255, 255, 255, 0.35);  /* сцена (тёмная всегда) */
-  --stage-layer: rgba(120, 160, 210, 0.18);  /* сцена (тёмная всегда) */
-  --stage-layer-actor: rgba(120, 200, 150, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-item: rgba(220, 190, 120, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-text: rgba(180, 150, 220, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-locked: rgba(255, 160, 160, 0.8);  /* сцена (тёмная всегда) */
+  --canvas: #12110f;
+  --surface: #1b1a17;
+  --surface-soft: #232019;
+  --surface-sunken: #292620;
+  --surface-code: #0e0d0c;
+  --text-code: #dcd4c6;
+  --border: rgba(222, 215, 200, .14);
+  --border-strong: rgba(222, 215, 200, .48);
+  --border-subtle: rgba(222, 215, 200, .08);
+  --border-accent: rgba(168, 191, 220, .34);
+  --border-success: rgba(143, 187, 144, .34);
+  --border-danger: rgba(217, 135, 118, .38);
+  --border-warning: rgba(205, 167, 92, .38);
+  --border-admin: rgba(183, 159, 214, .34);
+  --admin-bg: #241f2c;
+  --text: #ded7c8;
+  --text-strong: #eee8dc;
+  --text-secondary: #c1b8a9;
+  --muted: #938c7d;
+  --muted-strong: #a9a294;
+  --muted-soft: #8f8a7d;
+  --primary: #c94c36;
+  --primary-hover: #e0705a;
+  --selected: rgba(201, 76, 54, .16);
+  --on-accent: #ffffff;
+  --focus: #e07660;
+  --info: #a8bfdc;
+  --info-strong: #c6d8ee;
+  --info-bg: #232a33;
+  --success: #8fbb90;
+  --success-strong: #a9d0a9;
+  --success-bg: #16251c;
+  --success-muted: #93b195;
+  --danger: #d98776;
+  --danger-strong: #e8a99c;
+  --danger-bg: #2a1b1b;
+  --danger-muted: #c49a8f;
+  --warning: #cda75c;
+  --warning-strong: #dcc07f;
+  --warning-bg: #2a2418;
+  --node-location: #8fa6c4;
+  --node-character: #b79fd6;
+  --node-resource: #d99a5e;
+  --overlay: rgba(0, 0, 0, .62);
+  --shadow-xs: rgba(0, 0, 0, .30);
+  --shadow-node: rgba(0, 0, 0, .35);
+  --shadow-sm: rgba(0, 0, 0, .40);
+  --shadow-md: rgba(0, 0, 0, .45);
+  --shadow-lg: rgba(0, 0, 0, .50);
+  --shadow-xl: rgba(0, 0, 0, .55);
+  --shadow-drag: rgba(0, 0, 0, .60);
+  --focus-ring: rgba(224, 118, 96, .45);
+  --focus-ring-soft: rgba(224, 118, 96, .32);
+  --focus-blue: rgba(224, 118, 96, .28);
+  --focus-blue-soft: rgba(224, 118, 96, .34);
+  --tour-ring: rgba(224, 118, 96, .55);
+  --board-dot: rgba(222, 215, 200, .10);
+  --board-selected: rgba(201, 76, 54, .40);
+  --board-valid: rgba(201, 76, 54, .60);
+  --conflict-tint: rgba(217, 135, 118, .12);
+  --presence-shadow: rgba(0, 0, 0, .50);
+  --presence-shadow-strong: rgba(0, 0, 0, .60);
+  --stage-surface: #101418;
+  --stage-handle: #FFFFFF;
+  --stage-checker: rgba(0, 0, 0, 0.18);
+  --stage-layer-border: rgba(255, 255, 255, 0.35);
+  --stage-layer: rgba(120, 160, 210, 0.18);
+  --stage-layer-actor: rgba(120, 200, 150, 0.22);
+  --stage-layer-item: rgba(220, 190, 120, 0.22);
+  --stage-layer-text: rgba(180, 150, 220, 0.22);
+  --stage-layer-locked: rgba(255, 160, 160, 0.8);
 }
 
-/* Светлая мастерская — сохраняется и остаётся полностью рабочей. */
+/* Светлая тема — «Флоренция»: пергамент и терракота. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --canvas: #F5F3EE;  /* фон сайта */
-  --surface: #FFFFFF;  /* карточки и панели */
-  --surface-soft: #F8F9FB;  /* вложенные подложки */
-  --surface-sunken: #F0F2F5;  /* поля кода и бейджи */
-  --surface-code: #111827;  /* терминал/JSON-вывод */
-  --text-code: #E5E7EB;  /* текст на surface-code */
-  --border: #E3E6EB;  /* тихие границы */
-  --border-strong: #CBD2DC;  /* границы кнопок */
-  --border-subtle: #EDF0F4;  /* внутренние разделители */
-  --border-accent: #CBD8F6;  /* граница info */
-  --border-success: #B9D4BF;  /* граница success */
-  --border-danger: #EFC7C1;  /* граница danger */
-  --border-warning: #EFD2A6;  /* граница warning */
-  --border-admin: #D8C9F0;  /* граница admin */
-  --admin-bg: #FAF7FF;  /* подложка admin-подсказки */
-  --text: #202B29;  /* основной текст (сайт) */
-  --text-strong: #253047;  /* заголовки/сильные подписи */
-  --text-secondary: #465166;  /* вторичный текст */
-  --muted: #687386;  /* приглушённый текст */
-  --muted-strong: #566174;  /* метки и подписи полей */
-  --muted-soft: #8992A1;  /* самый тихий текст */
-  --primary: #176B56;  /* акцент сайта */
-  --primary-hover: #125642;  /* акцент, наведение */
-  --selected: #EAF4EF;  /* выбранное состояние */
-  --on-accent: #FFFFFF;  /* текст на акценте */
-  --focus: #245BD7;  /* фокус-контур */
-  --info: #285FD6;  /* информационный акцент */
-  --info-strong: #244A91;  /* info-текст */
-  --info-bg: #EEF3FF;  /* info-подложка */
-  --success: #246B42;  /* успех */
-  --success-strong: #23673F;  /* успех, сильный текст */
-  --success-bg: #EDF8F1;  /* успех-подложка */
-  --success-muted: #597063;  /* успех, тихий текст */
-  --danger: #B42332;  /* опасность */
-  --danger-strong: #8D382E;  /* danger-текст */
-  --danger-bg: #FFF5F3;  /* danger-подложка */
-  --danger-muted: #805A54;  /* danger, тихий текст */
-  --warning: #8A5200;  /* предупреждение */
-  --warning-strong: #775D18;  /* warning-текст */
-  --warning-bg: #FFF6DD;  /* warning-подложка */
-  --node-location: #2563EB;  /* узел «локация» */
-  --node-character: #7C3AED;  /* узел «персонаж» */
-  --node-resource: #B45309;  /* узел «ресурс» */
-  --overlay: rgba(32, 43, 41, .45);  /* затемнение модалок */
-  --shadow-xs: rgba(29, 41, 57, .05);  /* тень-xs */
-  --shadow-node: rgba(25, 40, 32, .08);  /* тень узла */
-  --shadow-sm: rgba(25, 40, 32, .10);  /* тень-sm */
-  --shadow-md: rgba(25, 40, 32, .14);  /* тень-md */
-  --shadow-lg: rgba(25, 40, 32, .16);  /* тень-lg */
-  --shadow-xl: rgba(25, 40, 32, .22);  /* тень-xl */
-  --shadow-drag: rgba(25, 40, 32, .24);  /* тень перетаскивания */
-  --focus-ring: rgba(36, 91, 215, .35);  /* фокус, плотный */
-  --focus-ring-soft: rgba(36, 91, 215, .25);  /* фокус, мягкий */
-  --focus-blue: rgba(49, 102, 255, .22);  /* фокус полей */
-  --focus-blue-soft: rgba(49, 102, 255, .28);  /* фокус кнопок */
-  --tour-ring: rgba(40, 95, 214, .48);  /* подсветка тура */
-  --board-dot: rgba(101, 113, 107, .18);  /* сетка доски */
-  --board-selected: rgba(23, 107, 86, .22);  /* кольцо выбранного узла */
-  --board-valid: rgba(23, 107, 86, .4);  /* валидная связь */
-  --conflict-tint: rgba(176, 58, 46, .06);  /* тон конфликта */
-  --presence-shadow: rgba(18, 26, 46, .12);  /* тень панели присутствия */
-  --presence-shadow-strong: rgba(18, 26, 46, .28);  /* тень курсоров */
-  --stage-surface: #101418;  /* сцена (тёмная всегда) */
-  --stage-handle: #FFFFFF;  /* сцена (тёмная всегда) */
-  --stage-checker: rgba(0, 0, 0, 0.18);  /* сцена (тёмная всегда) */
-  --stage-layer-border: rgba(255, 255, 255, 0.35);  /* сцена (тёмная всегда) */
-  --stage-layer: rgba(120, 160, 210, 0.18);  /* сцена (тёмная всегда) */
-  --stage-layer-actor: rgba(120, 200, 150, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-item: rgba(220, 190, 120, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-text: rgba(180, 150, 220, 0.22);  /* сцена (тёмная всегда) */
-  --stage-layer-locked: rgba(255, 160, 160, 0.8);  /* сцена (тёмная всегда) */
+  --canvas: #e9d6ae;
+  --surface: #f5e7c8;
+  --surface-soft: #f9f0d9;
+  --surface-sunken: #ddc79c;
+  --surface-code: #2b2018;
+  --text-code: #e6dbc6;
+  --border: rgba(79, 48, 27, .2);
+  --border-strong: rgba(79, 48, 27, .68);
+  --border-subtle: rgba(79, 48, 27, .12);
+  --border-accent: rgba(49, 95, 118, .34);
+  --border-success: rgba(40, 92, 56, .34);
+  --border-danger: rgba(138, 48, 37, .34);
+  --border-warning: rgba(98, 65, 20, .34);
+  --border-admin: rgba(107, 63, 134, .30);
+  --admin-bg: #f0e6ee;
+  --text: #352217;
+  --text-strong: #3c271a;
+  --text-secondary: #4d3a28;
+  --muted: #705a44;
+  --muted-strong: #6e5843;
+  --muted-soft: #6a5738;
+  --primary: #a4442f;
+  --primary-hover: #8d3b2b;
+  --selected: #f7e1b6;
+  --on-accent: #fff4df;
+  --focus: #315f76;
+  --info: #315f76;
+  --info-strong: #24506a;
+  --info-bg: #dfe7ec;
+  --success: #285c38;
+  --success-strong: #23603f;
+  --success-bg: #e0ebdb;
+  --success-muted: #4c6b52;
+  --danger: #8a3025;
+  --danger-strong: #803426;
+  --danger-bg: #f4d9cf;
+  --danger-muted: #8a5548;
+  --warning: #624114;
+  --warning-strong: #6b4a12;
+  --warning-bg: #f3e4bf;
+  --node-location: #2f5c78;
+  --node-character: #6b3f86;
+  --node-resource: #8a4f16;
+  --overlay: rgba(52, 33, 23, .45);
+  --shadow-xs: rgba(76, 43, 23, .10);
+  --shadow-node: rgba(76, 43, 23, .12);
+  --shadow-sm: rgba(76, 43, 23, .15);
+  --shadow-md: rgba(76, 43, 23, .18);
+  --shadow-lg: rgba(76, 43, 23, .20);
+  --shadow-xl: rgba(76, 43, 23, .24);
+  --shadow-drag: rgba(76, 43, 23, .28);
+  --focus-ring: rgba(49, 95, 118, .45);
+  --focus-ring-soft: rgba(49, 95, 118, .30);
+  --focus-blue: rgba(49, 95, 118, .26);
+  --focus-blue-soft: rgba(49, 95, 118, .32);
+  --tour-ring: rgba(49, 95, 118, .50);
+  --board-dot: rgba(79, 48, 27, .16);
+  --board-selected: rgba(164, 68, 47, .28);
+  --board-valid: rgba(164, 68, 47, .50);
+  --conflict-tint: rgba(164, 68, 47, .10);
+  --presence-shadow: rgba(76, 43, 23, .18);
+  --presence-shadow-strong: rgba(76, 43, 23, .30);
+  --stage-surface: #101418;
+  --stage-handle: #FFFFFF;
+  --stage-checker: rgba(0, 0, 0, 0.18);
+  --stage-layer-border: rgba(255, 255, 255, 0.35);
+  --stage-layer: rgba(120, 160, 210, 0.18);
+  --stage-layer-actor: rgba(120, 200, 150, 0.22);
+  --stage-layer-item: rgba(220, 190, 120, 0.22);
+  --stage-layer-text: rgba(180, 150, 220, 0.22);
+  --stage-layer-locked: rgba(255, 160, 160, 0.8);
+}
+
+/* Третья тема — графит: доказательство, что тема добавляется без переделки. */
+:root[data-theme="graphite"] {
+  color-scheme: dark;
+  --canvas: #14171a;
+  --surface: #1b2024;
+  --surface-soft: #20262b;
+  --surface-sunken: #262d33;
+  --surface-code: #0e1114;
+  --text-code: #c3ccd6;
+  --border: #313a42;
+  --border-strong: #697783;
+  --border-subtle: #262d34;
+  --border-accent: #2c4a63;
+  --border-success: #2c4a37;
+  --border-danger: #5a3330;
+  --border-warning: #5a4526;
+  --border-admin: #4a3b63;
+  --admin-bg: #241f30;
+  --text: #e8edf2;
+  --text-strong: #f6f9fc;
+  --text-secondary: #c0c9d3;
+  --muted: #a9b4bf;
+  --muted-strong: #b6c1cc;
+  --muted-soft: #8b96a1;
+  --primary: #31a473;
+  --primary-hover: #3cbc88;
+  --selected: #16302a;
+  --on-accent: #0b0d0f;
+  --focus: #3fbf85;
+  --info: #74a8e8;
+  --info-strong: #a8c8ff;
+  --info-bg: #232a3d;
+  --success: #7cc576;
+  --success-strong: #97d78f;
+  --success-bg: #16251c;
+  --success-muted: #8fae9b;
+  --danger: #ef6b62;
+  --danger-strong: #f5a09a;
+  --danger-bg: #2a1b1b;
+  --danger-muted: #c59b93;
+  --warning: #e0a63c;
+  --warning-strong: #ecc06a;
+  --warning-bg: #2a2418;
+  --node-location: #5b8bf0;
+  --node-character: #a07cf5;
+  --node-resource: #d98a3c;
+  --overlay: rgba(0, 0, 0, .62);
+  --shadow-xs: rgba(0, 0, 0, .30);
+  --shadow-node: rgba(0, 0, 0, .35);
+  --shadow-sm: rgba(0, 0, 0, .40);
+  --shadow-md: rgba(0, 0, 0, .45);
+  --shadow-lg: rgba(0, 0, 0, .50);
+  --shadow-xl: rgba(0, 0, 0, .55);
+  --shadow-drag: rgba(0, 0, 0, .60);
+  --focus-ring: rgba(63, 191, 133, .45);
+  --focus-ring-soft: rgba(63, 191, 133, .32);
+  --focus-blue: rgba(63, 191, 133, .28);
+  --focus-blue-soft: rgba(63, 191, 133, .34);
+  --tour-ring: rgba(63, 191, 133, .55);
+  --board-dot: rgba(232, 237, 242, .10);
+  --board-selected: rgba(49, 164, 115, .40);
+  --board-valid: rgba(49, 164, 115, .60);
+  --conflict-tint: rgba(229, 112, 95, .12);
+  --presence-shadow: rgba(0, 0, 0, .50);
+  --presence-shadow-strong: rgba(0, 0, 0, .60);
+  --stage-surface: #101418;
+  --stage-handle: #FFFFFF;
+  --stage-checker: rgba(0, 0, 0, 0.18);
+  --stage-layer-border: rgba(255, 255, 255, 0.35);
+  --stage-layer: rgba(120, 160, 210, 0.18);
+  --stage-layer-actor: rgba(120, 200, 150, 0.22);
+  --stage-layer-item: rgba(220, 190, 120, 0.22);
+  --stage-layer-text: rgba(180, 150, 220, 0.22);
+  --stage-layer-locked: rgba(255, 160, 160, 0.8);
 }
 /* ==== theme tokens: end ==== */
+
+/* ==== typography tokens: start ==== */
+/* Типографика сайта: серифный заголовок (Prata) + sans для тела (Manrope),
+   малоформатные надстрочные подписи — uppercase с letter-spacing. */
+:root {
+  --font-body: Manrope, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif;
+  --font-display: Prata, Georgia, "Times New Roman", "Noto Serif", serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-lg: 17px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 26px;
+  --line-height: 1.5;
+  --letter-eyebrow: .15em;
+  --letter-display: -.02em;
+}
+/* ==== typography tokens: end ==== */
+/* ==== базовые правила темы: типографика и размеры контролов ==== */
+/* Каркас сайта: серифный заголовок + sans тело + надстрочные малоформатные подписи.
+   Все значения — из блока токенов выше; зашитых цветов здесь нет (правило владельца). */
+:root {
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--canvas);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body { background: var(--canvas); color: var(--text); font-family: var(--font-body); }
+
+/* Серифный заголовок: крупный кегль, спокойная насыщенность, плотный трекинг. */
+h1, h2, .brand, .brand-name, .projects-head h1, .draft-header h1,
+.empty-workspace h1, .section-title h2, .ed-utility-panel > header h2, .modal h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: var(--letter-display);
+}
+
+/* Надстрочная малоформатная подпись (eyebrow сайта). */
+.topbar-status,
+.ed-save-state,
+.projects-profile,
+.section-heading-row h2,
+.brand-sub,
+.brand-subtitle,
+.lh-kicker {
+  text-transform: uppercase;
+  letter-spacing: var(--letter-eyebrow);
+}
+
+/* Ссылка читается на обеих темах: акцент текстом темнее/светлее плитки акцента. */
+a { color: var(--primary-hover); }
+
+/* Иконки: единая коробка и единая толщина штриха, цвет наследуется. */
+.lh-icon { display: inline-flex; align-items: center; justify-content: center; color: currentColor; flex: 0 0 auto; }
+.lh-icon svg { display: block; width: var(--lh-icon-size, 20px); height: var(--lh-icon-size, 20px); }
+
+/* Кнопки с иконкой и подписью выравниваются по значку, а не по базовой линии. */
+.crumbs button,
+.collapse-btn,
+.theme-toggle,
+.board-zoom button,
+.lh-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
+}
+
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: var(--canvas); color: var(--text); font-size: 14px; }
@@ -184,7 +324,8 @@ button {
   cursor: pointer;
   min-height: 40px;
   padding: 0 14px;
-  border: 1px solid var(--border);
+  /* Граница контрола — сильный токен: ≥ 3:1 к фону (WCAG 1.4.11). */
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-s);
   background: var(--surface);
   color: var(--text);
@@ -196,13 +337,18 @@ button.primary, .button-primary {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--on-accent);
+  /* Главное действие экрана — самый крупный контрол (правило владельца). */
+  min-height: 48px;
+  line-height: 1.2;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 button.primary:hover:not(:disabled), .button-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
 .button-secondary { background: var(--surface); color: var(--text); }
 button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 input, select, textarea {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-s);
   background: var(--surface);
   color: var(--text);
@@ -755,20 +901,22 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .form-error { color: var(--danger); font-size: 13px; }
 
 /* Каркас редактора V01 */
-.ed-shell { height: 100vh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: 60px minmax(0, 1fr); }
-.ed-topbar { min-height: 60px; display: flex; align-items: center; gap: var(--gap-4); padding: 10px var(--gap-4); background: var(--surface); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
+.ed-shell { height: 100vh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.ed-topbar { min-height: 68px; display: flex; align-items: center; gap: var(--gap-4); padding: 10px var(--gap-4); background: var(--surface); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
 .ed-topbar .crumbs { display: flex; align-items: center; gap: var(--gap-2); color: var(--muted); font-size: 13px; white-space: nowrap; }
 .ed-topbar .crumbs button { min-height: 40px; padding: 0 10px; }
 .ed-rename { display: flex; gap: var(--gap-2); align-items: center; min-width: 0; flex: 1 1 auto; max-width: 480px; }
 .ed-rename input { min-height: 36px; }
 .ed-save-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .ed-topbar .spacer { flex: 1 1 auto; }
-.ed-topbar .actions { display: flex; gap: var(--gap-2); align-items: center; }
+.ed-topbar .actions { display: flex; gap: var(--gap-2); align-items: center; flex: 0 0 auto; }
 .ed-topbar .actions button { min-height: 40px; }
+/* Главное действие остаётся 48px и в верхней панели (правило владельца). */
+.ed-topbar .actions button.primary { min-height: 48px; }
 .ed-menu-wrap { position: relative; }
 .ed-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; min-width: 230px; padding: 8px; display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); box-shadow: 0 12px 32px var(--shadow-lg); }
 .ed-menu button { width: 100%; text-align: left; }
-.ed-body { display: grid; grid-template-columns: 240px minmax(0, 1fr) 336px; min-height: 0; height: calc(100vh - 60px); align-items: stretch; }
+.ed-body { display: grid; grid-template-columns: 240px minmax(0, 1fr) 336px; min-height: 0; height: 100%; align-items: stretch; }
 .ed-body.library-hidden { grid-template-columns: 48px minmax(0, 1fr) 336px; }
 .ed-library { border-right: 1px solid var(--border); background: var(--surface); padding: var(--gap-3); min-height: 0; height: 100%; position: relative; top: auto; max-height: none; overflow-y: auto; }
 .ed-library .collapse-btn { width: 100%; min-height: 40px; }
@@ -845,8 +993,11 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
   box-shadow: 0 8px 28px var(--shadow-sm);
 }
 .board-toolbar button {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: transparent;
@@ -953,13 +1104,17 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
   box-shadow: 0 8px 28px var(--shadow-sm);
 }
 .board-zoom button {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: transparent;
 }
+.board-zoom .board-zoom-label { font-size: 13px; font-weight: 650; }
 .board-zoom span {
   min-width: 44px;
   text-align: center;

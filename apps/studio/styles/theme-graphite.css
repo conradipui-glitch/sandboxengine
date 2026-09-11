@@ -47,59 +47,62 @@
   --graphite-radius-l: 14px;
 }
 /* ==== graphite theme tokens: end ==== */
-
+/* Правила ниже — тема-АГНОСТИЧНЫЕ: они читают переменные активной темы
+   (--surface/--border/--text/--primary/--danger/--focus), а не значения графита.
+   Поэтому лист не переопределяет фон и панели активной темы «Петроград/Флоренция»
+   и работает как общий слой состояний и фокус-кольца. */
 :root[data-theme="graphite"] {
   color-scheme: dark;
 }
 
 body,
 .lh-studio {
-  background: var(--graphite-background);
-  color: var(--graphite-text);
-  font-family: var(--graphite-font-family);
-  font-size: var(--graphite-font-size-base);
-  line-height: var(--graphite-line-height);
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-body, system-ui, sans-serif);
+  font-size: var(--font-size-base, 15px);
+  line-height: var(--line-height, 1.5);
 }
 
 .lh-panel,
 .panel {
-  background: var(--graphite-surface);
-  border: 1px solid var(--graphite-border);
-  color: var(--graphite-text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
 }
 
 .lh-card,
 .popover,
 .dialog {
-  background: var(--graphite-surface-raised);
-  border: 1px solid var(--graphite-border);
-  border-radius: var(--graphite-radius-m);
-  color: var(--graphite-text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m, 12px);
+  color: var(--text);
 }
 
 .lh-muted {
-  color: var(--graphite-text-muted);
+  color: var(--muted);
 }
 
 /* Единственный акцент: интерактивные элементы. */
 .button-primary,
 .lh-button--primary {
-  background: var(--graphite-accent);
-  color: var(--graphite-accent-text);
-  border: 1px solid var(--graphite-accent);
-  border-radius: var(--graphite-radius-s);
+  background: var(--primary);
+  color: var(--on-accent);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-s, 8px);
 }
 
 a {
-  color: var(--graphite-accent);
+  color: var(--primary-hover);
 }
 
 /* Спокойная сетка доски. */
 .board-grid,
 .board-host {
-  background-color: var(--graphite-background);
-  background-image: linear-gradient(var(--graphite-board-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--graphite-board-grid) 1px, transparent 1px);
+  background-color: var(--canvas);
+  background-image: linear-gradient(var(--board-dot) 1px, transparent 1px),
+    linear-gradient(90deg, var(--board-dot) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -108,15 +111,15 @@ a {
 /* ------------------------------------------------------------------ */
 
 .lh-state {
-  border-left: 3px solid var(--graphite-border);
-  padding-left: var(--graphite-space-3);
+  border-left: 3px solid var(--border);
+  padding-left: var(--gap-3, 12px);
   font-weight: 600;
 }
 
 .lh-state[data-state="error"] {
-  color: var(--graphite-danger);
-  background: var(--graphite-danger-bg);
-  border-left-color: var(--graphite-danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-left-color: var(--danger);
   text-decoration: underline;
   text-decoration-style: wavy;
 }
@@ -127,9 +130,9 @@ a {
 }
 
 .lh-state[data-state="warning"] {
-  color: var(--graphite-warning);
-  background: var(--graphite-warning-bg);
-  border-left-color: var(--graphite-warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-left-color: var(--warning);
   text-decoration: underline;
   text-decoration-style: dotted;
 }
@@ -140,9 +143,9 @@ a {
 }
 
 .lh-state[data-state="success"] {
-  color: var(--graphite-success);
-  background: var(--graphite-success-bg);
-  border-left-color: var(--graphite-success);
+  color: var(--success);
+  background: var(--success-bg);
+  border-left-color: var(--success);
 }
 
 .lh-state[data-state="success"]::before {
@@ -153,16 +156,16 @@ a {
 [aria-invalid="true"] {
   text-decoration: underline;
   text-decoration-style: wavy;
-  border-color: var(--graphite-danger);
+  border-color: var(--danger);
 }
 
 /* Видимое фокус-кольцо. */
 :focus-visible {
-  outline: 2px solid var(--graphite-focus-ring);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 :where(a, button, input, select, textarea):focus-visible {
-  outline: 2px solid var(--graphite-focus-ring);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

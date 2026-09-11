@@ -76,8 +76,7 @@ const SMALL_TARGETS_KNOWN = Object.freeze({
   "styles.css": Object.freeze([
     // Сам чекбокс 16px, но кликабельна обёртка .checkbox (label, min-height: 40px).
     ".checkbox input  # кликабельна обёртка label .checkbox { min-height: 40px }",
-    // Настоящие нарушения: кнопки меньше 32px.
-    ".board-zoom button",
+    // Единственное настоящее нарушение ниже 32px, оставшееся намеренно.
     ".presence-avatar"
   ])
 });

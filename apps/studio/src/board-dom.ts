@@ -36,6 +36,7 @@ import {
   type BoardStoryNode
 } from "./board-model.js";
 import { cssEscape } from "./dom-escape.js";
+import { iconElement } from "./icons.js";
 
 /** Параметры mountBoard. */
 export interface BoardDomOptions {
@@ -346,7 +347,9 @@ const BOARD_DOM_CSS = `
   z-index: 12;
 }
 .board-hint.visible { opacity: 1; }
-.board-zoom .board-zoom-fit { width: auto; padding: 0 10px; font-size: 12px; }
+.board-zoom { display: flex; align-items: center; gap: 4px; }
+.board-zoom .board-zoom-fit { width: auto; padding: 0 12px; gap: 8px; font-size: 13px; }
+.board-zoom .lh-icon { pointer-events: none; }
 .board-viewport.lhbd-panning { cursor: grabbing; }
 `;
 
@@ -423,23 +426,29 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   emptyState.style.display = "none";
   viewport.appendChild(emptyState);
 
-  /** Панель масштаба внизу слева: − / масштаб% / + / «Показать всё». */
+  /** Панель масштаба внизу слева: иконки «отдалить/приблизить/показать всё». */
   const zoomBar = document.createElement("div");
   zoomBar.className = "board-zoom";
-  const makeZoomButton = (text: string, ariaLabel: string): HTMLButtonElement => {
+  const makeZoomButton = (iconName: string, ariaLabel: string, text?: string): HTMLButtonElement => {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = text;
+    button.appendChild(iconElement(document, iconName, 20));
+    if (text !== undefined) {
+      const label = document.createElement("span");
+      label.className = "board-zoom-label";
+      label.textContent = text;
+      button.appendChild(label);
+    }
     button.setAttribute("aria-label", ariaLabel);
     button.title = ariaLabel;
     return button;
   };
-  const zoomOutButton = makeZoomButton("−", "Отдалить");
+  const zoomOutButton = makeZoomButton("minus", "Отдалить");
   const zoomLabel = document.createElement("span");
   zoomLabel.className = "board-zoom-value";
   zoomLabel.textContent = "100%";
-  const zoomInButton = makeZoomButton("+", "Приблизить");
-  const fitButton = makeZoomButton("Показать всё", "Показать всё");
+  const zoomInButton = makeZoomButton("plus", "Приблизить");
+  const fitButton = makeZoomButton("expand", "Показать всё", "Показать всё");
   fitButton.className = "board-zoom-fit";
   zoomBar.append(zoomOutButton, zoomLabel, zoomInButton, fitButton);
   viewport.appendChild(zoomBar);

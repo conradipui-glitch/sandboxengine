@@ -1,4 +1,5 @@
 import { escapeHtml } from "./dom-escape.js";
+import { icon } from "./icons.js";
 
 export const ONBOARDING_STORAGE_KEY = "living-history.studio.onboarding.v1";
 export const ONBOARDING_PROGRESS_KEY = "living-history.studio.onboarding.progress.v1";
@@ -430,7 +431,8 @@ export function installStudioOnboarding(doc: Document, options: OnboardingOption
   trigger.dataset.action = "studio-help";
   trigger.setAttribute("aria-haspopup", "dialog");
   trigger.setAttribute("aria-label", "Открыть справку Living History Studio");
-  trigger.textContent = "? Справка";
+  // Значок — SVG (не «?»), подпись остаётся: доступное имя уже задано aria-label.
+  trigger.innerHTML = `${icon("help", 20)}<span>Справка</span>`;
 
   const host = doc.createElement("div");
   host.id = "studio-onboarding-layer";
@@ -624,7 +626,7 @@ function helpMarkup(role: string): string {
     <section class="lh-help-dialog" role="dialog" aria-modal="true" aria-labelledby="lh-help-title">
       <div class="lh-dialog-heading">
         <div><span class="lh-kicker">Путь автора · ${escapeHtml(audienceLabel(audience))}</span><h2 id="lh-help-title">Справка Studio</h2></div>
-        <button type="button" class="lh-icon-button" data-onboarding-action="close-help" aria-label="Закрыть справку">×</button>
+        <button type="button" class="lh-icon-button" data-onboarding-action="close-help" aria-label="Закрыть справку">${icon("close", 20)}</button>
       </div>
       <p class="lh-help-intro">Статическая справка по пути Studio → доска и экраны → проверка → frozen playtest → Player → публикация выпуска. Текущая роль: <strong>${escapeHtml(roleLabel(role))}</strong>. Справка не запускает AI и не меняет authoring/game state.</p>
       <div class="lh-help-topics">${topics.map((topic) => `<article data-audience="${escapeHtml(topic.audience)}"><h3>${escapeHtml(topic.title)}</h3><p>${escapeHtml(topic.body)}</p></article>`).join("")}</div>
@@ -708,18 +710,23 @@ function ensureStyles(doc: Document): void {
   const style = doc.createElement("style");
   style.id = "studio-onboarding-styles";
   style.textContent = `
-    .lh-help-trigger{position:fixed;right:18px;bottom:18px;z-index:900;border:1px solid #c7d0df;border-radius:999px;background:#fff;color:#26354e;padding:10px 14px;box-shadow:0 8px 24px rgba(23,32,51,.14);font:650 13px/1.2 Inter,ui-sans-serif,system-ui,sans-serif}
-    .lh-help-trigger:focus-visible,.lh-help-dialog button:focus-visible,.lh-tour-card button:focus-visible{outline:3px solid rgba(49,102,255,.28);outline-offset:2px}
-    .lh-help-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(20,28,42,.42)}
-    .lh-help-dialog,.lh-tour-card{color:#172033;background:#fff;border:1px solid #dce2eb;border-radius:14px;box-shadow:0 22px 70px rgba(23,32,51,.24);font-family:Inter,ui-sans-serif,system-ui,sans-serif}
+    /* Справка и тур читают переменные активной темы: один и тот же лист выглядит
+       корректно в тёмной («Петроград»), светлой («Флоренция») и графитовой темах. */
+    .lh-help-trigger{position:fixed;right:18px;bottom:18px;z-index:900;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text);padding:10px 14px;min-height:40px;cursor:pointer;box-shadow:0 8px 24px var(--shadow-md);font:650 13px/1.2 var(--font-body)}
+    .lh-help-trigger:hover{border-color:var(--primary)}
+    .lh-help-trigger:focus-visible,.lh-help-dialog button:focus-visible,.lh-tour-card button:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}
+    .lh-help-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:var(--overlay)}
+    .lh-help-dialog,.lh-tour-card{color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-l);box-shadow:0 22px 70px var(--shadow-lg);font-family:var(--font-body)}
     .lh-help-dialog{width:min(760px,100%);max-height:calc(100vh - 40px);overflow:auto;padding:22px}
-    .lh-dialog-heading{display:flex;justify-content:space-between;gap:16px;align-items:start}.lh-dialog-heading h2,.lh-tour-card h2{margin:4px 0 10px;font-size:22px;letter-spacing:-.02em}.lh-kicker,.lh-tour-progress{color:#687386;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
-    .lh-icon-button{border:0;background:transparent;color:#687386;font-size:24px;line-height:1;padding:4px 7px}.lh-help-intro,.lh-tour-card>p{color:#687386;line-height:1.55;font-size:14px}
-    .lh-help-topics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}.lh-help-topics article{padding:12px;border:1px solid #e4e8ee;border-radius:10px;background:#fafbfd}.lh-help-topics article[data-audience="admin"]{border-color:#d8c9f0;background:#faf7ff}.lh-help-topics h3{margin:0 0 5px;font-size:13px}.lh-help-topics p{margin:0;color:#687386;font-size:12px;line-height:1.5}
-    .lh-dialog-actions{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.lh-dialog-actions button{border:1px solid #cbd2dc;border-radius:8px;background:#fff;color:#253047;padding:9px 12px;min-height:38px;font:650 13px/1.2 Inter,ui-sans-serif,system-ui,sans-serif}.lh-dialog-actions .lh-primary{background:#285fd6;border-color:#285fd6;color:#fff}.lh-spacer{flex:1}
-    .lh-tour-card{position:fixed;right:18px;bottom:72px;z-index:1001;width:min(420px,calc(100vw - 36px));padding:18px}.lh-prerequisite{padding:10px;border-radius:8px;background:#fff6dd;color:#775d18!important}.lh-complete{border-color:#cce4d5}.lh-tour-highlight{outline:4px solid rgba(40,95,214,.48)!important;outline-offset:4px!important}
-    .lh-studio-error{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 12px;border:1px solid #e3b7b7;border-radius:10px;background:#fdf3f3;color:#7a2020;font:600 13px/1.4 Inter,ui-sans-serif,system-ui,sans-serif}
-    .lh-studio-error-retry{border:1px solid #c98d8d;border-radius:8px;background:#fff;color:#7a2020;padding:6px 10px;font:650 12px/1.2 Inter,ui-sans-serif,system-ui,sans-serif}
+    .lh-dialog-heading{display:flex;justify-content:space-between;gap:16px;align-items:start}.lh-dialog-heading h2,.lh-tour-card h2{margin:4px 0 10px;font-family:var(--font-display);font-weight:400;font-size:22px;letter-spacing:var(--letter-display)}.lh-kicker,.lh-tour-progress{color:var(--muted);font-size:11px;font-weight:750;letter-spacing:var(--letter-eyebrow);text-transform:uppercase}
+    .lh-icon-button{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;background:transparent;color:var(--muted);min-height:40px;min-width:40px;padding:4px 7px;border-radius:var(--radius-s)}.lh-icon-button:hover{color:var(--text);border-color:var(--border)}
+    .lh-help-intro,.lh-tour-card>p{color:var(--muted);line-height:1.55;font-size:14px}
+    .lh-help-topics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}.lh-help-topics article{padding:12px;border:1px solid var(--border);border-radius:var(--radius-m);background:var(--surface-soft)}
+    .lh-help-topics h3{margin:0 0 5px;font-size:13px}.lh-help-topics p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+    .lh-dialog-actions{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.lh-dialog-actions button{border:1px solid var(--border-strong);border-radius:var(--radius-s);background:var(--surface);color:var(--text);padding:9px 12px;min-height:40px;font:650 13px/1.2 var(--font-body)}.lh-dialog-actions .lh-primary{background:var(--primary);border-color:var(--primary);color:var(--on-accent)}.lh-spacer{flex:1}
+    .lh-tour-card{position:fixed;right:18px;bottom:72px;z-index:1001;width:min(420px,calc(100vw - 36px));padding:18px}.lh-prerequisite{padding:10px;border-radius:var(--radius-s);background:var(--warning-bg);color:var(--warning-strong)!important}.lh-complete{border-color:var(--border-success)}.lh-tour-highlight{outline:4px solid var(--tour-ring)!important;outline-offset:4px!important}
+    .lh-studio-error{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 12px;border:1px solid var(--border-danger);border-radius:var(--radius-m);background:var(--danger-bg);color:var(--danger-strong);font:600 13px/1.4 var(--font-body)}
+    .lh-studio-error-retry{border:1px solid var(--border-danger);border-radius:var(--radius-s);background:var(--surface);color:var(--danger-strong);padding:6px 10px;min-height:40px;font:650 12px/1.2 var(--font-body)}
     @media(max-width:680px){.lh-help-trigger{right:12px;bottom:12px}.lh-help-backdrop{padding:10px}.lh-help-dialog{max-height:calc(100vh - 20px);padding:16px}.lh-help-topics{grid-template-columns:1fr}.lh-tour-card{left:10px;right:10px;bottom:64px;width:auto;max-height:calc(100vh - 84px);overflow:auto}.lh-tour-actions .lh-spacer{display:none}.lh-tour-actions button{flex:1 1 auto}}
   `;
   doc.head.append(style);
