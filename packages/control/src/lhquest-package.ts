@@ -56,9 +56,24 @@ type PackageSource =
 const REQUIRED_FILES = ["SHA256SUMS", "manifest.json", "quest.json"] as const;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const FORBIDDEN_KEY_PATTERN = /(?:secret|password|credential|csrf|token|api[_-]?key|session|player[_-]?state|world[_-]?save|turn[_-]?history|provider[_-]?prompt)/i;
+/** Upper bound on JSON nesting accepted from an untrusted package (real manifests/quests stay far below). */
+export const MAX_PACKAGE_JSON_DEPTH = 64;
 
-/** Validate a complete v1 lhquest archive without extracting it to disk. */
+/**
+ * Validate a complete v1 lhquest archive without extracting it to disk.
+ * The archive is untrusted input: any thrown exception (including stack exhaustion on
+ * adversarial nesting) is converted into a fail-closed `INVALID_JSON` result instead of
+ * escaping the boundary.
+ */
 export async function parseLhquestDraftPackage(archive: Uint8Array): Promise<ParseLhquestPackageResult> {
+  try {
+    return await parseLhquestDraftPackageInner(archive);
+  } catch {
+    return fail("INVALID_JSON");
+  }
+}
+
+async function parseLhquestDraftPackageInner(archive: Uint8Array): Promise<ParseLhquestPackageResult> {
   const zip = readBoundedStoredZip(archive);
   if (!zip.ok) return fail(zip.code);
   const paths = [...zip.entries.keys()].sort();
@@ -241,11 +256,33 @@ function parseChecksums(text: string): { ok: true; hashes: ReadonlyMap<string, s
 function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: false; code: "INVALID_UTF8" | "INVALID_JSON" } {
   const text = decodeUtf8(bytes);
   if (text === null) return Object.freeze({ ok: false, code: "INVALID_UTF8" });
+  let value: unknown;
   try {
-    return Object.freeze({ ok: true, value: JSON.parse(text) });
+    value = JSON.parse(text);
   } catch {
     return Object.freeze({ ok: false, code: "INVALID_JSON" });
   }
+  if (exceedsJsonDepth(value, MAX_PACKAGE_JSON_DEPTH)) return Object.freeze({ ok: false, code: "INVALID_JSON" });
+  return Object.freeze({ ok: true, value });
+}
+
+/** Iterative depth probe: never recurses, so adversarial nesting cannot exhaust the stack. */
+function exceedsJsonDepth(root: unknown, limit: number): boolean {
+  const stack: Array<{ readonly value: unknown; readonly depth: number }> = [{ value: root, depth: 1 }];
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) continue;
+    const value = frame.value;
+    const isArray = Array.isArray(value);
+    if (!isArray && !isRecord(value)) continue;
+    if (frame.depth > limit) return true;
+    if (isArray) {
+      for (const entry of value as readonly unknown[]) stack.push({ value: entry, depth: frame.depth + 1 });
+    } else {
+      for (const entry of Object.values(value as Record<string, unknown>)) stack.push({ value: entry, depth: frame.depth + 1 });
+    }
+  }
+  return false;
 }
 
 function decodeUtf8(bytes: Uint8Array): string | null {
@@ -256,12 +293,20 @@ function decodeUtf8(bytes: Uint8Array): string | null {
   }
 }
 
-function containsForbiddenKey(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some((entry) => containsForbiddenKey(entry));
-  if (!isRecord(value)) return false;
-  for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEY_PATTERN.test(key)) return true;
-    if (containsForbiddenKey(child)) return true;
+/** Iterative walk of untrusted JSON; bounded by an explicit stack so nesting cannot overflow the call stack. */
+function containsForbiddenKey(root: unknown): boolean {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (Array.isArray(value)) {
+      for (const entry of value) stack.push(entry);
+      continue;
+    }
+    if (!isRecord(value)) continue;
+    for (const [key, child] of Object.entries(value)) {
+      if (FORBIDDEN_KEY_PATTERN.test(key)) return true;
+      stack.push(child);
+    }
   }
   return false;
 }
