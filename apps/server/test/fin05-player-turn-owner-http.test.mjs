@@ -77,6 +77,15 @@ function missionDocument() {
         title: "Старт",
         text: "Станция встречает тишиной.",
         dialogue: [],
+        choices: [
+          { id: "move", label: "Идти дальше", targetSceneId: "platform", endingId: null, conditions: [], effects: [] },
+          { id: "finish", label: "Закончить", targetSceneId: null, endingId: "done", conditions: [], effects: [] }
+        ]
+      }, {
+        id: "platform",
+        title: "Платформа",
+        text: "Ветер с рельсов.",
+        dialogue: [],
         choices: [{ id: "finish", label: "Закончить", targetSceneId: null, endingId: "done", conditions: [], effects: [] }]
       }],
       endings: [{ id: "done", title: "Готово", text: "Рассвет." }]
@@ -190,10 +199,10 @@ const readSession = (h, who, sessionId) => request(h.base, `${QUEST}/mission/ses
   headers: sessionHeaders(h[who])
 });
 
-const turn = (h, who, sessionId, key, choiceId = "finish") => request(h.base, `${QUEST}/mission/sessions/${sessionId}/turns`, {
+const turn = (h, who, sessionId, key, choiceId = "finish", baseTurn = 0) => request(h.base, `${QUEST}/mission/sessions/${sessionId}/turns`, {
   method: "POST",
   headers: sessionHeaders(h[who], key),
-  json: { baseTurn: 0, choiceId }
+  json: { baseTurn, choiceId }
 });
 
 test("R-25: чужая сессия хода недоступна по HTTP ни на чтение, ни на ход (404, как у отсутствующей)", async (t) => {
@@ -250,7 +259,12 @@ test("R-26: мир без ключа terminal играется, а испорч�
   const read = await readSession(h, "alice", "no-terminal");
   assert.equal(read.status, 200);
 
-  const played = await turn(h, "alice", "no-terminal", "alice-no-terminal-turn");
+  const moved = await turn(h, "alice", "no-terminal", "alice-no-terminal-move", "move");
+  assert.equal(moved.status, 200, `ход по активному миру без ключа terminal не должен падать 500: ${moved.status} ${JSON.stringify(moved.body)}`);
+  assert.equal(moved.body.state.position.endingId, null, "активный мир не имеет финала");
+  assert.equal(moved.body.state.position.terminal, false, "активный мир не терминален");
+
+  const played = await turn(h, "alice", "no-terminal", "alice-no-terminal-turn", "finish", 1);
   assert.equal(played.status, 200, `ход не должен падать 500: ${played.status} ${JSON.stringify(played.body)}`);
   assert.equal(played.body.state.position.endingId, "done");
   assert.equal(played.body.state.position.terminal, true);

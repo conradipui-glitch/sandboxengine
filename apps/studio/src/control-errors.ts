@@ -40,6 +40,8 @@ const MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 
   // Доступ и сессия.
   CONTROL_FORBIDDEN: "Недостаточно прав для этого действия в проекте.",
+  // Фактический код сервера на 401 (control-server.ts:349, presence.ts, editing-lock.ts).
+  CONTROL_AUTH_REQUIRED: "Нужно войти в мастерскую заново: сессия не найдена или истекла.",
   CONTROL_ORIGIN_DENIED: "Запрос пришёл с неизвестного адреса: обновите страницу и войдите заново.",
   CONTROL_CSRF_REQUIRED: "Сессия устарела: обновите страницу и войдите заново.",
   CONTROL_UNAUTHENTICATED: "Нужно войти в мастерскую.",

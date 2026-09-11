@@ -187,14 +187,17 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
   async unpublish(input: { readonly publicMissionId: string; readonly expectedReleaseId: string; readonly idempotencyKey: string; readonly requestHash: string }): Promise<UnpublishPublicationResult> {
     if (!isId(input.publicMissionId) || !isId(input.expectedReleaseId) || !isIdempotency(input.idempotencyKey) || !isHash(input.requestHash)) return frozen({ kind: "invalid_request" });
     const key = `unpublish\u0000${input.publicMissionId}\u0000${input.idempotencyKey}`;
+    // R-28: CAS-проверка (expectedReleaseId) стоит ВЫШЕ идемпотентного повтора.
+    // Иначе повтор доставки с устаревшей ожидаемой ревизией получал «успех» из
+    // журнала, хотя живой указатель уже указывает на другую публикацию.
+    const current = this.#records.get(input.publicMissionId);
+    if (!current) return frozen({ kind: "not_found" });
+    if (current.releaseId !== input.expectedReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current.releaseId });
     const replay = this.#idempotency.get(key);
     if (replay) {
       if (replay.requestHash !== input.requestHash) return frozen({ kind: "idempotency_key_reused" });
       return frozen({ kind: "replay", publication: clone(replay.result) });
     }
-    const current = this.#records.get(input.publicMissionId);
-    if (!current) return frozen({ kind: "not_found" });
-    if (current.releaseId !== input.expectedReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current.releaseId });
     const stored = clone({ ...current, status: "unlisted" as const });
     this.#records.set(stored.publicMissionId, stored);
     this.#idempotency.set(key, { requestHash: input.requestHash, result: stored });
@@ -374,14 +377,16 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
     this.#assertOpen();
     if (!isId(input.publicMissionId) || !isId(input.expectedReleaseId) || !isIdempotency(input.idempotencyKey) || !isHash(input.requestHash)) return frozen({ kind: "invalid_request" });
     return this.#transaction(() => {
+      // R-28: сначала живое состояние и CAS-проверка, только потом идемпотентный
+      // повтор — иначе повтор с устаревшим expectedReleaseId возвращал «успех».
+      const current = this.#db.prepare("SELECT * FROM control_publication_records WHERE public_mission_id = ? LIMIT 1").get(input.publicMissionId);
+      if (!current) return frozen({ kind: "not_found" });
+      if (String(current.release_id) !== input.expectedReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: String(current.release_id) });
       const replay = this.#readIdempotency("unpublish", input.publicMissionId, input.idempotencyKey);
       if (replay) {
         if (replay.requestHash !== input.requestHash) return frozen({ kind: "idempotency_key_reused" });
         return frozen({ kind: "replay", publication: publicationFromJson(replay.resultJson) });
       }
-      const current = this.#db.prepare("SELECT * FROM control_publication_records WHERE public_mission_id = ? LIMIT 1").get(input.publicMissionId);
-      if (!current) return frozen({ kind: "not_found" });
-      if (String(current.release_id) !== input.expectedReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: String(current.release_id) });
       this.#db.prepare("UPDATE control_publication_records SET status = 'unlisted' WHERE public_mission_id = ?").run(input.publicMissionId);
       const stored = publicationFromRow(this.#db.prepare("SELECT * FROM control_publication_records WHERE public_mission_id = ?").get(input.publicMissionId));
       this.#writeIdempotency("unpublish", input.publicMissionId, input.idempotencyKey, input.requestHash, stored);
