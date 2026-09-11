@@ -5,6 +5,23 @@ import {
   type ControlProjectRole,
   type ControlSecurityStore
 } from "@living-history/control";
+import { readJsonObject, readCookie, readHeader, sendJson as sendJsonShared } from "./http-primitives.js";
+import { isRecord, hasExactKeys } from "./input-guards.js";
+
+const MAX_PRESENCE_BODY_CHARS = 16_384;
+const PRESENCE_JSON_OPTIONS = Object.freeze({
+  maxChars: MAX_PRESENCE_BODY_CHARS,
+  invalidCode: "INVALID_PRESENCE_REQUEST",
+  tooLargeCode: "PRESENCE_BODY_TOO_LARGE"
+});
+
+// Маршруты присутствия исторически отвечают «guarded»: не пишут ответ, если
+// заголовки уже отправлены или поток закрыт, и добавляют
+// x-content-type-options: nosniff. Общий помощник параметризован — здесь
+// фиксируется исходный контракт вызывающих.
+function sendJson(response: any, status: number, payload: unknown): void {
+  sendJsonShared(response, status, payload, { guarded: true, nosniff: true });
+}
 
 /*
  * FIN-13 (V08) — присутствие реальных участников доски.
@@ -231,12 +248,9 @@ function viewOf(connection: PresenceConnection): PresenceParticipantView {
   });
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function isBoardPoint(value: unknown): value is PresenceBoardPoint {
-  if (!isPlainObject(value)) return false;
+  if (!isRecord(value)) return false;
   if (!hasExactKeys(value, ["x", "y"])) return false;
   const x = value.x;
   const y = value.y;
@@ -246,7 +260,7 @@ function isBoardPoint(value: unknown): value is PresenceBoardPoint {
 }
 
 function isTargetRef(value: unknown): value is PresenceTargetRef {
-  if (!isPlainObject(value)) return false;
+  if (!isRecord(value)) return false;
   if (!hasExactKeys(value, ["kind", "targetId"])) return false;
   const kind = value.kind;
   if (typeof kind !== "string" || !PRESENCE_TARGET_KINDS.includes(kind)) return false;
@@ -255,19 +269,13 @@ function isTargetRef(value: unknown): value is PresenceTargetRef {
   return typeof targetId === "string" && ID_PATTERN.test(targetId);
 }
 
-function hasExactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const keys = Object.keys(value);
-  if (keys.length !== allowed.length) return false;
-  for (const key of keys) if (!allowed.includes(key)) return false;
-  return true;
-}
 
 /**
  * Разбор тела POST /presence. Возвращает null только при структурной ошибке:
  * клиент либо присылает heartbeat, либо одну/несколько координат состояния.
  */
 export function parsePresenceUpdate(value: unknown): Partial<PresencePublishedState> | null {
-  if (!isPlainObject(value)) return null;
+  if (!isRecord(value)) return null;
   const keys = Object.keys(value);
   if (keys.length === 0) return null;
   for (const key of keys) {
@@ -556,7 +564,6 @@ export class PresenceHub {
 
 const CONTROL_SESSION_COOKIE = "lh_control_session";
 const CONTROL_CSRF_HEADER = "x-csrf-token";
-const MAX_PRESENCE_BODY_CHARS = 16_384;
 
 export interface PresenceHttpServiceOptions {
   readonly security: ControlSecurityStore;
@@ -826,7 +833,7 @@ export function createPresenceHttpService(options: PresenceHttpServiceOptions): 
       return;
     }
 
-    const body = await readJsonObject(request, response);
+    const body = await readJsonObject(request, response, PRESENCE_JSON_OPTIONS);
     if (body === null) return;
     const patch = parsePresenceUpdate(body);
     if (patch === null) {
@@ -950,74 +957,10 @@ function writeFrame(response: any, text: string): void {
   }
 }
 
-function sendJson(response: any, status: number, payload: unknown): void {
-  if (response.headersSent || response.writableEnded) return;
-  response.statusCode = status;
-  response.setHeader("content-type", "application/json; charset=utf-8");
-  response.setHeader("cache-control", "no-store");
-  response.setHeader("x-content-type-options", "nosniff");
-  response.end(JSON.stringify(payload));
-}
 
-function readHeader(request: any, name: string): string | undefined {
-  const value = request?.headers?.[name];
-  if (typeof value === "string") return value;
-  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
-  return undefined;
-}
 
-function readCookie(request: any, name: string): string | null {
-  const header = readHeader(request, "cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const trimmed = part.trim();
-    const separator = trimmed.indexOf("=");
-    if (separator <= 0) continue;
-    if (trimmed.slice(0, separator) !== name) continue;
-    const value = trimmed.slice(separator + 1);
-    return value.length > 0 ? value : null;
-  }
-  return null;
-}
 
-async function readJsonObject(request: any, response: any): Promise<Record<string, unknown> | null> {
-  const raw = await readBody(request, response);
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    sendJson(response, 400, { error: { code: "INVALID_PRESENCE_REQUEST" } });
-    return null;
-  }
-  if (!isPlainObject(parsed)) {
-    sendJson(response, 400, { error: { code: "INVALID_PRESENCE_REQUEST" } });
-    return null;
-  }
-  return parsed;
-}
 
-function readBody(request: any, response: any): Promise<string | null> {
-  return new Promise((resolve) => {
-    let text = "";
-    let settled = false;
-    const finish = (value: string | null): void => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-    request.on?.("data", (chunk: any) => {
-      if (settled) return;
-      text += typeof chunk === "string" ? chunk : String(chunk);
-      if (text.length > MAX_PRESENCE_BODY_CHARS) {
-        sendJson(response, 413, { error: { code: "PRESENCE_BODY_TOO_LARGE" } });
-        finish(null);
-      }
-    });
-    request.on?.("end", () => finish(text));
-    request.on?.("error", () => finish(null));
-  });
-}
 
 /** Небольшой http-сервер только из presence-маршрутов — для тестов и встраивания. */
 export function createPresenceOnlyHttpServer(options: PresenceHttpServiceOptions): PresenceHttpService & { readonly server: any; listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }> } {

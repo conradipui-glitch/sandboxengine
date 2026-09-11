@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import type { AuthoringProposal } from "@living-history/control";
 import { canonicalStringify } from "@living-history/core";
 import { loadInstalledAgentKit, type InstalledAgentKit, type InstalledAgentKitIdentity } from "./agent-kit.js";
+import { isId, isRecord } from "./input-guards.js";
 
 export const AUTHOR_TASK_PACKAGE_FORMAT = "living-history.external-author-task";
 export const AUTHOR_TASK_PACKAGE_SCHEMA_VERSION = "1.0";
@@ -323,13 +324,7 @@ function safeFilename(value: string): string {
   return normalized.slice(0, 80) || "capability";
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");

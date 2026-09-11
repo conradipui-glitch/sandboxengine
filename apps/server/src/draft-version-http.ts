@@ -18,6 +18,7 @@ import { restoreControlDraft } from "./draft-version-authority.js";
 import { routeAuthoringProposalHttp } from "./authoring-proposal-http.js";
 import { routeAuthorJobHttp } from "./author-job-http.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
+import { isId, isRevision, isTitle, hasExactKeys } from "./input-guards.js";
 
 const MAX_IMPORT_BASE64_CHARS = Math.ceil(MAX_LHQUEST_ARCHIVE_BYTES / 3) * 4;
 
@@ -403,17 +404,3 @@ function decodeBase64(value: string): Uint8Array | null {
   return output;
 }
 
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
-}
-function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}

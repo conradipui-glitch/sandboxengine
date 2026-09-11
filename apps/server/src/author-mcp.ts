@@ -4,6 +4,7 @@ import {
   type AuthorToolBrokerPin
 } from "@living-history/control";
 import { canonicalStringify } from "@living-history/core";
+import { isId, isRecord, hasExactKeys } from "./input-guards.js";
 
 export const DEFAULT_AUTHOR_MCP_TIMEOUT_MS = 10_000;
 export const MAX_AUTHOR_MCP_TIMEOUT_MS = 30_000;
@@ -207,19 +208,8 @@ function normalizeOutput(value: unknown): unknown | null {
   try { return JSON.parse(serialized); } catch { return null; }
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
-function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 
 function isVersion(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 100 && /^[A-Za-z0-9][A-Za-z0-9._:+-]*$/.test(value);

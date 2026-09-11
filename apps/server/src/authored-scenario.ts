@@ -1,6 +1,7 @@
 import type { IntentActionCatalogEntry } from "@living-history/ai";
 import type { Condition, JsonValue, ResolvedIntent, WorldState, WorldTerminal } from "@living-history/contracts";
 import { evaluateCondition, tryApplyEffectBatch } from "@living-history/core";
+import { isPlainObject, hasExactKeys, cloneJson } from "./input-guards.js";
 
 export const AUTHORED_SCENARIO_SIDECAR_KIND = "core.authored-scenario" as const;
 export const AUTHORED_SCENARIO_FORMAT = "living-history.authored-scenario/1" as const;
@@ -354,21 +355,8 @@ function isOptionStatus(value: unknown): value is AuthoredOptionStatus {
   return value === "executed" || value === "conditional" || value === "blocked";
 }
 
-function isPlainObject(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
 
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

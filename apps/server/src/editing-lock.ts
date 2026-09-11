@@ -5,6 +5,22 @@ import {
   type ControlProjectRole,
   type ControlSecurityStore
 } from "@living-history/control";
+import { readJsonObject, readCookie, readHeader, sendJson as sendJsonShared } from "./http-primitives.js";
+import { isRecord, isRevision, hasExactKeys } from "./input-guards.js";
+
+const MAX_LOCKS_BODY_CHARS = 16_384;
+const EDITING_LOCK_JSON_OPTIONS = Object.freeze({
+  maxChars: MAX_LOCKS_BODY_CHARS,
+  invalidCode: "INVALID_EDITING_LOCK_REQUEST",
+  tooLargeCode: "EDITING_LOCK_BODY_TOO_LARGE"
+});
+
+// Маршруты арен исторически отвечают «guarded»: не пишут ответ, если заголовки
+// уже отправлены или поток закрыт, и добавляют x-content-type-options: nosniff.
+// Общий помощник параметризован — здесь фиксируется исходный контракт вызывающих.
+function sendJson(response: any, status: number, payload: unknown): void {
+  sendJsonShared(response, status, payload, { guarded: true, nosniff: true });
+}
 
 /*
  * FIN-13 (вторая половина) — согласование одновременного редактирования.
@@ -217,13 +233,7 @@ export function editingLockHolderId(sessionId: string, projectId: string, kind: 
   return `lock_${digest.slice(0, 24)}`;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
 
 function isKind(value: unknown): value is string {
   return typeof value === "string" && EDITING_LOCK_KINDS.includes(value);
@@ -233,12 +243,6 @@ function isTargetId(value: unknown): value is string {
   return typeof value === "string" && ID_PATTERN.test(value);
 }
 
-function hasExactKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const keys = Object.keys(value);
-  if (keys.length !== allowed.length) return false;
-  for (const key of keys) if (!allowed.includes(key)) return false;
-  return true;
-}
 
 function viewOf(lease: EditingLockLease): EditingLockView {
   return Object.freeze({
@@ -260,7 +264,7 @@ function viewOf(lease: EditingLockLease): EditingLockView {
  * семантика (занято/конфликт) разбирается уже в хабе.
  */
 export function parseEditingLockRequest(value: unknown): (EditingLockRequest & { readonly action: EditingLockAction }) | null {
-  if (!isPlainObject(value)) return null;
+  if (!isRecord(value)) return null;
   for (const key of Object.keys(value)) {
     if (key !== "action" && key !== "kind" && key !== "targetId" && key !== "questId" && key !== "expectedRevision") return null;
   }
@@ -586,7 +590,7 @@ export class EditingLockHub {
 }
 
 function validateActorRequest(actor: EditingLockActor, request: EditingLockRequest): string | null {
-  if (!isPlainObject(actor) || !isPlainObject(request)) return "INVALID_EDITING_LOCK_REQUEST";
+  if (!isRecord(actor) || !isRecord(request)) return "INVALID_EDITING_LOCK_REQUEST";
   if (!ID_PATTERN.test(actor.projectId) || !ID_PATTERN.test(actor.userId) || !ID_PATTERN.test(actor.sessionId)) return "INVALID_EDITING_LOCK_REQUEST";
   if (typeof actor.displayName !== "string" || typeof actor.sessionTokenHash !== "string") return "INVALID_EDITING_LOCK_REQUEST";
   if (!isKind(request.kind) || !isTargetId(request.targetId)) return "INVALID_EDITING_LOCK_REQUEST";
@@ -599,7 +603,6 @@ function validateActorRequest(actor: EditingLockActor, request: EditingLockReque
 
 const CONTROL_SESSION_COOKIE = "lh_control_session";
 const CONTROL_CSRF_HEADER = "x-csrf-token";
-const MAX_LOCKS_BODY_CHARS = 16_384;
 
 export interface EditingLockHttpServiceOptions {
   readonly security: ControlSecurityStore;
@@ -744,7 +747,7 @@ export function createEditingLockHttpService(options: EditingLockHttpServiceOpti
       sendJson(response, 403, { error: { code: proof === "required" ? "CONTROL_CSRF_REQUIRED" : "CONTROL_CSRF_INVALID" } });
       return;
     }
-    const body = await readJsonObject(request, response);
+    const body = await readJsonObject(request, response, EDITING_LOCK_JSON_OPTIONS);
     if (body === null) return;
     const parsed = parseEditingLockRequest(body);
     if (parsed === null) {
@@ -967,74 +970,10 @@ export function createEditingLockHttpService(options: EditingLockHttpServiceOpti
   });
 }
 
-function sendJson(response: any, status: number, payload: unknown): void {
-  if (response.headersSent || response.writableEnded) return;
-  response.statusCode = status;
-  response.setHeader("content-type", "application/json; charset=utf-8");
-  response.setHeader("cache-control", "no-store");
-  response.setHeader("x-content-type-options", "nosniff");
-  response.end(JSON.stringify(payload));
-}
 
-function readHeader(request: any, name: string): string | undefined {
-  const value = request?.headers?.[name];
-  if (typeof value === "string") return value;
-  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
-  return undefined;
-}
 
-function readCookie(request: any, name: string): string | null {
-  const header = readHeader(request, "cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const trimmed = part.trim();
-    const separator = trimmed.indexOf("=");
-    if (separator <= 0) continue;
-    if (trimmed.slice(0, separator) !== name) continue;
-    const value = trimmed.slice(separator + 1);
-    return value.length > 0 ? value : null;
-  }
-  return null;
-}
 
-async function readJsonObject(request: any, response: any): Promise<Record<string, unknown> | null> {
-  const raw = await readBody(request, response);
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    sendJson(response, 400, { error: { code: "INVALID_EDITING_LOCK_REQUEST" } });
-    return null;
-  }
-  if (!isPlainObject(parsed)) {
-    sendJson(response, 400, { error: { code: "INVALID_EDITING_LOCK_REQUEST" } });
-    return null;
-  }
-  return parsed;
-}
 
-function readBody(request: any, response: any): Promise<string | null> {
-  return new Promise((resolve) => {
-    let text = "";
-    let settled = false;
-    const finish = (value: string | null): void => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-    request.on?.("data", (chunk: any) => {
-      if (settled) return;
-      text += typeof chunk === "string" ? chunk : String(chunk);
-      if (text.length > MAX_LOCKS_BODY_CHARS) {
-        sendJson(response, 413, { error: { code: "EDITING_LOCK_BODY_TOO_LARGE" } });
-        finish(null);
-      }
-    });
-    request.on?.("end", () => finish(text));
-    request.on?.("error", () => finish(null));
-  });
-}
 
 /** Небольшой http-сервер только из маршрутов аренд — для тестов и встраивания. */
 export function createEditingLockOnlyHttpServer(options: EditingLockHttpServiceOptions): EditingLockHttpService & { readonly server: any; listen(port?: number, host?: string): Promise<{ readonly port: number; readonly host: string }> } {

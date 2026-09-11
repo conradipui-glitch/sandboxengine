@@ -19,6 +19,7 @@ import {
 } from "./author-assistant.js";
 import { loadInstalledAgentKit } from "./agent-kit.js";
 import { buildExternalAuthorTaskPackage } from "./author-task-package.js";
+import { hasExactKeys } from "./input-guards.js";
 
 const ACTIVE_AUTHOR_SEGMENTS = new WeakMap<object, Map<string, AbortController>>();
 
@@ -669,8 +670,3 @@ function hasExactQuery(search: URLSearchParams, keys: readonly string[]): boolea
   return actual.length === keys.length && keys.every((key) => actual.filter((item) => item === key).length === 1);
 }
 
-function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}

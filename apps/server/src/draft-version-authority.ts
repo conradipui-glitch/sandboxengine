@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { canonicalStringify } from "@living-history/core";
 import type { ControlStore, RestoreDraftResult } from "@living-history/control";
+import { isId, isRevision } from "./input-guards.js";
 
 export interface RestoreControlDraftInput {
   readonly projectId: string;
@@ -38,9 +39,3 @@ export async function restoreControlDraft(
   });
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
