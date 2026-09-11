@@ -40,7 +40,8 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "docs:generate": "node scripts/docs-generate.mjs",
     "docs:check": "node scripts/docs-check.mjs",
-    "verify": "npm run typecheck && npm run audit:release && npm run test:contracts && npm run test:assets && npm run test:plugins && npm run test:core && npm run test:ai && npm run test:storage && npm run drill:backup-restore && npm run drill:rollback && npm run drill:startup-shutdown && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run test:builder && npm run check:boundaries && npm run docs:check"
+    "verify": "npm run typecheck && npm run audit:release && npm run test:contracts && npm run test:assets && npm run test:plugins && npm run test:core && npm run test:ai && npm run test:storage && npm run drill:backup-restore && npm run drill:rollback && npm run drill:startup-shutdown && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run test:builder && npm run check:boundaries && npm run docs:check",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0",
