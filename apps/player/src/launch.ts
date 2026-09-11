@@ -187,9 +187,14 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
       actionId: actionBlock.id,
       actionTitle: actionBlock.title
     });
+    const storyMission = await controlStore.getMissionAtRevision(playtest.projectId, playtest.questId, playtest.draftRevision);
+    const story = storyMission === null
+      ? undefined
+      : { mission: JSON.parse(JSON.stringify(storyMission.mission)) as JsonValue };
     const player = createPlayerDevServer({
       runtimeOrigin: `http://${runtimeAddress.host}:${runtimeAddress.port}`,
       metadata,
+      ...(story ? { story } : {}),
       presentation: {
         release: Object.freeze({ questId: template.release.questId, releaseId: template.release.releaseId }),
         assets: presentationTemplate.catalog.assets,

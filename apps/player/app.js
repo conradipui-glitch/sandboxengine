@@ -1,6 +1,14 @@
 import { PlayerClientError, RuntimePlayerClient } from "/player-lib/client.js";
 import { PresentationExecutor } from "/player-lib/presentation-executor.js";
 import { BrowserPresentationRenderer } from "/player-assets/presentation-renderer.js";
+import {
+  createStoryScreens,
+  isSelfActivatingControl,
+  storyScreensInput,
+  storyScreensKeyInput,
+  storyScreensMission,
+  storyScreensView
+} from "/player-assets/story-screens.js";
 
 const root = document.querySelector("#app");
 if (!(root instanceof HTMLElement)) throw new Error("Player root is missing");
@@ -14,13 +22,15 @@ const state = {
   presentationFrame: null,
   phase: "loading",
   message: "Запускаем frozen playtest…",
-  presentationMessage: ""
+  presentationMessage: "",
+  story: null
 };
 const renderer = new BrowserPresentationRenderer(() => state.session);
 const executor = new PresentationExecutor(renderer);
 
 root.addEventListener("submit", (event) => void onSubmit(event));
 root.addEventListener("click", (event) => void onClick(event));
+window.addEventListener("keydown", (event) => void onStoryKey(event));
 window.addEventListener("pagehide", () => {
   executor.cancelActive();
   renderer.dispose();
@@ -33,6 +43,16 @@ async function start() {
     state.meta = await loadMetadata();
     state.session = await resumeOrCreateSession(state.meta.templateId);
     state.presentationFrame = state.session.presentationFrame;
+    const story = await loadStory();
+    if (story) {
+      state.story = { mission: story, screens: createStoryScreens(story), view: null, pendingTurn: null, exited: false };
+      state.message = "Экраны истории загружены из frozen playtest.";
+      state.phase = "ready";
+      persistSession(state.session);
+      render();
+      await renderStoryScreen();
+      return;
+    }
     state.phase = "ready";
     state.message = state.session.lastOperationId === null
       ? "Тестовая сессия запущена."
@@ -44,6 +64,68 @@ async function start() {
     clearStoredSession();
     setError(error);
     render();
+  }
+}
+
+/**
+ * Экраны истории приходят pinned из frozen playtest через /player-story.json.
+ * Отсутствие истории — не ошибка: Player остаётся paint-клиентом.
+ */
+async function loadStory() {
+  try {
+    const response = await fetch("/player-story.json", { headers: { accept: "application/json" } });
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!body || typeof body !== "object" || !isMissionDocument(body.mission)) return null;
+    return storyScreensMission(body.mission);
+  } catch {
+    return null;
+  }
+}
+
+function isMissionDocument(value) {
+  return value !== null && typeof value === "object"
+    && value.story !== null && typeof value.story === "object"
+    && typeof value.story.entrySceneId === "string"
+    && Array.isArray(value.story.scenes) && Array.isArray(value.story.endings)
+    && value.screens !== null && typeof value.screens === "object"
+    && Array.isArray(value.screens.intros)
+    && value.screens.scenes !== null && typeof value.screens.scenes === "object"
+    && value.screens.endings !== null && typeof value.screens.endings === "object";
+}
+
+async function onStoryKey(event) {
+  if (!state.story) return;
+  const input = storyScreensKeyInput(event, isSelfActivatingControl(event.target));
+  if (!input) return;
+  event.preventDefault();
+  await applyStory(input);
+}
+
+async function applyStory(input) {
+  if (!state.story) return;
+  const result = storyScreensInput(state.story.screens, state.story.mission, input);
+  if (!result.handled) return;
+  state.story.screens = result.state;
+  state.story.exited = result.exited || state.story.exited;
+  if (result.turnRequest) state.story.pendingTurn = result.turnRequest;
+  render();
+  await renderStoryScreen();
+}
+
+async function renderStoryScreen() {
+  if (!state.story) return;
+  const stage = document.querySelector("#presentation-stage");
+  if (!stage) return;
+  const view = storyScreensView(state.story.screens, state.story.mission);
+  state.story.view = view;
+  renderer.prepareTargetFrame(null);
+  try {
+    // Материалы экранов в этом срезе не проксируются; renderer честно уходит
+    // в доступный fallback «Фон недоступен», а не молчит.
+    await renderer.renderStoryScreens(view, () => Promise.resolve(null));
+  } catch {
+    stage.textContent = "Экран истории недоступен; структурированный ход сохранён.";
   }
 }
 
@@ -120,6 +202,24 @@ async function playPresentation(presentation) {
 async function onClick(event) {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!(target instanceof HTMLElement)) return;
+
+  if (target.dataset.action === "story-primary") {
+    await applyStory({ kind: "advance" });
+    return;
+  }
+  if (target.dataset.action === "story-choice") {
+    const choiceId = target.dataset.choiceId;
+    if (typeof choiceId === "string" && choiceId.length > 0) await applyStory({ kind: "choose", choiceId });
+    return;
+  }
+  if (target.dataset.action === "story-repeat") {
+    await applyStory({ kind: "restart" });
+    return;
+  }
+  if (target.dataset.action === "story-exit") {
+    await applyStory({ kind: "exit" });
+    return;
+  }
 
   if (target.dataset.action === "skip-presentation") {
     if (state.phase === "presenting") {
@@ -215,6 +315,11 @@ function render() {
     return;
   }
 
+  if (state.story) {
+    renderStoryShell();
+    return;
+  }
+
   const meta = state.meta;
   const view = state.session.playerView;
   const resource = view.resources.find((entry) => entry.id === meta.resourceId);
@@ -299,6 +404,61 @@ function render() {
       </div>
     </div>
   `;
+}
+
+function renderStoryShell() {
+  const meta = state.meta;
+  const story = state.story;
+  const pending = story.pendingTurn;
+  const pendingText = pending === null
+    ? ""
+    : `<p class="story-turn">Зафиксирован ход: выбор ${escapeHtml(pending.choiceId)} (baseTurn ${pending.baseTurn}).</p>`;
+
+  // Story shell uses only local metadata; SceneFrame/story content is never
+  // interpolated here — the shared renderer below builds it with createElement.
+  root.innerHTML = `
+    <div class="player-shell">
+      <header class="player-topbar">
+        <div>
+          <div class="brand">Living History Player</div>
+          <div class="brand-subtitle">Frozen playtest · экраны истории</div>
+        </div>
+        <div class="session-state">
+          <strong>Ходы: ${story.screens.turns}</strong>
+          ${escapeHtml(state.message)}
+        </div>
+      </header>
+
+      <div class="player-main">
+        <section class="quest-header">
+          <h1>${escapeHtml(meta.questTitle)}</h1>
+          <p>Вступление, сцена, диалог, выбор и финал рисуются общим renderer'ом Player. Перелистывание вступлений не тратит игровой ход.</p>
+          <div class="playtest-id">playtest: ${escapeHtml(meta.playtestId)}</div>
+        </section>
+
+        <section class="scene-surface" aria-label="Экран истории">
+          <div id="presentation-stage" class="presentation-stage" aria-live="polite"></div>
+          <p class="presentation-status" data-presentation-status>${escapeHtml(storyStatus(story))}</p>
+        </section>
+
+        <footer class="player-footer">
+          ${pendingText}
+          <p>Session ${escapeHtml(state.session.sessionId)}</p>
+          <button class="secondary" type="button" data-action="story-repeat">Повторить историю</button>
+        </footer>
+      </div>
+    </div>
+  `;
+}
+
+function storyStatus(story) {
+  if (story.exited) return "История завершена: выход.";
+  const view = story.view;
+  if (!view) return "Загружаем экран истории…";
+  if (view.phase === "intro") return `Вступление ${view.intro.page} / ${view.intro.pageCount}.`;
+  if (view.phase === "scene") return view.primary ? "Диалог сцены: листайте кликом или клавишами." : "Выберите вариант продолжения.";
+  if (view.phase === "ending") return "Финал. Выход или повтор.";
+  return "";
 }
 
 function renderResult(result, errorMessage) {
