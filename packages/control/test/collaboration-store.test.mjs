@@ -209,3 +209,287 @@ test("FIN-12 collaboration store survives close/reopen and upgrades schema v5", 
     await dispose(dir, reopened);
   }
 });
+
+test("FIN-12 collaboration store: note edits form an append-only revision log and deletes are soft tombstones", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    const createInput = { text: "Первая версия", position: { x: 1, y: 2 }, idempotencyKey: "rev-note-create", actorUserId: "author-1" };
+    const created = await store.createNote("p1", "q1", createInput);
+    assert.equal(created.kind, "created");
+    assert.equal(created.view.revision, 1);
+    const noteId = created.view.notes[0].noteId;
+    assert.equal(created.view.notes[0].revision, 1);
+
+    const second = await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 1, text: "Вторая версия", position: { x: 5, y: 6 },
+      idempotencyKey: "rev-note-2", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(second.kind, "updated");
+    assert.equal(second.view.revision, 2);
+    assert.equal(second.view.notes[0].revision, 2);
+    assert.equal(second.view.notes[0].text, "Вторая версия");
+    assert.deepEqual(second.view.notes[0].position, { x: 5, y: 6 });
+
+    const third = await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 2, text: "Третья версия", position: { x: 7, y: 8 },
+      idempotencyKey: "rev-note-3", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(third.kind, "updated");
+    assert.equal(third.view.revision, 3);
+    assert.equal(third.view.notes[0].revision, 3);
+
+    // The write log is append-only: replaying an earlier accepted write returns
+    // the view of that revision, while the live view keeps the newest revision.
+    const replayCreate = await store.createNote("p1", "q1", createInput);
+    assert.equal(replayCreate.kind, "replay");
+    assert.equal(replayCreate.view.revision, 1);
+    assert.equal(replayCreate.view.notes[0].revision, 1);
+    assert.equal(replayCreate.view.notes[0].text, "Первая версия");
+    const replaySecond = await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 1, text: "Вторая версия", position: { x: 5, y: 6 },
+      idempotencyKey: "rev-note-2", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(replaySecond.kind, "replay");
+    assert.equal(replaySecond.view.notes[0].revision, 2);
+    assert.equal(replaySecond.view.notes[0].text, "Вторая версия");
+    assert.equal((await store.getCollaboration("p1", "q1")).notes[0].text, "Третья версия");
+
+    // A stale base revision is rejected, never merged into the newer state.
+    const stale = await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 2, text: "Устаревшая", position: { x: 0, y: 0 },
+      idempotencyKey: "rev-note-stale", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.deepEqual(stale, { kind: "revision_conflict", currentRevision: 3 });
+    assert.equal((await store.getCollaboration("p1", "q1")).notes[0].text, "Третья версия");
+
+    // Delete is a tombstone: the note leaves the live view, the revision still
+    // advances, and the earlier revisions stay replayable afterwards.
+    const deleted = await store.deleteNote("p1", "q1", {
+      noteId, expectedRevision: 3, idempotencyKey: "rev-note-delete", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(deleted.kind, "updated");
+    assert.equal(deleted.view.revision, 4);
+    assert.deepEqual(deleted.view.notes, []);
+    assert.deepEqual(await store.deleteNote("p1", "q1", {
+      noteId, expectedRevision: 4, idempotencyKey: "rev-note-delete-again", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 4, text: "После удаления", position: { x: 1, y: 1 },
+      idempotencyKey: "rev-note-after-delete", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    const replayDeleted = await store.deleteNote("p1", "q1", {
+      noteId, expectedRevision: 3, idempotencyKey: "rev-note-delete", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(replayDeleted.kind, "replay");
+    assert.equal(replayDeleted.view.revision, 4);
+    const replayThird = await store.changeNote("p1", "q1", {
+      noteId, expectedRevision: 2, text: "Третья версия", position: { x: 7, y: 8 },
+      idempotencyKey: "rev-note-3", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(replayThird.kind, "replay");
+    assert.equal(replayThird.view.notes[0].revision, 3);
+    assert.equal(replayThird.view.notes[0].text, "Третья версия");
+  } finally {
+    await dispose(dir, store);
+  }
+});
+
+test("FIN-12 collaboration store: replies attach to their thread and unknown/cross-thread ids are rejected", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    const first = await store.createThread("p1", "q1", {
+      anchor: { kind: "scene", targetId: "forward", position: null },
+      text: "Тред A", idempotencyKey: "th-a", actorUserId: "author-1"
+    });
+    assert.equal(first.kind, "created");
+    const second = await store.createThread("p1", "q1", {
+      anchor: { kind: "board", targetId: null, position: { x: 10, y: 20 } },
+      text: "Тред B", idempotencyKey: "th-b", actorUserId: "author-2"
+    });
+    const threadA = first.view.threads.find((entry) => entry.anchor.kind === "scene");
+    const threadB = second.view.threads.find((entry) => entry.anchor.kind === "board");
+    assert.equal(threadA.messages[0].authorUserId, "author-1");
+    assert.equal(threadB.messages[0].authorUserId, "author-2");
+
+    // A reply lands in the addressed thread only and records its own author.
+    const reply = await store.addMessage("p1", "q1", {
+      threadId: threadA.threadId, text: "Ответ в A", idempotencyKey: "th-a-reply", actorUserId: "author-3"
+    });
+    assert.equal(reply.kind, "updated");
+    const aAfter = reply.view.threads.find((entry) => entry.threadId === threadA.threadId);
+    const bAfter = reply.view.threads.find((entry) => entry.threadId === threadB.threadId);
+    assert.equal(aAfter.messages.length, 2);
+    assert.equal(aAfter.messages[1].text, "Ответ в A");
+    assert.equal(aAfter.messages[1].authorUserId, "author-3");
+    assert.equal(aAfter.messages[1].revision, 1);
+    assert.equal(aAfter.revision, threadA.revision + 1);
+    assert.equal(bAfter.messages.length, 1);
+    assert.equal(bAfter.revision, threadB.revision);
+
+    // A reply to a message/thread that does not exist is rejected, not attached.
+    assert.deepEqual(await store.addMessage("p1", "q1", {
+      threadId: "thread-404", text: "нет треда", idempotencyKey: "th-missing", actorUserId: "author-1"
+    }), { kind: "not_found" });
+    const messageA = aAfter.messages[0].messageId;
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: "message-404", expectedRevision: 1, text: "нет сообщения",
+      idempotencyKey: "msg-missing", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.deleteMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: "message-404", expectedRevision: 1,
+      idempotencyKey: "msg-missing-delete", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    // A real message id addressed under the wrong thread is rejected too.
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: threadB.threadId, messageId: messageA, expectedRevision: 1, text: "чужой тред",
+      idempotencyKey: "msg-wrong-thread", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: "thread-404", messageId: messageA, expectedRevision: 1, text: "нет треда",
+      idempotencyKey: "msg-ghost-thread", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+
+    // Message edits are CAS- and authorship-guarded.
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 5, text: "устарело",
+      idempotencyKey: "msg-stale", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "revision_conflict", currentRevision: 1 });
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 1, text: "чужое",
+      idempotencyKey: "msg-foreign", actorUserId: "author-9", actorRole: "editor"
+    }), { kind: "forbidden" });
+    const own = await store.changeMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 1, text: "свой текст",
+      idempotencyKey: "msg-own", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(own.kind, "updated");
+    assert.equal(own.view.threads.find((entry) => entry.threadId === threadA.threadId).messages[0].text, "свой текст");
+
+    // Soft delete keeps the slot so thread order and count stay honest.
+    const beforeDelete = own.view.threads.find((entry) => entry.threadId === threadA.threadId);
+    const removed = await store.deleteMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 2,
+      idempotencyKey: "msg-delete", actorUserId: "author-1", actorRole: "editor"
+    });
+    assert.equal(removed.kind, "updated");
+    const afterDelete = removed.view.threads.find((entry) => entry.threadId === threadA.threadId);
+    assert.equal(afterDelete.messages.length, beforeDelete.messages.length);
+    assert.equal(afterDelete.messages[0].messageId, messageA);
+    assert.equal(afterDelete.messages[0].deleted, true);
+    assert.equal(afterDelete.messages[0].text, "");
+    assert.equal(afterDelete.revision, beforeDelete.revision + 1);
+    assert.equal(afterDelete.messages[1].deleted, false);
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 2, text: "после удаления",
+      idempotencyKey: "msg-after-delete", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.deleteMessage("p1", "q1", {
+      threadId: threadA.threadId, messageId: messageA, expectedRevision: 2,
+      idempotencyKey: "msg-delete-again", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+  } finally {
+    await dispose(dir, store);
+  }
+});
+
+test("FIN-12 collaboration store: thread status is a CAS state machine over open/resolved and rejects invalid states", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    const opened = await store.createThread("p1", "q1", {
+      anchor: { kind: "board", targetId: null, position: { x: 1, y: 1 } },
+      text: "Открытый тред", idempotencyKey: "state-open", actorUserId: "author-1"
+    });
+    const threadId = opened.view.threads[0].threadId;
+    assert.equal(opened.view.threads[0].status, "open");
+    assert.equal(opened.view.unresolvedThreadCount, 1);
+
+    assert.deepEqual(await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 5, status: "resolved", idempotencyKey: "state-stale-1", actorUserId: "author-1"
+    }), { kind: "revision_conflict", currentRevision: 1 });
+    const invalid = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 1, status: "closed", idempotencyKey: "state-invalid", actorUserId: "author-1"
+    });
+    assert.equal(invalid.kind, "invalid_request");
+    assert.deepEqual(invalid.errors, ["status"]);
+    assert.deepEqual(await store.setThreadStatus("p1", "q1", {
+      threadId: "thread-404", expectedRevision: 1, status: "resolved", idempotencyKey: "state-missing", actorUserId: "author-1"
+    }), { kind: "not_found" });
+
+    const resolved = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 1, status: "resolved", idempotencyKey: "state-resolve", actorUserId: "author-1"
+    });
+    assert.equal(resolved.kind, "updated");
+    let thread = resolved.view.threads[0];
+    assert.equal(thread.status, "resolved");
+    assert.equal(Number.isFinite(thread.resolvedAtMs), true);
+    assert.equal(thread.revision, 2);
+    assert.equal(resolved.view.unresolvedThreadCount, 0);
+
+    assert.deepEqual(await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 1, status: "open", idempotencyKey: "state-stale-2", actorUserId: "author-1"
+    }), { kind: "revision_conflict", currentRevision: 2 });
+
+    const reopened = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 2, status: "open", idempotencyKey: "state-reopen", actorUserId: "author-2"
+    });
+    assert.equal(reopened.kind, "updated");
+    thread = reopened.view.threads[0];
+    assert.equal(thread.status, "open");
+    assert.equal(thread.resolvedAtMs, null);
+    assert.equal(thread.revision, 3);
+    assert.equal(reopened.view.unresolvedThreadCount, 1);
+
+    // A status change never drops the discussion.
+    assert.equal(thread.messages.length, 1);
+    assert.equal((await store.getCollaboration("p1", "q1")).threads[0].status, "open");
+  } finally {
+    await dispose(dir, store);
+  }
+});
+
+test("FIN-12 collaboration store: unknown ids and a foreign quest stay not_found instead of silently creating", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    assert.equal(await store.getCollaboration("p1", "missing-quest"), null);
+    assert.equal(await store.getCollaboration("missing-project", "q1"), null);
+
+    assert.deepEqual(await store.changeNote("p1", "q1", {
+      noteId: "note-404", expectedRevision: 1, text: "x", position: { x: 1, y: 1 },
+      idempotencyKey: "u-note-change", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.deleteNote("p1", "q1", {
+      noteId: "note-404", expectedRevision: 1, idempotencyKey: "u-note-delete", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.addMessage("p1", "q1", {
+      threadId: "thread-404", text: "x", idempotencyKey: "u-reply", actorUserId: "author-1"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.changeMessage("p1", "q1", {
+      threadId: "thread-404", messageId: "message-404", expectedRevision: 1, text: "x",
+      idempotencyKey: "u-msg-change", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.deleteMessage("p1", "q1", {
+      threadId: "thread-404", messageId: "message-404", expectedRevision: 1,
+      idempotencyKey: "u-msg-delete", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.deepEqual(await store.setThreadStatus("p1", "q1", {
+      threadId: "thread-404", expectedRevision: 1, status: "resolved", idempotencyKey: "u-status", actorUserId: "author-1"
+    }), { kind: "not_found" });
+
+    // A real note id belongs to one quest: the same id in a sibling quest is
+    // simply unknown, and neither quest is mutated.
+    await store.createQuest({ projectId: "p1", questId: "q2", title: "Квест 2", entryLocationId: "forward", initialBlocks: [workshop, forward] });
+    const made = await store.createNote("p1", "q1", {
+      text: "живая", position: { x: 1, y: 1 }, idempotencyKey: "u-note", actorUserId: "author-1"
+    });
+    const noteId = made.view.notes[0].noteId;
+    assert.deepEqual(await store.changeNote("p1", "q2", {
+      noteId, expectedRevision: 1, text: "чужой квест", position: { x: 1, y: 1 },
+      idempotencyKey: "u-cross-quest", actorUserId: "author-1", actorRole: "editor"
+    }), { kind: "not_found" });
+    assert.equal((await store.getCollaboration("p1", "q1")).notes[0].text, "живая");
+    assert.deepEqual((await store.getCollaboration("p1", "q2")).notes, []);
+    assert.equal((await store.getCollaboration("p1", "q2")).revision, 0);
+  } finally {
+    await dispose(dir, store);
+  }
+});
