@@ -264,6 +264,16 @@ async function routeControlRequest(
     return;
   }
 
+  // Assets of the revision a *started* game is pinned to. This is the path the
+  // published-mission BFF uses: it carries the session credential, so a game
+  // that is already running keeps its own artwork after the mission is
+  // republished — or taken down.
+  const publicSessionAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
+  if (method === "GET" && publicSessionAssetMatch && releases?.publicationStore && missionStore) {
+    await routePublicMissionSessionAsset(request, response, publicSessionAssetMatch, releases, missionStore, assetStorage, assetLibrary);
+    return;
+  }
+
   // Public, credentialless bytes of an asset that belongs to the *pinned*
   // published revision. Anything else stays private.
   const publicAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
@@ -914,23 +924,32 @@ async function routeControlRequest(
       sendJson(response, 400, { error: { code: "INVALID_PUBLISH_REQUEST" } });
       return;
     }
-    // The catalog record is written first: a failure there leaves the release
-    // pointer untouched. If the promotion then fails, the catalog is reverted
-    // so no path can observe a catalog pointing at a release that is not live.
-    const previousPublication = releases.publicationStore
-      ? await releases.publicationStore.getPublicationForQuest(projectId, questId)
-      : null;
-    const publication = await syncPublicationRecord(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth));
-    if (publication.kind === "source_stale") {
+    // A publish is staged, never compensated. The candidate catalog record is
+    // written durably but stays invisible (`beginPublicationCandidate`), the
+    // release pointer is promoted with its CAS check, and only a successful
+    // promotion commits the record. A rejected publish therefore leaves no
+    // trace: there is no window in which the catalog points at a release that
+    // is not live, and nothing has to be rolled back afterwards.
+    const staged = await beginPublicationCandidate(releases, missionStore, projectId, questId, body.releaseId, idempotencyKey, releaseNowMs(releases, auth), "publish");
+    if (staged.kind === "source_stale") {
       sendJson(response, 409, { error: { code: "PUBLICATION_SOURCE_STALE" } });
       return;
     }
-    if (publication.kind === "bundle_unavailable") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
+    if (staged.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: staged.code } });
       return;
     }
-    if (publication.kind === "conflict") {
+    if (staged.kind === "store_failure") {
+      // The catalog could not be written, so the release pointer must not move.
+      sendJson(response, 500, { error: { code: "PUBLICATION_STORE_UNAVAILABLE" } });
+      return;
+    }
+    if (staged.kind === "conflict") {
       sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
+      return;
+    }
+    if (staged.kind === "replay") {
+      sendJson(response, 200, { publication: { kind: "replay" }, catalog: publicPublicationView(staged.record) });
       return;
     }
     const result = await publishControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
@@ -943,19 +962,19 @@ async function routeControlRequest(
       idempotencyKey
     });
     const promoted = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay";
-    if (!promoted) {
-      await revertPublicationRecord(
-        releases,
-        projectId,
-        questId,
-        previousPublication,
-        publication.kind === "published" || publication.kind === "replay" ? publication.record : null,
-        idempotencyKey
-      );
-    }
-    if (promoted && (publication.kind === "published" || publication.kind === "replay")) {
-      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
+    if (promoted && staged.kind === "ready") {
+      const committed = await commitPublicationCandidate(releases, projectId, questId, staged.operationKey, releaseNowMs(releases, auth));
+      if (!committed) {
+        sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
+        return;
+      }
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(committed) });
       return;
+    }
+    if (!promoted && staged.kind === "ready") {
+      // Nothing became visible, so abandoning the staged record restores exactly
+      // the state the caller started from.
+      await abortPublicationCandidate(releases, projectId, questId, staged.operationKey, releaseNowMs(releases, auth));
     }
     if (promoted) {
       sendJson(response, 200, { publication: result });
@@ -1000,6 +1019,26 @@ async function routeControlRequest(
       sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: preflight.code } });
       return;
     }
+    // The catalog change is staged before the pointer moves: a rollback that
+    // cannot write the catalog record must leave the release pointer exactly
+    // where it was, the same way a rejected publish does.
+    const publication = await beginPublicationCandidate(releases, missionStore, projectId, questId, body.targetReleaseId, idempotencyKey, releaseNowMs(releases, auth), "rollback", preflight.kind === "resolved" ? preflight : undefined);
+    if (publication.kind === "conflict" || publication.kind === "source_stale") {
+      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+      return;
+    }
+    if (publication.kind === "bundle_unavailable") {
+      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
+      return;
+    }
+    if (publication.kind === "store_failure") {
+      sendJson(response, 500, { error: { code: "PUBLICATION_STORE_UNAVAILABLE" } });
+      return;
+    }
+    if (publication.kind === "replay") {
+      sendJson(response, 200, { publication: { kind: "replay" }, catalog: publicPublicationView(publication.record) });
+      return;
+    }
     const result = await rollbackControlRelease({ releaseStore: releases.store, pluginRegistry: releases.pluginRegistry }, {
       projectId,
       questId,
@@ -1009,22 +1048,20 @@ async function routeControlRequest(
       createdAtMs: releaseNowMs(releases, auth),
       idempotencyKey
     });
-    const publication = result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay"
-      ? await syncPublicationRecord(releases, missionStore, projectId, questId, result.currentReleaseId, idempotencyKey, releaseNowMs(releases, auth), preflight.kind === "resolved" ? preflight : undefined)
-      : { kind: "not_attempted" as const };
-    if (publication.kind === "conflict" || publication.kind === "source_stale") {
-      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+    if (publication.kind === "ready" && (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay")) {
+      const committed = await commitPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
+      if (!committed) {
+        sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
+        return;
+      }
+      sendJson(response, 200, { publication: result, catalog: publicPublicationView(committed) });
       return;
     }
-    if (publication.kind === "bundle_unavailable") {
-      sendJson(response, 409, { error: { code: "PUBLICATION_BUNDLE_UNAVAILABLE", detailCode: publication.code } });
-      return;
+    if (publication.kind === "ready") {
+      await abortPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
     }
-    if (publication.kind === "published" || publication.kind === "replay") {
-      sendJson(response, 200, { publication: result, catalog: publicPublicationView(publication.record) });
-      return;
-    }
-    if (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay") {
+    if (publication.kind === "not_attempted" && (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay")) {
+      // Without a catalog store there is nothing to stage.
       sendJson(response, 200, { publication: result });
     } else if (result.kind === "release_not_found") {
       sendNotFound(response);
@@ -1523,12 +1560,15 @@ async function routePublicMissionAsset(
   }
   // Only assets actually referenced by the pinned revision are published.
   if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
-  const entries = await assetLibrary.listProjectAssets(publication.projectId, false);
-  const entry = entries.find((candidate) => candidate.assetId === assetId) ?? null;
-  if (!entry) { sendNotFound(response); return; }
+  // The bytes come from the release's immutable asset pin, never from "whatever
+  // the library entry points at now": re-uploading an assetId later must not
+  // rewrite what an already published revision serves under a one-year
+  // `immutable` cache header.
+  const pinnedHash = await resolvePinnedAssetHash(releases, publication.projectId, publication.questId, publication.releaseId, assetId);
+  if (pinnedHash === null) { sendNotFound(response); return; }
   let stored;
   try {
-    stored = await assetStorage.read(assetId, entry.hash);
+    stored = await assetStorage.read(assetId, pinnedHash);
   } catch (error) {
     if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
       sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
@@ -1545,6 +1585,128 @@ async function routePublicMissionAsset(
   response.end(stored.bytes);
 }
 
+/**
+ * Serves the bytes of an asset the *started game* is pinned to.
+ *
+ * The published-mission BFF proxies here with the session credential, so the
+ * artwork a player is looking at does not depend on what the catalog says right
+ * now: republishing a newer revision, or taking the mission down entirely,
+ * leaves a running game on its own revision and its own assets.
+ */
+async function routePublicMissionSessionAsset(
+  request: any,
+  response: any,
+  match: RegExpExecArray,
+  releases: ControlReleaseModeOptions,
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  assetStorage: LocalAssetStore | null,
+  assetLibrary: ProjectAssetLibrary | null
+): Promise<void> {
+  const identifier = match[1] ?? "";
+  const sessionId = match[2] ?? "";
+  const assetId = match[3] ?? "";
+  const secret = releases.publicMissionSessionSecret ?? "";
+  if (typeof secret !== "string" || secret.length < 16) {
+    sendJson(response, 503, { error: { code: "PUBLIC_MISSION_RUNTIME_UNAVAILABLE" } });
+    return;
+  }
+  const existing = await missionStore.getMissionSession(sessionId);
+  if (!existing) { sendNotFound(response); return; }
+  const sessionPublicMissionId = `mission:${existing.projectId}:${existing.questId}`;
+  let identifierMatches = identifier === sessionPublicMissionId;
+  if (!identifierMatches) {
+    // The publication record survives unpublish, so the slug still identifies
+    // the mission whose session is asking for bytes.
+    const questPublication = await releases.publicationStore?.getPublicationForQuest(existing.projectId, existing.questId);
+    identifierMatches = !!questPublication && questPublication.slug === identifier;
+  }
+  if (!identifierMatches) { sendNotFound(response); return; }
+  const credential = publicMissionCredential(secret, sessionPublicMissionId, sessionId);
+  if (readHeader(request, "authorization") !== `Bearer ${credential}`) {
+    sendJson(response, 401, { error: { code: "PUBLIC_MISSION_CREDENTIAL_REQUIRED" } });
+    return;
+  }
+  const pinned = await missionStore.getMissionAtRevision(existing.projectId, existing.questId, existing.contentRevision);
+  if (!pinned || pinned.contentHash !== existing.contentHash) {
+    sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
+    return;
+  }
+  if (assetStorage === null || assetLibrary === null) {
+    sendJson(response, 501, { error: { code: "ASSET_STORAGE_UNAVAILABLE" } });
+    return;
+  }
+  // Only assets the *pinned* revision references are served through the session.
+  if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
+  // Same rule as the catalog route, but the revision is the one the session is
+  // pinned to — its own asset pin, not the currently published one.
+  const pinnedHash = await resolvePinnedAssetHashForRevision(releases, existing.projectId, existing.questId, existing, assetId);
+  if (pinnedHash === null) { sendNotFound(response); return; }
+  let stored;
+  try {
+    stored = await assetStorage.read(assetId, pinnedHash);
+  } catch (error) {
+    if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
+      sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
+    } else {
+      sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
+    }
+    return;
+  }
+  response.statusCode = 200;
+  response.setHeader("content-type", stored.record.manifest.mimeType);
+  response.setHeader("content-length", String(stored.bytes.byteLength));
+  // The URL names one session and one pinned revision, so these bytes cannot go
+  // stale — but they stay private to the credential that asked for them.
+  response.setHeader("cache-control", "private, max-age=31536000, immutable");
+  response.setHeader("etag", `"${existing.contentHash.slice(0, 32)}-${assetId}"`);
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end(stored.bytes);
+}
+
+/**
+ * Resolves the bytes an immutable published revision pinned for one asset.
+ *
+ * `null` means "this release never pinned that asset", which callers turn into a
+ * 404: falling back to the library's current entry would let a later re-upload
+ * silently rewrite content a player was already promised.
+ */
+async function resolvePinnedAssetHash(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  releaseId: string,
+  assetId: string
+): Promise<string | null> {
+  const pin = await releases.publicationStore?.getReleasePin(projectId, questId, releaseId);
+  return pin?.assets.find((entry) => entry.assetId === assetId)?.hash ?? null;
+}
+
+/**
+ * The same question for a *started game*: it knows only the revision it was
+ * created from, so the release carrying that exact revision is found first.
+ */
+async function resolvePinnedAssetHashForRevision(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  revision: { readonly contentRevision: number; readonly contentHash: string },
+  assetId: string
+): Promise<string | null> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return null;
+  // A session only records the revision it started on, so the release has to be
+  // found by that revision — and a release pin is exactly the record that says
+  // which revision it publishes.
+  const known = await releases.store.listReleases(projectId, questId);
+  for (const candidate of known) {
+    const pin = await publicationStore.getReleasePin(projectId, questId, candidate.releaseId);
+    if (!pin) continue;
+    if (pin.missionRevision !== revision.contentRevision || pin.missionContentHash !== revision.contentHash) continue;
+    return pin.assets.find((entry) => entry.assetId === assetId)?.hash ?? null;
+  }
+  return null;
+}
+
 function publicMissionCredential(secret: string, publicMissionId: string, sessionId: string): string {
   return hashControlOpaqueSecret(`${secret}\0${publicMissionId}\0${sessionId}`);
 }
@@ -1558,7 +1720,23 @@ type ResolvedReleaseBundle = {
   readonly bundleHash: string;
 };
 
-async function syncPublicationRecord(
+type PublicationStaging =
+  | { readonly kind: "ready"; readonly operationKey: string }
+  | { readonly kind: "replay"; readonly record: ControlPublicationRecord }
+  | { readonly kind: "source_stale" | "not_attempted" }
+  | { readonly kind: "bundle_unavailable"; readonly code: string }
+  | { readonly kind: "store_failure" }
+  | { readonly kind: "conflict" };
+
+/**
+ * Stages a catalog change without making it visible.
+ *
+ * The candidate record is written durably as a pending publication operation,
+ * so an interrupted publish survives a restart and can be committed or
+ * abandoned later, while the public catalog still serves exactly what it served
+ * before. Visibility only changes in `commitPublicationCandidate`.
+ */
+async function beginPublicationCandidate(
   releases: ControlReleaseModeOptions,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
   projectId: string,
@@ -1566,12 +1744,9 @@ async function syncPublicationRecord(
   releaseId: string,
   idempotencyKey: string,
   publishedAtMs: number,
+  kind: "publish" | "rollback",
   preResolved?: ResolvedReleaseBundle
-): Promise<
-  | { readonly kind: "published" | "replay"; readonly record: ControlPublicationRecord }
-  | { readonly kind: "source_stale" | "conflict" | "not_attempted" }
-  | { readonly kind: "bundle_unavailable"; readonly code: string }
-> {
+): Promise<PublicationStaging> {
   const publicationStore = releases.publicationStore;
   if (!publicationStore) return { kind: "not_attempted" };
   const release = await releases.store.getRelease(projectId, questId, releaseId);
@@ -1581,7 +1756,7 @@ async function syncPublicationRecord(
   // and the digests of the assets that revision references. Resolving through
   // the pin is what makes rollback truthful — the catalog is repointed, the
   // content behind it is not re-read from the latest draft.
-  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing);
+  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing, kind);
   if (resolved.kind !== "resolved") return resolved;
   const { mission, bundleHash } = resolved;
   const record: ControlPublicationRecord = {
@@ -1599,13 +1774,64 @@ async function syncPublicationRecord(
     listing: mission.listing,
     publishedAtMs
   };
-  const result = await publicationStore.publish({
-    record,
-    idempotencyKey: `catalog-${idempotencyKey}`.slice(0, 200),
-    requestHash: bundleHash
+  const operationKey = `catalog-${idempotencyKey}`.slice(0, 200);
+  const begun = await publicationStore.beginPublicationOperation({
+    operation: {
+      schemaVersion: "1.0",
+      projectId,
+      questId,
+      operationKey,
+      kind,
+      requestHash: hashControlOpaqueSecret(`${bundleHash}\u0000${releaseId.slice(0, 120)}`),
+      targetReleaseId: releaseId,
+      candidate: record,
+      state: "pending",
+      startedAtMs: publishedAtMs,
+      finishedAtMs: null
+    }
   });
-  if (result.kind === "published" || result.kind === "replay") return { kind: result.kind, record: result.publication };
-  return { kind: "conflict" };
+  if (begun.kind === "invalid_request") return { kind: "store_failure" };
+  if (begun.kind === "operation_conflict") return { kind: "conflict" };
+  if (begun.kind === "replay") {
+    // The same request already finished: there is nothing left to do, and the
+    // answer must name the content that is actually live.
+    return begun.operation.state === "committed"
+      ? { kind: "replay", record: begun.operation.candidate }
+      : { kind: "ready", operationKey };
+  }
+  return { kind: "ready", operationKey };
+}
+
+/** Publishes the staged record, atomically with marking the operation committed. */
+async function commitPublicationCandidate(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  operationKey: string,
+  committedAtMs: number
+): Promise<ControlPublicationRecord | null> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return null;
+  const result = await publicationStore.commitPublicationOperation({ projectId, questId, operationKey, committedAtMs });
+  if (result.kind === "committed" || result.kind === "replay") return result.publication;
+  return null;
+}
+
+/** Abandons a staged record. It was never visible, so there is nothing to undo. */
+async function abortPublicationCandidate(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  operationKey: string,
+  abortedAtMs: number
+): Promise<void> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return;
+  try {
+    await publicationStore.abortPublicationOperation({ projectId, questId, operationKey, abortedAtMs });
+  } catch {
+    // The staged record was never visible; a stuck operation is recoverable.
+  }
 }
 
 /**
@@ -1759,44 +1985,6 @@ async function resolveReferencedAssets(
   return Object.freeze(assets
     .filter((asset) => referenced.has(asset.assetId))
     .map((asset) => Object.freeze({ assetId: asset.assetId, hash: asset.hash })));
-}
-
-/**
- * Compensating revert of the catalog pointer when the release promotion fails
- * after the catalog record was already written.
- */
-async function revertPublicationRecord(
-  releases: ControlReleaseModeOptions,
-  projectId: string,
-  questId: string,
-  previous: ControlPublicationRecord | null,
-  written: ControlPublicationRecord | null,
-  idempotencyKey: string
-): Promise<void> {
-  const publicationStore = releases.publicationStore;
-  if (!publicationStore) return;
-  try {
-    if (previous) {
-      await publicationStore.publish({
-        record: { ...previous, status: "published" },
-        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
-        requestHash: previous.contentHash
-      });
-      return;
-    }
-    if (written) {
-      await publicationStore.unpublish({
-        publicMissionId: written.publicMissionId,
-        expectedReleaseId: written.releaseId,
-        idempotencyKey: `revert-${idempotencyKey}`.slice(0, 200),
-        requestHash: written.contentHash
-      });
-    }
-  } catch {
-    // The revert is best effort: the caller still reports the original failure.
-  }
-  void projectId;
-  void questId;
 }
 
 function publicPublicationView(record: ControlPublicationRecord): object {

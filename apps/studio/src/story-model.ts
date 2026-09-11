@@ -16,6 +16,8 @@ export interface StoryEdge {
   readonly source: string;
   readonly target: string;
   readonly label: string;
+  /** Текст перехода: название сцены/финала-цели (подпись стрелки ведёт автора к цели). */
+  readonly targetTitle: string;
   readonly choiceId: string;
 }
 
@@ -276,14 +278,203 @@ export function missionToStoryBoard(
       const target = (targetScene ?? targetEnding) as string;
       const known = targetScene !== null ? sceneIds.has(target) : endingIds.has(target);
       if (!known) continue;
+      const targetTitle = targetScene !== null
+        ? (doc.story.scenes.find((entry) => entry.id === target)?.title ?? target)
+        : (doc.story.endings.find((entry) => entry.id === target)?.title ?? target);
       edges.push({
         id: `${scene.id}:${choice.id}`,
         source: scene.id,
         target,
         label: choice.label,
+        targetTitle,
         choiceId: choice.id
       });
     }
   }
   return { nodes: Object.freeze(nodes), edges: Object.freeze(edges), entrySceneId: doc.story.entrySceneId, positions };
+}
+
+/**
+ * Подпись стрелки-выбора: текст решения автора и текстом перехода (куда ведёт).
+ * Единственное место, где формируется подпись — story-dom.ts только рисует.
+ */
+export function storyEdgeCaption(edge: StoryEdge): string {
+  return edge.targetTitle ? `${edge.label} → ${edge.targetTitle}` : edge.label;
+}
+
+type StoryWork = ReturnType<typeof cloneMission>;
+
+function storyIdTaken(work: StoryWork, id: string): boolean {
+  return work.story.scenes.some((scene) => scene.id === id) || work.story.endings.some((ending) => ending.id === id);
+}
+
+/** Детерминированный дочерний ID без random: уникален в пределах нового узла. */
+function uniqueChildId(prefix: string, index: number, used: ReadonlySet<string>): string {
+  let candidate = `${prefix}-${index}`;
+  let bump = index;
+  while (used.has(candidate)) {
+    bump += 1;
+    candidate = `${prefix}-${bump}`;
+  }
+  return candidate;
+}
+
+function collectChoiceIds(work: StoryWork): Set<string> {
+  const used = new Set<string>();
+  for (const scene of work.story.scenes) {
+    for (const choice of scene.choices) used.add(choice.id);
+  }
+  return used;
+}
+
+/**
+ * Дублирование сцены: новый ID сцены, новые ID диалогов и выборов; выборы,
+ * ссылающиеся на исходную сцену (self-loop), перевязываются на копию,
+ * внешние цели сохраняются. Возвращает только новое story (без мутации входа).
+ */
+export function duplicateStoryScene(
+  doc: MissionDraft,
+  sourceSceneId: string,
+  newSceneId: string
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  const work = cloneMission(doc);
+  const source = work.story.scenes.find((scene) => scene.id === sourceSceneId);
+  if (!source) return { ok: false, error: "story.node_missing" };
+  if (!newSceneId || storyIdTaken(work, newSceneId)) return { ok: false, error: "story.id_taken" };
+  const usedChoices = collectChoiceIds(work);
+  let n = 1;
+  const choices = source.choices.map((choice) => {
+    const id = uniqueChildId(`${newSceneId}-c`, n, usedChoices);
+    n += 1;
+    usedChoices.add(id);
+    return {
+      id,
+      label: choice.label,
+      targetSceneId: choice.targetSceneId === sourceSceneId ? newSceneId : choice.targetSceneId,
+      endingId: choice.endingId,
+      conditions: [],
+      effects: []
+    };
+  });
+  const usedDialogue = new Set(source.dialogue.map((line) => line.id));
+  let d = 1;
+  const dialogue = source.dialogue.map((line) => {
+    const id = uniqueChildId(`${newSceneId}-d`, d, usedDialogue);
+    d += 1;
+    usedDialogue.add(id);
+    return { id, speakerId: line.speakerId, text: line.text };
+  });
+  const copy = { id: newSceneId, title: `${source.title} (копия)`, text: source.text, dialogue, choices };
+  return {
+    ok: true,
+    story: { entrySceneId: work.story.entrySceneId, scenes: [...work.story.scenes, copy], endings: [...work.story.endings] }
+  };
+}
+
+/** Дублирование финала: новый ID, тот же текст. */
+export function duplicateStoryEnding(
+  doc: MissionDraft,
+  sourceEndingId: string,
+  newEndingId: string
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  const work = cloneMission(doc);
+  const source = work.story.endings.find((ending) => ending.id === sourceEndingId);
+  if (!source) return { ok: false, error: "story.node_missing" };
+  if (!newEndingId || storyIdTaken(work, newEndingId)) return { ok: false, error: "story.id_taken" };
+  return {
+    ok: true,
+    story: {
+      entrySceneId: work.story.entrySceneId,
+      scenes: [...work.story.scenes],
+      endings: [...work.story.endings, { id: newEndingId, title: `${source.title} (копия)`, text: source.text }]
+    }
+  };
+}
+
+/** Дублирование выбора внутри сцены: новый ID выбора, та же цель. */
+export function duplicateStoryChoice(
+  doc: MissionDraft,
+  sceneId: string,
+  choiceId: string,
+  newChoiceId: string
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  const work = cloneMission(doc);
+  const scenes = work.story.scenes.map((scene) => ({ ...scene, choices: [...scene.choices] }));
+  const scene = scenes.find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, error: "story.scene_missing" };
+  const source = scene.choices.find((choice) => choice.id === choiceId);
+  if (!source) return { ok: false, error: "story.choice_missing" };
+  if (!newChoiceId || collectChoiceIds(work).has(newChoiceId)) {
+    return { ok: false, error: "story.choice_id_taken" };
+  }
+  scene.choices.push({
+    id: newChoiceId,
+    label: source.label,
+    targetSceneId: source.targetSceneId,
+    endingId: source.endingId,
+    conditions: [],
+    effects: []
+  });
+  return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings: [...work.story.endings] } };
+}
+
+/** Переименование подписи выбора без изменения цели. */
+export function renameStoryChoice(
+  doc: MissionDraft,
+  sceneId: string,
+  choiceId: string,
+  label: string
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  if (!label.trim()) return { ok: false, error: "story.label_empty" };
+  const work = cloneMission(doc);
+  const scenes = work.story.scenes.map((scene) => ({ ...scene, choices: [...scene.choices] }));
+  const scene = scenes.find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, error: "story.scene_missing" };
+  const choice = scene.choices.find((entry) => entry.id === choiceId);
+  if (!choice) return { ok: false, error: "story.choice_missing" };
+  const index = scene.choices.indexOf(choice);
+  scene.choices[index] = { ...choice, label: label.trim() };
+  return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings: [...work.story.endings] } };
+}
+
+export interface StoryDeletionReference {
+  readonly sceneId: string;
+  readonly sceneTitle: string;
+  readonly choiceId: string;
+  readonly label: string;
+}
+
+export interface StoryDeletionImpact {
+  readonly exists: boolean;
+  readonly isEntry: boolean;
+  readonly referencedBy: readonly StoryDeletionReference[];
+  readonly safeToDelete: boolean;
+}
+
+/**
+ * Предупреждение о зависимостях перед удалением сцены/финала: какие выборы на
+ * неё ссылаются. Удаление выполняется removeStoryNode (fail-closed), это лишь
+ * данные для честного сообщения автору.
+ */
+export function storyDeletionImpact(doc: MissionDraft, nodeId: string): StoryDeletionImpact {
+  const scene = doc.story.scenes.find((entry) => entry.id === nodeId) ?? null;
+  const ending = scene ? null : doc.story.endings.find((entry) => entry.id === nodeId) ?? null;
+  if (!scene && !ending) {
+    return { exists: false, isEntry: false, referencedBy: Object.freeze([]), safeToDelete: false };
+  }
+  const referencedBy: StoryDeletionReference[] = [];
+  for (const owner of doc.story.scenes) {
+    for (const choice of owner.choices) {
+      if (choice.targetSceneId === nodeId || choice.endingId === nodeId) {
+        referencedBy.push({ sceneId: owner.id, sceneTitle: owner.title, choiceId: choice.id, label: choice.label });
+      }
+    }
+  }
+  const isEntry = doc.story.entrySceneId === nodeId;
+  return {
+    exists: true,
+    isEntry,
+    referencedBy: Object.freeze(referencedBy),
+    safeToDelete: !isEntry && referencedBy.length === 0
+  };
 }

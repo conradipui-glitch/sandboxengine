@@ -33,8 +33,14 @@ function mission(text) {
   };
 }
 
+// A publication store whose catalog writes cannot land. Since the catalog is
+// written through a staged publication operation, the failure point is
+// `beginPublicationOperation` rather than `publish`.
 class FailingPublicationStore extends MemoryControlPublicationStore {
   publish() {
+    return Promise.resolve({ kind: "invalid_request" });
+  }
+  beginPublicationOperation() {
     return Promise.resolve({ kind: "invalid_request" });
   }
 }

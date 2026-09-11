@@ -4,12 +4,29 @@
 
 Маршрут завершения: **FIN-00…FIN-14**. Единый план — [PLAN-FIN-RU.md](PLAN-FIN-RU.md), состояние карточек — [FIN-CHECKLIST.md](FIN-CHECKLIST.md).
 
-Активная карточка: **FIN-01 — неизменяемый bundle релиза и настоящий rollback (B02)**, статус LOCAL_PASS (worklog: [worklog/2026-09-11-FIN01-release-bundle.md](worklog/2026-09-11-FIN01-release-bundle.md)).
-Первый незакрытый критерий: hosted-проверка FIN-01 (требует доставки новой ревизии engine, карточка FIN-04), далее FIN-02 (B03, согласованная публикация), FIN-03 (B04, ассеты открытых сессий).
-Следующее действие: реализовать FIN-02 — инвалидация/транзакционность публикации в реальной SQLite, CAS + idempotency receipt, без best-effort компенсации поверх чужой версии.
+Активные карточки: **FIN-03 (B04, ассеты открытых сессий) — engine-половина LOCAL_PASS, site-половина в ветке сайта**, **FIN-04 (B01, доставка) — манифест состава сделан, карточка PARTIAL**, **FIN-05 + FIN-05B влиты** (`426c944`).
+Первый незакрытый критерий: hosted-прогон FIN-03 через nginx под gate (нужна доставка новой ревизии engine — FIN-04), затем FIN-06 (роли editor/viewer/read-only), FIN-07/08 (ИИ-провайдеры, нужны реальные ключи).
+Следующее действие: доставка `feat/b13-acceptance-closure` на VPS по exact-SHA + перегенерация `deploy/vps/delivery-manifest.json`, затем hosted smoke и сквозная приёмка.
+Текущий SHA рабочей ветки: `426c944` (FIN-05B merge); до него `01cbbd6` (FIN-04 манифест), `6c51629` (FIN-03 engine pinned-байты), `dc2de3d` (FIN-03 engine session-route), `523dca5` (FIN-05), `232afa2` (FIN-02), `1886041` (FIN-01).
 
 Текущий блок: **M06 PARTIAL → исправления F01–F07 доставлены и подтверждены hosted. OPEN: R05 закрытие, C18 ролевые проверки, браузерный проход глазами игрока, второй независимый прогон; плюс четыре проблемы повторного аудита B01–B04 → FIN-01…FIN-04.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
+
+## FIN-03 (B04) и FIN-04 (B01) — ассеты открытых сессий и манифест доставки (2026-09-11)
+
+- **FIN-03 engine-половина (B04):** открытая сессия теперь получает ассеты по session-pinned маршруту `/public/v1/missions/:id/sessions/:sid/assets/:assetId`; credential сессии обязателен (нет/подделка → 401, чужая сессия или миссия → 404), отдача `private`. Оба маршрута (публичный и session) отдают байты **pinned digest** релиза, а не текущую запись библиотеки — иначе повторная загрузка того же `assetId` подменяла содержимое под `cache-control: immutable`. Тесты: `apps/server/test/fin03-session-assets.test.mjs` **3/3** (3-й кейс был RED: 2/3), независимый репро-тест субагента `apps/server/test/fin03-open-session-assets.test.mjs` **3/3** против этой ветки (до фикса 2/3). Site-половина — отдельный репозиторий, ветка `feat/fin03-site-session-assets` (`6eb4f9c`): BFF запрашивает тот же session-pinned URL. Worklog: [worklog/2026-09-11-FIN03-engine-session-assets.md](worklog/2026-09-11-FIN03-engine-session-assets.md).
+- **FIN-04 (B01) — манифест состава:** `deploy/vps/delivery-manifest.json` (генерируется `deploy/vps/delivery-manifest.mjs`) перечисляет версии компонентов состава (engine/authored/studio — commit exact-SHA, gate — SHA-256 файла) и объявляет общего писателя общей БД. Тест `apps/server/test/fin04-delivery-manifest.test.mjs` **2/2** (RED до манифеста 1/2; тест написан субагентом-репро). Worklog: [worklog/2026-09-11-FIN04-delivery-manifest.md](worklog/2026-09-11-FIN04-delivery-manifest.md). **Не закрыто:** runtime-детекция «старый Control пишет в общую БД» и hosted-проверка; манифест — снимок доставленного SHA.
+- **FIN-05B влит** в рабочую ветку (`426c944`), конфликт был только в `docs/FIN-CHECKLIST.md`. После слияния: typecheck/docs:check/boundaries exit 0, Server **144/144**, Control 106/106, Contracts 57/57, Studio 142 pass / 0 fail / 1 skip.
+- **FIN-12 (серверная половина заметок/комментариев) — ветка `feat/fin12-project-notes` (`eee9234`)**, ещё не влита: тонкие тесты (2 + 1), отправлена на усиление.
+
+## FIN-05B — композиция экрана (2026-09-11, worktree `C:/Temp/lhc-fin05b-compose`, ветка `feat/fin05b-screen-composition`)
+
+Второй bounded-срез FIN-05: слои-материалы и ручная композиция экрана в Studio.
+
+- Модель `apps/studio/src/screen-composition.ts` (без новых полей контракта): update/duplicate/delete слоя, drag/resize(пропорц.)/rotate/flip/opacity/z-order/lock/visible, contain/cover + фокус и crop, наследование фона (own/inherited/none), preset + reduced-motion/пауза, реальные mute/play/blocked музыки, клавиатура; запись через тот же CAS `POST /mission`.
+- `apps/studio/src/screen-dom.ts` — живая сцена (drag, ручка resize, клавиатура); `app.ts` — инспектор слоёв с действиями и inline-формой, монтаж сцены с сохранением host между render'ами.
+- Проверка: `apps/studio/test/fin05b-screen-composition.test.mjs` **16/16** (RED до реализации — `ERR_MODULE_NOT_FOUND`); `test:studio` 142/0/1; Control 106/106, Server 141/141, Contracts 57/57; typecheck/boundaries/docs:check — exit 0.
+- **Не закрыто:** реальная библиотека материалов (hash/MIME/размеры, restart/другой браузер), воспроизведение сцены в Player/сайте/runtime, browser-приёмка 3+ сцен/2 финалов не-Florence. Карточка остаётся **PARTIAL**. Worklog: [worklog/2026-09-11-FIN05B-screen-composition.md](worklog/2026-09-11-FIN05B-screen-composition.md).
 
 ## Независимая проверка M06 и корректирующие работы (2026-09-11)
 

@@ -65,6 +65,38 @@ export type UnpublishPublicationResult =
   | { readonly kind: "idempotency_key_reused" }
   | { readonly kind: "invalid_request" };
 
+/**
+ * A durable publication attempt. The candidate record it carries is invisible
+ * until it is committed, so a failed or interrupted publish can never leave the
+ * catalog pointing at content the author never successfully published.
+ */
+export interface ControlPublicationOperation {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  readonly operationKey: string;
+  readonly kind: "publish" | "rollback";
+  readonly requestHash: string;
+  readonly targetReleaseId: string;
+  readonly candidate: ControlPublicationRecord;
+  readonly state: "pending" | "committed" | "aborted";
+  readonly startedAtMs: number;
+  readonly finishedAtMs: number | null;
+}
+
+export type BeginPublicationOperationResult =
+  | { readonly kind: "pending"; readonly operation: ControlPublicationOperation }
+  | { readonly kind: "replay"; readonly operation: ControlPublicationOperation }
+  | { readonly kind: "operation_conflict"; readonly operation: ControlPublicationOperation }
+  | { readonly kind: "invalid_request" };
+
+export type CommitPublicationOperationResult =
+  | { readonly kind: "committed"; readonly publication: ControlPublicationRecord }
+  | { readonly kind: "replay"; readonly publication: ControlPublicationRecord }
+  | { readonly kind: "not_pending" }
+  | { readonly kind: "slug_conflict" }
+  | { readonly kind: "invalid_request" };
+
 export interface ControlPublicationStore {
   listPublished(): Promise<readonly ControlPublicationRecord[]>;
   getPublicMission(identifier: string): Promise<ControlPublicationRecord | null>;
@@ -86,6 +118,23 @@ export interface ControlPublicationStore {
     readonly idempotencyKey: string;
     readonly requestHash: string;
   }): Promise<PinReleaseResult>;
+  beginPublicationOperation(input: {
+    readonly operation: ControlPublicationOperation;
+  }): Promise<BeginPublicationOperationResult>;
+  commitPublicationOperation(input: {
+    readonly projectId: string;
+    readonly questId: string;
+    readonly operationKey: string;
+    readonly committedAtMs: number;
+  }): Promise<CommitPublicationOperationResult>;
+  abortPublicationOperation(input: {
+    readonly projectId: string;
+    readonly questId: string;
+    readonly operationKey: string;
+    readonly abortedAtMs: number;
+  }): Promise<ControlPublicationOperation | null>;
+  getPublicationOperation(projectId: string, questId: string, operationKey: string): Promise<ControlPublicationOperation | null>;
+  listPendingPublicationOperations(projectId?: string, questId?: string): Promise<readonly ControlPublicationOperation[]>;
   close?(): void;
 }
 
@@ -171,6 +220,64 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     this.#pins.set(pinKey(stored.projectId, stored.questId, stored.releaseId), stored);
     this.#pinIdempotency.set(key, { requestHash: input.requestHash, result: stored });
     return frozen({ kind: "pinned", pin: clone(stored) });
+  }
+
+  readonly #operations = new Map<string, ControlPublicationOperation>();
+
+  async beginPublicationOperation(input: { readonly operation: ControlPublicationOperation }): Promise<BeginPublicationOperationResult> {
+    const operation = input.operation;
+    if (!validOperation(operation)) return frozen({ kind: "invalid_request" });
+    const key = operationMapKey(operation.projectId, operation.questId, operation.operationKey);
+    const existing = this.#operations.get(key);
+    if (existing) {
+      if (existing.requestHash !== operation.requestHash) return frozen({ kind: "operation_conflict", operation: clone(existing) });
+      return frozen({ kind: "replay", operation: clone(existing) });
+    }
+    const stored = clone(operation);
+    this.#operations.set(key, stored);
+    return frozen({ kind: "pending", operation: clone(stored) });
+  }
+
+  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number }): Promise<CommitPublicationOperationResult> {
+    if (!isId(input.projectId) || !isId(input.questId) || !isIdempotency(input.operationKey)) return frozen({ kind: "invalid_request" });
+    const key = operationMapKey(input.projectId, input.questId, input.operationKey);
+    const operation = this.#operations.get(key);
+    if (!operation) return frozen({ kind: "not_pending" });
+    if (operation.state === "committed") {
+      const committed = this.#records.get(operation.candidate.publicMissionId);
+      return committed ? frozen({ kind: "replay", publication: clone(committed) }) : frozen({ kind: "not_pending" });
+    }
+    if (operation.state !== "pending") return frozen({ kind: "not_pending" });
+    const slugCollision = [...this.#records.values()].find((record) => record.slug === operation.candidate.slug && record.publicMissionId !== operation.candidate.publicMissionId);
+    if (slugCollision) return frozen({ kind: "slug_conflict" });
+    const stored = clone({ ...operation.candidate, status: "published" as const });
+    this.#records.set(stored.publicMissionId, stored);
+    this.#operations.set(key, clone({ ...operation, state: "committed" as const, finishedAtMs: input.committedAtMs }));
+    return frozen({ kind: "committed", publication: clone(stored) });
+  }
+
+  async abortPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly abortedAtMs: number }): Promise<ControlPublicationOperation | null> {
+    const key = operationMapKey(input.projectId, input.questId, input.operationKey);
+    const operation = this.#operations.get(key);
+    if (!operation) return null;
+    if (operation.state !== "pending") return clone(operation);
+    const stored = clone({ ...operation, state: "aborted" as const, finishedAtMs: input.abortedAtMs });
+    this.#operations.set(key, stored);
+    return clone(stored);
+  }
+
+  async getPublicationOperation(projectId: string, questId: string, operationKey: string): Promise<ControlPublicationOperation | null> {
+    if (!isId(projectId) || !isId(questId) || !isIdempotency(operationKey)) return null;
+    const operation = this.#operations.get(operationMapKey(projectId, questId, operationKey));
+    return operation ? clone(operation) : null;
+  }
+
+  async listPendingPublicationOperations(projectId?: string, questId?: string): Promise<readonly ControlPublicationOperation[]> {
+    return Object.freeze([...this.#operations.values()]
+      .filter((operation) => operation.state === "pending")
+      .filter((operation) => (projectId === undefined || operation.projectId === projectId) && (questId === undefined || operation.questId === questId))
+      .sort((left, right) => left.startedAtMs - right.startedAtMs)
+      .map(clone));
   }
 
   close(): void {}
@@ -279,7 +386,16 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
       project_id TEXT NOT NULL, quest_id TEXT NOT NULL, release_id TEXT NOT NULL,
       idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL, result_json TEXT NOT NULL,
       PRIMARY KEY (project_id, quest_id, release_id, idempotency_key)
-    ) STRICT;`);
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS control_publication_operations (
+      project_id TEXT NOT NULL, quest_id TEXT NOT NULL, operation_key TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('publish','rollback')), request_hash TEXT NOT NULL,
+      target_release_id TEXT NOT NULL, candidate_json TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending','committed','aborted')),
+      started_at_ms INTEGER NOT NULL, finished_at_ms INTEGER,
+      PRIMARY KEY (project_id, quest_id, operation_key)
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS control_publication_operations_pending_idx ON control_publication_operations(state, started_at_ms);`);
     try { this.#db.exec("ALTER TABLE control_publication_records ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0"); } catch {}
     try { this.#db.exec("ALTER TABLE control_publication_records ADD COLUMN draft_content_hash TEXT NOT NULL DEFAULT ''"); } catch {}
   }
@@ -320,6 +436,89 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
       return frozen({ kind: "pinned", pin: stored });
     });
   }
+  async beginPublicationOperation(input: { readonly operation: ControlPublicationOperation }): Promise<BeginPublicationOperationResult> {
+    this.#assertOpen();
+    const operation = input.operation;
+    if (!validOperation(operation)) return frozen({ kind: "invalid_request" });
+    return this.#transaction(() => {
+      const row = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1")
+        .get(operation.projectId, operation.questId, operation.operationKey);
+      if (row) {
+        const existing = operationFromRow(row);
+        if (existing.requestHash !== operation.requestHash) return frozen({ kind: "operation_conflict", operation: existing });
+        return frozen({ kind: "replay", operation: existing });
+      }
+      this.#db.prepare(`INSERT INTO control_publication_operations
+        (project_id, quest_id, operation_key, kind, request_hash, target_release_id, candidate_json, state, started_at_ms, finished_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL)`).run(
+        operation.projectId, operation.questId, operation.operationKey, operation.kind, operation.requestHash,
+        operation.targetReleaseId, JSON.stringify(operation.candidate), operation.startedAtMs
+      );
+      return frozen({ kind: "pending", operation: clone(operation) });
+    });
+  }
+
+  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number }): Promise<CommitPublicationOperationResult> {
+    this.#assertOpen();
+    if (!isId(input.projectId) || !isId(input.questId) || !isIdempotency(input.operationKey)) return frozen({ kind: "invalid_request" });
+    return this.#transaction(() => {
+      const row = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1")
+        .get(input.projectId, input.questId, input.operationKey);
+      if (!row) return frozen({ kind: "not_pending" });
+      const operation = operationFromRow(row);
+      if (operation.state === "committed") {
+        const committedRow = this.#db.prepare("SELECT * FROM control_publication_records WHERE public_mission_id = ? LIMIT 1").get(operation.candidate.publicMissionId);
+        return committedRow ? frozen({ kind: "replay", publication: publicationFromRow(committedRow) }) : frozen({ kind: "not_pending" });
+      }
+      if (operation.state !== "pending") return frozen({ kind: "not_pending" });
+      const collision = this.#db.prepare("SELECT public_mission_id FROM control_publication_records WHERE slug = ? AND public_mission_id <> ? LIMIT 1").get(operation.candidate.slug, operation.candidate.publicMissionId);
+      if (collision) return frozen({ kind: "slug_conflict" });
+      const stored = clone({ ...operation.candidate, status: "published" as const });
+      this.#db.prepare(`INSERT INTO control_publication_records
+        (public_mission_id, slug, project_id, quest_id, draft_revision, draft_content_hash, release_id, content_hash, channel, status, listing_json, published_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(public_mission_id) DO UPDATE SET slug=excluded.slug, project_id=excluded.project_id, quest_id=excluded.quest_id, draft_revision=excluded.draft_revision, draft_content_hash=excluded.draft_content_hash,
+          release_id=excluded.release_id, content_hash=excluded.content_hash, channel=excluded.channel, status=excluded.status,
+          listing_json=excluded.listing_json, published_at_ms=excluded.published_at_ms`).run(
+        stored.publicMissionId, stored.slug, stored.projectId, stored.questId, stored.draftRevision, stored.draftContentHash, stored.releaseId, stored.contentHash,
+        stored.channel, stored.status, JSON.stringify(stored.listing), stored.publishedAtMs
+      );
+      this.#db.prepare("UPDATE control_publication_operations SET state = 'committed', finished_at_ms = ? WHERE project_id = ? AND quest_id = ? AND operation_key = ?")
+        .run(input.committedAtMs, input.projectId, input.questId, input.operationKey);
+      return frozen({ kind: "committed", publication: stored });
+    });
+  }
+
+  async abortPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly abortedAtMs: number }): Promise<ControlPublicationOperation | null> {
+    this.#assertOpen();
+    if (!isId(input.projectId) || !isId(input.questId) || !isIdempotency(input.operationKey)) return null;
+    return this.#transaction(() => {
+      const row = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1")
+        .get(input.projectId, input.questId, input.operationKey);
+      if (!row) return null;
+      const operation = operationFromRow(row);
+      if (operation.state !== "pending") return operation;
+      this.#db.prepare("UPDATE control_publication_operations SET state = 'aborted', finished_at_ms = ? WHERE project_id = ? AND quest_id = ? AND operation_key = ?")
+        .run(input.abortedAtMs, input.projectId, input.questId, input.operationKey);
+      return clone({ ...operation, state: "aborted" as const, finishedAtMs: input.abortedAtMs });
+    });
+  }
+
+  async getPublicationOperation(projectId: string, questId: string, operationKey: string): Promise<ControlPublicationOperation | null> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId) || !isIdempotency(operationKey)) return null;
+    const row = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1").get(projectId, questId, operationKey);
+    return row ? operationFromRow(row) : null;
+  }
+
+  async listPendingPublicationOperations(projectId?: string, questId?: string): Promise<readonly ControlPublicationOperation[]> {
+    this.#assertOpen();
+    const rows = this.#db.prepare(`SELECT * FROM control_publication_operations WHERE state = 'pending'
+      AND (? IS NULL OR project_id = ?) AND (? IS NULL OR quest_id = ?) ORDER BY started_at_ms ASC`)
+      .all(projectId ?? null, projectId ?? null, questId ?? null, questId ?? null);
+    return Object.freeze(rows.map((row: any) => operationFromRow(row)));
+  }
+
   #readIdempotency(operation: "publish" | "unpublish", publicMissionId: string, key: string): { requestHash: string; resultJson: string } | null {
     const row = this.#db.prepare("SELECT request_hash, result_json FROM control_publication_idempotency WHERE operation_kind = ? AND public_mission_id = ? AND idempotency_key = ?").get(operation, publicMissionId, key);
     return row ? { requestHash: String(row.request_hash), resultJson: String(row.result_json) } : null;
@@ -379,6 +578,41 @@ function pinFromJson(json: string): ControlPublicationReleasePin {
   const candidate = JSON.parse(json) as ControlPublicationReleasePin;
   if (!validPin(candidate)) throw new Error("corrupt publication release pin");
   return clone(candidate);
+}
+function operationMapKey(projectId: string, questId: string, operationKey: string): string { return `${projectId}\u0000${questId}\u0000${operationKey}`; }
+function validOperationShape(operation: unknown): boolean {
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) return false;
+  const value = operation as ControlPublicationOperation;
+  return value.schemaVersion === "1.0" && isId(value.projectId) && isId(value.questId) && isIdempotency(value.operationKey)
+    && (value.kind === "publish" || value.kind === "rollback")
+    && isHash(value.requestHash) && isId(value.targetReleaseId)
+    && validRecord(value.candidate)
+    && (value.state === "pending" || value.state === "committed" || value.state === "aborted")
+    && Number.isSafeInteger(value.startedAtMs) && value.startedAtMs >= 0
+    && (value.finishedAtMs === null || (Number.isSafeInteger(value.finishedAtMs) && value.finishedAtMs >= 0));
+}
+function validOperation(operation: ControlPublicationOperation): boolean {
+  return validOperationShape(operation) && operation.state === "pending" && operation.finishedAtMs === null;
+}
+function operationFromJson(json: string): ControlPublicationOperation {
+  const candidate = JSON.parse(json) as ControlPublicationOperation;
+  if (!validOperationShape(candidate)) throw new Error("corrupt publication operation");
+  return clone(candidate);
+}
+function operationFromRow(row: any): ControlPublicationOperation {
+  return operationFromJson(JSON.stringify({
+    schemaVersion: "1.0",
+    projectId: String(row.project_id),
+    questId: String(row.quest_id),
+    operationKey: String(row.operation_key),
+    kind: String(row.kind),
+    requestHash: String(row.request_hash),
+    targetReleaseId: String(row.target_release_id),
+    candidate: JSON.parse(String(row.candidate_json)),
+    state: String(row.state),
+    startedAtMs: Number(row.started_at_ms),
+    finishedAtMs: row.finished_at_ms === null || row.finished_at_ms === undefined ? null : Number(row.finished_at_ms)
+  }));
 }
 function publicationFromRow(row: any): ControlPublicationRecord { return publicationFromJson(String(row.listing_json), row); }
 function publicationFromJson(json: string, row?: any): ControlPublicationRecord {

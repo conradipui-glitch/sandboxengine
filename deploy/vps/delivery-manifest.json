@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAtMs": 1789087160619,
+  "generatedFrom": {
+    "commit": "7e61f9889724f01a5f5c1c2e511093c177ceac6b",
+    "note": "engine, authored and studio are built from this commit; the gate is the mounted deploy/vps/lhc-gate.mjs file"
+  },
+  "components": [
+    {
+      "name": "engine",
+      "version": "7e61f9889724f01a5f5c1c2e511093c177ceac6b",
+      "kind": "commit",
+      "source": "deploy/vps/Dockerfile.engine",
+      "serves": [
+        "control API :8788 (loopback)",
+        "runtime :8742"
+      ]
+    },
+    {
+      "name": "authored",
+      "version": "7e61f9889724f01a5f5c1c2e511093c177ceac6b",
+      "kind": "commit",
+      "source": "deploy/vps/authored-server.mjs",
+      "serves": [
+        "authored scenario runtime :8746"
+      ]
+    },
+    {
+      "name": "studio",
+      "version": "7e61f9889724f01a5f5c1c2e511093c177ceac6b",
+      "kind": "commit",
+      "source": "deploy/vps/Dockerfile.studio",
+      "serves": [
+        "authoring studio :8740",
+        "player :8745"
+      ]
+    },
+    {
+      "name": "gate",
+      "version": "sha256:ffc4945a56571421c689b5833809d1403b7dacb71d8ce8363c63c706217ea7da",
+      "kind": "file-digest",
+      "source": "deploy/vps/lhc-gate.mjs",
+      "serves": [
+        "telegram gate :8744"
+      ]
+    }
+  ],
+  "sharedDatabase": {
+    "path": "/data/living-history.sqlite",
+    "volume": "engine-data",
+    "writers": [
+      {
+        "component": "engine",
+        "via": "RUNTIME_DB_PATH"
+      },
+      {
+        "component": "studio",
+        "via": "LH_DATABASE_PATH"
+      },
+      {
+        "component": "authored",
+        "via": "AUTHORED_DB_PATH"
+      }
+    ],
+    "note": "More than one process writes this file; the manifest names them so a stale writer can be spotted instead of being inferred."
+  }
+}

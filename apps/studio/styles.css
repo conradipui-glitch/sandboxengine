@@ -1081,6 +1081,12 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .story-wrap { height: clamp(420px, calc(100vh - 255px), 680px); min-height: 420px; }
 .story-host { height: 100%; }
 .story-inspector { display: flex; flex-direction: column; gap: 10px; }
+.story-choice-row { flex-direction: column; align-items: stretch; }
+.story-choice-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.story-choice-edit { display: flex; gap: 8px; align-items: flex-end; }
+.story-choice-edit label { flex: 1; }
+.story-node-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.story-delete-warning { color: var(--danger); }
 
 .screen-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .screen-readonly { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -1088,3 +1094,52 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .screen-layer-row small { display: block; max-width: 190px; overflow-wrap: anywhere; }
 .screen-layer-add { border-top: 1px solid var(--border); padding-top: 8px; }
 .screen-layer-add summary { cursor: pointer; color: var(--primary); font-weight: 600; }
+
+.screen-stage-wrap { position: relative; }
+.screen-stage-host { width: 100%; }
+.screen-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, rgba(0, 0, 0, 0.18) 25%, transparent 25%) 0 0 / 24px 24px,
+    linear-gradient(45deg, transparent 75%, rgba(0, 0, 0, 0.18) 75%) 0 0 / 24px 24px,
+    var(--surface, #101418);
+  touch-action: none;
+  outline: none;
+}
+.screen-stage:focus-visible { box-shadow: 0 0 0 2px var(--primary); }
+.screen-stage-bg { position: absolute; inset: 0; background-size: cover; background-position: center; transform-origin: top left; pointer-events: none; }
+.screen-stage-layers { position: absolute; inset: 0; }
+.screen-layer {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  background: rgba(120, 160, 210, 0.18);
+  transform-origin: center;
+  cursor: grab;
+}
+.screen-layer-actor { background: rgba(120, 200, 150, 0.22); }
+.screen-layer-item { background: rgba(220, 190, 120, 0.22); }
+.screen-layer-text { background: rgba(180, 150, 220, 0.22); }
+.screen-layer.is-hidden { opacity: 0.35 !important; border-style: dashed; }
+.screen-layer.is-locked { cursor: not-allowed; border-color: rgba(255, 160, 160, 0.8); }
+.screen-layer.is-selected { outline: 2px solid var(--primary); outline-offset: 1px; }
+.screen-resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--primary);
+  border: 1px solid #fff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+}
+.screen-hint { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted); pointer-events: none; }
+.screen-layer-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.screen-layer-actions .screen-layer-action { padding: 2px 6px; font-size: 12px; }
+.screen-layer-row.is-selected { border-left: 2px solid var(--primary); }
+.screen-layer-edit { border-top: 1px dashed var(--border); padding-top: 8px; margin-bottom: 8px; }
+

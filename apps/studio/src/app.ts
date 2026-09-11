@@ -61,14 +61,21 @@ import {
   addStoryChoice,
   addStoryEnding,
   addStoryScene,
+  duplicateStoryChoice,
+  duplicateStoryEnding,
+  duplicateStoryScene,
   missionToStoryBoard,
   removeStoryChoice,
   removeStoryNode,
+  renameStoryChoice,
+  storyDeletionImpact,
   storyRendererPositions,
   storyPositionKey,
   updateStoryNode,
-  type StoryBoardModel
+  type StoryBoardModel,
+  type StoryDeletionImpact
 } from "./story-model.js";
+import { StoryHistory } from "./story-commands.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -77,6 +84,17 @@ import {
   updateScreen,
   type ScreenMutationResult
 } from "./screen-model.js";
+import {
+  applyScreenLayerAction,
+  duplicateScreenLayer,
+  nextScreenLayerId,
+  orderedScreenLayers,
+  translateScreenLayer,
+  updateScreenLayer,
+  type ScreenLayerAction,
+  type ScreenTransform
+} from "./screen-composition.js";
+import { mountScreenComposition, type ScreenCompositionHandle } from "./screen-dom.js";
 import { mountStoryBoard, type StoryDomHandle } from "./story-dom.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
@@ -137,7 +155,8 @@ interface StudioState {
   missionLoadError: string | null;
   missionSaving: boolean;
   selectedStoryNodeId: string | null;
-  storyUndo: readonly MissionDraft[];
+  selectedScreenLayerId: string | null;
+  storyHistory: StoryHistory<MissionDraft>;
   storyDialog: { readonly kind: "node"; readonly nodeKind: "scene" | "ending" }
     | { readonly kind: "choice"; readonly sourceId: string; readonly targetId: string; readonly targetKind: "scene" | "ending" }
     | null;
@@ -194,7 +213,8 @@ export class StudioApp {
     missionLoadError: null,
     missionSaving: false,
     selectedStoryNodeId: null,
-    storyUndo: [],
+    selectedScreenLayerId: null,
+    storyHistory: new StoryHistory<MissionDraft>(),
     storyDialog: null,
     editorMenuOpen: false,
     utilityPanel: null,
@@ -209,6 +229,9 @@ export class StudioApp {
   private storyHandle: StoryDomHandle | null = null;
   private storyHost: HTMLElement | null = null;
   private storyContext: { readonly projectId: string; readonly questId: string } | null = null;
+  private screenHandle: ScreenCompositionHandle | null = null;
+  private screenHost: HTMLElement | null = null;
+  private screenContext: { readonly projectId: string; readonly questId: string; readonly nodeId: string } | null = null;
   private readonly rootDisposers: Array<() => void> = [];
   private inspectorSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private boardSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -492,12 +515,38 @@ export class StudioApp {
       await this.undoStoryChange();
       return;
     }
+    if (action === "story-redo") {
+      await this.redoStoryChange();
+      return;
+    }
+    if (action === "story-duplicate-node") {
+      const nodeId = target.dataset.nodeId;
+      const mission = this.state.mission;
+      if (typeof nodeId === "string" && nodeId.length > 0 && mission) {
+        const isScene = mission.story.scenes.some((scene) => scene.id === nodeId);
+        const newId = generateStoryId(isScene ? "scene" : "ending");
+        const label = isScene ? "Сцена дублирована." : "Финал дублирован.";
+        const ok = isScene
+          ? await this.saveMissionStory(label, (doc) => duplicateStoryScene(doc, nodeId, newId))
+          : await this.saveMissionStory(label, (doc) => duplicateStoryEnding(doc, nodeId, newId));
+        if (ok) this.state.selectedStoryNodeId = newId;
+        this.render();
+      }
+      return;
+    }
+    if (action === "story-duplicate-choice") {
+      const sceneId = target.dataset.sceneId;
+      const choiceId = target.dataset.choiceId;
+      if (typeof sceneId === "string" && typeof choiceId === "string") {
+        await this.saveMissionStory("Выбор дублирован.", (doc) => duplicateStoryChoice(doc, sceneId, choiceId, generateStoryId("choice")));
+        this.render();
+      }
+      return;
+    }
     if (action === "story-delete-node") {
       const nodeId = target.dataset.nodeId;
       if (typeof nodeId === "string" && nodeId.length > 0) {
-        const ok = await this.saveMissionStory("Узел удалён.", (doc) => removeStoryNode(doc, nodeId));
-        if (ok && this.state.selectedStoryNodeId === nodeId) this.state.selectedStoryNodeId = null;
-        this.render();
+        await this.requestStoryNodeDelete(nodeId);
       }
       return;
     }
@@ -513,7 +562,24 @@ export class StudioApp {
       const nodeId = target.dataset.nodeId;
       const layerId = target.dataset.layerId;
       if (typeof nodeId === "string" && typeof layerId === "string") {
-        await this.saveMissionDocument("Слой удалён.", (doc) => removeScreenLayer(doc, nodeId, layerId));
+        const ok = await this.saveMissionDocument("Слой удалён.", (doc) => removeScreenLayer(doc, nodeId, layerId));
+        if (ok && this.state.selectedScreenLayerId === layerId) this.state.selectedScreenLayerId = null;
+        this.render();
+      }
+      return;
+    }
+    if (action === "screen-select-layer") {
+      const layerId = target.dataset.layerId;
+      this.state.selectedScreenLayerId = typeof layerId === "string" && layerId.length > 0 ? layerId : null;
+      this.render();
+      return;
+    }
+    if (action === "screen-layer-action") {
+      const nodeId = target.dataset.nodeId;
+      const layerId = target.dataset.layerId;
+      const layerAction = target.dataset.layerAction as ScreenLayerAction | undefined;
+      if (typeof nodeId === "string" && typeof layerId === "string" && layerAction) {
+        await this.runScreenLayerAction(nodeId, layerId, layerAction);
       }
       return;
     }
@@ -719,6 +785,12 @@ export class StudioApp {
         }));
         return;
       }
+      if (kind === "story-choice-edit") {
+        const sceneId = form.dataset.sceneId ?? "";
+        const choiceId = form.dataset.choiceId ?? "";
+        await this.saveMissionStory("Подпись выбора сохранена.", (doc) => renameStoryChoice(doc, sceneId, choiceId, text(data, "label")));
+        return;
+      }
       if (kind === "screen-save") {
         const nodeId = form.dataset.nodeId ?? "";
         const result = await this.saveMissionDocument("Оформление экрана сохранено.", (doc) => updateScreen(doc, nodeId, {
@@ -748,6 +820,25 @@ export class StudioApp {
           z: Number(text(data, "z"))
         };
         await this.saveMissionDocument("Слой добавлен.", (doc) => addScreenLayer(doc, nodeId, layer));
+        return;
+      }
+      if (kind === "screen-layer-edit") {
+        const nodeId = form.dataset.nodeId ?? "";
+        const layerId = form.dataset.layerId ?? "";
+        await this.saveMissionDocument("Слой сохранён.", (doc) => updateScreenLayer(doc, nodeId, layerId, {
+          name: text(data, "name"),
+          visible: data.get("visible") === "on",
+          locked: data.get("locked") === "on",
+          asset: assetRefFromForm(data, "assetId", "assetHash"),
+          x: Number(text(data, "x")),
+          y: Number(text(data, "y")),
+          scale: Number(text(data, "scale")),
+          rotation: Number(text(data, "rotation")),
+          flipH: data.get("flipH") === "on",
+          flipV: data.get("flipV") === "on",
+          opacity: Number(text(data, "opacity")),
+          z: integer(data, "z")
+        }));
         return;
       }
 
@@ -1199,7 +1290,7 @@ export class StudioApp {
         this.state.missionLoadError = null;
         this.state.missionSaving = false;
         this.state.selectedStoryNodeId = null;
-        this.state.storyUndo = [];
+        this.state.storyHistory.clear();
         this.state.storyDialog = null;
         this.state.validation = null;
     this.state.playtest = null;
@@ -1845,9 +1936,24 @@ export class StudioApp {
     if (!canKeepStory || (this.storyContext !== null && !sameStoryContext)) {
       this.destroyStory();
     }
+    const canKeepScreen = this.state.view === "editor"
+      && this.state.boardView === "story"
+      && this.state.mission !== null
+      && this.state.selectedProjectId !== null
+      && this.state.selectedQuestId !== null
+      && this.state.selectedStoryNodeId !== null;
+    const sameScreenContext = canKeepScreen
+      && this.screenContext !== null
+      && this.screenContext.projectId === this.state.selectedProjectId
+      && this.screenContext.questId === this.state.selectedQuestId
+      && this.screenContext.nodeId === this.state.selectedStoryNodeId;
+    if (!canKeepScreen || (this.screenContext !== null && !sameScreenContext)) {
+      this.destroyScreen();
+    }
 
     const preservedBoardHost = canKeepBoard ? this.boardHost : null;
     const preservedStoryHost = canKeepStory ? this.storyHost : null;
+    const preservedScreenHost = canKeepScreen ? this.screenHost : null;
     const focusKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.focusKey : undefined;
     if (this.state.view === "projects" && this.state.access.mode !== "anonymous") {
       this.root.innerHTML = this.renderProjects();
@@ -1863,6 +1969,10 @@ export class StudioApp {
       const freshHost = this.root.querySelector<HTMLElement>("[data-story-host]");
       if (freshHost && freshHost !== preservedStoryHost) freshHost.replaceWith(preservedStoryHost);
     }
+    if (preservedScreenHost) {
+      const freshHost = this.root.querySelector<HTMLElement>("[data-screen-host]");
+      if (freshHost && freshHost !== preservedScreenHost) freshHost.replaceWith(preservedScreenHost);
+    }
     if (focusKey) {
       const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
       const element = this.root.querySelector<HTMLElement>(selector);
@@ -1877,6 +1987,7 @@ export class StudioApp {
 
     this.mountBoardIfNeeded();
     this.mountStoryEditableIfNeeded();
+    this.mountScreenIfNeeded();
   }
 
   /** Монтирует или обновляет единственный живой canvas после shell render. */
@@ -1940,6 +2051,120 @@ export class StudioApp {
     this.storyContext = null;
   }
 
+  /** FIN-05B: монтирует живую сцену композиции выбранного экрана. */
+  private mountScreenIfNeeded(): void {
+    if (typeof this.root.querySelector !== "function") return;
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    const mission = this.state.mission;
+    const nodeId = this.state.selectedStoryNodeId;
+    if (!projectId || !questId || !mission || !nodeId) return;
+    const host = this.root.querySelector<HTMLElement>("[data-screen-host]");
+    if (!host) return;
+    const screen = screenForNode(mission, nodeId);
+    if (!screen) return;
+    const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+    const editable = canEditProject(this.state.access, project);
+    const same = this.screenHandle !== null
+      && this.screenHost === host
+      && this.screenContext?.projectId === projectId
+      && this.screenContext.questId === questId
+      && this.screenContext.nodeId === nodeId;
+    if (same) {
+      this.screenHandle?.update(screen, editable);
+      this.screenHandle?.select(this.state.selectedScreenLayerId);
+      return;
+    }
+    this.destroyScreen();
+    this.screenHost = host;
+    this.screenContext = { projectId, questId, nodeId };
+    this.screenHandle = mountScreenComposition(host, {
+      screen,
+      defaults: mission.defaults,
+      editable,
+      selectedLayerId: this.state.selectedScreenLayerId,
+      ...this.screenCallbacks(projectId, questId, nodeId)
+    });
+  }
+
+  private destroyScreen(): void {
+    if (this.screenHandle) {
+      try {
+        this.screenHandle.destroy();
+      } catch {
+        /* повторный destroy безопасен */
+      }
+      this.screenHandle = null;
+    }
+    this.screenHost = null;
+    this.screenContext = null;
+  }
+
+  private screenCallbacks(projectId: string, questId: string, nodeId: string): {
+    readonly onSelect: (layerId: string | null) => void;
+    readonly onCommit: (layerId: string, transform: ScreenTransform) => void;
+    readonly onNudge: (layerId: string, dx: number, dy: number) => void;
+    readonly onAction: (action: ScreenLayerAction, layerId: string) => void;
+    readonly onHint: (message: string) => void;
+  } {
+    const current = (): boolean =>
+      this.screenContext?.projectId === projectId
+      && this.screenContext?.questId === questId
+      && this.screenContext?.nodeId === nodeId
+      && this.state.selectedStoryNodeId === nodeId;
+    return {
+      onSelect: (layerId) => {
+        if (!current()) return;
+        this.state.selectedScreenLayerId = layerId;
+        this.render();
+        if (layerId) this.screenHandle?.select(layerId);
+      },
+      onCommit: (layerId, transform) => {
+        if (!current()) return;
+        void this.saveScreenMutation("Размещение слоя сохранено.", (doc) => updateScreenLayer(doc, nodeId, layerId, {
+          x: transform.x, y: transform.y, scale: transform.scale, rotation: transform.rotation
+        }));
+      },
+      onNudge: (layerId, dx, dy) => {
+        if (!current()) return;
+        void this.saveScreenMutation("Слой сдвинут.", (doc) => translateScreenLayer(doc, nodeId, layerId, dx, dy));
+      },
+      onAction: (action, layerId) => {
+        if (!current()) return;
+        void this.runScreenLayerAction(nodeId, layerId, action);
+      },
+      onHint: (message) => {
+        if (!current()) return;
+        this.state.message = message;
+        this.render();
+      }
+    };
+  }
+
+  private async saveScreenMutation(
+    label: string,
+    apply: (doc: MissionDraft) => ScreenMutationResult
+  ): Promise<boolean> {
+    return this.saveMissionDocument(label, apply);
+  }
+
+  private async runScreenLayerAction(
+    nodeId: string,
+    layerId: string,
+    action: ScreenLayerAction
+  ): Promise<void> {
+    if (action === "duplicate") {
+      const screen = this.state.mission ? screenForNode(this.state.mission, nodeId) : null;
+      const newId = screen ? nextScreenLayerId(screen.layers, `${layerId}-copy`) : `${layerId}-copy`;
+      const ok = await this.saveMissionDocument("Слой дублирован.", (doc) => duplicateScreenLayer(doc, nodeId, layerId, newId));
+      if (ok) this.state.selectedScreenLayerId = newId;
+    } else {
+      const ok = await this.saveMissionDocument(screenLayerActionLabel(action), (doc) => applyScreenLayerAction(doc, nodeId, layerId, action));
+      if (ok && action === "delete") this.state.selectedScreenLayerId = null;
+    }
+    this.render();
+  }
+
   private storyModel(): StoryBoardModel | null {
     if (!this.state.mission) return null;
     return missionToStoryBoard(this.state.mission, storyRendererPositions(this.state.boardPositions));
@@ -1949,6 +2174,9 @@ export class StudioApp {
     readonly onSelect: (nodeId: string | null) => void;
     readonly onMove: (nodeId: string, x: number, y: number) => void;
     readonly onConnectPair: (sourceId: string, targetId: string) => void;
+    readonly onUndo: () => void;
+    readonly onRedo: () => void;
+    readonly onDelete: (nodeId: string) => void;
   } {
     return {
       onSelect: (nodeId) => {
@@ -1966,8 +2194,34 @@ export class StudioApp {
       onConnectPair: (sourceId, targetId) => {
         if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
         this.openStoryChoiceDialog(projectId, questId, sourceId, targetId);
+      },
+      onUndo: () => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.undoStoryChange();
+      },
+      onRedo: () => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.redoStoryChange();
+      },
+      onDelete: (nodeId) => {
+        if (this.storyContext?.projectId !== projectId || this.storyContext?.questId !== questId) return;
+        void this.requestStoryNodeDelete(nodeId);
       }
     };
+  }
+
+  /** Удаление узла с честным предупреждением о зависимостях (кнопка и Delete ведут сюда). */
+  private async requestStoryNodeDelete(nodeId: string): Promise<void> {
+    const mission = this.state.mission;
+    const impact = mission ? storyDeletionImpact(mission, nodeId) : null;
+    if (impact && !impact.safeToDelete) {
+      this.state.message = describeStoryDeletionBlock(impact);
+      this.render();
+      return;
+    }
+    const ok = await this.saveMissionStory("Узел удалён.", (doc) => removeStoryNode(doc, nodeId));
+    if (ok && this.state.selectedStoryNodeId === nodeId) this.state.selectedStoryNodeId = null;
+    this.render();
   }
 
   private openStoryChoiceDialog(projectId: string, questId: string, sourceId: string, targetId: string): void {
@@ -2019,6 +2273,9 @@ export class StudioApp {
         onSelect: callbacks.onSelect,
         onMove: callbacks.onMove,
         onConnectPair: callbacks.onConnectPair,
+        onUndo: callbacks.onUndo,
+        onRedo: callbacks.onRedo,
+        onDelete: callbacks.onDelete,
         onHint: (message) => {
           this.state.message = message;
           this.render();
@@ -2060,7 +2317,7 @@ export class StudioApp {
     this.render();
     try {
       const saved = await this.api.saveMission(projectId, questId, baseRevision, applied.mission);
-      this.state.storyUndo = [...this.state.storyUndo.slice(-49), mission];
+      this.state.storyHistory.push(mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
       this.state.missionSaving = false;
@@ -2109,7 +2366,7 @@ export class StudioApp {
     this.render();
     try {
       const saved = await this.api.saveMission(projectId, questId, baseRevision, next);
-      this.state.storyUndo = [...this.state.storyUndo.slice(-49), mission];
+      this.state.storyHistory.push(mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
       this.state.missionSaving = false;
@@ -2185,7 +2442,7 @@ export class StudioApp {
       const saved = await this.api.saveMission(projectId, questId, 0, mission);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
-      this.state.storyUndo = [];
+      this.state.storyHistory.clear();
       this.state.selectedStoryNodeId = saved.mission.story.entrySceneId;
       this.state.message = `Миссия создана. Revision ${saved.mission.contentRevision}. Добавьте сцены и свяжите их выборами.`;
     } catch (error) {
@@ -2202,26 +2459,42 @@ export class StudioApp {
   }
 
   private async undoStoryChange(): Promise<void> {
-    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
-    const previous = this.state.storyUndo[this.state.storyUndo.length - 1] ?? null;
-    if (!previous || !this.state.mission) {
+    const previous = this.state.mission ? this.state.storyHistory.undo(this.state.mission) : null;
+    if (!previous) {
       this.state.message = "Нечего отменять.";
       this.render();
       return;
     }
+    await this.applyStorySnapshot(previous, "Отменено.");
+  }
+
+  private async redoStoryChange(): Promise<void> {
+    const next = this.state.mission ? this.state.storyHistory.redo(this.state.mission) : null;
+    if (!next) {
+      this.state.message = "Нечего повторять.";
+      this.render();
+      return;
+    }
+    await this.applyStorySnapshot(next, "Повторено.");
+  }
+
+  /** Пишет готовый снимок сюжета поверх текущей ревизии через тот же CAS-путь /mission. */
+  private async applyStorySnapshot(snapshot: MissionDraft, label: string): Promise<void> {
+    const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
     this.state.missionSaving = true;
-    this.state.message = "Отменяем последнее изменение сюжета…";
+    this.state.message = "Сохраняем сюжет…";
     this.render();
     try {
-      const saved = await this.api.saveMission(projectId, questId, this.state.missionRevision, previous);
-      this.state.storyUndo = this.state.storyUndo.slice(0, -1);
+      const saved = await this.api.saveMission(projectId, questId, this.state.missionRevision, snapshot);
       this.state.mission = saved.mission;
       this.state.missionRevision = saved.mission.contentRevision;
-      this.state.message = `Отменено. Revision ${saved.mission.contentRevision}.`;
+      this.state.message = `${label} Revision ${saved.mission.contentRevision}.`;
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409) {
-        this.state.message = "Отмена невозможна: сюжет изменился на сервере. Обновите квест.";
+        this.state.message = "Сюжет изменился на сервере. Обновите квест и повторите.";
+      } else if (error instanceof ControlApiError && error.status === 422) {
+        this.state.message = `Сервер отклонил сюжет (${error.code ?? "validation_failed"}).`;
       } else {
         this.setError(error);
         return;
@@ -2593,7 +2866,8 @@ export class StudioApp {
         </form>` : `<p class="form-hint">Только чтение: создание миссии недоступно для вашей роли.</p>`}
       </div>`;
     }
-    const undoDepth = this.state.storyUndo.length;
+    const undoDepth = this.state.storyHistory.depth;
+    const canRedo = this.state.storyHistory.canRedo;
     return `<section class="story-panel" aria-label="Сюжет миссии">
       <div class="story-bar">
         <div><strong>Сюжет</strong> <span class="save-state">Revision ${this.state.missionRevision}</span></div>
@@ -2601,9 +2875,10 @@ export class StudioApp {
           <button class="button-secondary" data-action="story-add" data-kind="scene">+ Сцена</button>
           <button class="button-secondary" data-action="story-add" data-kind="ending">+ Финал</button>
           <button class="button-secondary" data-action="story-undo" ${undoDepth === 0 || this.state.missionSaving ? "disabled" : ""}>↩ Отменить${undoDepth > 0 ? ` (${undoDepth})` : ""}</button>
+          <button class="button-secondary" data-action="story-redo" ${!canRedo || this.state.missionSaving ? "disabled" : ""}>↪ Повторить</button>
         </div>` : `<span class="access-note">Только чтение.</span>`}
       </div>
-      <p class="form-hint">Связь: кнопка «Связать» на доске → клик по сцене-источнику → клик по цели → подпись выбора.</p>
+      <p class="form-hint">Связь: кнопка «Связать» на доске → клик по сцене-источнику → клик по цели → подпись выбора. Клавиатура: F — «Вписать всё», Ctrl+Z — отменить, Ctrl+Shift+Z — повторить, Delete — удалить выбранное, Esc — снять выделение. Позиция карточки — раскладка и не меняет игровой контент.</p>
       <div class="story-wrap"><div class="story-host" data-story-host aria-label="Доска сюжета"></div></div>
       ${this.renderStoryDialogs()}
     </section>`;
@@ -2619,6 +2894,7 @@ export class StudioApp {
     const ending = scene ? null : mission.story.endings.find((entry) => entry.id === nodeId) ?? null;
     if (!scene && !ending) return `<p class="form-hint">Узел не найден в сюжете.</p>`;
     const isEntry = mission.story.entrySceneId === nodeId;
+    const impact = storyDeletionImpact(mission, nodeId);
     const title = scene ? scene.title : (ending as { readonly title: string }).title;
     const text = scene ? scene.text : (ending as { readonly text: string }).text;
     const choices = scene ? scene.choices : [];
@@ -2630,12 +2906,32 @@ export class StudioApp {
         <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Сохранить</button>
       </form>` : `<div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text) || "—"}</p></div>`}
       ${scene ? `<div class="section-heading-row"><h3>Выборы (${choices.length})</h3></div>
-      ${choices.map((choice) => `<div class="entity-row">
-        <div><strong>${escapeHtml(choice.label)}</strong><small>→ ${escapeHtml(choice.targetSceneId ?? choice.endingId ?? "?")}</small></div>
-        ${allowEdit ? `<button class="danger" data-action="story-delete-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Удалить…</button>` : ""}
-      </div>`).join("") || `<p class="form-hint">Выборов нет — тупик. Добавьте связь с доски.</p>`}` : ""}
-      ${allowEdit && !isEntry ? `<button class="danger" data-action="story-delete-node" data-node-id="${escapeAttr(nodeId)}">Удалить узел…</button>` : ""}
-      ${allowEdit && isEntry ? `<p class="form-hint">Входную сцену удалить нельзя.</p>` : ""}
+      ${choices.map((choice) => {
+        const targetId = choice.targetSceneId ?? choice.endingId ?? "";
+        const targetTitle = mission.story.scenes.find((entry) => entry.id === targetId)?.title
+          ?? mission.story.endings.find((entry) => entry.id === targetId)?.title
+          ?? "?";
+        const targetKind = choice.targetSceneId ? "сцена" : "финал";
+        return `<div class="entity-row story-choice-row">
+        <div><strong>${escapeHtml(choice.label)}</strong><small>→ ${escapeHtml(targetKind)} «${escapeHtml(targetTitle)}»</small></div>
+        ${allowEdit ? `<div class="story-choice-actions">
+          <button class="button-secondary" data-action="story-duplicate-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Дублировать</button>
+          <button class="danger" data-action="story-delete-choice" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}">Удалить…</button>
+        </div>` : ""}
+        ${allowEdit ? `<form data-form="story-choice-edit" data-scene-id="${escapeAttr(scene.id)}" data-choice-id="${escapeAttr(choice.id)}" class="story-choice-edit">
+          <label>Подпись <input name="label" maxlength="120" required value="${escapeAttr(choice.label)}"></label>
+          <button class="button-secondary" type="submit">Переименовать</button>
+        </form>` : ""}
+      </div>`;
+      }).join("") || `<p class="form-hint">Выборов нет — тупик. Добавьте связь с доски.</p>`}` : ""}
+      ${allowEdit ? `<div class="story-node-actions">
+        <button class="button-secondary" data-action="story-duplicate-node" data-node-id="${escapeAttr(nodeId)}">Дублировать ${scene ? "сцену" : "финал"}</button>
+        ${!isEntry ? `<button class="danger" data-action="story-delete-node" data-node-id="${escapeAttr(nodeId)}">Удалить узел…</button>` : ""}
+      </div>` : ""}
+      ${allowEdit && isEntry ? `<p class="form-hint">Входную сцену удалить нельзя: с неё начинается история.</p>` : ""}
+      ${allowEdit && !impact.safeToDelete && !impact.isEntry && impact.referencedBy.length > 0
+        ? `<p class="form-hint story-delete-warning">Удаление затронет выборы: ${impact.referencedBy.map((ref) => `«${escapeHtml(ref.label)}» (${escapeHtml(ref.sceneTitle)})`).join(", ")}.</p>`
+        : ""}
       ${this.renderScreenEditor(nodeId, allowEdit)}
     </div>`;
   }
@@ -2647,10 +2943,42 @@ export class StudioApp {
     const backgroundHash = screen.background?.hash ?? "";
     const musicId = screen.music?.assetId ?? "";
     const musicHash = screen.music?.hash ?? "";
-    const layers = screen.layers;
+    const layers = orderedScreenLayers(screen);
+    const selectedId = this.state.selectedScreenLayerId;
+    const layerRow = (layer: MissionScreenLayer): string => {
+      const selected = layer.id === selectedId;
+      const layerButton = (action: ScreenLayerAction, label: string, title: string): string =>
+        `<button class="button-secondary screen-layer-action" data-action="screen-layer-action" data-node-id="${escapeAttr(nodeId)}" data-layer-id="${escapeAttr(layer.id)}" data-layer-action="${action}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
+      return `<div class="entity-row screen-layer-row${selected ? " is-selected" : ""}">
+        <div><strong>${escapeHtml(layer.name)}</strong><small>${escapeHtml(layer.kind)} · x ${layer.x.toFixed(2)} y ${layer.y.toFixed(2)} · масштаб ${layer.scale.toFixed(2)} · поворот ${Math.round(layer.rotation)}° · z ${layer.z}${layer.visible ? "" : " · скрыт"}${layer.locked ? " · закреплён" : ""}${layer.asset ? ` · ${escapeHtml(layer.asset.assetId)}` : ""}</small></div>
+        ${allowEdit ? `<div class="screen-layer-actions">
+          <button class="button-secondary" data-action="screen-select-layer" data-node-id="${escapeAttr(nodeId)}" data-layer-id="${escapeAttr(layer.id)}">${selected ? "Выбран" : "Выбрать"}</button>
+          ${layerButton("backward", "▼", "Ниже по слоям")}
+          ${layerButton("forward", "▲", "Выше по слоям")}
+          ${layerButton("back", "Вниз", "На самый низ")}
+          ${layerButton("front", "Наверх", "На самый верх")}
+          ${layerButton("flip-h", "⇄", "Отразить по горизонтали")}
+          ${layerButton("flip-v", "⇅", "Отразить по вертикали")}
+          ${layerButton("toggle-visible", layer.visible ? "Скрыть" : "Показать", "Видимость слоя")}
+          ${layerButton("toggle-lock", layer.locked ? "Открепить" : "Закрепить", "Блокировка слоя")}
+          ${layerButton("duplicate", "Дублировать", "Дублировать слой")}
+          <button class="danger" data-action="screen-delete-layer" data-node-id="${escapeAttr(nodeId)}" data-layer-id="${escapeAttr(layer.id)}">Удалить…</button>
+        </div>` : ""}
+      </div>
+      ${allowEdit && selected ? `<form data-form="screen-layer-edit" data-node-id="${escapeAttr(nodeId)}" data-layer-id="${escapeAttr(layer.id)}" class="inspector-form screen-layer-edit">
+        <div class="form-grid two"><label>Имя <input name="name" maxlength="120" required value="${escapeAttr(layer.name)}"></label><label>Z <input name="z" type="number" step="1" value="${layer.z}" required></label></div>
+        <div class="form-grid three"><label>X <input name="x" type="number" min="0" max="1" step="0.01" value="${layer.x}" required></label><label>Y <input name="y" type="number" min="0" max="1" step="0.01" value="${layer.y}" required></label><label>Масштаб <input name="scale" type="number" min="0.05" max="4" step="0.01" value="${layer.scale}" required></label></div>
+        <div class="form-grid three"><label>Поворот <input name="rotation" type="number" step="1" value="${layer.rotation}" required></label><label>Прозрачность <input name="opacity" type="number" min="0" max="1" step="0.01" value="${layer.opacity}" required></label><label>Asset ID <input name="assetId" maxlength="200" value="${escapeAttr(layer.asset?.assetId ?? "")}" placeholder="необязательно"></label></div>
+        <label>Asset SHA-256 <input name="assetHash" pattern="[0-9a-f]{64}" maxlength="64" value="${escapeAttr(layer.asset?.hash ?? "")}" placeholder="обязательно вместе с Asset ID"></label>
+        <div class="form-grid two"><label class="checkbox"><input name="visible" type="checkbox" ${layer.visible ? "checked" : ""}> Видимый</label><label class="checkbox"><input name="locked" type="checkbox" ${layer.locked ? "checked" : ""}> Заблокирован</label></div>
+        <div class="form-grid two"><label class="checkbox"><input name="flipH" type="checkbox" ${layer.flipH ? "checked" : ""}> Отразить X</label><label class="checkbox"><input name="flipV" type="checkbox" ${layer.flipV ? "checked" : ""}> Отразить Y</label></div>
+        <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Сохранить слой</button>
+      </form>` : ""}`;
+    };
     return `<section class="screen-editor" aria-label="Оформление экрана">
-      <div class="section-heading-row"><h3>Оформление экрана</h3><span class="save-state">${layers.length} слоёв</span></div>
-      <p class="form-hint">Фон и слои хранятся в MissionDraft.screens отдельно от сюжета. Asset hash — точная SHA-256 идентичность из библиотеки проекта.</p>
+      <div class="section-heading-row"><h3>Оформление экрана</h3><span class="save-state">${screen.layers.length} слоёв</span></div>
+      <p class="form-hint">Фон и слои входят в игровой контент (contentHash). Перетаскивайте слой по сцене, тяните правый нижний угол для размера; стрелки — точный сдвиг (Shift — крупный шаг), [ ] — порядок слоёв, D — дублировать, Del — удалить, Esc — снять выделение. Позиция доски сюжета — раскладка и на контент не влияет.</p>
+      ${mission ? `<div class="screen-stage-wrap"><div class="screen-stage-host" data-screen-host aria-label="Сцена композиции"></div></div>` : ""}
       ${allowEdit ? `<form data-form="screen-save" data-node-id="${escapeAttr(nodeId)}" class="inspector-form">
         <label>Background assetId <input name="backgroundAssetId" maxlength="200" value="${escapeAttr(backgroundId)}" placeholder="пусто — без фона" /></label>
         <label>Background SHA-256 <input name="backgroundHash" pattern="[0-9a-f]{64}" maxlength="64" value="${escapeAttr(backgroundHash)}" placeholder="64 hex символа" /></label>
@@ -2660,16 +2988,13 @@ export class StudioApp {
         <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Сохранить экран</button>
       </form>` : `<div class="screen-readonly"><div>Фон: <code>${escapeHtml(backgroundId || "не задан")}</code></div><div>Музыка: <code>${escapeHtml(musicId || "не задана")}</code></div><div>${screen.inheritBackground ? "Фон наследуется" : "Собственный фон"}</div></div>`}
       <div class="section-heading-row"><h4>Слои</h4></div>
-      ${layers.map((layer) => `<div class="entity-row screen-layer-row">
-        <div><strong>${escapeHtml(layer.name)}</strong><small>${escapeHtml(layer.kind)} · x ${layer.x.toFixed(2)} y ${layer.y.toFixed(2)} · z ${layer.z}${layer.asset ? ` · ${escapeHtml(layer.asset.assetId)}` : ""}</small></div>
-        ${allowEdit ? `<button class="danger" data-action="screen-delete-layer" data-node-id="${escapeAttr(nodeId)}" data-layer-id="${escapeAttr(layer.id)}">Удалить…</button>` : ""}
-      </div>`).join("") || `<p class="form-hint">Слоёв пока нет.</p>`}
+      ${layers.map(layerRow).join("") || `<p class="form-hint">Слоёв пока нет.</p>`}
       ${allowEdit ? `<details class="screen-layer-add"><summary>Добавить слой</summary>
         <form data-form="screen-layer-add" data-node-id="${escapeAttr(nodeId)}" class="inspector-form">
           <div class="form-grid two"><label>ID <input name="id" required maxlength="120" placeholder="actor-master"></label><label>Имя <input name="name" required maxlength="120" placeholder="Мастер"></label></div>
           <div class="form-grid two"><label>Тип <select name="kind"><option value="actor">Персонаж</option><option value="item">Предмет</option><option value="text">Текст</option></select></label><label>Asset ID <input name="assetId" maxlength="200" placeholder="необязательно"></label></div>
           <label>Asset SHA-256 <input name="assetHash" pattern="[0-9a-f]{64}" maxlength="64" placeholder="обязательно вместе с Asset ID"></label>
-          <div class="form-grid three"><label>X <input name="x" type="number" min="0" max="1" step="0.01" value="0.5" required></label><label>Y <input name="y" type="number" min="0" max="1" step="0.01" value="0.5" required></label><label>Масштаб <input name="scale" type="number" min="0.01" max="4" step="0.01" value="1" required></label></div>
+          <div class="form-grid three"><label>X <input name="x" type="number" min="0" max="1" step="0.01" value="0.5" required></label><label>Y <input name="y" type="number" min="0" max="1" step="0.01" value="0.5" required></label><label>Масштаб <input name="scale" type="number" min="0.05" max="4" step="0.01" value="1" required></label></div>
           <div class="form-grid three"><label>Поворот <input name="rotation" type="number" step="1" value="0" required></label><label>Прозрачность <input name="opacity" type="number" min="0" max="1" step="0.01" value="1" required></label><label>Z <input name="z" type="number" step="1" value="1" required></label></div>
           <div class="form-grid two"><label class="checkbox"><input name="visible" type="checkbox" checked> Видимый</label><label class="checkbox"><input name="locked" type="checkbox"> Заблокирован</label></div>
           <div class="form-grid two"><label class="checkbox"><input name="flipH" type="checkbox"> Отразить X</label><label class="checkbox"><input name="flipV" type="checkbox"> Отразить Y</label></div>
@@ -3081,6 +3406,21 @@ function generateStoryId(kind: "scene" | "ending" | "choice"): string {
   return `${kind}-${suffix}`;
 }
 
+/**
+ * Предупреждение о зависимостях при удалении узла сюжета: называет мешающие
+ * выборы, а не просто «нельзя». Удаление выполняет removeStoryNode (fail-closed).
+ */
+function describeStoryDeletionBlock(impact: StoryDeletionImpact): string {
+  if (impact.isEntry) return "Входную сцену удалить нельзя: с неё начинается история.";
+  if (!impact.exists) return "Узел не найден в сюжете.";
+  const names = impact.referencedBy
+    .slice(0, 3)
+    .map((ref) => `«${ref.label}» (${ref.sceneTitle})`)
+    .join(", ");
+  const more = impact.referencedBy.length > 3 ? ` и ещё ${impact.referencedBy.length - 3}` : "";
+  return `Сцену/финал используют выборы: ${names}${more}. Сначала удалите или переведите эти выборы, затем удалите узел.`;
+}
+
 /** M05 человекочитаемые тексты ошибок сюжетных мутаций. */
 function storyErrorMessage(code: string): string {
   switch (code) {
@@ -3111,13 +3451,30 @@ function screenLayerKind(data: FormData): MissionScreenLayer["kind"] {
   return "text";
 }
 
+function screenLayerActionLabel(action: ScreenLayerAction): string {
+  switch (action) {
+    case "forward": return "Слой поднят выше.";
+    case "backward": return "Слой опущен ниже.";
+    case "front": return "Слой на самом верху.";
+    case "back": return "Слой на самом низу.";
+    case "flip-h": return "Отражение по горизонтали.";
+    case "flip-v": return "Отражение по вертикали.";
+    case "toggle-visible": return "Видимость слоя изменена.";
+    case "toggle-lock": return "Блокировка слоя изменена.";
+    case "duplicate": return "Слой дублирован.";
+    case "delete": return "Слой удалён.";
+    default: return "Слой изменён.";
+  }
+}
+
 function mutationErrorMessage(code: string): string {
   switch (code) {
     case "screen.node_missing": return "Экран этого узла не найден.";
     case "screen.asset_ref_invalid": return "Asset ID и SHA-256 должны быть указаны парой; hash — 64 строчных hex символа.";
-    case "screen.layer_transform_invalid": return "Проверьте тип слоя, asset ref и координаты X/Y [0…1], масштаб, прозрачность и Z.";
+    case "screen.layer_transform_invalid": return "Проверьте тип слоя, asset ref и координаты X/Y [0…1], масштаб [0.05…4], прозрачность и целый Z.";
     case "screen.layer_id_taken": return "Такой ID слоя уже есть на этом экране.";
     case "screen.layer_missing": return "Слой не найден.";
+    case "screen.action_unsupported": return "Такое действие со слоем не поддерживается.";
     default: return storyErrorMessage(code);
   }
 }
