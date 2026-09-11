@@ -37,6 +37,7 @@ import {
 } from "./board-model.js";
 import { cssEscape } from "./dom-escape.js";
 import { iconElement } from "./icons.js";
+import { minReadableScale } from "./board-viewport.js";
 
 /** Параметры mountBoard. */
 export interface BoardDomOptions {
@@ -125,9 +126,11 @@ function isStoryNode(node: BoardCardNode): node is BoardStoryNode {
 }
 
 /** Ограничение масштаба рабочим диапазоном 25–200% (нечисловое → 100%). */
-export function clampZoom(value: number): number {
+export function clampZoom(value: number, min: number = MIN_ZOOM, max: number = MAX_ZOOM): number {
   if (!Number.isFinite(value)) return 1;
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+  const low = Number.isFinite(min) ? Math.min(min, max) : MIN_ZOOM;
+  const high = Number.isFinite(max) ? Math.max(min, max) : MAX_ZOOM;
+  return Math.min(high, Math.max(low, value));
 }
 
 /**
@@ -361,7 +364,10 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   let destroyed = false;
   let currentModel: BoardModel = options.model;
   let selectedId: string | null = null;
-  let scale = 1;
+  // Стартовая точка до вписывания: при пустой доске вписывание не запустится
+  // вовсе (нет контента) — честный старт 100%; с контентом начальное значение
+  // перезапишет rAF-вписывание с порогом читаемости.
+  let scale = currentModel.nodes.length > 0 ? minReadableScale() : 1;
   let panX = 0;
   let panY = 0;
   let spaceDown = false;
@@ -501,7 +507,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   };
 
   /** «Показать всё»: подогнать transform под границы всех карточек. */
-  const fitView = (): void => {
+  const fitView = (options: { readonly minScale?: number } = {}): void => {
     const rect = viewport.getBoundingClientRect();
     const viewportWidth = rect.width || 800;
     const viewportHeight = rect.height || 600;
@@ -524,11 +530,15 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     }
     const boundsWidth = Math.max(1, maxX - minX);
     const boundsHeight = Math.max(1, maxY - minY);
+    // minScale опускает порог только для явного «Показать всё» (это обзор
+    // целиком); обычное вписывание держит порог читаемости по умолчанию.
+    const lowerBound = options.minScale !== undefined ? Math.min(options.minScale, minReadableScale()) : minReadableScale();
     scale = clampZoom(
       Math.min(
         (viewportWidth - FIT_PADDING_PX * 2) / boundsWidth,
         (viewportHeight - FIT_PADDING_PX * 2) / boundsHeight
-      )
+      ),
+      lowerBound
     );
     panX = (viewportWidth - boundsWidth * scale) / 2 - minX * scale;
     panY = (viewportHeight - boundsHeight * scale) / 2 - minY * scale;
@@ -1088,7 +1098,9 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     const cy = (rect.height || 300) / 2;
     if (button === zoomOutButton) zoomAt(cx, cy, 1 / BUTTON_ZOOM_STEP);
     else if (button === zoomInButton) zoomAt(cx, cy, BUTTON_ZOOM_STEP);
-    else if (button === fitButton) fitView();
+    // «Показать всё» — явный обзор: разрешаем опуститься ниже порога
+    // читаемости (обзор не обязан быть читаемым, он обязан показывать всё).
+    else if (button === fitButton) fitView({ minScale: MIN_ZOOM });
   };
 
   /** Escape снимает выбор; Space (вне полей ввода) готовит pan-жест. */

@@ -100,10 +100,18 @@ a {
 /* Спокойная сетка доски. */
 .board-grid,
 .board-host {
+  /* Сетка живёт на .board-host .board-viewport (см. правило ниже): фон на
+     .board-host под карточками конфликтовал с прозрачными подложками и
+     спорил с полотном. Здесь остаётся только геометрия ячейки. */
+  background-size: 24px 24px;
+}
+
+/* Сетку рисует полотно доски: карточки лежат над ней, подложки не спорят
+   с фоном хоста, а рисунок не рассыпается под полупрозрачными карточками. */
+.board-host .board-viewport {
   background-color: var(--canvas);
   background-image: linear-gradient(var(--board-dot) 1px, transparent 1px),
     linear-gradient(90deg, var(--board-dot) 1px, transparent 1px);
-  background-size: 24px 24px;
 }
 
 /* ------------------------------------------------------------------ */
