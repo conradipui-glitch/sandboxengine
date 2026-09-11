@@ -27,12 +27,13 @@ import {
 } from "./forms.js";
 import {
   loadVersionsReadModel,
+  renderPublishEntry,
   renderVersionsPanel,
   type PublicationReceipt,
   type PublishReportIntent,
   type ReleaseBuildIntent,
   type RestoreIntent,
-  type VersionsReadModel
+  type VersionsReadModel,
 } from "./versions.js";
 import {
   authenticatedAccessState,
@@ -3185,6 +3186,7 @@ export class StudioApp {
           <div class="actions">
             ${draft ? `<button class="button-secondary" data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
             <button class="primary" data-action="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Запуск…" : "Играть"}</button>` : ``}
+            ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">
               <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">

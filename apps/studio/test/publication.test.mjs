@@ -105,7 +105,7 @@ test("B09-03 publication renderer separates inert reports from server-confirmed 
   );
   assert.match(owner, /data-action="prepare-rollback" data-release-id="release-r0"/);
   assert.match(owner, /data-action="prepare-publish" data-release-id="release-never"/);
-  assert.doesNotMatch(owner, /data-release-id="release-r1"[^>]*>Publish report/);
+  assert.doesNotMatch(owner, /data-release-id="release-r1"[^>]*>Опубликовать…/);
   assert.doesNotMatch(owner, /Опубликовано — подтверждено server receipt/);
 
   const report = renderVersionsPanel(
@@ -130,7 +130,7 @@ test("B09-03 publication renderer separates inert reports from server-confirmed 
     },
     null
   );
-  assert.match(report, /Owner publish report: release-never/);
+  assert.match(report, /Публикация release-never/);
   assert.match(report, /Expected current pointer: <code>release-r1<\/code>/);
   assert.match(report, /Этот report ничего не меняет/);
   assert.match(report, /data-action="confirm-publication"/);

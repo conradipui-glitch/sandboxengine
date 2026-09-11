@@ -5,6 +5,26 @@ import {
   type ReleaseSummaryView
 } from "./api.js";
 
+/**
+ * Точка входа «Опубликовать» в верхней панели миссии — целевой сценарий владельца:
+ * собрал историю, проверил, опубликовал. Кнопка не врёт: если есть собранный, но ещё
+ * не опубликованный выпуск, она открывает его publish report; если публиковать нечего,
+ * она ведёт в историю версий, где выпуск создаётся, и объясняет это в подсказке.
+ */
+export function renderPublishEntry(versions: VersionsReadModel | null): string {
+  const candidate = versions === null
+    ? null
+    : versions.releases.find((release) => !release.isCurrent && !release.wasPublished) ?? null;
+  if (candidate !== null) {
+    return `<button class="button-secondary" data-action="prepare-publish" data-release-id="${escapeAttr(candidate.releaseId)}" title="Опубликовать выпуск ${escapeAttr(candidate.releaseId)}: история появится на сайте">Опубликовать</button>`;
+  }
+  if (versions !== null && versions.currentReleaseId !== null
+      && versions.releases.every((release) => release.wasPublished || release.isCurrent)) {
+    return `<button class="button-secondary" data-action="open-utility-panel" data-panel="versions" title="Все выпуски уже опубликованы — открыть историю версий">Опубликовать…</button>`;
+  }
+  return `<button class="button-secondary" data-action="open-utility-panel" data-panel="versions" title="Публиковать пока нечего: проверьте миссию и создайте выпуск в истории версий">Опубликовать…</button>`;
+}
+
 export interface RestoreIntent {
   readonly sourceRevision: number;
   readonly baseRevision: number;
@@ -191,10 +211,10 @@ function renderReleaseBuildIntent(
 function publicationAction(release: ReleaseSummaryView, model: VersionsReadModel, allowed: boolean): string {
   if (!allowed || release.isCurrent) return "";
   if (release.wasPublished && model.currentReleaseId !== null) {
-    return `<button data-action="prepare-rollback" data-release-id="${escapeAttr(release.releaseId)}">Rollback report</button>`;
+    return `<button data-action="prepare-rollback" data-release-id="${escapeAttr(release.releaseId)}">Откатить…</button>`;
   }
   if (!release.wasPublished) {
-    return `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Publish report</button>`;
+    return `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Опубликовать…</button>`;
   }
   return "";
 }
@@ -203,7 +223,7 @@ function renderPublishReport(report: PublishReportIntent): string {
   const rollback = report.action === "rollback";
   return `<div class="restore-confirm publish-report" role="status">
     <div>
-      <strong>Owner ${rollback ? "rollback" : "publish"} report: ${escapeHtml(report.releaseId)}</strong>
+      <strong>${rollback ? "Откат" : "Публикация"} ${escapeHtml(report.releaseId)}</strong>
       <p>При подтверждении сервер выполнит CAS current pointer на этот exact immutable release.</p>
       <p>Draft r${report.draftRevision} · draft hash ${escapeHtml(shortHash(report.draftContentHash))} · compiled hash ${escapeHtml(shortHash(report.compiledContentHash))}.</p>
       <p>Expected current pointer: ${report.expectedCurrentReleaseId === null ? "none" : `<code>${escapeHtml(report.expectedCurrentReleaseId)}</code>`}.</p>
