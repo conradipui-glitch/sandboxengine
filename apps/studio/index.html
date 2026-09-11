@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -17,6 +17,10 @@
   <link rel="stylesheet" href="/studio-assets/styles/publish.css">
 </head>
 <body>
+  <div id="app"><div class="boot">Загружаем Living History Studio…</div></div>
+  <!-- Подключение ИИ-помощника — служебная панель поверх рабочей области
+       (внизу слева), а не полоса над шапкой мастерской: она не должна быть
+       первым элементом экрана и не должна отжимать шапку вниз. -->
   <details class="provider-settings">
     <summary>Подключение ИИ-помощника</summary>
     <form id="provider-form">
@@ -31,7 +35,6 @@
       <p>Выберите модель с поддержкой JSON-ответов. Остаток лимита: неизвестен; баланс смотрите у провайдера.</p>
     </form>
   </details>
-  <div id="app"><div class="boot">Загружаем Living History Studio…</div></div>
   <script type="module" src="/studio-assets/dist/src/app.js"></script>
   <script type="module" src="/studio-assets/dist/src/onboarding.js"></script>
   <script type="module" src="/studio-assets/dist/src/provider-settings.js"></script>

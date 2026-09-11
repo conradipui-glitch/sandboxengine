@@ -14,8 +14,12 @@
  * у LibraryProjectCard нет поля состояния (черновик/опубликовано), поэтому блок
  * состояния не рисуется вовсе (честное «не показывать», а не выдуманный статус).
  *
- * Модуль не подключён к app.ts: app.ts не входит в разрешённые к правке файлы.
- * Подключение — см. отчёт (что осталось сделать).
+ * Дата изменения: API не отдаёт время правки проекта, поэтому строка «Изменён»
+ * появляется только при настоящей дате. При отсутствии данных строки нет —
+ * «нет данных» в карточке проекта не выводится.
+ *
+ * Заголовок экрана «Мои проекты» принадлежит оболочке Studio (app.ts): модуль
+ * его не дублирует, чтобы на экране не было двух одинаковых шапок.
  */
 
 import { escapeAttr, escapeHtml } from "./dom-escape.js";
@@ -76,7 +80,17 @@ export function libraryInitialState(): LibraryState {
 }
 
 /**
+ * Есть ли настоящая дата изменения. Только конечное число миллисекунд, из
+ * которого получается корректный момент времени: иначе строки «Изменён» нет.
+ */
+export function hasUpdatedAt(updatedAtMs: number | null): boolean {
+  if (typeof updatedAtMs !== "number" || !Number.isFinite(updatedAtMs)) return false;
+  return !Number.isNaN(new Date(updatedAtMs).getTime());
+}
+
+/**
  * Дата изменения в читаемом виде (локаль ru-RU). Нет данных — честное «нет данных».
+ * Карточка проекта эту строку при отсутствии даты не рисует (см. hasUpdatedAt).
  */
 export function formatUpdatedAt(updatedAtMs: number | null): string {
   if (updatedAtMs === null || typeof updatedAtMs !== "number" || !Number.isFinite(updatedAtMs)) {
@@ -173,6 +187,8 @@ export function libraryCardHtml(card: LibraryProjectCard): string {
   const acceptance = isAcceptanceProject(card)
     ? `<p class="lhp-badge">${LIBRARY_ACCEPTANCE_LABEL}</p>`
     : "";
+  // Строка «Изменён» — только с настоящей датой: «нет данных» в карточке не выводится.
+  const updatedRow = hasUpdatedAt(card.updatedAtMs) ? metaRow("Изменён", formatUpdatedAt(card.updatedAtMs)) : "";
   const action = (name: string, label: string): string =>
     `<button type="button" class="lhp-action" data-action="${name}" data-project-id="${escapeAttr(
       projectId
@@ -191,7 +207,7 @@ export function libraryCardHtml(card: LibraryProjectCard): string {
       <dl class="lhp-card-meta">
         ${metaRow("Миссий", formatQuestCount(card.questCount))}
         ${metaRow("Роль", libraryRoleLabel(card.role))}
-        ${metaRow("Изменён", formatUpdatedAt(card.updatedAtMs))}
+        ${updatedRow}
       </dl>
       <div class="lhp-card-actions">
         ${action("open-project", "Открыть")}
@@ -250,7 +266,8 @@ export function libraryResultsHtml(state: LibraryState): string {
   return groupHtml("", "", work);
 }
 
-/** Полный HTML экрана: шапка, тулбар (поиск + фильтр), список/пустое/ошибка/загрузка. */
+/** Полный HTML экрана: тулбар (поиск + фильтр), список/пустое/ошибка/загрузка.
+ *  Заголовок «Мои проекты» рисует оболочка Studio, поэтому здесь его нет. */
 export function libraryView(state: LibraryState): string {
   const total = state.projects.length;
   const visible = filterLibraryProjects(state.projects, state.search, state.hideAcceptance);
@@ -292,10 +309,7 @@ export function libraryView(state: LibraryState): string {
       </div>
       <div class="lhp-results">${libraryResultsHtml(state)}</div>`;
   })();
-  return `<section class="lhp-library" aria-labelledby="lhp-heading">
-      <header class="lhp-head">
-        <h1 class="lhp-title" id="lhp-heading">Мои проекты</h1>
-      </header>
+  return `<section class="lhp-library" aria-label="Проекты">
       ${body}
     </section>`;
 }

@@ -14,22 +14,10 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  width: 100%;
   color: var(--text, #e8e6e1);
   background: var(--bg, #14161a);
   padding: 1.25rem;
-}
-
-.lhp-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.75rem;
-}
-
-.lhp-title {
-  margin: 0;
-  font-size: 1.5rem;
-  line-height: 1.25;
 }
 
 .lhp-status {
@@ -102,6 +90,7 @@
 
 .lhp-results {
   display: block;
+  width: 100%;
 }
 
 .lhp-group + .lhp-group {
@@ -300,12 +289,11 @@
   --accent: var(--primary);
   display: block;
   width: 100%;
+  max-width: none;
 }
 
-/* Заголовок экрана уже есть в шапке мастерской — модуль его не дублирует. */
-.library-host .lhp-title {
-  display: none;
-}
+/* Заголовок «Мои проекты» рисует оболочка мастерской; модуль его не выводит,
+   поэтому подавлять дубль правилом не нужно. */
 
 .library-host .lhp-toolbar {
   align-items: center;
@@ -319,6 +307,7 @@
 
 .library-host .lhp-grid {
   grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  width: 100%;
 }
 
 .library-host .lhp-card {
