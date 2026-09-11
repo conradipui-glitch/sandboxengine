@@ -35,6 +35,9 @@ import { isControlReleaseHash } from "./releases.js";
  * columns, added by ALTER TABLE with placeholder defaults — or whose mission
  * revision no longer reproduces its hash) are likewise reported and never
  * rewritten: changing them would change public content to make a check green.
+ * A stored release row that cannot be decoded at all is reported `unprovable`
+ * (`STORED_RELEASE_UNREADABLE`) instead of aborting the report; it is never
+ * rewritten and never re-pointed at the newest draft.
  *
  * The inspection is read-only apart from the idempotent schema migration, and
  * re-running it is safe.
@@ -105,6 +108,7 @@ export interface LegacyMigrationReport {
 
 const REASON_ADOPTED = "no pin; the stored publication record names this release, so its mission revision is provable and adoption will be flagged assetsVerified=false";
 const REASON_UNPROVABLE = "no pin and no publication record names this release; its historical bundle is unknown and the newest draft must not be substituted";
+const REASON_UNREADABLE = "STORED_RELEASE_UNREADABLE: the stored release row cannot be decoded, so its authored bundle is unknown; nothing was rewritten and the newest draft is not substituted";
 const REASON_PINNED = null;
 
 /** Sorted `type:name` inventory of the schema objects in a database file. */
@@ -171,7 +175,7 @@ export async function inspectLegacyReleaseMigration(input: {
   let pinCount = 0;
   try {
     for (const scope of releaseScopes(input.path)) {
-      const stored = await releases.listReleases(scope.projectId, scope.questId);
+      const stored = await readStoredReleases(releases, input.path, scope);
       const currentReleaseId = await releases.getCurrentReleaseId(scope.projectId, scope.questId);
       // A publication record written before its revision columns existed cannot
       // be read back at all (the placeholder defaults fail record validation).
@@ -182,7 +186,10 @@ export async function inspectLegacyReleaseMigration(input: {
         const pin = await publications.getReleasePin(scope.projectId, scope.questId, release.releaseId);
         if (pin) pinCount += 1;
         const named = record !== null && record.releaseId === release.releaseId;
-        const verdict: LegacyReleaseVerdict = pin ? "pinned" : named ? "adoptable" : "unprovable";
+        // A pin is evidence of its own: it survives an unreadable release row.
+        // Otherwise a row that cannot be decoded is reported unprovable and is
+        // never adopted from the publication record or re-pointed at a draft.
+        const verdict: LegacyReleaseVerdict = pin ? "pinned" : release.unreadable || !named ? "unprovable" : "adoptable";
         releaseFindings.push(Object.freeze({
           projectId: scope.projectId,
           questId: scope.questId,
@@ -190,8 +197,8 @@ export async function inspectLegacyReleaseMigration(input: {
           recordedDraftRevision: release.draftRevision,
           isCurrent: currentReleaseId === release.releaseId,
           verdict,
-          provenance: pin ? "pin" : named ? "publication_record" : "none",
-          reason: verdict === "pinned" ? REASON_PINNED : verdict === "adoptable" ? REASON_ADOPTED : REASON_UNPROVABLE
+          provenance: pin ? "pin" : verdict === "adoptable" ? "publication_record" : "none",
+          reason: pin ? REASON_PINNED : release.unreadable ? REASON_UNREADABLE : verdict === "adoptable" ? REASON_ADOPTED : REASON_UNPROVABLE
         }));
       }
     }
@@ -261,6 +268,53 @@ async function classifyPublication(
 }
 
 interface Scoped { readonly projectId: string; readonly questId: string; }
+
+interface StoredReleaseEntry {
+  readonly releaseId: string;
+  readonly draftRevision: number;
+  /** True when the stored row cannot be decoded; its bundle is then unprovable. */
+  readonly unreadable: boolean;
+}
+
+/**
+ * Enumerates the stored releases of one scope so that a single torn row is
+ * reported instead of aborting the whole report. The store read is the honest
+ * fast path; when it fails, the release ids come from the columns that are still
+ * readable and each row is re-read individually, so only the row that cannot be
+ * decoded becomes `unreadable` while its siblings keep their verdicts.
+ */
+async function readStoredReleases(
+  releases: SQLiteControlReleaseStore,
+  path: string,
+  scope: Scoped
+): Promise<readonly StoredReleaseEntry[]> {
+  try {
+    return (await releases.listReleases(scope.projectId, scope.questId))
+      .map((release) => Object.freeze({ releaseId: release.releaseId, draftRevision: release.draftRevision, unreadable: false }));
+  } catch {
+    const entries: StoredReleaseEntry[] = [];
+    for (const row of rawReleaseIndex(path, scope)) {
+      let readable: { readonly releaseId: string; readonly draftRevision: number } | null = null;
+      try {
+        readable = await releases.getRelease(scope.projectId, scope.questId, row.releaseId);
+      } catch {
+        readable = null;
+      }
+      entries.push(Object.freeze(readable
+        ? { releaseId: readable.releaseId, draftRevision: readable.draftRevision, unreadable: false }
+        : { releaseId: row.releaseId, draftRevision: row.draftRevision, unreadable: true }));
+    }
+    return Object.freeze(entries);
+  }
+}
+
+function rawReleaseIndex(path: string, scope: Scoped): readonly { readonly releaseId: string; readonly draftRevision: number }[] {
+  return Object.freeze(withDatabase(path, (db) => db.prepare(`SELECT release_id, draft_revision FROM control_releases
+    WHERE project_id = ? AND quest_id = ? ORDER BY release_id`).all(scope.projectId, scope.questId).map((row: any) => Object.freeze({
+    releaseId: String(row.release_id),
+    draftRevision: Number(row.draft_revision)
+  }))));
+}
 
 async function readPublicationRecord(
   publications: ControlPublicationStore,
