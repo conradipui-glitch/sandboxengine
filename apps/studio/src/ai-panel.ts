@@ -81,6 +81,14 @@ export const AI_PROVIDER_UNAVAILABLE =
 export const AI_CONFIGURED_HINT =
   "После настройки вернитесь на эту вкладку и нажмите «Проверить снова» — появится поле для описания идеи.";
 
+/**
+ * Честное объяснение вместо молчания: кнопка «Настроить подключение» нажата,
+ * но никто не подтвердил, что форма подключения открылась.
+ */
+export const AI_CONFIGURE_UNHANDLED =
+  "Форма подключения не открылась: в оболочке Studio не нашёлся блок «Подключение ИИ-помощника». "
+  + "Обновите страницу и нажмите «Настроить подключение» снова — или откройте этот блок внизу страницы вручную.";
+
 /** Подпись этапа для шапки прогресса. */
 export function aiStageLabel(stage: AiStage): string {
   return AI_STAGE_LABELS[stage] ?? AI_STAGE_LABELS.idle;
@@ -130,7 +138,12 @@ interface PreviewScene {
 
 type PanelView =
   | { readonly kind: "checking" }
-  | { readonly kind: "unavailable"; readonly reason: string | null }
+  /**
+   * Провайдер не настроен. `configureNotice` заполняется, только если просьба
+   * открыть настройки осталась без ответа оболочки: тогда автор видит честное
+   * объяснение, а не тишину.
+   */
+  | { readonly kind: "unavailable"; readonly reason: string | null; readonly configureNotice: string | null }
   /** Собственный запрос панели сорвался: показываем причину и «Повторить». */
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "form"; readonly error: AiResultErr | null; readonly notice: string | null }
@@ -252,8 +265,12 @@ function renderFatalError(view: Extract<PanelView, { kind: "error" }>): string {
 }
 
 function renderUnavailable(view: Extract<PanelView, { kind: "unavailable" }>): string {
+  const notice = view.configureNotice !== null
+    ? `<p class="ai-notice" data-ai-configure-notice role="status">${escapeHtml(view.configureNotice)}</p>`
+    : "";
   return `<div class="ai-unavailable" data-ai-unavailable>
     <p class="ai-note" data-ai-unavailable-reason>${escapeHtml(providerUnavailableMessage(view.reason))}</p>
+    ${notice}
     <div class="ai-actions">
       <button class="primary" type="button" data-action="ai-configure">Настроить подключение</button>
       <button class="secondary" type="button" data-action="ai-recheck">Проверить снова</button>
@@ -392,7 +409,7 @@ export function renderAiPanel(host: AiPanelHost): () => void {
       const readiness = await host.readiness();
       if (disposed) return;
       if (!readiness.available) {
-        setView({ kind: "unavailable", reason: readiness.reason });
+        setView({ kind: "unavailable", reason: readiness.reason, configureNotice: null });
         return;
       }
       setView({ kind: "form", error: null, notice: null });
@@ -497,11 +514,19 @@ export function renderAiPanel(host: AiPanelHost): () => void {
   };
 
   const openConfigure = (): void => {
+    const current = state.view;
     const dispatch = (root as unknown as { dispatchEvent?: (event: unknown) => boolean }).dispatchEvent;
     if (typeof dispatch !== "function") return;
-    const CustomEventCtor = (globalThis as { CustomEvent?: new (type: string, init?: { bubbles?: boolean }) => unknown }).CustomEvent;
+    const CustomEventCtor = (globalThis as { CustomEvent?: new (type: string, init?: { bubbles?: boolean; cancelable?: boolean }) => { defaultPrevented?: boolean } }).CustomEvent;
     if (typeof CustomEventCtor !== "function") return;
-    dispatch.call(root, new CustomEventCtor(AI_PANEL_CONFIGURE_EVENT, { bubbles: true }));
+    // cancelable: оболочка Studio отвечает на просьбу preventDefault — это значит,
+    // что форма подключения действительно открыта. Ответа нет — панель объясняет
+    // автору, что открыть её не удалось, вместо прежней тишины.
+    const event = new CustomEventCtor(AI_PANEL_CONFIGURE_EVENT, { bubbles: true, cancelable: true });
+    const dispatched = dispatch.call(root, event);
+    if (current.kind !== "unavailable") return;
+    if (event.defaultPrevented === true || dispatched === false) return;
+    setView({ kind: "unavailable", reason: current.reason, configureNotice: AI_CONFIGURE_UNHANDLED });
   };
 
   const onClick = (event: Event): void => {

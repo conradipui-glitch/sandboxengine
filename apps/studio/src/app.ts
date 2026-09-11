@@ -114,7 +114,7 @@ import {
 import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
-import { renderAiPanel } from "./ai-panel.js";
+import { AI_PANEL_CONFIGURE_EVENT, renderAiPanel } from "./ai-panel.js";
 import { renderPublishPanel } from "./publish-panel.js";
 import {
   renderSceneInspector,
@@ -372,17 +372,22 @@ export class StudioApp {
     const onInput = (event: Event): void => this.onInput(event);
     const onChange = (event: Event): void => this.onInspectorChange(event);
     const onFocusOut = (event: Event): void => this.onInspectorBlur(event);
+    // Просьба панели ИИ-помощника «откройте форму подключения» приходит событием
+    // и всплывает до корня приложения — слушатель ровно один, перерисовки нет.
+    const onAiConfigure = (event: Event): void => this.onAiConfigureRequest(event);
     root.addEventListener("click", onClick);
     root.addEventListener("submit", onSubmit);
     root.addEventListener("input", onInput);
     root.addEventListener("change", onChange);
     root.addEventListener("focusout", onFocusOut);
+    root.addEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure);
     this.rootDisposers.push(
       () => root.removeEventListener("click", onClick),
       () => root.removeEventListener("submit", onSubmit),
       () => root.removeEventListener("input", onInput),
       () => root.removeEventListener("change", onChange),
-      () => root.removeEventListener("focusout", onFocusOut)
+      () => root.removeEventListener("focusout", onFocusOut),
+      () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure)
     );
   }
 
@@ -2997,6 +3002,37 @@ export class StudioApp {
     const slug = this.state.publishedSlug;
     if (base === null || slug === null) return null;
     return `${base.replace(/\/+$/, "")}/p/${encodeURIComponent(slug)}/`;
+  }
+
+  /**
+   * Кнопка «Настроить подключение» в панели ИИ-помощника: панель шлёт просьбу
+   * событием, а открывает настоящую форму подключения провайдера оболочка Studio —
+   * тот же рабочий блок «Подключение ИИ-помощника» (#provider-form), который уже
+   * живёт на странице и сам следит за правами автора.
+   *
+   * Оболочка подтверждает открытие preventDefault: если блока нет, панель честно
+   * объясняет это сама. Здесь нет ни запросов, ни полной перерисовки: открытие
+   * блока не срывает монтаж панели и не запускает лавину запросов.
+   */
+  private onAiConfigureRequest(event: Event): void {
+    if (!this.openProviderSettingsDock()) return;
+    const prevent = (event as { preventDefault?: () => void }).preventDefault;
+    if (typeof prevent === "function") prevent.call(event);
+  }
+
+  /** Открывает блок подключения ИИ-помощника и ставит фокус в первое поле формы. */
+  private openProviderSettingsDock(): boolean {
+    if (typeof document === "undefined" || typeof document.querySelector !== "function") return false;
+    type SettingsDock = HTMLElement & { open: boolean; scrollIntoView?: (options?: unknown) => void };
+    const form = document.querySelector<HTMLFormElement>("#provider-form");
+    const dock = document.querySelector<SettingsDock>(".provider-settings")
+      ?? (form?.closest("details") as SettingsDock | null);
+    if (!form || !dock) return false;
+    dock.open = true;
+    const field = form.querySelector<HTMLElement>("input, select, textarea");
+    if (field && typeof field.focus === "function") field.focus();
+    if (typeof dock.scrollIntoView === "function") dock.scrollIntoView({ block: "nearest" });
+    return true;
   }
 
   /**

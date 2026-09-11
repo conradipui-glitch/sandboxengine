@@ -1,0 +1,65 @@
+{
+ "phase": "after",
+ "at": "2026-09-11T23:08:08.855Z",
+ "studio": "http://127.0.0.1:4216/",
+ "control": "http://127.0.0.1:8926",
+ "cdp": "http://127.0.0.1:9392",
+ "database": "C:\\Users\\kato55\\lhc-ai-configure\\data\\living-history.sqlite",
+ "before": {
+  "dockOpen": false,
+  "formVisible": false,
+  "formRect": {
+   "width": 217,
+   "height": 813
+  },
+  "panelReason": "Подключение к ИИ не настроено или ключ отклонён.",
+  "requests": 70
+ },
+ "after": {
+  "dockOpen": true,
+  "formVisible": true,
+  "formRect": {
+   "width": 631,
+   "height": 610
+  },
+  "formDisplay": "grid",
+  "statusText": "ИИ не подключён. Укажите провайдера, модель и ключ — соединение проверится первым запросом помощника.",
+  "controls": [
+   "preset",
+   "baseUrl",
+   "model",
+   "credential",
+   "Сохранить подключение",
+   "Отключить"
+  ],
+  "focused": "preset",
+  "focusedInProviderForm": true,
+  "panelNotice": null,
+  "panelStillUnavailable": true,
+  "aiPanelHosts": 1
+ },
+ "newRequests": [],
+ "screenshots": [
+  {
+   "theme": "dark",
+   "actualTheme": "dark",
+   "themed": true,
+   "path": "C:\\Users\\kato55\\lhc-ai-configure\\artifacts\\ai-configure-wiring\\ai-configure-dark-4216.png"
+  },
+  {
+   "theme": "light",
+   "actualTheme": "light",
+   "themed": true,
+   "path": "C:\\Users\\kato55\\lhc-ai-configure\\artifacts\\ai-configure-wiring\\ai-configure-light-4216.png"
+  }
+ ],
+ "consoleErrors": [],
+ "verdict": {
+  "formOpened": true,
+  "focusInField": true,
+  "noExtraRequests": true,
+  "panelKeptIntact": true,
+  "consoleClean": true,
+  "themesCaptured": true
+ }
+}
