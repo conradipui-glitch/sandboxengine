@@ -12,9 +12,10 @@
 //   character → location: character.data.initialLocationId
 //   action → resource:   action.data.resourceId
 
-import type { Block } from "@living-history/contracts";
+import type { Block, MissionDraft } from "@living-history/contracts";
 import type { DraftChange } from "@living-history/control";
 import type { DraftView } from "./api.js";
+import { missionToStoryBoard, storyEdgeCaption, storyFallbackPosition, storyPositionKey } from "./story-model.js";
 
 export type BoardBlock =
   | { readonly kind: "location"; readonly id: string; readonly title: string; readonly description: string; readonly isEntry: boolean }
@@ -39,9 +40,50 @@ export interface BoardEdge {
   readonly label: string;
 }
 
+/**
+ * Сюжетный узел доски: сцена или финал из ДОКУМЕНТА миссии. Живёт отдельно от
+ * карточек блоков (BoardNode) — у него своя модель, свои позиции и свой вид
+ * карточки. Блоки и их поведение при этом не трогаются.
+ */
+export type BoardStoryKind = "scene" | "ending";
+
+export interface BoardStoryNode {
+  readonly kind: BoardStoryKind;
+  readonly id: string;
+  readonly title: string;
+  /** Текст сцены/финала: то самое поле, которое автор правит (виден на карточке). */
+  readonly text: string;
+  readonly isEntry: boolean;
+  /** Сколько выборов выходит из сцены (у финала — 0). */
+  readonly choiceCount: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Связь-выбор между сценами/финалами (в стиле связей блоков — та же стрелка). */
+export interface BoardStoryEdge {
+  readonly id: string;
+  readonly source: string;
+  readonly target: string;
+  readonly kind: "story-choice";
+  readonly label: string;
+}
+
+/** Общий вид ребра доски: связь блока или выбор сюжета (общая отрисовка SVG). */
+export interface BoardEdgeLike {
+  readonly id: string;
+  readonly source: string;
+  readonly target: string;
+  readonly kind: string;
+  readonly label: string;
+}
+
 export interface BoardModel {
   readonly nodes: readonly BoardNode[];
   readonly edges: readonly BoardEdge[];
+  /** Сцены и финалы квеста — отдельный слой доски (не блоки). */
+  readonly storyNodes: readonly BoardStoryNode[];
+  readonly storyEdges: readonly BoardStoryEdge[];
   readonly entryLocationId: string | null;
   readonly positions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
 }
@@ -64,8 +106,73 @@ export function fallbackPosition(kind: BoardBlock["kind"], index: number): { rea
   return { x: 48 + col * 300, y: 64 + row * 160 };
 }
 
-/** Чистая проекция DraftView → BoardModel (без DOM, без random, детерминированно). */
-export function draftToBoard(draft: DraftView, savedPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }> = new Map()): BoardModel {
+/** Отступ сюжетного слоя: сцены/финалы стоят правее колонок блоков. */
+export const STORY_BAND_OFFSET_X = 1200;
+
+/**
+ * Детерминированная fallback-раскладка сюжетного узла: сцены и финалы уходят в
+ * свою полосу СПРАВА от блоков, чтобы карточки блоков и сюжета не наезжали друг
+ * на друга и сюжет не приходилось искать среди карточек проекта. Базовая сетка
+ * берётся из story-model (сцены — левая колонка полосы, финалы — правая), то
+ * есть порядок и ряды те же, что на доске сюжета.
+ */
+export function storyBoardFallbackPosition(kind: BoardStoryKind, index: number): { readonly x: number; readonly y: number } {
+  const base = storyFallbackPosition(kind, index);
+  return { x: base.x + STORY_BAND_OFFSET_X, y: base.y };
+}
+
+/**
+ * Проекция документа миссии на сюжетный слой доски: сцены и финалы как карточки
+ * + выборы как связи. Позиции берутся из общей карты раскладки по ключу
+ * `story:<id>` (storyPositionKey) — той же карты, что хранит позиции блоков, но
+ * в отдельном пространстве ключей; без сохранённой позиции работает
+ * детерминированная fallback-раскладка storyBoardFallbackPosition.
+ * Связи выводятся тем же чистым кодом, что и на доске сюжета (missionToStoryBoard),
+ * поэтому подписи и отсев висячих целей совпадают.
+ */
+export function missionToBoardStory(
+  mission: MissionDraft | null | undefined,
+  savedPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }> = new Map()
+): { readonly nodes: readonly BoardStoryNode[]; readonly edges: readonly BoardStoryEdge[] } {
+  if (!mission) return { nodes: Object.freeze([]), edges: Object.freeze([]) };
+  const story = missionToStoryBoard(mission);
+  const nodes: BoardStoryNode[] = [];
+  const push = (
+    kind: BoardStoryKind,
+    id: string,
+    title: string,
+    text: string,
+    isEntry: boolean,
+    choiceCount: number,
+    index: number
+  ): void => {
+    const at = savedPositions.get(storyPositionKey(id)) ?? storyBoardFallbackPosition(kind, index);
+    nodes.push({ kind, id, title, text, isEntry, choiceCount, x: at.x, y: at.y });
+  };
+  mission.story.scenes.forEach((scene, index) =>
+    push("scene", scene.id, scene.title, scene.text, scene.id === mission.story.entrySceneId, scene.choices.length, index));
+  mission.story.endings.forEach((ending, index) =>
+    push("ending", ending.id, ending.title, ending.text, false, 0, index));
+  const edges: BoardStoryEdge[] = story.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    kind: "story-choice" as const,
+    label: storyEdgeCaption(edge)
+  }));
+  return { nodes: Object.freeze(nodes), edges: Object.freeze(edges) };
+}
+
+/**
+ * Чистая проекция DraftView → BoardModel (без DOM, без random, детерминированно).
+ * Третий аргумент — документ миссии: из него выводится сюжетный слой доски
+ * (сцены, финалы, связи-выборы). Без него модель остаётся блоковой, как раньше.
+ */
+export function draftToBoard(
+  draft: DraftView,
+  savedPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }> = new Map(),
+  mission: MissionDraft | null | undefined = null
+): BoardModel {
   type CharBlock = Extract<BoardBlock, { kind: "character" }>;
   type ActionBlock2 = Extract<BoardBlock, { kind: "action" }>;
 
@@ -145,9 +252,17 @@ export function draftToBoard(draft: DraftView, savedPositions: ReadonlyMap<strin
     }
   }
 
+  const story = missionToBoardStory(mission, savedPositions);
+  for (const storyNode of story.nodes) {
+    // Сюжетные позиции живут в той же карте, но под ключом story:<id>.
+    positions.set(storyNode.id, { x: storyNode.x, y: storyNode.y });
+  }
+
   return {
     nodes: Object.freeze(nodes),
     edges: Object.freeze(edges),
+    storyNodes: story.nodes,
+    storyEdges: story.edges,
     entryLocationId: draft.entryLocationId ?? null,
     positions
   };

@@ -146,3 +146,27 @@
   .board-host .board-viewport { min-height: 260px; }
   .board-host .presence-bar-host { max-width: min(240px, 60vw); }
 }
+
+/* ── Сюжетный слой доски: сцены и финалы квеста (board-model.ts) ─────────── */
+
+/* Карточка сцены/финала — тот же .board-node (габарит, высота по содержимому,
+   перетаскивание), но слой отдельный: сцены и финалы выводятся из документа
+   миссии, а не из блоков проекта. Нецветовые признаки вместо одного цвета:
+   сплошная рамка у сцены, штриховая у финала, подпись «Сцена»/«Финал» в шапке
+   и «Вход» у входной сцены. Правила снимают наследие .story-node из
+   styles.css (там карточка сцены живёт внутри доски сюжета и имеет свой
+   padding/тень/курсор), чтобы вид совпадал с карточками блоков. */
+.board-host .board-story-node {
+  padding: 0;
+  cursor: grab;
+  box-shadow: 0 8px 28px var(--shadow-sm);
+}
+.board-host .board-story-node:active { cursor: grabbing; }
+.board-host .board-story-node.story-node-scene { border-color: var(--primary, #245BD7); }
+.board-host .board-story-node.story-node-ending { border-style: dashed; }
+.board-host .board-story-node .node-head { gap: 6px; }
+/* Выделение видно даже на штриховой рамке финала — контур, а не только цвет. */
+.board-host .board-story-node.selected {
+  outline: 2px solid var(--focus, #245BD7);
+  outline-offset: 2px;
+}

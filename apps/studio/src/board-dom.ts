@@ -30,9 +30,10 @@
 import {
   EDGE_RULES,
   type BoardBlock,
-  type BoardEdge,
+  type BoardEdgeLike,
   type BoardModel,
-  type BoardNode
+  type BoardNode,
+  type BoardStoryNode
 } from "./board-model.js";
 import { cssEscape } from "./dom-escape.js";
 
@@ -90,6 +91,12 @@ const KIND_CAPTIONS: Readonly<Record<BoardBlock["kind"], string>> = Object.freez
   action: "Действие"
 });
 
+/** Сюжетный слой доски: карточка сцены/финала читается тем же языком, что у блоков. */
+const STORY_CAPTIONS: Readonly<Record<BoardStoryNode["kind"], string>> = Object.freeze({
+  scene: "Сцена",
+  ending: "Финал"
+});
+
 /** Цвет подписи типа — та же палитра, что у маркеров карточек (styles.css). */
 const KIND_COLORS: Readonly<Record<BoardBlock["kind"], string>> = Object.freeze({
   location: "#245BD7",
@@ -98,10 +105,23 @@ const KIND_COLORS: Readonly<Record<BoardBlock["kind"], string>> = Object.freeze(
   action: "#2E7D32"
 });
 
+const STORY_COLORS: Readonly<Record<BoardStoryNode["kind"], string>> = Object.freeze({
+  scene: "#245BD7",
+  ending: "#7C3AED"
+});
+
 const INVALID_CONNECTION_HINT =
   "Такая связь не поддерживается: персонаж → место начала, действие → расходуемый ресурс.";
 
 const EMPTY_BOARD_MESSAGE = "Доска пуста. Добавьте место, персонажа, ресурс или действие.";
+
+/** Узел доски: карточка блока либо карточка сцены/финала (сюжетный слой). */
+type BoardCardNode = BoardNode | BoardStoryNode;
+
+/** true — сюжетный узел (нет поля block, есть текст сцены). */
+function isStoryNode(node: BoardCardNode): node is BoardStoryNode {
+  return !("block" in node);
+}
 
 /** Ограничение масштаба рабочим диапазоном 25–200% (нечисловое → 100%). */
 export function clampZoom(value: number): number {
@@ -231,6 +251,12 @@ function nodeMetaText(block: BoardBlock, nodes: readonly BoardNode[]): string {
   }
 }
 
+/** Ключевые значения карточки сцены/финала: сцена показывает число выборов. */
+function storyMetaText(node: BoardStoryNode): string {
+  if (node.kind === "ending") return "Конец истории";
+  return node.choiceCount > 0 ? `Выборов: ${node.choiceCount}` : "Выборов нет";
+}
+
 /** true — цель указателя/клавиатуры это поле ввода: жестики не запускаем. */
 function isTextInput(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
@@ -338,7 +364,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   let spaceDown = false;
   /** Живые позиции узлов: во время drag обновляются немедленно. */
   const positions = new Map<string, { x: number; y: number }>();
-  const edgeRefs: Array<{ edge: BoardEdge; path: SVGPathElement; label: SVGTextElement }> = [];
+  const edgeRefs: Array<{ edge: BoardEdgeLike; path: SVGPathElement; label: SVGTextElement }> = [];
   const disposers: Array<() => void> = [];
   const rafIds: number[] = [];
   let hintTimer: number | null = null;
@@ -501,8 +527,18 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   };
 
   // ── Выбор, подсказка, узлы ───────────────────────────────────────────────
-  const nodeById = (id: string): BoardNode | undefined =>
-    currentModel.nodes.find((node) => node.id === id);
+  /**
+   * Все карточки доски: блоки проекта + сцены/финалы квеста (сюжетный слой).
+   * Сюжетный слой читается терпимо к модели без него (старые фикстуры и
+   * доска без миссии) — отсутствие узлов не должно ломать карточки блоков.
+   */
+  const allNodes = (): readonly BoardCardNode[] => [...currentModel.nodes, ...(currentModel.storyNodes ?? [])];
+
+  /** Все рёбра доски: связи блоков + выборы сюжета (рисуются одним механизмом). */
+  const allEdges = (): readonly BoardEdgeLike[] => [...currentModel.edges, ...(currentModel.storyEdges ?? [])];
+
+  const nodeById = (id: string): BoardCardNode | undefined =>
+    currentModel.nodes.find((node) => node.id === id) ?? currentModel.storyNodes.find((node) => node.id === id);
 
   const paintSelection = (): void => {
     for (const element of Array.from(viewport.querySelectorAll(".board-node.selected"))) {
@@ -567,9 +603,9 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
 
   const computeEdgeSlots = (): void => {
     edgeSlots.clear();
-    const outgoing = new Map<string, BoardEdge[]>();
-    const incoming = new Map<string, BoardEdge[]>();
-    for (const edge of currentModel.edges) {
+    const outgoing = new Map<string, BoardEdgeLike[]>();
+    const incoming = new Map<string, BoardEdgeLike[]>();
+    for (const edge of allEdges()) {
       const out = outgoing.get(edge.source);
       if (out) out.push(edge);
       else outgoing.set(edge.source, [edge]);
@@ -634,11 +670,57 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
     return port;
   };
 
-  const buildNode = (node: BoardNode): HTMLElement => {
-    const block = node.block;
+  const buildNode = (node: BoardCardNode): HTMLElement => {
     const card = document.createElement("article");
-    card.className = "board-node";
     card.dataset.nodeId = node.id;
+    if (isStoryNode(node)) {
+      // Сюжетная карточка: отдельный слой доски, но тот же язык карточек.
+      card.className = `board-node board-story-node story-node story-node-${node.kind}`;
+      card.dataset.nodeKind = `story-${node.kind}`;
+      card.dataset.storyNodeId = node.id;
+      const position = positions.get(node.id) ?? { x: node.x, y: node.y };
+      card.style.transform = `translate(${position.x}px, ${position.y}px)`;
+
+      const head = document.createElement("div");
+      head.className = "node-head";
+      head.dataset.dragHandle = "";
+      const kind = document.createElement("span");
+      kind.className = "node-kind";
+      kind.textContent = STORY_CAPTIONS[node.kind];
+      kind.style.color = STORY_COLORS[node.kind];
+      head.appendChild(kind);
+      if (node.isEntry) {
+        const badge = document.createElement("span");
+        badge.className = "entry-badge";
+        badge.textContent = "Вход";
+        head.appendChild(badge);
+      }
+
+      const body = document.createElement("div");
+      body.className = "node-body";
+      const title = document.createElement("h3");
+      title.className = "node-title story-node-title";
+      title.textContent = node.title;
+      body.appendChild(title);
+      if (node.text.trim() !== "") {
+        const text = document.createElement("p");
+        text.className = "node-desc";
+        text.textContent = node.text;
+        body.appendChild(text);
+      }
+      const meta = document.createElement("div");
+      meta.className = "node-meta";
+      meta.textContent = storyMetaText(node);
+      body.appendChild(meta);
+
+      card.append(head, body);
+      // Порты соединений — только у карточек блоков: связи сюжета выводятся из
+      // выборов документа миссии, а не рисуются перетаскиванием.
+      return card;
+    }
+
+    const block = node.block;
+    card.className = "board-node";
     card.dataset.blockKind = node.type;
     const position = positions.get(node.id) ?? { x: node.x, y: node.y };
     card.style.transform = `translate(${position.x}px, ${position.y}px)`;
@@ -692,17 +774,17 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
 
   const renderNodes = (): void => {
     for (const existing of Array.from(world.querySelectorAll(".board-node"))) existing.remove();
-    for (const node of currentModel.nodes) world.appendChild(buildNode(node));
+    for (const node of allNodes()) world.appendChild(buildNode(node));
   };
 
   const renderEdges = (): void => {
     while (edgesGroup.firstChild) edgesGroup.firstChild.remove();
     edgeRefs.length = 0;
     computeEdgeSlots();
-    for (const edge of currentModel.edges) {
+    for (const edge of allEdges()) {
       if (!positions.has(edge.source) || !positions.has(edge.target)) continue;
       const path = document.createElementNS(SVG_NS, "path");
-      path.setAttribute("class", "board-edge");
+      path.setAttribute("class", `board-edge board-edge--${edge.kind}`);
       path.setAttribute("data-edge-id", edge.id);
       path.setAttribute("data-edge-kind", edge.kind);
       path.setAttribute("marker-end", "url(#board-arrowhead)");
@@ -717,12 +799,12 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   };
 
   const updateEmptyState = (): void => {
-    emptyState.style.display = currentModel.nodes.length === 0 ? "" : "none";
+    emptyState.style.display = allNodes().length === 0 ? "" : "none";
   };
 
   const render = (): void => {
     positions.clear();
-    for (const node of currentModel.nodes) {
+    for (const node of allNodes()) {
       positions.set(node.id, { x: node.x, y: node.y });
     }
     renderNodes();
@@ -812,7 +894,8 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
    */
   const startConnectDrag = (event: PointerEvent, card: HTMLElement, sourceSide: PortSide = "right"): void => {
     const sourceNode = nodeById(card.dataset.nodeId ?? "");
-    if (!sourceNode) return;
+    // Связи рисуются только между карточками блоков: выборы сюжета — не жест доски.
+    if (!sourceNode || isStoryNode(sourceNode)) return;
     const sourceId = sourceNode.id;
     const sourcePosition = positions.get(sourceId) ?? { x: sourceNode.x, y: sourceNode.y };
     const source = portAnchor(sourcePosition.x, sourcePosition.y, sourceSide, 0.5, nodeHeight(sourceId));
@@ -846,7 +929,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       clearHover();
       if (!targetCard || targetId === null || targetId === sourceId) return;
       const targetNode = nodeById(targetId);
-      if (!targetNode) return;
+      if (!targetNode || isStoryNode(targetNode)) return;
       hovered = targetCard;
       hovered.classList.add(canConnect(sourceNode.type, targetNode.type) ? "connect-target-ok" : "connect-target-bad");
     };
@@ -857,7 +940,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
       cancel();
       if (targetId === null || targetId === sourceId) return;
       const targetNode = nodeById(targetId);
-      if (!targetNode) return;
+      if (!targetNode || isStoryNode(targetNode)) return;
       if (canConnect(sourceNode.type, targetNode.type)) {
         // Запоминаем, с какой стороны автор потянул: ветка останется на этом порту.
         preferredSourceSide.set(`${sourceId}->${targetNode.id}`, sourceSide);

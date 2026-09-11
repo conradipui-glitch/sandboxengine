@@ -2508,8 +2508,10 @@ export class StudioApp {
     if (!canKeepStory || (this.storyContext !== null && !sameStoryContext)) {
       this.destroyStory();
     }
+    // Экран/сцена выбранной сцены живёт и на «Доске»: один инспектор на оба представления.
     const canKeepScreen = this.state.view === "editor"
-      && this.state.boardView === "story"
+      && (this.state.boardView === "story"
+        || (this.state.boardView === "board" && this.state.selectedStoryNodeId !== null))
       && this.state.mission !== null
       && this.state.selectedProjectId !== null
       && this.state.selectedQuestId !== null
@@ -2942,10 +2944,11 @@ export class StudioApp {
     if (!host || !draft || !projectId || !questId) return;
     const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
     const editable = canEditProject(this.state.access, project);
-    const model = draftToBoard(draft, this.state.boardPositions);
+    const model = draftToBoard(draft, this.state.boardPositions, this.state.mission);
+    const selectedNodeId = this.boardSelectionId();
 
     if (this.boardHost === host && this.boardContext?.projectId === projectId && this.boardContext.questId === questId) {
-      this.boardLifecycle.update(projectId, questId, model, this.state.selectedBoardNodeId, editable);
+      this.boardLifecycle.update(projectId, questId, model, selectedNodeId, editable);
       return;
     }
     this.destroyBoard();
@@ -2958,10 +2961,25 @@ export class StudioApp {
       container: host,
       model,
       editable,
-      selectedNodeId: this.state.selectedBoardNodeId,
+      selectedNodeId,
       ...this.boardCallbacks(projectId, questId)
     });
     this.mountPresenceIfNeeded(host, projectId, questId);
+  }
+
+  /**
+   * Выделение на «Доске» общее для двух слоёв: выбранная сцена/финал (сюжет)
+   * имеет приоритет над карточкой блока, потому что выбор одной очищает второе.
+   */
+  private boardSelectionId(): string | null {
+    return this.state.selectedStoryNodeId ?? this.state.selectedBoardNodeId;
+  }
+
+  /** id принадлежит сцене или финалу документа миссии (сюжетный слой доски). */
+  private isStoryNodeId(nodeId: string): boolean {
+    const story = this.state.mission?.story;
+    if (!story) return false;
+    return story.scenes.some((scene) => scene.id === nodeId) || story.endings.some((ending) => ending.id === nodeId);
   }
 
   /**
@@ -3577,15 +3595,21 @@ export class StudioApp {
     return {
       onMove: (nodeId, x, y) => {
         if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
-        saveBoardPosition(questId, nodeId, x, y);
+        // Позиция сцены/финала лежит в раскладке под ключом story:<id>, блока — под своим id.
+        const key = this.isStoryNodeId(nodeId) ? storyPositionKey(nodeId) : nodeId;
+        saveBoardPosition(questId, key, x, y);
         const next = new Map(this.state.boardPositions);
-        next.set(nodeId, { x, y });
+        next.set(key, { x, y });
         this.state.boardPositions = next;
         this.scheduleBoardSave(projectId, questId);
       },
       onSelect: (nodeId) => {
         if (!this.boardLifecycle.isCurrent(projectId, questId)) return;
-        this.state.selectedBoardNodeId = nodeId;
+        // Тот же путь выбора, что в «Сюжете»: карточка сцены задаёт
+        // selectedStoryNodeId, карточка блока — selectedBoardNodeId.
+        const isStory = nodeId !== null && this.isStoryNodeId(nodeId);
+        this.state.selectedStoryNodeId = isStory ? nodeId : null;
+        this.state.selectedBoardNodeId = isStory ? null : nodeId;
         this.state.selectedBoardEdgeId = null;
         this.state.inspectorDraft = null;
         this.render();
@@ -3831,7 +3855,8 @@ export class StudioApp {
             ${this.state.inspectorTab === "props" ? `
               <section class="inspector-section" aria-label="Инспектор карточки">
                 <div class="section-heading-row"><h2>Свойства карточки</h2></div>
-                ${this.state.boardView === "story" && this.state.mission
+                ${this.state.mission && (this.state.boardView === "story"
+                    || (this.state.boardView === "board" && this.state.selectedStoryNodeId !== null))
                   ? this.renderStoryInspector(allowEdit)
                   : renderBlockInspector(
                     selectedBlock,
