@@ -34,6 +34,7 @@ import {
   type BoardModel,
   type BoardNode
 } from "./board-model.js";
+import { cssEscape } from "./dom-escape.js";
 
 /** Параметры mountBoard. */
 export interface BoardDomOptions {
@@ -228,11 +229,6 @@ function nodeMetaText(block: BoardBlock, nodes: readonly BoardNode[]): string {
     case "location":
       return "";
   }
-}
-
-/** Экранирование значения внутри CSS-селектора атрибута (как в app.ts). */
-function cssEscape(value: string): string {
-  return value.replace(/["\\]/g, "\\$&");
 }
 
 /** true — цель указателя/клавиатуры это поле ввода: жестики не запускаем. */

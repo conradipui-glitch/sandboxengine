@@ -1,4 +1,5 @@
 import type { DraftReferenceAnalysisView } from "./api.js";
+import { escapeHtml } from "./dom-escape.js";
 
 export interface DeletionIntent {
   readonly targetBlockId: string;
@@ -26,8 +27,4 @@ export function renderDeletionPreflight(intent: DeletionIntent | null, currentRe
     ${refs ? `<ul class="deletion-reference-list">${refs}</ul>` : ""}
     <div class="deletion-actions">${confirm}<button data-action="cancel-delete-block">Закрыть</button></div>
   </section>`;
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }

@@ -4,6 +4,8 @@ import {
   type PublicationResultView,
   type ReleaseSummaryView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
+import { shortHashWide as shortHash } from "./short-hash.js";
 
 /**
  * Точка входа «Опубликовать» в верхней панели миссии — целевой сценарий владельца:
@@ -264,23 +266,6 @@ function renderRestoreIntent(intent: RestoreIntent, currentRevision: number): st
       <button data-action="cancel-restore">Отмена</button>
     </div>
   </div>`;
-}
-
-function shortHash(value: string): string {
-  return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function deepFreeze<T>(value: T): T {

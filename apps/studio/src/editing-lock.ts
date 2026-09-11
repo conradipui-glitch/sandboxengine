@@ -1,4 +1,5 @@
 import type { FetchLike } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
 
 /*
  * FIN-13 (вторая половина) — согласование одновременного редактирования в Studio.
@@ -347,14 +348,6 @@ export function renderEditingLockBadge(state: EditingLockState, target: EditingL
     + ` data-lock-kind="${escapeAttr(target.kind)}" data-lock-target="${escapeAttr(target.targetId)}"`
     + ` role="status" aria-label="${escapeAttr(info.label)}">`
     + `<span class="editing-lock-label">${label}</span>${detail}</span>`;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
 }
 
 /* ──────────────────────────────── монтирование ─────────────────────────────── */

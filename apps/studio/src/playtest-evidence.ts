@@ -1,4 +1,6 @@
 import type { PlaytestTraceView, PlaytestView } from "./api.js";
+import { escapeHtml } from "./dom-escape.js";
+import { shortHashWide as shortHash } from "./short-hash.js";
 
 const MAX_RENDERED_RESPONSE_CHARS = 4_000;
 
@@ -75,17 +77,4 @@ function renderedJson(value: unknown): { readonly text: string; readonly truncat
   try { text = JSON.stringify(value, null, 2); } catch { text = "[unrenderable persisted response]"; }
   if (text.length <= MAX_RENDERED_RESPONSE_CHARS) return { text, truncated: false };
   return { text: `${text.slice(0, MAX_RENDERED_RESPONSE_CHARS)}\n…`, truncated: true };
-}
-
-function shortHash(value: string): string {
-  return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

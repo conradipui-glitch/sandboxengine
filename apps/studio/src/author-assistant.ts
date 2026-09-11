@@ -9,6 +9,8 @@ import {
   ControlApiClient,
   type AuthorJobReadView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
+import { shortHash } from "./short-hash.js";
 
 export interface AuthorProposalCardView {
   readonly artifact: AuthorAgentProposalArtifact;
@@ -200,16 +202,6 @@ function jobFailedHint(code: string): string {
   if (code === "backend.backend_error") return " — провайдер вернул ошибку; проверьте адрес API и модель, затем повторите.";
   return "";
 }
-
-function shortHash(value: string): string {
-  return value.length > 14 ? `${value.slice(0, 7)}…${value.slice(-6)}` : value;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
-}
-
-function escapeAttr(value: string): string { return escapeHtml(value); }
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

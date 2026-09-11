@@ -1,3 +1,5 @@
+import { escapeHtml } from "./dom-escape.js";
+
 export const ONBOARDING_STORAGE_KEY = "living-history.studio.onboarding.v1";
 export const ONBOARDING_PROGRESS_KEY = "living-history.studio.onboarding.progress.v1";
 
@@ -717,10 +719,6 @@ function ensureStyles(doc: Document): void {
     @media(max-width:680px){.lh-help-trigger{right:12px;bottom:12px}.lh-help-backdrop{padding:10px}.lh-help-dialog{max-height:calc(100vh - 20px);padding:16px}.lh-help-topics{grid-template-columns:1fr}.lh-tour-card{left:10px;right:10px;bottom:64px;width:auto;max-height:calc(100vh - 84px);overflow:auto}.lh-tour-actions .lh-spacer{display:none}.lh-tour-actions button{flex:1 1 auto}}
   `;
   doc.head.append(style);
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
 }
 
 if (typeof document !== "undefined") {

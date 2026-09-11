@@ -19,11 +19,11 @@ export function defaultScreen(): MissionSceneScreen {
   return { background: null, inheritBackground: true, layers: [], music: null };
 }
 
-function clone<T>(value: T): T {
+export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function validAsset(ref: AssetRefV2 | null): boolean {
+export function validAsset(ref: AssetRefV2 | null): boolean {
   return ref === null
     || (typeof ref.assetId === "string" && ref.assetId.length > 0
       && typeof ref.hash === "string" && /^[0-9a-f]{64}$/.test(ref.hash));
