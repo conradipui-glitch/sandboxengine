@@ -3210,7 +3210,7 @@ export class StudioApp {
       <div class="ed-shell">
         <header class="ed-topbar">
           <nav class="crumbs" aria-label="Навигация">
-            <button data-action="back-projects" title="Ко всем проектам">← Проекты</button>
+            <button data-action="back-projects" title="К списку проектов и миссий">← К миссиям</button>
             <span>${escapeHtml(project.title)}</span>
             ${quest ? `<span>· ${escapeHtml(quest.title)}</span>` : ``}
           </nav>
@@ -3222,7 +3222,7 @@ export class StudioApp {
           <span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>
           <span class="spacer"></span>
           <div class="actions">
-            ${draft ? `<button class="button-secondary" data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
+            ${draft ? `
             <button class="primary" data-action="play-quest" title="Проверить текущую revision и сразу запустить плеер на замороженной версии" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
             ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">

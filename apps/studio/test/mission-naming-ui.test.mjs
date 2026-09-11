@@ -44,8 +44,24 @@ test("верхняя панель предлагает одно действие
   assert.ok(button, "кнопка play-quest найдена");
   assert.equal(button[1], "${this.state.playerLaunching ? \"Проверяем и запускаем…\" : \"Проверить и сыграть\"}");
   assert.equal(app.includes(">Играть<"), false, "старая кнопка «Играть» убрана");
-  // Действие действительно сначала проверяет revision, потом запускает плеер.
-  assert.ok(/await this\.validateCurrentDraft\(\);[\s\S]{0,400}await this\.launchCurrentPlayer\(\);/.test(app));
+  // Раздельная кнопка «Проверить» в верхней панели убрана: проверка и запуск —
+  // одно действие автора, дублирующая кнопка снова делила его на два шага.
+  // Проверка остаётся в своей панели («Проверка миссии»), но не в верхней панели.
+  const topbar = app.slice(app.indexOf("ed-save-state"), app.indexOf("ed-menu-wrap"));
+  assert.equal(
+    topbar.includes('data-action="validate"'),
+    false,
+    "в верхней панели не осталось отдельной кнопки «Проверить»"
+  );
+  assert.ok(app.includes('data-action="back-projects" title="К списку проектов и миссий">← К миссиям<'));
+  // Действие действительно сначала проверяет revision, потом запускает плеер:
+  // кнопка верхней панели вызывает playCurrentQuest, а тот не запускает игру,
+  // пока проверка не сказала «valid».
+  assert.ok(/action === "play-quest"\) \{[^}]*this\.playCurrentQuest\(\)/.test(app), "верхняя панель запускает общий сценарий playCurrentQuest");
+  assert.ok(
+    /private async playCurrentQuest\(\): Promise<void> \{[\s\S]{0,500}await this\.validateCurrentDraft\(\);[\s\S]{0,400}await this\.launchCurrentPlayer\(\);/.test(app),
+    "проверка идёт до запуска плеера"
+  );
 });
 
 test("пустое название не создаёт безымянный проект или миссию", async () => {
