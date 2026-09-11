@@ -288,3 +288,107 @@
     animation: none !important;
   }
 }
+
+/* ==== интеграция в оболочку Studio (2026-09-11) ====
+   Модуль писался как самостоятельный экран, поэтому часть имён переменных у него
+   своя (--bg/--surface-strong/--text-dim/--accent). Здесь они привязываются к
+   токенам мастерской, чтобы экран был продолжением продукта, а не отдельной темой. */
+.library-host {
+  --bg: var(--canvas);
+  --surface-strong: var(--surface-soft);
+  --text-dim: var(--muted);
+  --accent: var(--primary);
+  display: block;
+  width: 100%;
+}
+
+/* Заголовок экрана уже есть в шапке мастерской — модуль его не дублирует. */
+.library-host .lhp-title {
+  display: none;
+}
+
+.library-host .lhp-toolbar {
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.library-host .lhp-search {
+  flex: 0 1 20rem;
+  min-width: 12rem;
+}
+
+.library-host .lhp-grid {
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+}
+
+.library-host .lhp-card {
+  gap: 0.6rem;
+}
+
+/* Заглушка обложки: обычная плашка с читаемой подписью, а не вертикальная строка. */
+.library-host .lhp-card-cover,
+.library-host .lhp-card-cover-empty {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 72px;
+  min-height: 72px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.4rem;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  color: var(--muted);
+}
+
+.library-host .lhp-card-meta {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.3rem 1rem;
+}
+
+/* Метка и значение читаются одной строкой: «Миссий 2», «Роль Владелец», «Изменён нет данных». */
+.library-host .lhp-meta-row {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.15rem;
+}
+
+.library-host .lhp-meta-term {
+  color: var(--muted-soft);
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  white-space: normal;
+}
+
+.library-host .lhp-meta-value {
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.library-host .lhp-group-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--muted-strong);
+}
+
+.library-host .lhp-action {
+  min-height: 32px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.library-host .lhp-action:hover {
+  border-color: var(--primary);
+}
+
+.library-host .lhp-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
