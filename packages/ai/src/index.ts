@@ -1,5 +1,7 @@
 export * from "./types.js";
 export * from "./connections.js";
+export * from "./model-catalog.js";
+export * from "./profile-router.js";
 export * from "./provider.js";
 export * from "./quota.js";
 export * from "./intent.js";
