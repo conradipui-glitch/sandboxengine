@@ -1,13 +1,9 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0 where node:sqlite is built in; no @types/node dependency is installed yet.
 import { DatabaseSync } from "node:sqlite";
-import {
-  CONTRACT_SCHEMA_VERSION,
-  hasValidWorldStateReferences,
-  type JsonValue,
-  type WorldState
-} from "@living-history/contracts";
+import type { JsonValue, WorldState } from "@living-history/contracts";
 import { MAX_LEASE_DURATION_MS, MAX_PUBLIC_RESPONSE_JSON_CHARS } from "./memory-storage.js";
 import type { ServiceClock } from "./service-clock.js";
+import { isValidWorldState } from "./world-state-validation.js";
 import type {
   ClaimOperationInput,
   ClaimOperationResult,
@@ -583,22 +579,6 @@ function isLeaseEndSafe(now: number, duration: number): boolean {
 function isValidCandidateState(state: WorldState, expectedRevision: number): boolean {
   if (expectedRevision === Number.MAX_SAFE_INTEGER) return false;
   return isValidWorldState(state) && state.revision === expectedRevision + 1;
-}
-
-function isValidWorldState(state: WorldState): boolean {
-  if (state.schemaVersion !== CONTRACT_SCHEMA_VERSION
-    || !isSafeNonNegativeInteger(state.revision)
-    || !isSafeNonNegativeInteger(state.clock?.elapsedSeconds)
-    || !Array.isArray(state.locations)
-    || !Array.isArray(state.entities)
-    || !Array.isArray(state.resources)
-    || !Array.isArray(state.items)) return false;
-  if (!hasValidWorldStateReferences(state)) return false;
-  for (const resource of state.resources) {
-    if (!Number.isSafeInteger(resource.value) || !Number.isSafeInteger(resource.min) || !Number.isSafeInteger(resource.max)) return false;
-    if (resource.min > resource.max || resource.value < resource.min || resource.value > resource.max) return false;
-  }
-  return true;
 }
 
 function isValidTurnRecord(record: TurnRecordBoundary, operation: OperationRecord, expectedRevision: number): boolean {

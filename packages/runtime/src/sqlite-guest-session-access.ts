@@ -1,11 +1,6 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0 where node:sqlite is built in; no @types/node dependency is installed yet.
 import { DatabaseSync } from "node:sqlite";
 import {
-  CONTRACT_SCHEMA_VERSION,
-  hasValidWorldStateReferences,
-  type WorldState
-} from "@living-history/contracts";
-import {
   DEFAULT_SQLITE_BUSY_TIMEOUT_MS,
   MAX_SQLITE_BUSY_TIMEOUT_MS,
   SQLiteStorageBusyError,
@@ -17,6 +12,7 @@ import type {
   RuntimeGuestSessionAccess
 } from "./session-access.js";
 import type { SessionRecord } from "./storage.js";
+import { isValidWorldState } from "./world-state-validation.js";
 
 const GUEST_ACCESS_SCHEMA_VERSION = 1;
 
@@ -167,22 +163,6 @@ function isValidCreateInput(input: CreateGuestSessionInput): boolean {
     && isSha256(input.release.contentHash)
     && isValidWorldState(input.initialState)
     && input.initialState.revision === 0;
-}
-
-function isValidWorldState(state: WorldState): boolean {
-  if (state.schemaVersion !== CONTRACT_SCHEMA_VERSION
-    || !isSafeNonNegativeInteger(state.revision)
-    || !isSafeNonNegativeInteger(state.clock?.elapsedSeconds)
-    || !Array.isArray(state.locations)
-    || !Array.isArray(state.entities)
-    || !Array.isArray(state.resources)
-    || !Array.isArray(state.items)) return false;
-  if (!hasValidWorldStateReferences(state)) return false;
-  for (const resource of state.resources) {
-    if (!Number.isSafeInteger(resource.value) || !Number.isSafeInteger(resource.min) || !Number.isSafeInteger(resource.max)) return false;
-    if (resource.min > resource.max || resource.value < resource.min || resource.value > resource.max) return false;
-  }
-  return true;
 }
 
 function isRuntimeId(value: unknown): value is string {
