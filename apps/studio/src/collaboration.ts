@@ -73,7 +73,7 @@ export async function loadCollaborationPanel(
 
 export function collaborationLoadMessage(error: unknown): string {
   if (error instanceof ControlApiError) {
-    if (error.status === 404) return "Квест не найден или недоступен вашей роли (404). Панель ничего не изменила.";
+    if (error.status === 404) return "Миссия не найдена или недоступна вашей роли (404). Панель ничего не изменила.";
     if (error.status === 401) return "Нужен вход в Studio: сессия истекла или отсутствует (401).";
     if (error.status === 501) return "Server-side хранилище заметок не подключено (501).";
     if (error.status === 0) return "Control недоступен. Проверьте соединение и обновите панель.";
@@ -192,7 +192,7 @@ export function renderCollaborationPanel(
       <p>Рабочие материалы команды. Записи живут на сервере и не меняют черновик, выпуски и опубликованные игры.</p>
       <div class="collab-meta">
         <span>Проект <code>${escapeHtml(view.projectId)}</code></span>
-        <span>Квест <code>${escapeHtml(view.questId)}</code></span>
+        <span>Миссия <code>${escapeHtml(view.questId)}</code></span>
         <span>Коллекция r${view.revision}</span>
         <span>Заметок <strong>${view.notes.length}</strong></span>
         <span>Открытых <strong>${counts.open}</strong> из <strong>${counts.total}</strong></span>
@@ -235,7 +235,7 @@ export function renderCollaborationPanel(
           <label>Y <input name="y" type="number" step="1" data-collab-field="note.y" value="${escapeAttr(collabField(options.fields, "note.y", "0"))}"></label>
           <button class="primary" type="submit">Добавить заметку</button>
         </div>
-        <p class="collab-hint">Координаты — место пина на доске; они не меняют раскладку квеста.</p>
+        <p class="collab-hint">Координаты — место пина на доске; они не меняют раскладку миссии.</p>
       </form>` : readOnlyNote(options)}
     </section>
 

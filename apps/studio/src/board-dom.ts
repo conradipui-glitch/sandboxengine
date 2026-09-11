@@ -357,7 +357,7 @@ export function mountBoard(container: HTMLElement, options: BoardDomOptions): Bo
   const viewport = document.createElement("div");
   viewport.className = "board-viewport";
   viewport.tabIndex = 0;
-  viewport.setAttribute("aria-label", "Доска квеста");
+  viewport.setAttribute("aria-label", "Доска миссии");
   viewport.style.touchAction = "none";
 
   const world = document.createElement("div");

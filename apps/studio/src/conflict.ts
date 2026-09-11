@@ -61,7 +61,7 @@ function renderComparison(conflict: ConflictState): string {
   if (comparison === null) return `<div class="conflict-diff">Сравнение server revisions недоступно.</div>`;
 
   const rows: string[] = [];
-  if (comparison.titleChanged) rows.push("Название квеста изменено");
+  if (comparison.titleChanged) rows.push("Название миссии изменено");
   if (comparison.entryLocationChanged) rows.push("Стартовая локация изменена");
   for (const id of comparison.addedBlockIds) rows.push(`Добавлен блок: ${id}`);
   for (const id of comparison.removedBlockIds) rows.push(`Удалён блок: ${id}`);

@@ -125,7 +125,7 @@ export function renderAuthorAssistantPanel(
     ${job.state === "paused_budget" ? `<div class="assistant-budget-note">Segment budget исчерпан. Следующее сообщение может явно открыть новый bounded segment.</div>` : ""}
     ${canSend ? `<form class="assistant-composer" data-form="author-message">
       <input type="hidden" name="jobId" value="${escapeAttr(job.jobId)}">
-      <textarea name="instruction" required maxlength="20000" rows="3" placeholder="Опишите, что изменить в текущем квесте…"></textarea>
+      <textarea name="instruction" required maxlength="20000" rows="3" placeholder="Опишите, что изменить в текущей миссии…"></textarea>
       ${job.state === "paused_budget" ? `<input type="hidden" name="resumeBudget" value="true">` : ""}
       <button class="primary" type="submit">Отправить</button>
     </form>` : terminal
@@ -190,7 +190,7 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
 }
 
 function jobFailedHint(code: string): string {
-  if (code === "context_too_large") return " — контекст кампании превышает локальный лимит; сократите квест до 32 блоков или уменьшите объём текста.";
+  if (code === "context_too_large") return " — контекст кампании превышает локальный лимит; сократите миссию до 32 блоков или уменьшите объём текста.";
   if (code === "backend.auth_required") return " — ИИ не подключён или ключ отклонён: укажите провайдера, модель и ключ в форме «Подключение ИИ-помощника» выше.";
   if (code === "backend.rate_limited") return " — провайдер отвечает 429 (лимит запросов); повторите позже.";
   if (code === "backend.timeout") return " — провайдер не ответил за отведённое время; повторите запрос.";

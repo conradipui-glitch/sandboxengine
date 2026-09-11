@@ -52,7 +52,7 @@ test("B09-03 Studio stale conflict uses authoritative server comparison before e
 
   const html = renderConflictPanel(conflict);
   assert.match(html, /Server diff r3 → r5/);
-  assert.match(html, /Название квеста изменено/);
+  assert.match(html, /Название миссии изменено/);
   assert.match(html, /Добавлен блок: new-location/);
   assert.match(html, /Удалён блок: old-resource/);
   assert.match(html, /Изменён блок: paint/);

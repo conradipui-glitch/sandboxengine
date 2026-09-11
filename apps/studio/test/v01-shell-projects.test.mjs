@@ -151,7 +151,7 @@ async function bootStudio(options) {
 test("V01 empty projects screen has AI prompt, honest paint note and blank-project start", async () => {
   const { root } = await bootStudio({ projects: [] });
   assert.match(root.innerHTML, /Мои проекты/);
-  assert.match(root.innerHTML, /О чём будет квест\?/);
+  assert.match(root.innerHTML, /О чём будет миссия\?/);
   assert.match(root.innerHTML, /Создать с ИИ/);
   assert.match(root.innerHTML, /Начать с пустого проекта/);
   assert.match(root.innerHTML, /ограниченном профиле/);
@@ -169,8 +169,8 @@ test("V01 project cards open the project and show quest counts with roles", asyn
   });
   assert.match(root.innerHTML, /data-action="open-project"/);
   assert.match(root.innerHTML, /Первая история/);
-  assert.match(root.innerHTML, /Квестов: 1/);
-  assert.match(root.innerHTML, /Квестов: 0/);
+  assert.match(root.innerHTML, /Миссий: 1/);
+  assert.match(root.innerHTML, /Миссий: 0/);
   assert.match(root.innerHTML, /Новый проект/);
   assert.match(root.innerHTML, /Поиск по названию/);
   assert.ok(!root.innerHTML.includes("Technical ID"), "no Technical ID on cards");
@@ -206,7 +206,7 @@ test("K02 editor keeps the board in the main workspace and moves utility panels 
   app.render();
   assert.match(root.innerHTML, /ed-topbar/);
   assert.match(root.innerHTML, /Проверить/);
-  assert.match(root.innerHTML, /Играть/);
+  assert.match(root.innerHTML, /Проверить и сыграть/);
   assert.match(root.innerHTML, /ed-library/);
   assert.match(root.innerHTML, /Библиотека/);
   assert.match(root.innerHTML, /Свойства/);

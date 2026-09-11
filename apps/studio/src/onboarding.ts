@@ -85,13 +85,13 @@ export function audienceLabel(audience: StudioAudience): string {
 export const HELP_TOPICS: readonly HelpTopic[] = Object.freeze([
   Object.freeze({
     id: "project-quest",
-    title: "Проект и квест",
-    body: "Проект группирует авторскую работу. Квест — отдельная история внутри проекта со своим authoritative draft и стартовой локацией.",
+    title: "Проект и миссия",
+    body: "Проект группирует авторскую работу. Миссия — отдельная история внутри проекта со своим authoritative draft и стартовой локацией.",
     audience: "all"
   }),
   Object.freeze({
     id: "start-path",
-    title: "С чего начать квест",
+    title: "С чего начать миссию",
     body: "На экране «Мои проекты» откройте «Новый проект», затем задайте идею: кнопка «Создать с ИИ» готовит черновик по описанию, а «Начать с пустого проекта» открывает пустую мастерскую.",
     audience: "author"
   }),
@@ -177,7 +177,7 @@ export const STUDIO_ERROR_COPY: readonly StudioErrorCopy[] = Object.freeze([
   Object.freeze({ code: "background-load", message: "Не удалось загрузить фон", action: "Повторить" }),
   Object.freeze({ code: "asset-load", message: "Не удалось загрузить материал", action: "Повторить" }),
   Object.freeze({ code: "draft-save", message: "Не удалось сохранить черновик", action: "Повторить" }),
-  Object.freeze({ code: "validation-run", message: "Не удалось проверить квест", action: "Повторить" }),
+  Object.freeze({ code: "validation-run", message: "Не удалось проверить миссию", action: "Повторить" }),
   Object.freeze({ code: "release-build", message: "Не удалось собрать выпуск", action: "Повторить" }),
   Object.freeze({ code: "publication", message: "Не удалось опубликовать выпуск", action: "Повторить" }),
   Object.freeze({ code: "player-launch", message: "Не удалось открыть Player", action: "Повторить" }),
@@ -195,8 +195,8 @@ export function formatStudioError(code: string): string {
   return `${copy.message} — ${copy.action.charAt(0).toLowerCase()}${copy.action.slice(1)}`;
 }
 
-const NEED_QUEST = "Сначала создайте или выберите квест. Обучение не создаёт synthetic data и не меняет draft за вас.";
-const NEED_VALIDATION = "Шаг доступен после выбора квеста и valid validation текущей revision. Обучение только объясняет prerequisite и ничего не запускает автоматически.";
+const NEED_QUEST = "Сначала создайте или выберите миссию. Обучение не создаёт synthetic data и не меняет draft за вас.";
+const NEED_VALIDATION = "Шаг доступен после выбора миссии и valid validation текущей revision. Обучение только объясняет prerequisite и ничего не запускает автоматически.";
 
 /**
  * Тур описывает РЕАЛЬНЫЙ авторский путь: идея → ручной/ИИ старт → доска →
@@ -208,19 +208,19 @@ export const TOUR_STEPS: readonly TourStep[] = Object.freeze([
     id: "projects",
     anchor: ".projects-screen",
     title: "Проекты и идея",
-    body: "Экран «Мои проекты» — точка входа. Здесь видно ваши проекты и кнопку «Новый проект». Если проектов ещё нет, Studio предлагает блок «О чём будет ваш первый квест?»."
+    body: "Экран «Мои проекты» — точка входа. Здесь видно ваши проекты и кнопку «Новый проект». Если проектов ещё нет, Studio предлагает блок «О чём будет ваша первая миссия?»."
   }),
   Object.freeze({
     id: "start",
     anchor: "form[data-form=\"ai-draft\"]",
     title: "Старт: ИИ или пустой проект",
-    body: "Задайте идею квеста и нажмите «Создать с ИИ» — помощник соберёт черновик по описанию. Либо выберите «Начать с пустого проекта», чтобы заполнить мастерскую вручную.",
-    prerequisite: "Блок с идеей виден, пока у проекта ещё нет квестов."
+    body: "Задайте идею миссии и нажмите «Создать с ИИ» — помощник соберёт черновик по описанию. Либо выберите «Начать с пустого проекта», чтобы заполнить мастерскую вручную.",
+    prerequisite: "Блок с идеей виден, пока у проекта ещё нет миссий."
   }),
   Object.freeze({
     id: "board",
     anchor: "[data-action=\"board-view\"][data-view=\"board\"]",
-    title: "Доска квеста",
+    title: "Доска миссии",
     body: "В редакторе переключатель «Доска / Список / Сюжет» меняет вид. На доске карточки мест, персонажей, ресурсов и действий; позиция карточки — раскладка и на контент не влияет.",
     prerequisite: NEED_QUEST
   }),
@@ -234,8 +234,8 @@ export const TOUR_STEPS: readonly TourStep[] = Object.freeze([
   Object.freeze({
     id: "validation",
     anchor: ".validation-section",
-    title: "Проверка квеста",
-    body: "Кнопка «Проверить квест» привязана к точной revision и content hash. Изменили draft — выполните проверку снова перед сборкой выпуска.",
+    title: "Проверка миссии",
+    body: "Кнопка «Проверить миссию» привязана к точной revision и content hash. Изменили draft — выполните проверку снова перед сборкой выпуска.",
     prerequisite: NEED_QUEST
   }),
   Object.freeze({

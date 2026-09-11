@@ -248,5 +248,5 @@ test("L07 context overflow explains the corrective action instead of showing onl
     })
   });
   const html = renderAuthorAssistantPanel(failedState, { canMutate: true, hasMutationProof: true });
-  assert.match(html, /сократите квест до 32 блоков или уменьшите объём текста/);
+  assert.match(html, /сократите миссию до 32 блоков или уменьшите объём текста/);
 });

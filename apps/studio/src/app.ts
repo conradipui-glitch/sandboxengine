@@ -211,7 +211,7 @@ export class StudioApp {
     versions: null,
     versionsError: null,
     authorAssistant: Object.freeze({ kind: "empty" }),
-    collaboration: Object.freeze({ kind: "unavailable", reason: "Выберите квест, чтобы увидеть заметки." }),
+    collaboration: Object.freeze({ kind: "unavailable", reason: "Выберите миссию, чтобы увидеть заметки." }),
     collaborationConflict: null,
     collaborationBusy: false,
     collaborationNotice: null,
@@ -842,7 +842,15 @@ export class StudioApp {
       }
 
       if (kind === "project" || kind === "project-new") {
-        const title = text(data, "title");
+        const title = text(data, "title").trim();
+        if (title.length === 0) {
+          // `required` в форме пропускает строку из пробелов, а сервер такой
+          // проект принимал: в списке появлялась безымянная строка. Теперь
+          // причина видна прямо в форме.
+          this.state.projectModalError = "Введите название проекта: пустое название сервер принять не может.";
+          this.render();
+          return;
+        }
         const project = await this.api.createProject({
           projectId: generateTechnicalId(title),
           title
@@ -855,12 +863,19 @@ export class StudioApp {
         return;
       }
 
-      if (kind === "ai-draft" || kind === "empty-draft") {
-        const about = kind === "ai-draft" ? optionalText(data, "about") : null;
-        const title = about && about.length > 0 ? about.slice(0, 80) : "Новый квест";
+      if (kind === "ai-draft") {
+        const about = optionalText(data, "about");
+        if (!about || about.trim().length === 0) {
+          // Пустая форма «Создать с ИИ» молча рождала «Новый проект» и безымянный
+          // «Новый квест» — лишнюю строку в библиотеке вместо понятного отказа.
+          this.state.projectModalError = "Опишите миссию одним предложением: название берётся из описания, безымянных миссий Studio не создаёт.";
+          this.render();
+          return;
+        }
+        const title = about.trim().slice(0, 80);
         const project = await this.api.createProject({
           projectId: generateTechnicalId(title),
-          title: about && about.length > 0 ? `Квест: ${about.slice(0, 120)}` : "Новый проект"
+          title: `Миссия: ${about.trim().slice(0, 120)}`
         });
         this.state.projects = await this.api.listProjects();
         const draft = await this.api.createQuest({
@@ -875,11 +890,27 @@ export class StudioApp {
         this.state.projectModalError = null;
         await this.openProject(project.projectId);
         await this.selectQuest(draft.questId);
-        if (kind === "ai-draft") {
-          this.state.message = "Черновик создан. ИИ-помощник работает только в ограниченном профиле: текст и структура, рисование недоступно. Откройте «Соавтор», чтобы продолжить.";
-          this.state.inspectorTab = "coauthor";
-          this.render();
-        }
+        this.state.message = "Черновик создан. ИИ-помощник работает только в ограниченном профиле: текст и структура, рисование недоступно. Откройте «Соавтор», чтобы продолжить.";
+        this.state.inspectorTab = "coauthor";
+        this.render();
+        return;
+      }
+
+      if (kind === "empty-draft") {
+        // «Начать с пустого проекта» создаёт проект, но не миссию: безымянной
+        // первой миссии в библиотеке больше не появляется, название автор
+        // вводит сам в форме «Новая миссия».
+        const project = await this.api.createProject({
+          projectId: generateTechnicalId("story"),
+          title: "Новый проект"
+        });
+        this.state.projects = await this.api.listProjects();
+        this.state.questCounts = Object.freeze({ ...this.state.questCounts, [project.projectId]: 0 });
+        this.state.projectModal = false;
+        this.state.projectModalError = null;
+        await this.openProject(project.projectId);
+        this.state.message = "Пустой проект создан. Создайте первую миссию в библиотеке слева — название вводите сами.";
+        this.render();
         return;
       }
 
@@ -988,7 +1019,15 @@ export class StudioApp {
 
       if (kind === "quest") {
         const projectId = requireSelected(this.state.selectedProjectId, "Сначала выберите проект.");
-        const title = text(data, "title");
+        const title = text(data, "title").trim();
+        if (title.length === 0) {
+          // Пустое название превращалось в миссию `item-xxxxxx` с пустой
+          // подписью в библиотеке — автор не понимал, что создалось.
+          this.state.phase = "error";
+          this.state.message = "Введите название миссии: без названия она появится в библиотеке безымянной.";
+          this.render();
+          return;
+        }
         const questId = generateTechnicalId(title);
         const entryLocationId = "start";
         const draft = await this.api.createQuest({
@@ -1016,7 +1055,7 @@ export class StudioApp {
         await this.refreshVersions(projectId, questId);
         await this.refreshAuthorAssistant(projectId, questId);
         this.state.phase = "saved";
-        this.state.message = "Квест создан. Теперь добавьте ресурс и действие.";
+        this.state.message = "Миссия создана. Теперь добавьте ресурс и действие.";
         this.render();
         return;
       }
@@ -1092,7 +1131,7 @@ export class StudioApp {
     const intent = this.state.releaseBuildIntent;
     if (!intent) return;
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const draft = requireDraft(this.state.draft);
     const validation = this.state.validation;
     const stale = draft.draftRevision !== intent.draftRevision
@@ -1154,7 +1193,7 @@ export class StudioApp {
     const versions = this.state.versions;
     if (!report || !versions) return;
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const release = versions.releases.find((item) => item.releaseId === report.releaseId) ?? null;
     const stale = versions.currentReleaseId !== report.expectedCurrentReleaseId
       || release === null
@@ -1231,7 +1270,7 @@ export class StudioApp {
     const intent = this.state.restoreIntent;
     if (!intent) return;
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const draft = requireDraft(this.state.draft);
     if (draft.draftRevision !== intent.baseRevision) {
       this.state.restoreIntent = null;
@@ -1333,7 +1372,7 @@ export class StudioApp {
     this.destroyBoard();
     this.destroyStory();
     this.state.phase = "loading";
-    this.state.message = "Загружаем квесты…";
+    this.state.message = "Загружаем миссии…";
     this.state.selectedProjectId = projectId;
     this.state.selectedQuestId = null;
     this.state.draft = null;
@@ -1357,7 +1396,7 @@ export class StudioApp {
       const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
       this.state.access = await loadSelectedProjectAccess(this.api, this.state.access, project);
       this.state.phase = "idle";
-      this.state.message = this.state.quests.length === 0 ? "В проекте пока нет квестов." : "Выберите квест.";
+      this.state.message = this.state.quests.length === 0 ? "В проекте пока нет миссий." : "Выберите миссию.";
     } catch (error) {
       this.setError(error);
     }
@@ -1413,14 +1452,14 @@ export class StudioApp {
   private async playCurrentQuest(): Promise<void> {
     const draft = this.state.draft;
     if (!draft) {
-      this.state.message = "Сначала выберите квест в библиотеке слева.";
+      this.state.message = "Сначала выберите миссию в библиотеке слева.";
       this.render();
       return;
     }
     await this.validateCurrentDraft();
     const validation = this.state.validation;
     if (!validation || validation.status !== "valid") {
-      this.state.message = "Квест пока не готов к игре: сначала исправьте ошибки проверки.";
+      this.state.message = "Миссия пока не готова к игре: сначала исправьте ошибки проверки.";
       this.render();
       return;
     }
@@ -1510,7 +1549,7 @@ export class StudioApp {
     expectedContext?: { readonly projectId: string; readonly questId: string }
   ): Promise<boolean> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     if (expectedContext && (expectedContext.projectId !== projectId || expectedContext.questId !== questId)) return false;
     const draft = requireDraft(this.state.draft);
     this.state.phase = "saving";
@@ -1706,7 +1745,7 @@ export class StudioApp {
     const projectId = this.state.selectedProjectId;
     const questId = this.state.selectedQuestId;
     if (!projectId || !questId || this.state.draft === null) {
-      this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Откройте квест, чтобы работать с заметками." });
+      this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Откройте миссию, чтобы работать с заметками." });
       this.render();
       return;
     }
@@ -1918,7 +1957,7 @@ export class StudioApp {
   private requireCollaborationContext(): { readonly projectId: string; readonly questId: string } {
     return {
       projectId: requireSelected(this.state.selectedProjectId, "Сначала выберите проект."),
-      questId: requireSelected(this.state.selectedQuestId, "Сначала выберите квест.")
+      questId: requireSelected(this.state.selectedQuestId, "Сначала выберите миссию.")
     };
   }
 
@@ -1952,7 +1991,7 @@ export class StudioApp {
 
   private async startAuthorAssistant(): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     requireDraft(this.state.draft);
     this.state.phase = "assistant-starting";
     this.state.message = "Создаём durable Author job…";
@@ -1971,9 +2010,9 @@ export class StudioApp {
 
   private async sendAuthorMessage(jobId: string, instruction: string, resumeBudget: boolean): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const state = this.state.authorAssistant;
-    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте квест.");
+    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте миссию.");
     this.state.phase = "assistant-running";
     this.state.message = "Author Assistant читает authoritative draft и формирует bounded proposal…";
     this.render();
@@ -2005,9 +2044,9 @@ export class StudioApp {
 
   private async stopAuthorAssistant(jobId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const state = this.state.authorAssistant;
-    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте квест.");
+    if (state.kind !== "ready" || state.model.job.jobId !== jobId) throw new Error("Author job view устарел. Перечитайте миссию.");
     this.state.phase = "assistant-stopping";
     this.state.message = "Останавливаем Author job…";
     this.render();
@@ -2030,7 +2069,7 @@ export class StudioApp {
 
   private async applyAuthorProposal(proposalId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const state = this.state.authorAssistant;
     if (state.kind !== "ready") throw new Error("Author Assistant state недоступен.");
     const card = state.model.proposalCards.find((item) => item.artifact.proposal.proposalId === proposalId) ?? null;
@@ -2102,7 +2141,7 @@ export class StudioApp {
 
   private async validateCurrentDraft(): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const draft = requireDraft(this.state.draft);
     this.state.phase = "validating";
     this.state.message = `Проверяем revision ${draft.draftRevision}…`;
@@ -2121,7 +2160,7 @@ export class StudioApp {
 
   private async createCurrentPlaytest(): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const draft = requireDraft(this.state.draft);
     const validation = this.state.validation;
     if (!validation
@@ -2130,7 +2169,7 @@ export class StudioApp {
       || validation.contentHash !== draft.contentHash
     ) {
       this.state.phase = "error";
-      this.state.message = "Сначала проверьте текущую revision квеста.";
+      this.state.message = "Сначала проверьте текущую revision миссии.";
       this.render();
       return;
     }
@@ -2200,7 +2239,7 @@ export class StudioApp {
 
   private async prepareDeleteBlock(blockId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const draft = requireDraft(this.state.draft);
     try {
       const analysis = await this.api.analyzeDraftReferences(projectId, questId, draft.draftRevision, blockId);
@@ -2236,7 +2275,7 @@ export class StudioApp {
 
   private async cloneSelectedQuest(newQuestId: string, title: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const sourceQuestId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const sourceQuestId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     this.state.phase = "saving";
     this.state.message = `Clone ${sourceQuestId} → ${newQuestId}…`;
     this.render();
@@ -2255,7 +2294,7 @@ export class StudioApp {
 
   private async exportDraftRevision(revision: number): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Invalid draft revision for export.");
     try {
       const exported = await this.api.exportDraftQuest(projectId, questId, revision);
@@ -2271,7 +2310,7 @@ export class StudioApp {
 
   private async exportRelease(releaseId: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     try {
       const exported = await this.api.exportReleaseQuest(projectId, questId, releaseId);
       downloadQuestExport(exported);
@@ -2307,7 +2346,7 @@ export class StudioApp {
     const playtest = this.state.playtest;
     if (!playtest) return;
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     this.state.playtestTraceError = null;
     try {
       const trace = await this.api.getPlaytestTrace(projectId, questId, playtest.playtestId);
@@ -2775,7 +2814,7 @@ export class StudioApp {
     apply: (doc: MissionDraft) => ScreenMutationResult
   ): Promise<boolean> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const mission = this.state.mission;
     if (!mission) {
       this.state.message = "Сначала создайте миссию.";
@@ -2806,7 +2845,7 @@ export class StudioApp {
     } catch (error) {
       this.state.missionSaving = false;
       if (error instanceof ControlApiError && error.status === 409) {
-        this.state.message = "Миссия изменилась на сервере (конфликт revision). Обновите квест и повторите.";
+        this.state.message = "Миссия изменилась на сервере (конфликт revision). Обновите миссию и повторите.";
       } else if (error instanceof ControlApiError && error.status === 422) {
         this.state.message = `Сервер отклонил оформление (${error.code ?? "validation_failed"}).`;
       } else {
@@ -2823,7 +2862,7 @@ export class StudioApp {
     apply: (doc: MissionDraft) => { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string }
   ): Promise<boolean> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const mission = this.state.mission;
     if (!mission) {
       this.state.message = "Сначала создайте миссию.";
@@ -2856,7 +2895,7 @@ export class StudioApp {
     } catch (error) {
       this.state.missionSaving = false;
       if (error instanceof ControlApiError && error.status === 409) {
-        this.state.message = "Сюжет изменился на сервере (конфликт revision). Обновите квест и повторите — локальная правка не потеряна на экране.";
+        this.state.message = "Сюжет изменился на сервере (конфликт revision). Обновите миссию и повторите — локальная правка не потеряна на экране.";
       } else if (error instanceof ControlApiError && error.status === 422) {
         this.state.message = `Сервер отклонил сюжет (${error.code ?? "validation_failed"}): правка не сохранена.`;
       } else {
@@ -2871,7 +2910,7 @@ export class StudioApp {
   /** M05 создание миссии: сразу минимально проходимой (вход → выбор → финал), иначе сервер вернёт 422. */
   private async createMission(title: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     const entryId = generateStoryId("scene");
     const endingId = generateStoryId("ending");
     const mission: MissionDraft = {
@@ -2958,7 +2997,7 @@ export class StudioApp {
   /** Пишет готовый снимок сюжета поверх текущей ревизии через тот же CAS-путь /mission. */
   private async applyStorySnapshot(snapshot: MissionDraft, label: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
-    const questId = requireSelected(this.state.selectedQuestId, "Квест не выбран.");
+    const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
     this.state.missionSaving = true;
     this.state.message = "Сохраняем сюжет…";
     this.render();
@@ -2969,7 +3008,7 @@ export class StudioApp {
       this.state.message = `${label} Revision ${saved.mission.contentRevision}.`;
     } catch (error) {
       if (error instanceof ControlApiError && error.status === 409) {
-        this.state.message = "Сюжет изменился на сервере. Обновите квест и повторите.";
+        this.state.message = "Сюжет изменился на сервере. Обновите миссию и повторите.";
       } else if (error instanceof ControlApiError && error.status === 422) {
         this.state.message = `Сервер отклонил сюжет (${error.code ?? "validation_failed"}).`;
       } else {
@@ -3111,10 +3150,10 @@ export class StudioApp {
           </div>
           ${this.state.projects.length === 0 ? `
             <section class="projects-empty" aria-label="Первый проект">
-              <h2>О чём будет ваш первый квест?</h2>
+              <h2>О чём будет ваша первая миссия?</h2>
               <form data-form="ai-draft">
                 <div class="ai-row">
-                  <input data-focus-key="ai-about" name="about" maxlength="200" placeholder="О чём будет квест?">
+                  <input data-focus-key="ai-about" name="about" maxlength="200" placeholder="О чём будет миссия?">
                   <button class="primary" type="submit">Создать с ИИ</button>
                 </div>
               </form>
@@ -3176,15 +3215,15 @@ export class StudioApp {
             ${quest ? `<span>· ${escapeHtml(quest.title)}</span>` : ``}
           </nav>
           ${draft && allowEdit ? `
-          <form class="ed-rename" data-form="quest-rename" title="Переименовать квест">
-            <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название квеста">
+          <form class="ed-rename" data-form="quest-rename" title="Переименовать миссию">
+            <input data-focus-key="quest-rename" name="title" required maxlength="200" value="${escapeAttr(draft.title)}" aria-label="Название миссии">
             <button type="submit" title="Сохранить название">✓</button>
           </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
           <span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>
           <span class="spacer"></span>
           <div class="actions">
             ${draft ? `<button class="button-secondary" data-action="validate" ${this.state.phase === "validating" || !allowTest ? "disabled" : ""}>Проверить</button>
-            <button class="primary" data-action="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Запуск…" : "Играть"}</button>` : ``}
+            <button class="primary" data-action="play-quest" title="Проверить текущую revision и сразу запустить плеер на замороженной версии" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
             ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">
               <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
@@ -3198,16 +3237,16 @@ export class StudioApp {
         </header>
 
         <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}${this.state.inspectorTab === "notes" ? " notes-open" : ""}">
-          <aside class="ed-library" aria-label="Библиотека квестов">
+          <aside class="ed-library" aria-label="Библиотека миссий">
             <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? "»" : "« Библиотека"}</button>
             <div class="library-content">
               <section class="sidebar-section">
-                <div class="section-heading-row"><h2>Квесты</h2><span>${this.state.quests.length}</span></div>
+                <div class="section-heading-row"><h2>Миссии</h2><span>${this.state.quests.length}</span></div>
                 <div class="rail-list">${this.state.quests.map((item) => `
                   <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
                     <strong>${escapeHtml(item.title)}</strong>
-                  </button>`).join("") || `<div class="empty-rail">Создайте первый квест</div>`}</div>
-                ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание квеста недоступно.</p>`}
+                  </button>`).join("") || `<div class="empty-rail">Создайте первую миссию</div>`}</div>
+                ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание миссии недоступно.</p>`}
               </section>
               ${draft && allowEdit ? `<section class="sidebar-section block-library" aria-label="Добавить блок">
                 <div class="section-heading-row"><h2>Добавить карточку</h2></div>
@@ -3232,14 +3271,14 @@ export class StudioApp {
               </div>
             </section>
             <details class="diagnostics draft-meta"><summary>Дополнительно: технические данные</summary>
-              <div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>
+              <div>ID миссии: <code>${escapeHtml(draft.questId)}</code></div>
               <div>Версия черновика: <code>${draft.draftRevision}</code>, контрольная сумма: <code>${escapeHtml(shortHash(draft.contentHash))}</code></div>
             </details>
 
             ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
             ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
-            <div class="board-toggle" role="group" aria-label="Вид редактора квеста">
+            <div class="board-toggle" role="group" aria-label="Вид редактора миссии">
               <button class="button-secondary ${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board">Доска</button>
               <button class="button-secondary ${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list">Список</button>
               <button class="button-secondary ${this.state.boardView === "story" ? "active" : ""}" data-action="board-view" data-view="story">Сюжет</button>
@@ -3248,7 +3287,7 @@ export class StudioApp {
             ${this.state.boardView === "story"
                           ? this.renderStoryView(allowEdit)
                           : this.state.boardView === "board"
-                          ? `<div class="board-host" data-board-host aria-label="Доска квеста"></div>`
+                          ? `<div class="board-host" data-board-host aria-label="Доска миссии"></div>`
                           : `<div class="editor-grid">
                           <section class="editor-section">
                             <div class="section-title"><div><h2>Ресурсы</h2><p>Запасы игрового мира: сколько есть и в каких пределах.</p></div></div>
@@ -3271,16 +3310,16 @@ export class StudioApp {
                           </section>
                         </div>`}
             ` : `
-            <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите квест в библиотеке слева или создайте новый.</p></div>
+            <div class="empty-workspace"><h1>${escapeHtml(project.title)}</h1><p>Выберите миссию в библиотеке слева или создайте новую.</p></div>
             `}
             ${draft ? `
             <section class="ed-validation validation-section">
               <div>
-                <h2>Проверка квеста</h2>
+                <h2>Проверка миссии</h2>
                 <p>Проверка относится к текущей версии черновика. После изменений запустите её снова.</p>
               </div>
               ${allowTest
-                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить квест</button>`
+                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить миссию</button>`
                 : `<span class="access-note">Проверка и запуск доступны вашей роли после входа.</span>`}
               ${validationPanel(this.state.validation, draft)}
               ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
@@ -3340,7 +3379,7 @@ export class StudioApp {
     const mission = this.state.mission;
     if (!mission) {
       return `<div class="empty-workspace"><h1>Сюжет миссии</h1>
-        <p>Миссии у этого квеста пока нет. Создайте её — дальше сцены, развилки и экраны собираются здесь, без JSON.</p>
+        <p>В этой миссии пока нет ни одной сцены. Создайте первую — дальше сцены, развилки и экраны собираются здесь, без JSON.</p>
         ${allowEdit ? `<form data-form="story-mission-create" class="compact-form">
           <label>Название миссии <input name="title" maxlength="120" required placeholder="Например: Ночная смена" /></label>
           <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Создать миссию</button>
@@ -3545,7 +3584,7 @@ export class StudioApp {
       : this.state.utilityPanel === "portability"
         ? draft
           ? renderPortabilityPanel(draft, this.state.versions, allowEdit)
-          : `<p class="empty-panel">Сначала откройте квест, чтобы импортировать или экспортировать его.</p>`
+          : `<p class="empty-panel">Сначала откройте миссию, чтобы импортировать или экспортировать её.</p>`
         : `<section class="settings-panel">
             <h2>Настройки проекта и доступа</h2>
             <p>Права редактирования определяет сервер. Владелец проекта не получает глобальные права Studio автоматически.</p>
@@ -3553,7 +3592,7 @@ export class StudioApp {
             <details class="diagnostics" open>
               <summary>Технические данные</summary>
               <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
-              ${draft ? `<div>ID квеста: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
+              ${draft ? `<div>ID миссии: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
             </details>
           </section>`;
     return `<section class="ed-utility-panel" role="dialog" aria-label="${escapeAttr(panelTitle)}">
@@ -3749,15 +3788,15 @@ function projectCard(item: ProjectView, questCount: number): string {
   return `<button class="project-card" data-action="open-project" data-project-id="${escapeAttr(item.projectId)}">
     <span class="project-cover" aria-hidden="true">Обложка скоро появится</span>
     <h2>${escapeHtml(item.title)}</h2>
-    <span class="project-meta"><span>Квестов: ${questCount}</span><span class="role-badge">${escapeHtml(projectRoleLabel(item.role))}</span></span>
+    <span class="project-meta"><span>Миссий: ${questCount}</span><span class="role-badge">${escapeHtml(projectRoleLabel(item.role))}</span></span>
   </button>`;
 }
 
 function questForm(): string {
   return `<form class="compact-form" data-form="quest">
-    <h3>Новый квест</h3>
-    <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Название квеста"></label>
-    <button type="submit">Создать квест</button>
+    <h3>Новая миссия</h3>
+    <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Название миссии"></label>
+    <button type="submit">Создать миссию</button>
   </form>`;
 }
 
@@ -3807,8 +3846,8 @@ function validationPanel(validation: ValidationView | null, draft: DraftView): s
   // блокере здесь, а не на «Опубликовать» (R-01 полного ревью кода).
   const blockedReason = stale ? null : describeReleaseReadiness(validation.releaseReadiness);
   return `<div class="validation-result ${validation.status}">
-    <strong>${validation.status === "valid" ? "Квест готов" : "Найдены ошибки"}</strong>
-    ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей версии. Проверьте квест снова после изменений.</p>` : ""}
+    <strong>${validation.status === "valid" ? "Миссия готова" : "Найдены ошибки"}</strong>
+    ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей версии. Проверьте миссию снова после изменений.</p>` : ""}
     ${blockedReason ? `<p class="stale-note" data-release-blocked>Выпуск пока не собрать: ${escapeHtml(blockedReason)}</p>` : ""}
     ${validation.errors.length ? `<ul>${validation.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
     <details class="diagnostics"><summary>Дополнительно: данные проверки</summary>
