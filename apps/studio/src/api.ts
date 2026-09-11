@@ -268,6 +268,62 @@ export interface AgentKitView {
   }[];
 }
 
+/* FIN-12 (V07): заметки и обсуждения команды. Studio читает и пишет их через
+   тот же Control API; форма ответа описана отдельными View-типами, чтобы
+   клиент не зависел от деталей хранилища. */
+export interface CollaborationNoteView {
+  readonly noteId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly text: string;
+  readonly authorUserId: string;
+  readonly position: BoardPosition;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface CollaborationMessageView {
+  readonly messageId: string;
+  readonly authorUserId: string;
+  readonly text: string;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly deleted: boolean;
+}
+
+export interface CollaborationAnchorView {
+  readonly kind: "board" | "scene" | "layer" | "field";
+  readonly targetId: string | null;
+  readonly position: BoardPosition | null;
+}
+
+export interface CollaborationThreadView {
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly anchor: CollaborationAnchorView;
+  readonly anchorDeleted: boolean;
+  readonly status: "open" | "resolved";
+  readonly revision: number;
+  readonly createdByUserId: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly resolvedAtMs: number | null;
+  readonly messages: readonly CollaborationMessageView[];
+}
+
+export interface CollaborationView {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  readonly revision: number;
+  readonly unresolvedThreadCount: number;
+  readonly notes: readonly CollaborationNoteView[];
+  readonly threads: readonly CollaborationThreadView[];
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -747,6 +803,130 @@ export class ControlApiClient {
     return body.trace;
   }
 
+  /* FIN-12 (V07): заметки и треды комментариев. GET требует роль tester,
+     каждая запись — editor, CSRF proof и idempotency-key; CAS идёт через
+     expectedRevision, поэтому панель никогда не переписывает чужую правку. */
+  async getCollaboration(projectId: string, questId: string): Promise<CollaborationView> {
+    const body = await this.request<{ readonly collaboration: CollaborationView }>(
+      "GET",
+      collaborationPath(projectId, questId)
+    );
+    return body.collaboration;
+  }
+
+  async createCollaborationNote(
+    projectId: string,
+    questId: string,
+    input: { readonly text: string; readonly position: BoardPosition },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes`, input, idempotencyKey);
+  }
+
+  async changeCollaborationNote(
+    projectId: string,
+    questId: string,
+    noteId: string,
+    input: { readonly expectedRevision: number; readonly text: string; readonly position: BoardPosition },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes/${encodeURIComponent(noteId)}/changes`, input, idempotencyKey);
+  }
+
+  async deleteCollaborationNote(
+    projectId: string,
+    questId: string,
+    noteId: string,
+    expectedRevision: number,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes/${encodeURIComponent(noteId)}/delete`, { expectedRevision }, idempotencyKey);
+  }
+
+  async createCollaborationThread(
+    projectId: string,
+    questId: string,
+    input: { readonly anchor: CollaborationAnchorView; readonly text: string },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/comments`, input, idempotencyKey);
+  }
+
+  async addCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    text: string,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages`,
+      { text },
+      idempotencyKey
+    );
+  }
+
+  async changeCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    messageId: string,
+    input: { readonly expectedRevision: number; readonly text: string },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/changes`,
+      input,
+      idempotencyKey
+    );
+  }
+
+  async deleteCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    messageId: string,
+    expectedRevision: number,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/delete`,
+      { expectedRevision },
+      idempotencyKey
+    );
+  }
+
+  async setCollaborationThreadStatus(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    input: { readonly expectedRevision: number; readonly status: "open" | "resolved" },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/status`,
+      input,
+      idempotencyKey
+    );
+  }
+
+  private async collaborationWrite(
+    path: string,
+    body: unknown,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0) {
+      throw new ControlApiError(0, "CLIENT_IDEMPOTENCY_KEY_REQUIRED", null);
+    }
+    const response = await this.request<{ readonly collaboration: CollaborationView }>(
+      "POST",
+      path,
+      body,
+      { idempotencyKey }
+    );
+    return response.collaboration;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
@@ -781,6 +961,10 @@ export class ControlApiClient {
     }
     return payload as T;
   }
+}
+
+function collaborationPath(projectId: string, questId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/collaboration`;
 }
 
 function createClientIdempotencyKey(): string {

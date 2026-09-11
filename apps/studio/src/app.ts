@@ -8,6 +8,7 @@ import type { ActionBlock, Block, MissionDraft, MissionScreenLayer } from "@livi
 import {
   ControlApiClient,
   ControlApiError,
+  type CollaborationView,
   type DraftView,
   type PlaytestTraceView,
   type PlaytestView,
@@ -109,6 +110,19 @@ import {
   renderAuthorAssistantPanel,
   type AuthorAssistantPanelState
 } from "./author-assistant.js";
+import {
+  collabField,
+  collaborationAnchorFromForm,
+  collaborationErrorMessage,
+  collaborationWriteFailure,
+  loadCollaborationPanel,
+  renderCollaborationPanel,
+  type CollaborationConflict,
+  type CollaborationEditTarget,
+  type CollaborationPanelState,
+  type CollaborationRenderOptions,
+  type CollaborationWriteFailure
+} from "./collaboration.js";
 
 interface StudioState {
   projects: readonly ProjectView[];
@@ -123,6 +137,12 @@ interface StudioState {
   versions: VersionsReadModel | null;
   versionsError: string | null;
   authorAssistant: AuthorAssistantPanelState;
+  collaboration: CollaborationPanelState;
+  collaborationConflict: CollaborationConflict | null;
+  collaborationBusy: boolean;
+  collaborationNotice: string | null;
+  collaborationFields: Readonly<Record<string, string>>;
+  collaborationEditing: CollaborationEditTarget | null;
   access: StudioAccessState;
   restoreIntent: RestoreIntent | null;
   releaseBuildIntent: ReleaseBuildIntent | null;
@@ -142,7 +162,7 @@ interface StudioState {
   projectModalError: string | null;
   questCounts: Readonly<Record<string, number>>;
   libraryCollapsed: boolean;
-  inspectorTab: "props" | "coauthor";
+  inspectorTab: "props" | "coauthor" | "notes";
   boardView: "board" | "list" | "story";
   selectedBoardNodeId: string | null;
   selectedBoardEdgeId: string | null;
@@ -181,6 +201,12 @@ export class StudioApp {
     versions: null,
     versionsError: null,
     authorAssistant: Object.freeze({ kind: "empty" }),
+    collaboration: Object.freeze({ kind: "unavailable", reason: "Выберите квест, чтобы увидеть заметки." }),
+    collaborationConflict: null,
+    collaborationBusy: false,
+    collaborationNotice: null,
+    collaborationFields: Object.freeze({}),
+    collaborationEditing: null,
     access: initialAccessState(),
     restoreIntent: null,
     releaseBuildIntent: null,
@@ -585,9 +611,69 @@ export class StudioApp {
     }
     if (action === "inspector-tab") {
       const tab = target.dataset.tab;
-      if (tab === "props" || tab === "coauthor") {
+      if (tab === "props" || tab === "coauthor" || tab === "notes") {
         this.state.inspectorTab = tab;
+        if (tab === "notes" && (this.state.collaboration.kind !== "ready" || this.state.collaborationConflict !== null)) {
+          const projectId = this.state.selectedProjectId;
+          const questId = this.state.selectedQuestId;
+          if (projectId && questId && this.state.draft !== null) {
+            await this.refreshCollaboration(projectId, questId, "Заметки и обсуждения загружены с сервера.");
+            return;
+          }
+        }
         this.render();
+      }
+      return;
+    }
+    if (action === "collab-reload") {
+      await this.reloadCollaboration();
+      return;
+    }
+    if (action === "collab-cancel-edit") {
+      this.state.collaborationEditing = null;
+      this.render();
+      return;
+    }
+    if (action === "collab-note-edit") {
+      const noteId = target.dataset.noteId;
+      if (typeof noteId === "string") {
+        this.state.collaborationEditing = { kind: "note", noteId };
+        this.render();
+      }
+      return;
+    }
+    if (action === "collab-note-delete") {
+      const noteId = target.dataset.noteId;
+      const note = this.collaborationView().notes.find((entry) => entry.noteId === noteId);
+      if (note) await this.deleteCollaborationNote(note.noteId, note.revision);
+      return;
+    }
+    if (action === "collab-message-edit") {
+      const threadId = target.dataset.threadId;
+      const messageId = target.dataset.messageId;
+      if (typeof threadId === "string" && typeof messageId === "string") {
+        this.state.collaborationEditing = { kind: "message", threadId, messageId };
+        this.render();
+      }
+      return;
+    }
+    if (action === "collab-message-delete") {
+      const threadId = target.dataset.threadId;
+      const messageId = target.dataset.messageId;
+      const thread = this.collaborationView().threads.find((entry) => entry.threadId === threadId);
+      const message = thread?.messages.find((entry) => entry.messageId === messageId);
+      if (thread && message) await this.deleteCollaborationMessage(thread.threadId, message.messageId, message.revision);
+      return;
+    }
+    if (action === "collab-thread-resolve" || action === "collab-thread-reopen") {
+      const threadId = target.dataset.threadId;
+      const thread = this.collaborationView().threads.find((entry) => entry.threadId === threadId);
+      if (thread) {
+        await this.setCollaborationThreadStatus(
+          thread.threadId,
+          action === "collab-thread-resolve" ? "resolved" : "open",
+          thread.revision
+        );
       }
       return;
     }
@@ -651,6 +737,27 @@ export class StudioApp {
           text(data, "instruction"),
           data.get("resumeBudget") === "true"
         );
+        return;
+      }
+
+      if (kind === "collab-note-create") {
+        await this.createCollaborationNoteFromForm(data);
+        return;
+      }
+      if (kind === "collab-note-change") {
+        await this.changeCollaborationNoteFromForm(data);
+        return;
+      }
+      if (kind === "collab-thread-create") {
+        await this.createCollaborationThreadFromForm(data);
+        return;
+      }
+      if (kind === "collab-thread-reply") {
+        await this.replyCollaborationThread(text(data, "threadId"), text(data, "text"));
+        return;
+      }
+      if (kind === "collab-message-change") {
+        await this.changeCollaborationMessageFromForm(data);
         return;
       }
 
@@ -864,6 +971,10 @@ export class StudioApp {
         this.state.versions = null;
         this.state.versionsError = null;
         this.state.authorAssistant = Object.freeze({ kind: "empty" });
+        this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Загружаем заметки…" });
+        this.state.collaborationConflict = null;
+        this.state.collaborationNotice = null;
+        this.state.collaborationEditing = null;
         this.state.deletionIntent = null;
         await this.refreshVersions(projectId, questId);
         await this.refreshAuthorAssistant(projectId, questId);
@@ -1163,6 +1274,10 @@ export class StudioApp {
       this.state.versions = null;
       this.state.versionsError = null;
       this.state.authorAssistant = Object.freeze({ kind: "empty" });
+      this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Загружаем заметки…" });
+      this.state.collaborationConflict = null;
+      this.state.collaborationNotice = null;
+      this.state.collaborationEditing = null;
       this.state.conflict = null;
       this.state.restoreIntent = null;
       this.state.releaseBuildIntent = null;
@@ -1190,6 +1305,10 @@ export class StudioApp {
     this.state.versions = null;
     this.state.versionsError = null;
     this.state.authorAssistant = Object.freeze({ kind: "empty" });
+    this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Загружаем заметки…" });
+    this.state.collaborationConflict = null;
+    this.state.collaborationNotice = null;
+    this.state.collaborationEditing = null;
     this.state.conflict = null;
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
@@ -1216,6 +1335,7 @@ export class StudioApp {
 
   private onInput(event: Event): void {
     const target = event.target;
+    if (this.captureCollaborationField(target)) return;
     if (isInspectorControl(target) && target.dataset.inspectorField) {
       this.updateInspectorField(target);
       return;
@@ -1236,6 +1356,7 @@ export class StudioApp {
 
   private onInspectorChange(event: Event): void {
     const target = event.target;
+    if (this.captureCollaborationField(target)) return;
     if (isInspectorControl(target) && target.dataset.inspectorField) this.updateInspectorField(target);
   }
 
@@ -1297,6 +1418,10 @@ export class StudioApp {
     this.state.versions = null;
     this.state.versionsError = null;
     this.state.authorAssistant = Object.freeze({ kind: "empty" });
+    this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Загружаем заметки…" });
+    this.state.collaborationConflict = null;
+    this.state.collaborationNotice = null;
+    this.state.collaborationEditing = null;
     this.state.conflict = null;
     this.state.restoreIntent = null;
     this.state.releaseBuildIntent = null;
@@ -1332,6 +1457,7 @@ export class StudioApp {
       }
       await this.refreshVersions(projectId, questId);
       await this.refreshAuthorAssistant(projectId, questId);
+      await this.refreshCollaboration(projectId, questId, null);
       this.state.phase = "idle";
       this.state.message = this.state.versionsError === null
         ? "Черновик, версии и соавтор обновлены с сервера."
@@ -1509,6 +1635,282 @@ export class StudioApp {
 
   private async refreshAuthorAssistant(projectId: string, questId: string): Promise<void> {
     this.state.authorAssistant = await loadAuthorAssistantPanel(this.api, projectId, questId);
+  }
+
+  /* ---------------- FIN-12: заметки и обсуждения ---------------- */
+
+  private collaborationView(): CollaborationView {
+    return this.state.collaboration.kind === "ready"
+      ? this.state.collaboration.view
+      : Object.freeze({
+        schemaVersion: "1.0" as const,
+        projectId: "",
+        questId: "",
+        revision: 0,
+        unresolvedThreadCount: 0,
+        notes: Object.freeze([]),
+        threads: Object.freeze([])
+      });
+  }
+
+  /** Чтение панели: доступно любой роли, включая tester, и не пишет ничего. */
+  private async refreshCollaboration(projectId: string, questId: string, notice: string | null): Promise<void> {
+    this.state.collaboration = await loadCollaborationPanel(this.api, projectId, questId);
+    if (notice !== null) this.state.collaborationNotice = notice;
+    this.state.collaborationEditing = null;
+    this.render();
+  }
+
+  /**
+   * Явная перечитка после конфликта или ошибки. Никакого silent overwrite:
+   * до нажатия этой кнопки локальная копия и введённый текст остаются как есть.
+   */
+  private async reloadCollaboration(): Promise<void> {
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    if (!projectId || !questId || this.state.draft === null) {
+      this.state.collaboration = Object.freeze({ kind: "unavailable", reason: "Откройте квест, чтобы работать с заметками." });
+      this.render();
+      return;
+    }
+    this.state.collaborationConflict = null;
+    this.state.collaborationBusy = true;
+    this.state.collaborationNotice = "Перечитываем заметки и обсуждения с сервера…";
+    this.render();
+    await this.refreshCollaboration(projectId, questId, "Данные перечитаны с сервера.");
+  }
+
+  private collaborationOptions(project: ProjectView | null): CollaborationRenderOptions {
+    const canWrite = canEditProject(this.state.access, project);
+    return {
+      canWrite,
+      currentUserId: this.state.access.auth?.user.userId ?? (this.state.access.mode === "local-owner" ? "local-owner" : null),
+      isOwner: project?.role === "owner",
+      conflict: this.state.collaborationConflict,
+      busy: this.state.collaborationBusy,
+      fields: this.state.collaborationFields,
+      editing: this.state.collaborationEditing,
+      notice: this.state.collaborationNotice
+    };
+  }
+
+  private async runCollaborationWrite(
+    project: ProjectView | null,
+    write: () => Promise<CollaborationView>,
+    successMessage: string,
+    clearedFields: readonly string[]
+  ): Promise<void> {
+    if (!canEditProject(this.state.access, project)) {
+      this.state.collaborationNotice = "Запись недоступна: нужна роль editor или owner и активный mutation proof.";
+      this.render();
+      return;
+    }
+    this.state.collaborationBusy = true;
+    this.state.collaborationNotice = null;
+    this.render();
+    try {
+      const view = await write();
+      const cleared: Record<string, string> = { ...this.state.collaborationFields };
+      for (const name of clearedFields) delete cleared[name];
+      this.state.collaborationFields = Object.freeze(cleared);
+      this.state.collaboration = Object.freeze({ kind: "ready", view });
+      this.state.collaborationConflict = null;
+      this.state.collaborationEditing = null;
+      this.state.collaborationNotice = successMessage;
+      this.state.phase = "saved";
+      this.state.message = `${successMessage} Черновик, выпуски и игра не менялись.`;
+    } catch (error) {
+      this.handleCollaborationFailure(error);
+    } finally {
+      this.state.collaborationBusy = false;
+    }
+    this.render();
+  }
+
+  /**
+   * 409 COLLABORATION_REVISION_CONFLICT и 403 COLLABORATION_FORBIDDEN видны в
+   * панели, локальные данные не подменяются ответом сервера, текст не теряется.
+   */
+  private handleCollaborationFailure(error: unknown): void {
+    const failure: CollaborationWriteFailure = collaborationWriteFailure(error);
+    const message = collaborationErrorMessage(failure);
+    if (failure.kind === "conflict") {
+      this.state.collaborationConflict = Object.freeze({
+        code: failure.code,
+        currentRevision: failure.currentRevision,
+        message
+      });
+      this.state.phase = "conflict";
+    } else {
+      this.state.collaborationConflict = null;
+      this.state.collaborationNotice = message;
+      this.state.phase = "error";
+    }
+    this.state.message = message;
+  }
+
+  private async createCollaborationNoteFromForm(data: FormData): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    const position = this.collaborationPosition(data, "x", "y");
+    if (position === null) {
+      this.state.collaborationNotice = "Координаты заметки должны быть числами.";
+      this.render();
+      return;
+    }
+    const noteText = text(data, "text");
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.createCollaborationNote(projectId, questId, { text: noteText, position }, mutationKey("collab-note")),
+      "Заметка создана на сервере.",
+      ["note.text"]
+    );
+  }
+
+  private async changeCollaborationNoteFromForm(data: FormData): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    const position = this.collaborationPosition(data, "x", "y");
+    if (position === null) {
+      this.state.collaborationNotice = "Координаты заметки должны быть числами.";
+      this.render();
+      return;
+    }
+    const noteId = text(data, "noteId");
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.changeCollaborationNote(projectId, questId, noteId, {
+        expectedRevision: this.collaborationRevision(data.get("expectedRevision")),
+        text: text(data, "text"),
+        position
+      }, mutationKey("collab-note-change")),
+      "Заметка обновлена сервером.",
+      [`note.${noteId}.text`, `note.${noteId}.x`, `note.${noteId}.y`]
+    );
+  }
+
+  private async deleteCollaborationNote(noteId: string, expectedRevision: number): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.deleteCollaborationNote(projectId, questId, noteId, expectedRevision, mutationKey("collab-note-delete")),
+      "Заметка удалена (мягкое удаление на сервере).",
+      []
+    );
+  }
+
+  private async createCollaborationThreadFromForm(data: FormData): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    const rawKind = text(data, "anchorKind");
+    const x = this.collaborationNumber(data.get("x"));
+    const y = this.collaborationNumber(data.get("y"));
+    const anchor = collaborationAnchorFromForm(rawKind, text(data, "targetId"), x ?? Number.NaN, y ?? Number.NaN);
+    if (!anchor.ok) {
+      this.state.collaborationNotice = anchor.error;
+      this.render();
+      return;
+    }
+    const threadText = text(data, "text");
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.createCollaborationThread(projectId, questId, { anchor: anchor.anchor, text: threadText }, mutationKey("collab-thread")),
+      "Обсуждение открыто на сервере.",
+      ["thread.text"]
+    );
+  }
+
+  private async replyCollaborationThread(threadId: string, replyText: string): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.addCollaborationMessage(projectId, questId, threadId, replyText, mutationKey("collab-reply")),
+      "Ответ добавлен в тред.",
+      [`reply.${threadId}`]
+    );
+  }
+
+  private async changeCollaborationMessageFromForm(data: FormData): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    const threadId = text(data, "threadId");
+    const messageId = text(data, "messageId");
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.changeCollaborationMessage(projectId, questId, threadId, messageId, {
+        expectedRevision: this.collaborationRevision(data.get("expectedRevision")),
+        text: text(data, "text")
+      }, mutationKey("collab-message-change")),
+      "Сообщение обновлено сервером.",
+      [`msg.${threadId}.${messageId}`]
+    );
+  }
+
+  private async deleteCollaborationMessage(threadId: string, messageId: string, expectedRevision: number): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.deleteCollaborationMessage(projectId, questId, threadId, messageId, expectedRevision, mutationKey("collab-message-delete")),
+      "Сообщение удалено; место в треде сохранено.",
+      []
+    );
+  }
+
+  private async setCollaborationThreadStatus(
+    threadId: string,
+    status: "open" | "resolved",
+    expectedRevision: number
+  ): Promise<void> {
+    const project = this.project();
+    const { projectId, questId } = this.requireCollaborationContext();
+    await this.runCollaborationWrite(
+      project,
+      () => this.api.setCollaborationThreadStatus(projectId, questId, threadId, { expectedRevision, status }, mutationKey("collab-status")),
+      status === "resolved" ? "Тред закрыт." : "Тред переоткрыт.",
+      []
+    );
+  }
+
+  private project(): ProjectView | null {
+    return this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+  }
+
+  private requireCollaborationContext(): { readonly projectId: string; readonly questId: string } {
+    return {
+      projectId: requireSelected(this.state.selectedProjectId, "Сначала выберите проект."),
+      questId: requireSelected(this.state.selectedQuestId, "Сначала выберите квест.")
+    };
+  }
+
+  private collaborationPosition(data: FormData, xName: string, yName: string): { readonly x: number; readonly y: number } | null {
+    const x = this.collaborationNumber(data.get(xName));
+    const y = this.collaborationNumber(data.get(yName));
+    if (x === null || y === null) return null;
+    return { x, y };
+  }
+
+  private collaborationNumber(value: FormDataEntryValue | null): number | null {
+    if (typeof value !== "string" || value.trim().length === 0) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  /** Ревизия для CAS берётся из скрытого поля формы, а не из локальной копии. */
+  private collaborationRevision(value: FormDataEntryValue | null): number {
+    const parsed = this.collaborationNumber(value);
+    return parsed === null || !Number.isSafeInteger(parsed) ? 0 : parsed;
+  }
+
+  /** FIN-12: сохраняет введённый текст панели, чтобы он пережил render(). */
+  private captureCollaborationField(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return false;
+    const name = target.dataset.collabField;
+    if (typeof name !== "string" || name.length === 0) return false;
+    this.state.collaborationFields = Object.freeze({ ...this.state.collaborationFields, [name]: target.value });
+    return true;
   }
 
   private async startAuthorAssistant(): Promise<void> {
@@ -2719,7 +3121,7 @@ export class StudioApp {
           </div>
         </header>
 
-        <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}">
+        <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}${this.state.inspectorTab === "notes" ? " notes-open" : ""}">
           <aside class="ed-library" aria-label="Библиотека квестов">
             <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? "»" : "« Библиотека"}</button>
             <div class="library-content">
@@ -2818,6 +3220,7 @@ export class StudioApp {
             <div class="ed-tabs" role="tablist">
               <button class="button-secondary ${this.state.inspectorTab === "props" ? "active" : ""}" data-action="inspector-tab" data-tab="props" role="tab">Свойства</button>
               <button class="button-secondary ${this.state.inspectorTab === "coauthor" ? "active" : ""}" data-action="inspector-tab" data-tab="coauthor" role="tab">ИИ-помощник</button>
+              <button class="button-secondary ${this.state.inspectorTab === "notes" ? "active" : ""}" data-action="inspector-tab" data-tab="notes" role="tab">Заметки${collaborationTabBadge(this.state.collaboration)}</button>
             </div>
             ${this.state.inspectorTab === "props" ? `
               <section class="inspector-section" aria-label="Инспектор карточки">
@@ -2833,7 +3236,7 @@ export class StudioApp {
                   )}
                 <button class="button-secondary settings-link" data-action="open-utility-panel" data-panel="settings">Настройки доступа и проекта</button>
               </section>
-            ` : `
+            ` : this.state.inspectorTab === "coauthor" ? `
               <section class="inspector-section">
                 <div class="section-heading-row"><h2>ИИ-помощник</h2></div>
                 <p class="paint-note">ИИ-помощник помогает с текстом и структурой. Рисование и игровые действия добавляются автором.</p>
@@ -2843,6 +3246,8 @@ export class StudioApp {
                 hasMutationProof: this.state.access.mutationProof,
                 busy: isAuthorAssistantBusy(this.state.phase)
               })}
+            ` : `
+              ${renderCollaborationPanel(this.state.collaboration, this.collaborationOptions(project))}
             `}
           </aside>
         </div>
@@ -3219,6 +3624,13 @@ function isAuthorAssistantBusy(phase: StudioState["phase"]): boolean {
     || phase === "assistant-running"
     || phase === "assistant-applying"
     || phase === "assistant-stopping";
+}
+
+/** FIN-12: счётчик открытых тредов прямо на вкладке — реальные данные сервера. */
+function collaborationTabBadge(state: CollaborationPanelState): string {
+  return state.kind === "ready" && state.view.unresolvedThreadCount > 0
+    ? ` · ${state.view.unresolvedThreadCount}`
+    : "";
 }
 
 function saveStateLabel(phase: StudioState["phase"]): string {
