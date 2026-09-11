@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   SQLiteControlStore,
+  MemoryControlStore,
   MemoryControlSecurityStore
 } from "../../../packages/control/dist/index.js";
 import { createControlHttpServer } from "../dist/control-server.js";
@@ -502,5 +503,50 @@ test("FIN-12 collaboration HTTP: comment threads, replies, status transitions an
     assert.equal(draft.contentHash, (await ctx.store.getDraftSnapshot("project", "quest", 0)).contentHash);
   } finally {
     await disposeCollaborationControl(ctx);
+  }
+});
+
+test("FIN-12 collaboration HTTP: a store without collaboration support answers 501 COLLABORATION_STORAGE_UNAVAILABLE", async () => {
+  // MemoryControlStore carries no collaboration half, so the server falls back
+  // to the `COLLABORATION_STORAGE_UNAVAILABLE` branch for every route under
+  // /collaboration, read and write alike, before any role or body check.
+  const store = new MemoryControlStore();
+  const control = createControlHttpServer({ store });
+  const address = await control.listen();
+  const base = `http://${address.host}:${address.port}`;
+  const collab = "/control/v1/projects/p1/quests/q1/collaboration";
+  try {
+    const read = await request(base, collab);
+    assert.equal(read.status, 501);
+    assert.equal(read.body.error.code, "COLLABORATION_STORAGE_UNAVAILABLE");
+
+    const noteWrite = await request(base, `${collab}/notes`, {
+      method: "POST", headers: { "idempotency-key": "mem-note-1" },
+      json: { text: "нет хранилища", position: { x: 1, y: 1 } }
+    });
+    assert.equal(noteWrite.status, 501);
+    assert.equal(noteWrite.body.error.code, "COLLABORATION_STORAGE_UNAVAILABLE");
+
+    const threadWrite = await request(base, `${collab}/comments`, {
+      method: "POST", headers: { "idempotency-key": "mem-thread-1" },
+      json: { anchor: { kind: "board", targetId: null, position: { x: 1, y: 1 } }, text: "нет хранилища" }
+    });
+    assert.equal(threadWrite.status, 501);
+    assert.equal(threadWrite.body.error.code, "COLLABORATION_STORAGE_UNAVAILABLE");
+
+    const replyWrite = await request(base, `${collab}/comments/thread-1/messages`, {
+      method: "POST", headers: { "idempotency-key": "mem-reply-1" }, json: { text: "нет хранилища" }
+    });
+    assert.equal(replyWrite.status, 501);
+    assert.equal(replyWrite.body.error.code, "COLLABORATION_STORAGE_UNAVAILABLE");
+
+    const statusWrite = await request(base, `${collab}/comments/thread-1/status`, {
+      method: "POST", headers: { "idempotency-key": "mem-status-1" },
+      json: { expectedRevision: 1, status: "resolved" }
+    });
+    assert.equal(statusWrite.status, 501);
+    assert.equal(statusWrite.body.error.code, "COLLABORATION_STORAGE_UNAVAILABLE");
+  } finally {
+    await control.close();
   }
 });
