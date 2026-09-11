@@ -374,11 +374,38 @@ export interface StoryScreensTurnResolution {
   readonly message: string;
 }
 
-/** Переход по ответу сервера: диалог целевой сцены раскрывается заново. */
+/** Идентификатор позиции/сцены приходит только из доверенного формата ID. */
+const TURN_REPLY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+
+/**
+ * Ответ сервера — недоверенный вход. Позиция принимается только если все три
+ * поля имеют ожидаемый тип: целый неотрицательный ход и ID-подобные
+ * sceneId/endingId. Иначе строка сервера попала бы в состояние и оттуда в HTML.
+ */
+export function isStoryScreensTurnReply(value: unknown): value is StoryScreensTurnReply {
+  if (value === null || typeof value !== "object") return false;
+  const reply = value as { readonly turn?: unknown; readonly sceneId?: unknown; readonly endingId?: unknown };
+  if (typeof reply.turn !== "number" || !Number.isSafeInteger(reply.turn) || reply.turn < 0) return false;
+  if (typeof reply.sceneId !== "string" || !TURN_REPLY_ID_PATTERN.test(reply.sceneId)) return false;
+  if (!(reply.endingId === null || (typeof reply.endingId === "string" && TURN_REPLY_ID_PATTERN.test(reply.endingId)))) return false;
+  return true;
+}
+
+/**
+ * Переход по ответу сервера: диалог целевой сцены раскрывается заново.
+ * Некорректный по типу ответ и ход назад (устаревший ответ) не применяются:
+ * состояние остаётся ровно тем, что было до хода.
+ */
 export function storyScreensTurnApplied(
   current: StoryScreensState,
-  reply: StoryScreensTurnReply
+  reply: unknown
 ): StoryScreensTurnResolution {
+  if (!isStoryScreensTurnReply(reply)) {
+    return Object.freeze({ ok: false, state: current, message: "Сервер вернул некорректный ход: позиция не изменена." });
+  }
+  if (reply.turn < current.turns) {
+    return Object.freeze({ ok: false, state: current, message: "Устаревший ход отклонён: позиция не изменена." });
+  }
   const phase: StoryScreenPhase = reply.endingId === null ? "scene" : "ending";
   const state = Object.freeze({
     phase,
@@ -417,7 +444,8 @@ const TURN_FAILURE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   TURN_MISSION_ENDED: "История уже завершена.",
   TURN_CONFLICT: "Ход устарел: сервер уже ушёл вперёд. Обновите экран.",
   TURN_IDEMPOTENCY_KEY_REUSED: "Ключ хода уже использован другим запросом.",
-  INVALID_TURN_REQUEST: "Сервер отклонил запрос хода как некорректный."
+  INVALID_TURN_REQUEST: "Сервер отклонил запрос хода как некорректный.",
+  INVALID_TURN_REPLY: "Сервер вернул некорректный ответ хода. Позиция не изменена."
 });
 
 export function storyScreensTurnFailureMessage(failure: StoryScreensTurnFailure): string {
