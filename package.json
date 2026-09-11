@@ -30,6 +30,7 @@
     "test:e2e": "npm run test:player",
     "eval:ai": "npm run typecheck && node scripts/eval-ai.mjs",
     "audit:release": "node scripts/b12-release-audit.mjs",
+    "migrate:fin01": "npm run typecheck && node scripts/fin01-legacy-migration.mjs",
     "drill:backup-restore": "npm run typecheck && node scripts/b12-backup-restore-drill.mjs",
     "drill:rollback": "npm run typecheck && node scripts/b12-rollback-drill.mjs",
     "drill:startup-shutdown": "npm run typecheck && node scripts/b12-startup-shutdown-drill.mjs",
