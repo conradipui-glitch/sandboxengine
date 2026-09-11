@@ -1,0 +1,150 @@
+/* ==========================================================================
+   Доска: вьюпорт, честные карточки, безопасная зона оверлеев.
+   Файл-компаньон apps/studio/src/board-viewport.ts.
+
+   Область действия — .board-host[data-board-host]: это живая точка монтирования
+   доски (mountBoard получает именно её), внутри неё лежат .board-viewport,
+   .board-world, карточки и оверлеи (присутствие, тулбар, панель масштаба).
+   Класс .board-canvas из styles.css относится к старой разметке и здесь не
+   используется намеренно.
+
+   Подключение (вне этой карточки, требует правки index.html и dev-server.ts):
+     <link rel="stylesheet" href="/studio-assets/styles/board.css">  — после styles.css
+     serveStatic: normalized === "styles/board.css" → разрешить путь
+   Все правила либо новые, либо уточняют специфичность внутри .board-host,
+   поэтому styles.css не переопределяется.
+
+   Синхронизация с кодом (проверяется тестом board-viewport.test.mjs):
+     --board-card-width       == NODE_WIDTH            (board-dom.ts)
+     --board-card-min-height  == NODE_HEIGHT           (board-dom.ts)
+     --board-card-font        == BOARD_CARD_FONT_PX    (board-viewport.ts)
+   Кегль --board-card-font вместе с порогом MIN_READABLE_FONT_PX = 12px задаёт
+   минимальный масштаб вписывания (12 / 13 ≈ 0.923): ниже него вписывать
+   нельзя — доска честно остаётся в масштабе 1 с панорамированием.
+   ========================================================================== */
+
+.board-host {
+  --board-card-width: 248px;
+  --board-card-min-height: 112px;
+  --board-card-font: 13px;
+  /* Углы оверлеев: те же числа читает reserveForOverlay() через
+     measureOverlays(), поэтому панели не попадают в рабочую область. */
+  --board-overlay-top-px: 12px;
+  --board-overlay-right-px: 12px;
+  --board-overlay-bottom-px: 12px;
+  --board-overlay-left-px: 12px;
+  position: relative;
+  /* Оверлеи адресуются от хоста (offsetParent) и не выходят за его рамку. */
+  overflow: hidden;
+}
+
+/* ── Полотно ─────────────────────────────────────────────────────────────── */
+
+.board-host .board-viewport {
+  position: relative;
+  overflow: hidden;
+  /* Колесо — это зум доски, а не скролл/зум страницы. */
+  touch-action: none;
+  overscroll-behavior: contain;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Полотно не должно «схлопываться»: при нулевой высоте вписывание считает
+     геометрию по пустому экрану и кладёт квест в пятно. */
+  min-height: 320px;
+}
+
+.board-host .board-viewport:active { cursor: grabbing; }
+.board-host .board-viewport.lhbd-panning { cursor: grabbing; }
+
+.board-host .board-world {
+  position: absolute;
+  width: 4000px;
+  height: 4000px;
+  /* Ключ к корректному вписыванию: scale идёт от левого верхнего угла, иначе
+     содержимое уезжает от рассчитанного offset. */
+  transform-origin: 0 0;
+  transform: translate(0px, 0px) scale(1);
+  will-change: transform;
+}
+
+/* ── Карточки: фактическая высота, а не номинал ─────────────────────────── */
+
+.board-host .board-node {
+  width: var(--board-card-width);
+  min-height: var(--board-card-min-height);
+  /* Высота по содержимому: описание переносится и тянет карточку вниз (R-29).
+     board-viewport.ts читает offsetHeight, поэтому границы вписывания совпадают
+     с тем, что реально нарисовано. */
+  height: auto;
+  box-sizing: border-box;
+  font-size: var(--board-card-font);
+}
+
+.board-host .node-title { font-size: 15px; }
+.board-host .node-desc { font-size: var(--board-card-font); }
+.board-host .node-meta { font-size: 12px; }
+.board-host .node-kind { font-size: 10px; }
+
+/* Подписи связей масштабируются вместе с миром; при сильном отдалении они
+   перестают читаться, поэтому ниже порога гасим их, а не показываем кашу.
+   Маркер data-board-scale ставит applyViewport() (board-viewport.ts). */
+.board-host .board-viewport[data-board-scale="far"] .board-edge-label { opacity: .45; }
+
+/* ── Оверлеи: не перекрывают рабочую область ────────────────────────────── */
+
+/* Карточка присутствия «На доске: N». В дефекте она вырастала на треть доски:
+   ограничиваем ширину и оставляем её компактной плашкой в верхнем правом углу. */
+.board-host .presence-bar-host {
+  top: var(--board-overlay-top-px);
+  right: var(--board-overlay-right-px);
+  max-width: min(320px, 38vw);
+}
+
+.board-host .presence-bar {
+  max-width: 100%;
+  min-height: 0;
+  padding: 4px 10px;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow: hidden;
+}
+
+/* Пояснительные строки присутствия не убираем из DOM (это часть статуса), но
+   обрезаем до одной строки: полоса перестаёт закрывать рабочую область. */
+.board-host .presence-note,
+.board-host .presence-empty,
+.board-host .presence-activity {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Панели доски прижаты к тем же углам, что вычитает безопасный отступ. */
+.board-host .board-toolbar { top: var(--board-overlay-top-px); left: var(--board-overlay-left-px); }
+.board-host .board-zoom { bottom: var(--board-overlay-bottom-px); left: var(--board-overlay-left-px); }
+.board-host .board-zoom-value { min-width: 44px; text-align: center; }
+
+/* Пустое состояние не ловит жесты: клик по доске обязан работать. */
+.board-host .board-empty { pointer-events: none; }
+
+/* ── Доступность и предпочтения ─────────────────────────────────────────── */
+
+.board-host .board-zoom button:focus-visible,
+.board-host .board-toolbar button:focus-visible {
+  outline: 2px solid var(--focus, #245BD7);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .board-host .board-world { transition: transform .16s ease-out; }
+  /* Живой pan (класс lhbd-panning ставит board-dom.ts) не должен отставать от
+     курсора — переход движения только мешает. */
+  .board-host .board-viewport.lhbd-panning .board-world { transition: none; }
+}
+
+@media (max-width: 900px) {
+  .board-host .board-viewport { min-height: 260px; }
+  .board-host .presence-bar-host { max-width: min(240px, 60vw); }
+}
