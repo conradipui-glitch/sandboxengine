@@ -214,3 +214,18 @@ HTTP-сервер Control, четыре неполные формы мира п�
 Остаток (не входит в R-07, остаётся за хранилищем): `createMissionSession` в
 `packages/control/src/sqlite-store.ts` всё ещё бросает вместо возврата
 `{ kind: "invalid_request" }` — это исправляется в зоне хранилища.
+
+
+## Волна 2 — приёмка и интеграция (HEAD e9a20f2)
+
+Три ветки волны 2 смёржены в `feat/b13-acceptance-closure` без конфликтов: `50f2213` (fix/devserver-imports), `49f460c` (fix/player-turn-owner), `e9a20f2` (fix/player-client-revision).
+
+| № | Дефект | Ветка/коммит | Проверка оркестратора |
+|---|---|---|---|
+| R-08 | dev-прокси Studio резал `/imports` общим лимитом 262144 Б → `413` на архивах > ~192 КиБ, хотя Control принимает до 8 МиБ | `fix/devserver-imports` / `34d2307` | SHA совпал, `tsc -b --force` = 0, `imports-proxy.test.mjs` 1/1 pass |
+| R-09 | сервис хода не привязан к участнику: чужой игрок того же квеста читал и вёл чужую сессию по одному `sessionId` | `fix/player-turn-owner` / `ea09b17` | SHA совпал, тест 2/2; мутация (снятие сверки `actorUserId`) → 1 pass / 1 fail, откат → 2 pass / 0 fail |
+| R-10 | клиент плеера принимал ответ с более старой `playerView.revision` (молчаливый откат) и непривязанный `presentation.frame` | `fix/player-client-revision` / `e7e10f4` | SHA совпал, `packages/player` 29/29, `apps/player` 23/23; мутация (снятие гвардов `STALE_PLAYER_VIEW`) → 3 pass / 3 fail, откат → 6 pass / 0 fail |
+
+Полный прогон на смёрженном HEAD `e9a20f2`: `tsc -b --force` = 0; contracts 57, core 64, runtime 22, player 29, control 129, server 216 (215 pass, 1 skip), studio 236 (235 pass, 1 skip), apps/player 23, builder-runner 26 — суммарно 802 теста, 0 падений.
+
+Открытая HTTP-половина R-09: маршруты `control-server.ts` зовут `applyMissionTurn` напрямую, минуя сервис с проверкой владельца. Проверка передана в финальную волну ревью `deleg_20ef1318` (8 ревьюеров, read-only, зоны: контракты+ядро, runtime+клиент плеера, хранилище/схема, публикация/релизы/пакеты, серверные границы, модули Studio, плеер+builder-runner+app.ts, скрипты+доки).
