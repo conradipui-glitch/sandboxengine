@@ -52,6 +52,21 @@ export class PlayerClientError extends Error {
 }
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/**
+ * What a presentation frame must prove before the client treats it as the
+ * confirmed visual state of this session. The Runtime persisted-operation path
+ * already binds frame identity to the session and revision; the inline
+ * `presentation` payload of create/action/resume responses must satisfy the
+ * same (and, for actions, the committed turn) or it is discarded as unbound.
+ */
+interface FrameExpectation {
+  readonly sessionId: string;
+  readonly revision: number;
+  /** `undefined` = turn identity is not known on this path and is not checked. */
+  readonly turnId?: string | null;
+}
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const TRANSITIONS = new Set(["fade", "slide", "crossfade"]);
@@ -87,7 +102,11 @@ export class RuntimePlayerClient {
       || body.playerView.sessionId !== body.sessionId
     ) throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
 
-    const presentation = parsePresentation(body.presentation);
+    const presentation = parsePresentation(body.presentation, {
+      sessionId: body.sessionId,
+      revision: body.playerView.revision,
+      turnId: null
+    });
     return freezeSession({
       templateId,
       sessionId: body.sessionId,
@@ -102,12 +121,16 @@ export class RuntimePlayerClient {
     templateId: string,
     sessionId: string,
     credential: string,
-    lastOperationId: string | null = null
+    lastOperationId: string | null = null,
+    knownRevision: number | null = null
   ): Promise<PlayerSessionHandle> {
     if (!ID_PATTERN.test(sessionId) || !/^[A-Za-z0-9_-]{32,256}$/.test(credential)) {
       throw new TypeError("invalid stored Player session identity");
     }
     if (lastOperationId !== null && !ID_PATTERN.test(lastOperationId)) throw new TypeError("invalid stored operation id");
+    if (knownRevision !== null && (!Number.isSafeInteger(knownRevision) || knownRevision < 0)) {
+      throw new TypeError("invalid known Player revision");
+    }
 
     const response = await this.#fetch(new URL(`/v1/sessions/${encodeURIComponent(sessionId)}`, this.#baseUrl), {
       headers: { authorization: `Bearer ${credential}` }
@@ -117,13 +140,17 @@ export class RuntimePlayerClient {
     if (!isRecord(body) || !isPlayerView(body.playerView) || body.playerView.sessionId !== sessionId) {
       throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
     }
+    // Never let an out-of-order or replayed response roll the confirmed
+    // gameplay revision backwards: a stale answer is rejected, not applied.
+    if (knownRevision !== null && body.playerView.revision < knownRevision) {
+      throw new PlayerClientError(409, "STALE_PLAYER_VIEW");
+    }
 
-    let presentationFrame: SceneFrameV2 | null = parsePresentation(body.presentation)?.frame ?? null;
+    const expectation: FrameExpectation = { sessionId, revision: body.playerView.revision };
+    let presentationFrame: SceneFrameV2 | null = parsePresentation(body.presentation, expectation)?.frame ?? null;
     if (lastOperationId !== null) {
-      const persisted = await this.#readPersistedPresentation(sessionId, credential, lastOperationId);
-      if (persisted && persisted.frame.sessionId === sessionId && persisted.frame.revision === body.playerView.revision) {
-        presentationFrame = persisted.frame;
-      }
+      const persisted = await this.#readPersistedPresentation(sessionId, credential, lastOperationId, expectation);
+      if (persisted) presentationFrame = persisted.frame;
     }
     return freezeSession({ templateId, sessionId, credential, playerView: body.playerView, presentationFrame, lastOperationId });
   }
@@ -133,7 +160,13 @@ export class RuntimePlayerClient {
   }
 
   async refresh(session: PlayerSessionHandle): Promise<PlayerSessionHandle> {
-    return this.resume(session.templateId, session.sessionId, session.credential, session.lastOperationId);
+    return this.resume(
+      session.templateId,
+      session.sessionId,
+      session.credential,
+      session.lastOperationId,
+      session.playerView.revision
+    );
   }
 
   async paint(
@@ -161,10 +194,21 @@ export class RuntimePlayerClient {
     if (!isActionResult(body) || body.playerView.sessionId !== session.sessionId) {
       throw new PlayerClientError(502, "INVALID_RUNTIME_RESPONSE");
     }
+    // A late/replayed action response must not roll the confirmed gameplay
+    // revision backwards, even though this client never signs up for
+    // out-of-order answers.
+    if (body.playerView.revision < session.playerView.revision) {
+      throw new PlayerClientError(409, "STALE_PLAYER_VIEW");
+    }
 
-    // Presentation is intentionally optional. A malformed visual payload is
-    // discarded without corrupting the already-valid structured gameplay result.
-    const presentation = parsePresentation(body.presentation);
+    // Presentation is intentionally optional. A malformed visual payload — or
+    // one whose frame does not prove this session/revision/turn — is discarded
+    // without corrupting the already-valid structured gameplay result.
+    const presentation = parsePresentation(body.presentation, {
+      sessionId: session.sessionId,
+      revision: body.playerView.revision,
+      turnId: body.turnId
+    });
     return Object.freeze({
       operationId: body.operationId,
       turnId: body.turnId,
@@ -183,7 +227,8 @@ export class RuntimePlayerClient {
   async #readPersistedPresentation(
     sessionId: string,
     credential: string,
-    operationId: string
+    operationId: string,
+    expectation: FrameExpectation
   ): Promise<PlayerPresentation | null> {
     try {
       const response = await this.#fetch(
@@ -194,7 +239,7 @@ export class RuntimePlayerClient {
       const body = await readJson(response);
       if (!isRecord(body) || !isRecord(body.operation) || body.operation.operationId !== operationId) return null;
       if (!isRecord(body.operation.publicResponse)) return null;
-      return parsePresentation(body.operation.publicResponse.presentation);
+      return parsePresentation(body.operation.publicResponse.presentation, expectation);
     } catch {
       return null;
     }
@@ -236,14 +281,21 @@ function isActionResult(value: unknown): value is {
     && isPlayerView(value.playerView);
 }
 
-function parsePresentation(value: unknown): PlayerPresentation | null {
+function parsePresentation(value: unknown, expectation: FrameExpectation): PlayerPresentation | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(value).sort();
   const validKeys = keys.length === 1 && keys[0] === "frame"
     || keys.length === 2 && keys[0] === "frame" && keys[1] === "plan";
   if (!validKeys || !isSceneFrameV2(value.frame)) return null;
   if ("plan" in value && !isPresentationPlanV2(value.plan)) return null;
-  return deepFreeze({ frame: value.frame, plan: "plan" in value ? value.plan as PresentationPlanV2 : null });
+  // An unbound frame is not this session's confirmed visual state, so it is
+  // rejected exactly like a malformed one: gameplay stays valid, presentation
+  // stays null.
+  const frame = value.frame as SceneFrameV2;
+  if (frame.sessionId !== expectation.sessionId
+    || frame.revision !== expectation.revision
+    || (expectation.turnId !== undefined && frame.turnId !== expectation.turnId)) return null;
+  return deepFreeze({ frame, plan: "plan" in value ? value.plan as PresentationPlanV2 : null });
 }
 
 function isSceneFrameV2(value: unknown): value is SceneFrameV2 {
