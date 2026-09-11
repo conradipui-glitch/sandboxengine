@@ -1918,6 +1918,7 @@ function missionSessionFromRow(row: any): MissionSessionState | null {
     sessionId: String(row.session_id),
     projectId: String(row.project_id),
     questId: String(row.quest_id),
+    actorUserId: String(row.actor_user_id),
     contentRevision: Number(row.content_revision),
     contentHash: String(row.content_hash),
     currentSceneId: String(row.current_scene_id),
