@@ -12,6 +12,14 @@
 Текущий блок: **M06 PARTIAL → исправления F01–F07 доставлены и подтверждены hosted. OPEN: R05 закрытие, C18 ролевые проверки, браузерный проход глазами игрока, второй независимый прогон; плюс четыре проблемы повторного аудита B01–B04 → FIN-01…FIN-04.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
+## FIN-12 (серверная половина влита) и FIN-05 site-половина (2026-09-11)
+
+- **FIN-12, сервер:** заметки/треды комментариев поверх Control: append-only ревизии, CAS (`409 COLLABORATION_REVISION_CONFLICT`), мягкие tombstone, авторство/роли, HTTP-маршруты (401/403/404, CSRF + idempotency-key, `replay`). Влито мержем `e129da2`; тесты `collaboration-store.test.mjs` + `collaboration-http.test.mjs` 10/10, несущая способность доказана 6 временными мутациями исходников (каждая красила конкретные тесты; мутации откачены, `git diff` по `src/**` пуст). UI заметок в Studio не сделан (конфликтует по файлам с FIN-05).
+- **FIN-05, site-половина** (репозиторий сайта, ветка `feat/fin03-site-session-assets`, `ed27170`): публичный плеер рендерит авторскую композицию — фон (own/inherited/none), preset анимации ко всем слоям, музыка экрана с mute и явным «Играть» при блокировке автоплея; `screen-composition.ts` + тесты. 21 файл / 109 тестов, `check` и `build` exit 0. Не сделано: живой браузерный прогон, реальная библиотека материалов, диалоги/пагинация интро.
+- Регрессия после мержа: typecheck / test:server / test:control / test:contracts / docs:check / check:boundaries — exit 0; `test:studio` в фоновом прогоне дал ложный C17 (внутри вложенного процесса оказался системный Node v22) — в интерактивном прогоне зелёный.
+
+
+
 ## FIN-01 (B02), второй проход — публичный контур был не закрыт (2026-09-11)
 
 Независимая adversarial-проверка (`origin/feat/fin01-adversarial-verify`) нашла три живые дыры в **публичном** контуре; все три закрыты в этой ветке:
