@@ -305,3 +305,83 @@ test("FIN-03/B04: unpublish withdraws new games but not the assets of an already
   assert.equal(served.contentType, "image/png");
   assert.equal(v1.contentRevision >= 1, true);
 });
+
+// FIN-03 (волна 3): байты публичной ревизии отдаются по СТАБИЛЬНОМУ адресу, в
+// котором нет хэша контента. Значит «immutable» тут — разрешение общему кэшу
+// закрепить старые байты под этим адресом на год. Маршрут обязан требовать
+// ревалидацию и отдавать 304 только при совпадении ревизии.
+test("FIN-03 (hosted): a revision-bound asset URL is not immutable and revalidates by revision", async (t) => {
+  const h = await harness(t);
+  const bytes = pngBytes("background-A");
+  const hash = sha256(bytes);
+  assert.equal((await h.upload("cellar-bg", "asset-1", bytes)).hash, hash);
+  await h.save(0, "save-1", "cellar-bg", hash);
+  await h.buildRelease("release-1", "build-1");
+  assert.equal((await h.publish("release-1", null, "publish-1")).status, 200);
+
+  const url = `${h.base}/public/v1/missions/cargo/assets/cellar-bg`;
+  const first = await fetch(url);
+  assert.equal(first.status, 200);
+  const cacheControl = first.headers.get("cache-control") ?? "";
+  const etag = first.headers.get("etag");
+  assert.ok(!/immutable/i.test(cacheControl), `immutable must never be emitted for a non-hashed path: ${cacheControl}`);
+  assert.ok(/no-cache|no-store/i.test(cacheControl), `the route must require revalidation: ${cacheControl}`);
+  assert.equal(typeof etag, "string");
+
+  // Тот же адрес + тот же ETag → 304, тело не пересылается.
+  const revalidated = await fetch(url, { headers: { "if-none-match": etag } });
+  assert.equal(revalidated.status, 304);
+  assert.equal((await revalidated.arrayBuffer()).byteLength, 0);
+
+  // Смена ревизии → другой ETag, и старый ETag больше не даёт 304.
+  const secondBytes = pngBytes("background-B");
+  const secondHash = sha256(secondBytes);
+  assert.equal((await h.upload("cellar-bg", "asset-2", secondBytes)).hash, secondHash);
+  await h.save(1, "save-2", "cellar-bg", secondHash);
+  await h.buildRelease("release-2", "build-2");
+  assert.equal((await h.publish("release-2", "release-1", "publish-2")).status, 200);
+
+  const afterR2 = await fetch(url, { headers: { "if-none-match": etag } });
+  assert.equal(afterR2.status, 200, "a stale ETag must not satisfy a newer revision");
+  assert.notEqual(afterR2.headers.get("etag"), etag);
+});
+
+// FIN-05 (волна 3): маршрут хода на авторской стороне обязан отдавать позицию
+// истории и статусы выборов, посчитанные движком, — раньше ответ содержал сырую
+// сессию, и клиент достраивал переход сам.
+test("FIN-05 (wiring): the author-side turn route answers with the engine's projected state", async (t) => {
+  const h = await harness(t);
+  const bytes = pngBytes("background-A");
+  const hash = sha256(bytes);
+  assert.equal((await h.upload("start-bg", "asset-1", bytes)).hash, hash);
+  await h.save(0, "save-1", "start-bg", hash);
+  await h.buildRelease("release-1", "build-1");
+  assert.equal((await h.publish("release-1", null, "publish-1")).status, 200);
+
+  const started = await h.startSession("session-a", "public-sess-a");
+  assert.equal(started.status, 201, JSON.stringify(started.body));
+  const sessionId = started.body.session.sessionId;
+
+  const turn = async (key, body) => {
+    const response = await fetch(`${h.base}/control/v1/projects/project/quests/quest/mission/sessions/${sessionId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": key },
+      body: JSON.stringify(body)
+    });
+    return { status: response.status, body: await response.json() };
+  };
+
+  const applied = await turn("turn-1", { baseTurn: 0, choiceId: "finish" });
+  assert.equal(applied.status, 200, JSON.stringify(applied.body));
+  assert.equal(typeof applied.body.state, "object", "the reply must carry the projected story state");
+  assert.equal(applied.body.state.position.turn, 1);
+  assert.equal(applied.body.state.position.endingId, "done");
+  assert.equal(applied.body.state.position.terminal, true);
+  assert.ok(Array.isArray(applied.body.state.options), "options must be the engine's list, not the client's guess");
+
+  // Тот же ключ хода — повтор, а не второй ход.
+  const replay = await turn("turn-1", { baseTurn: 0, choiceId: "finish" });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.body.replay, true);
+  assert.equal(replay.body.state.position.turn, 1, "a replay must not advance the story");
+});

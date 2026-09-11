@@ -44,6 +44,9 @@ import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 import { routeDraftVersionHttp } from "./draft-version-http.js";
 import { createPresenceHttpService, type PresenceHttpService } from "./presence.js";
+import { createEditingLockHttpService, type EditingLockHttpService } from "./editing-lock.js";
+import { resolvePublicAssetCache } from "./public-asset-cache.js";
+import { projectPlayerTurnState } from "./player-turn.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
 import { buildInstalledAuthorContextCapabilityCatalog } from "./author-context-catalog.js";
 import {
@@ -142,6 +145,23 @@ function presenceServiceFor(auth: AuthRuntime): PresenceHttpService {
   return created;
 }
 
+/**
+ * One editing-lock service per auth runtime: leases are in-memory, member-scoped
+ * and die with the server, exactly like presence.
+ */
+const editingLockServices = new WeakMap<object, EditingLockHttpService>();
+
+function editingLockServiceFor(auth: AuthRuntime): EditingLockHttpService {
+  const existing = editingLockServices.get(auth);
+  if (existing) return existing;
+  const created = createEditingLockHttpService({
+    security: auth.security,
+    allowedOrigins: [...auth.allowedOrigins]
+  });
+  editingLockServices.set(auth, created);
+  return created;
+}
+
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
@@ -217,6 +237,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
     },
     close(): Promise<void> {
       if (auth) presenceServices.get(auth)?.close();
+      if (auth) editingLockServices.get(auth)?.close();
       if (!server.listening) return Promise.resolve();
       return new Promise((resolve, reject) => {
         server.close((error: unknown) => error ? reject(error) : resolve());
@@ -272,6 +293,10 @@ async function routeControlRequest(
   // before the generic router and hands anything unrecognised back.
   if (auth && await presenceServiceFor(auth).handleRequest(request, response)) return;
 
+  // Editing locks (FIN-13, вторая половина) — та же схема: собственные гейты
+  // origin/session/role, чужие маршруты возвращаются обратно.
+  if (auth && await editingLockServiceFor(auth).handleRequest(request, response)) return;
+
   const publicMissionMatch = /^\/public\/v1\/missions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(publicPathname);
   if (method === "GET" && releases?.publicationStore && publicMissionMatch) {
     if (url.searchParams.size !== 0) {
@@ -310,7 +335,7 @@ async function routeControlRequest(
   // published revision. Anything else stays private.
   const publicAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
   if (method === "GET" && publicAssetMatch && releases?.publicationStore && missionStore) {
-    await routePublicMissionAsset(response, publicAssetMatch, releases, missionStore, assetStorage, assetLibrary);
+    await routePublicMissionAsset(request, response, publicAssetMatch, releases, missionStore, assetStorage, assetLibrary);
     return;
   }
 
@@ -905,8 +930,21 @@ async function routeControlRequest(
         idempotencyKey,
         actorUserId: identity?.user.userId ?? "local-owner"
       });
-      if (result.kind === "applied") sendJson(response, 200, { session: result.session, target: result.target });
-      else if (result.kind === "replay") sendJson(response, 200, { session: result.session, target: result.target, replay: true });
+      if (result.kind === "applied" || result.kind === "replay") {
+        // FIN-05: ответ несёт позицию истории и статусы выборов, посчитанные
+        // движком по авторитетному состоянию, а не собранные клиентом.
+        const state = await projectPlayerTurnState(missionStore, result.session, result.target);
+        if (state === null) {
+          sendJson(response, 500, { error: { code: "MISSION_TURN_PROJECTION_FAILED" } });
+          return;
+        }
+        sendJson(response, 200, {
+          session: result.session,
+          target: result.target,
+          state,
+          ...(result.kind === "replay" ? { replay: true } : {})
+        });
+      }
       else if (result.kind === "session_not_found") sendNotFound(response);
       else if (result.kind === "turn_conflict") {
         sendJson(response, 409, { error: { code: "MISSION_TURN_CONFLICT", currentTurn: result.currentTurn } });
@@ -1831,6 +1869,7 @@ async function routePublicMissionSession(
 }
 
 async function routePublicMissionAsset(
+  request: any,
   response: any,
   match: RegExpExecArray,
   releases: ControlReleaseModeOptions,
@@ -1867,11 +1906,27 @@ async function routePublicMissionAsset(
     }
     return;
   }
-  response.statusCode = 200;
+  // FIN-03: этот URL не несёт хэша контента — он привязан к ревизии, поэтому
+  // «immutable» на год здесь означал бы, что общий кэш вправе закрепить старые
+  // байты под стабильным адресом. Политика — обязательная ревалидация + ETag
+  // от пиннутой ревизии.
+  const cache = resolvePublicAssetCache(
+    {
+      path: `/public/v1/missions/${identifier}/assets/${assetId}`,
+      assetId,
+      hashed: false,
+      revision: publication.draftContentHash,
+      assetType: stored.record.manifest.mimeType,
+      authorized: false
+    },
+    readHeader(request, "if-none-match")
+  );
+  response.statusCode = cache.status;
+  for (const [name, value] of Object.entries(cache.headers)) response.setHeader(name, value);
+  response.setHeader("x-content-type-options", "nosniff");
+  if (cache.notModified) { response.end(); return; }
   response.setHeader("content-type", stored.record.manifest.mimeType);
   response.setHeader("content-length", String(stored.bytes.byteLength));
-  response.setHeader("cache-control", "public, max-age=31536000, immutable");
-  response.setHeader("x-content-type-options", "nosniff");
   response.end(stored.bytes);
 }
 
@@ -1942,14 +1997,25 @@ async function routePublicMissionSessionAsset(
     }
     return;
   }
-  response.statusCode = 200;
+  // FIN-03: тот же запрет на immutable — URL называет сессию и ревизию, но
+  // хэша контента в пути нет; байты приватны для предъявленного креда.
+  const cache = resolvePublicAssetCache(
+    {
+      path: `/public/v1/missions/${identifier}/sessions/${sessionId}/assets/${assetId}`,
+      assetId,
+      hashed: false,
+      revision: existing.contentHash,
+      assetType: stored.record.manifest.mimeType,
+      authorized: true
+    },
+    readHeader(request, "if-none-match")
+  );
+  response.statusCode = cache.status;
+  for (const [name, value] of Object.entries(cache.headers)) response.setHeader(name, value);
+  response.setHeader("x-content-type-options", "nosniff");
+  if (cache.notModified) { response.end(); return; }
   response.setHeader("content-type", stored.record.manifest.mimeType);
   response.setHeader("content-length", String(stored.bytes.byteLength));
-  // The URL names one session and one pinned revision, so these bytes cannot go
-  // stale — but they stay private to the credential that asked for them.
-  response.setHeader("cache-control", "private, max-age=31536000, immutable");
-  response.setHeader("etag", `"${existing.contentHash.slice(0, 32)}-${assetId}"`);
-  response.setHeader("x-content-type-options", "nosniff");
   response.end(stored.bytes);
 }
 

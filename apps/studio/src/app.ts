@@ -1,4 +1,5 @@
 import type { DraftChange } from "@living-history/control";
+import { initTheme } from "./theme.js";
 import {
   loadConflictState,
   renderConflictPanel,
@@ -4036,6 +4037,8 @@ export async function startStudio(root: HTMLElement, api?: ControlApiClient): Pr
 }
 
 if (typeof document !== "undefined") {
+  // §2.4: тёмная тема сайта — основная; сохранённый выбор и системная схема применяются до старта.
+  initTheme();
   const root = document.querySelector<HTMLElement>("#app");
   if (root) void startStudio(root);
 }
