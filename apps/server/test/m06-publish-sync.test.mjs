@@ -36,7 +36,7 @@ test("M06 owner publish automatically creates catalog record from the current Mi
   assert.equal(release.kind, "created");
   assert.equal((await freezeReleaseBundle(
     { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
-    { projectId: "project", questId: "quest", releaseId: "release-1" }
+    { projectId: "project", questId: "quest", releaseId }
   )).kind, "frozen");
   const control = createControlHttpServer({ store, missionStore: store, releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry, publicMissionSessionSecret: "test-public-session-secret-123" } });
   const address = await control.listen();

@@ -7,6 +7,7 @@ import {
   SQLiteAuthorAgentJobStore,
   SQLiteAuthorAgentProposalArtifactStore,
   SQLiteAuthorConversationStore,
+  SQLiteControlProviderConnectionStore,
   SQLiteControlPublicationStore,
   SQLiteControlReleaseStore,
   SQLiteControlStore
@@ -30,7 +31,14 @@ const playtestTrace = new SQLitePlaytestTraceReader({ path: databasePath });
 const authorJobs = new SQLiteAuthorAgentJobStore({ path: databasePath });
 const authorArtifacts = new SQLiteAuthorAgentProposalArtifactStore(authorJobs, { path: databasePath });
 const authorConversation = new SQLiteAuthorConversationStore(authorJobs, { path: databasePath });
-const authorProvider = new LocalAuthorProvider();
+// Ключ провайдера живёт в локальном файле стенда (не в памяти процесса) и
+// наружу отдаётся только маской: «Настройки → ИИ» переживают перезапуск.
+const providerConnections = new SQLiteControlProviderConnectionStore({ path: databasePath });
+const authorProvider = new LocalAuthorProvider(undefined, {
+  connections: providerConnections,
+  scope: { projectId: "local-operator", userId: "local-owner" }
+});
+await authorProvider.restore();
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
 if (!builtPluginRegistry.ok) throw new Error(`Studio plugin registry failed: ${builtPluginRegistry.code}`);
 
@@ -82,7 +90,27 @@ const playerLauncher = async (playtestId: string) => {
   }
   return { ok: false as const, code: launched.code, message: launched.message };
 };
-const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher });
+// FIN-09: полная миссия из идеи — тем же провайдером, что настроен в Studio.
+const missionDrafter = async (request: { readonly idea: string; readonly projectId: string; readonly questId: string; readonly genre?: string; readonly language?: string; readonly branchCount?: number; readonly endingCount?: number }) => {
+  const { ModelMissionWriter } = await import("@living-history/ai");
+  const writer = new ModelMissionWriter({
+    backend: authorProvider.backend,
+    profileId: "studio-dev-author-profile",
+    projectId: request.projectId,
+    questId: request.questId
+  });
+  return writer.write({
+    intent: {
+      idea: request.idea,
+      ...(request.genre === undefined ? {} : { genre: request.genre }),
+      ...(request.language === undefined ? {} : { language: request.language }),
+      ...(request.branchCount === undefined ? {} : { branchCount: request.branchCount }),
+      ...(request.endingCount === undefined ? {} : { endingCount: request.endingCount })
+    },
+    deadlineAtMs: Date.now() + 120_000
+  } as Parameters<InstanceType<typeof ModelMissionWriter>["write"]>[0]);
+};
+const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter });
 const studioAddress = await studio.listen(Number(process.env.LH_STUDIO_PORT ?? 4173), "127.0.0.1");
 
 console.log(`Living History Studio: http://${studioAddress.host}:${studioAddress.port}`);
@@ -91,13 +119,15 @@ console.log("Author Assistant: configure an API provider in Studio (key held in 
 
 const shutdown = async () => {
   await playerLaunchModule.closeAllPlayers();
-  authorProvider.disconnect();
+  // Остановка сервера не стирает сохранённый ключ: его убирает только явное отключение в UI.
+  authorProvider.disconnect({ erase: false });
   await studio.close();
   await control.close();
   authorConversation.close();
   authorArtifacts.close();
   authorJobs.close();
   playtestTrace.close();
+  providerConnections.close();
   publicationStore.close();
   releaseStore.close();
   store.close();

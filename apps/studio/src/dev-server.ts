@@ -41,9 +41,22 @@ export type PlayerLaunchOutcome =
 
 export type PlayerLauncher = (playtestId: string) => Promise<PlayerLaunchOutcome>;
 
+/** Запрос автора «создай полную миссию из идеи» (FIN-09). */
+export interface LocalMissionDraftRequest {
+  readonly idea: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly genre?: string;
+  readonly language?: string;
+  readonly branchCount?: number;
+  readonly endingCount?: number;
+}
+
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
+  /** Генерация полной миссии тем же провайдером, что настроен в «Настройки → ИИ». */
+  readonly missionDrafter?: (request: LocalMissionDraftRequest) => Promise<unknown>;
   readonly playerLauncher?: PlayerLauncher;
   /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
   readonly importBodyLimitBytes?: number;
@@ -112,6 +125,25 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
           } else {
             sendJson(response, 400, { error: { code: "INVALID_SETTINGS" } });
           }
+        }
+        return;
+      }
+      if (url.pathname === "/local/author-provider/probe" && options.authorProvider) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        await options.authorProvider.probe();
+        sendJson(response, 200, options.authorProvider.status());
+        return;
+      }
+      if (url.pathname === "/local/mission-draft" && options.missionDrafter) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          const body = await readLocalJson(request) as LocalMissionDraftRequest;
+          sendJson(response, 200, await options.missionDrafter(body));
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
+          else sendJson(response, 400, { error: { code: "INVALID_MISSION_DRAFT_REQUEST" } });
         }
         return;
       }

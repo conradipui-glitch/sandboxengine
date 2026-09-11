@@ -262,6 +262,7 @@ export {
   type UpdateProviderConnectionStateInput,
   type UpdateProviderConnectionStateResult
 } from "./provider-connections-store.js";
+export {
   BOARD_PRESENCE_SCHEMA_VERSION,
   DEFAULT_BOARD_PRESENCE_TTL_MS,
   MAX_BOARD_NODES,

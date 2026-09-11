@@ -19,6 +19,30 @@ import {
 } from "./api.js";
 import { describeControlError, describeReleaseReadiness } from "./control-errors.js";
 import {
+  NOT_STARTED_TOUR,
+  completeOnboardingTour,
+  currentOnboardingStep,
+  documentAnchorProbe,
+  explainStudioError,
+  loadOnboardingTourProgress,
+  onboardingTourNext,
+  renderOnboardingTourStep,
+  repeatOnboardingTour,
+  saveOnboardingTourProgress,
+  skipOnboardingTour,
+  type OnboardingTourState
+} from "./onboarding-tour.js";
+import type { PreferenceStore } from "./onboarding.js";
+
+// FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, доступ к
+// localStorage даёт этот адаптер — сам модуль о браузере ничего не знает.
+const tourPreferenceStore: PreferenceStore = {
+  getItem: (key: string) => (typeof localStorage === "undefined" ? null : localStorage.getItem(key)),
+  setItem: (key: string, value: string) => { if (typeof localStorage !== "undefined") localStorage.setItem(key, value); },
+  removeItem: (key: string) => { if (typeof localStorage !== "undefined") localStorage.removeItem(key); }
+};
+let onboardingTourState: OnboardingTourState = loadOnboardingTourProgress(tourPreferenceStore);
+import {
   createInitialLocationBlock,
   createPaintActionBlock,
   createResourceBlock,
@@ -527,6 +551,36 @@ export class StudioApp {
       this.render();
       return;
     }
+    if (action === "start-tour") {
+      const probe = { anchorPresent: documentAnchorProbe(document) };
+      onboardingTourState = repeatOnboardingTour(probe);
+      saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
+      this.state.message = this.tourMessage();
+      this.render();
+      return;
+    }
+    if (action === "tour-next") {
+      const probe = { anchorPresent: documentAnchorProbe(document) };
+      onboardingTourState = onboardingTourNext(onboardingTourState, probe);
+      if (onboardingTourState.status === "completed") {
+        onboardingTourState = completeOnboardingTour(onboardingTourState);
+        saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
+        this.state.message = "Тур пройден. Дальше можно работать самостоятельно; тур запускается снова из меню.";
+        this.render();
+        return;
+      }
+      saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
+      this.state.message = this.tourMessage();
+      this.render();
+      return;
+    }
+    if (action === "tour-skip") {
+      onboardingTourState = skipOnboardingTour(onboardingTourState);
+      saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
+      this.state.message = "Тур пропущен. Его можно запустить снова из меню редактора.";
+      this.render();
+      return;
+    }
     if (action === "toggle-editor-menu") {
       this.state.editorMenuOpen = !this.state.editorMenuOpen;
       this.render();
@@ -890,7 +944,10 @@ export class StudioApp {
         this.state.projectModalError = null;
         await this.openProject(project.projectId);
         await this.selectQuest(draft.questId);
-        this.state.message = "Черновик создан. ИИ-помощник работает только в ограниченном профиле: текст и структура, рисование недоступно. Откройте «Соавтор», чтобы продолжить.";
+        // FIN-09: «Создать с ИИ» собирает ПОЛНУЮ миссию (сцены, две развилки,
+        // два финала) тем же провайдером, что настроен в «Настройки → ИИ».
+        // Отказ ИИ никогда не подменяется пустым черновиком: текст говорит, что делать.
+        this.state.message = await this.draftMissionWithAi(project.projectId, draft.questId, about.trim());
         this.state.inspectorTab = "coauthor";
         this.render();
         return;
@@ -2378,10 +2435,25 @@ export class StudioApp {
     if (renderAfter) this.render();
   }
 
+  /** Текст текущего шага тура: заголовок, объяснение и что делать дальше. */
+  private tourMessage(): string {
+    const step = currentOnboardingStep(onboardingTourState);
+    if (!step) return "Тур пройден. Запустить снова можно кнопкой «Тур по Studio».";
+    const skipped = onboardingTourState.skipped.length > 0
+      ? ` Пропущено неприменимых шагов: ${onboardingTourState.skipped.length}.`
+      : "";
+    return `${renderOnboardingTourStep(step)}${skipped}`;
+  }
+
   private setError(error: unknown): void {
     this.state.phase = "error";
     if (error instanceof ControlApiError) {
-      this.state.message = describeControlError(error);
+      const described = describeControlError(error);
+      // FIN-10: к известному коду добавляется действие — что именно сделать.
+      const explained = explainStudioError(error.code, { detailCode: (error as { detailCode?: string | null }).detailCode ?? null });
+      this.state.message = explained.action.length > 0 && !described.includes(explained.action)
+        ? `${described} ${explained.action}`
+        : described;
       return;
     }
     this.state.message = error instanceof Error ? error.message : "Неизвестная ошибка Studio.";
@@ -2908,6 +2980,36 @@ export class StudioApp {
   }
 
   /** M05 создание миссии: сразу минимально проходимой (вход → выбор → финал), иначе сервер вернёт 422. */
+  /**
+   * Запрос полной миссии у ИИ и сохранение документа. Любой исход описывается
+   * словами, которые автор может выполнить: без «Ошибка 500» и без пустого черновика.
+   */
+  private async draftMissionWithAi(projectId: string, questId: string, idea: string): Promise<string> {
+    let payload: any = null;
+    try {
+      const response = await fetch("/local/mission-draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idea, projectId, questId })
+      });
+      payload = await response.json().catch(() => null);
+      if (!response.ok) payload = payload ?? { kind: "failed" };
+    } catch {
+      return "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ», затем повторите попытку. Черновик проекта уже создан и не потерян.";
+    }
+    if (payload?.kind === "ok" && payload.mission) {
+      try {
+        await this.api.saveMission(projectId, questId, 0, payload.mission);
+      } catch {
+        return "ИИ собрал миссию, но её не удалось сохранить. Проверьте статус сохранения и повторите публикацию позже.";
+      }
+      return "ИИ собрал полную миссию: сцены, две развилки и два финала. Откройте «Проверить и сыграть», чтобы пройти её.";
+    }
+    if (payload?.kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
+    if (payload?.kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
+    return "ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Черновик проекта уже создан и не потерян.";
+  }
+
   private async createMission(title: string): Promise<void> {
     const projectId = requireSelected(this.state.selectedProjectId, "Проект не выбран.");
     const questId = requireSelected(this.state.selectedQuestId, "Миссия не выбрана.");
@@ -3226,7 +3328,8 @@ export class StudioApp {
             <button class="primary" data-action="play-quest" title="Проверить текущую revision и сразу запустить плеер на замороженной версии" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
             ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">
-              <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
+              <button class="button-secondary" data-action="start-tour" title="Показать тур по главному сценарию">Тур по Studio</button>
+                <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
                 <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
                 <button data-action="open-utility-panel" data-panel="portability" role="menuitem">Импорт и экспорт</button>

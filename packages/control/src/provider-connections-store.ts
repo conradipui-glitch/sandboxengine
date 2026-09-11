@@ -100,6 +100,11 @@ export interface ControlProviderConnectionStore {
    * сырой ключ и обязан оставаться в границах серверного вызова провайдера.
    */
   revealApiKey(input: RevealProviderApiKeyInput): Promise<string | null>;
+  /**
+   * Отключение обязано стирать секрет: строка подключения удаляется целиком.
+   * Возвращает true, если запись была и её удалили.
+   */
+  clearConnection(projectId: string, userId: string): Promise<boolean>;
   close?(): void;
 }
 
@@ -159,6 +164,11 @@ export class MemoryControlProviderConnectionStore implements ControlProviderConn
   async revealApiKey(input: RevealProviderApiKeyInput): Promise<string | null> {
     if (!isId(input?.projectId) || !isId(input?.userId)) return null;
     return this.#connections.get(connectionKey(input.projectId, input.userId))?.apiKey ?? null;
+  }
+
+  async clearConnection(projectId: string, userId: string): Promise<boolean> {
+    if (!isId(projectId) || !isId(userId)) return false;
+    return this.#connections.delete(connectionKey(projectId, userId));
   }
 
   close(): void {}
@@ -240,6 +250,19 @@ export class SQLiteControlProviderConnectionStore implements ControlProviderConn
     this.#assertOpen();
     if (!isId(input?.projectId) || !isId(input?.userId)) return null;
     return this.#readConnection(input.projectId, input.userId)?.apiKey ?? null;
+  }
+
+  async clearConnection(projectId: string, userId: string): Promise<boolean> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(userId)) return false;
+    return this.#transaction(() => {
+      const existing = this.#readConnection(projectId, userId);
+      if (!existing) return false;
+      // Ключ стирается вместе со строкой: отключение не оставляет секрета.
+      this.#db.prepare("DELETE FROM control_provider_connections WHERE project_id = ? AND user_id = ?").run(projectId, userId);
+      this.#db.prepare("DELETE FROM control_provider_connection_idempotency WHERE project_id = ? AND user_id = ?").run(projectId, userId);
+      return true;
+    });
   }
 
   #readConnection(projectId: string, userId: string): StoredProviderConnection | null {

@@ -7,7 +7,12 @@ import {
   type GenerateResult,
   type ModelProvider
 } from "@living-history/ai";
-import { isAllowedLocalHttpRequest } from "@living-history/control";
+import {
+  isAllowedLocalHttpRequest,
+  maskProviderApiKey,
+  probeProviderConnection,
+  type ControlProviderConnectionStore
+} from "@living-history/control";
 
 export type LocalAuthorProviderState = "not_configured" | "settings_saved" | "requesting" | "connected" | "error";
 
@@ -18,6 +23,17 @@ interface LocalAuthorProviderSettings {
 }
 
 /** Local operator configuration, intentionally outside the shared/project Control API. */
+/** Область хранения секрета: локальный оператор стенда (не проект автора). */
+export interface LocalAuthorProviderScope {
+  readonly projectId: string;
+  readonly userId: string;
+}
+
+export interface LocalAuthorProviderPersistence {
+  readonly connections: ControlProviderConnectionStore;
+  readonly scope: LocalAuthorProviderScope;
+}
+
 export class LocalAuthorProvider {
   readonly backend = new ModelProviderAgentBackend();
   #settings: LocalAuthorProviderSettings | null = null;
@@ -25,14 +41,22 @@ export class LocalAuthorProvider {
   #lastErrorCode: string | null = null;
   #generation = 0;
   #activeRequests = 0;
-  constructor(private readonly providerFetch?: FetchLike) {}
+  /** Безопасное представление ключа: наружу отдаётся только признак и маска. */
+  #credentialMask: string | null = null;
+  #revision: number | null = null;
+  constructor(
+    private readonly providerFetch?: FetchLike,
+    private readonly persistence?: LocalAuthorProviderPersistence
+  ) {}
 
   status() {
     return Object.freeze({
       configured: this.#settings !== null,
       settings: this.#settings,
       state: this.#state,
-      credentialStorage: "process_memory",
+      credentialStorage: this.persistence ? "local_file_masked" : "process_memory",
+      credentialMask: this.#credentialMask,
+      hasCredential: this.#credentialMask !== null,
       connectionCheck: this.#state === "connected" ? "connected" : this.#state === "error" ? "error" : "not_performed",
       connectionCheckLabel: this.#state === "settings_saved"
         ? "Отдельная проверка не запускалась; первый запрос будет отправлен из помощника."
@@ -42,7 +66,7 @@ export class LocalAuthorProvider {
     });
   }
 
-  configure(value: unknown): void {
+  configure(value: unknown, options: { readonly persist?: boolean } = {}): void {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_settings");
     const config = value as Record<string, unknown>;
     if (Object.keys(config).sort().join(",") !== "baseUrl,credential,model,preset"
@@ -66,15 +90,107 @@ export class LocalAuthorProvider {
     this.#state = "settings_saved";
     this.#lastErrorCode = null;
     this.#activeRequests = 0;
+    this.#credentialMask = maskProviderApiKey(String(config.credential));
+    if (this.persistence && options.persist !== false) this.#persistConnection(String(config.credential));
   }
 
-  disconnect(): void {
+  /** Запись подключения в локальное хранилище: наружу ключ не возвращается. */
+  #persistConnection(apiKey: string): void {
+    const persistence = this.persistence!;
+    const settings = this.#settings!;
+    const { connections, scope } = persistence;
+    void connections.saveConnection({
+      ...scope,
+      expectedRevision: this.#revision,
+      providerPreset: settings.preset,
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+      apiKey,
+      idempotencyKey: `save-${settings.preset}-${settings.model}-${this.#generation}`,
+      requestHash: `save-${settings.preset}-${settings.baseUrl}-${settings.model}`,
+      updatedAtMs: Date.now()
+    }).then((result) => {
+      if (result.kind === "saved" || result.kind === "replay") this.#revision = result.connection.revision;
+    }).catch(() => undefined);
+  }
+
+  /**
+   * Восстанавливает сохранённое подключение после перезапуска сервера: ключ
+   * читается внутренним доступом, сразу уходит в провайдера и не сохраняется
+   * в полях класса — наружу остаётся только маска.
+   */
+  async restore(): Promise<void> {
+    if (!this.persistence) return;
+    const { connections, scope } = this.persistence;
+    const summary = await connections.getConnection(scope.projectId, scope.userId);
+    if (!summary) return;
+    const apiKey = await connections.revealApiKey(scope);
+    if (apiKey === null) return;
+    this.configure({
+      preset: summary.providerPreset,
+      baseUrl: summary.baseUrl,
+      model: summary.model,
+      credential: apiKey
+    }, { persist: false });
+    this.#revision = summary.revision;
+    this.#state = summary.status === "connected" ? "settings_saved" : mapStoredStatus(summary.status);
+    this.#lastErrorCode = summary.lastErrorCode;
+  }
+
+  /**
+   * Проверка соединения отдельным запросом: результат виден до первого запроса
+   * помощника. Состояние подключения сохраняется, ключ — не покидает процесс.
+   */
+  async probe(): Promise<LocalAuthorProviderState> {
+    if (!this.#settings || !this.persistence) {
+      this.#state = this.#settings ? this.#state : "not_configured";
+      return this.#state;
+    }
+    const { connections, scope } = this.persistence;
+    const apiKey = await connections.revealApiKey(scope);
+    if (apiKey === null) { this.#state = "not_configured"; return this.#state; }
+    this.#state = "requesting";
+    const doFetch = this.providerFetch ?? ((url: string, init: RequestInit) => fetch(url, init));
+    const result = await probeProviderConnection(
+      { baseUrl: this.#settings.baseUrl, model: this.#settings.model, apiKey },
+      doFetch as never
+    );
+    this.#lastErrorCode = result.kind === "connected" ? null : result.kind;
+    this.#state = result.kind === "connected" ? "connected" : "error";
+    await this.#persistState(result.kind === "connected" ? "connected" : "error", this.#lastErrorCode);
+    return this.#state;
+  }
+
+  /** `erase: false` — остановка процесса: ключ остаётся в локальном файле. */
+  disconnect(options: { readonly erase?: boolean } = {}): void {
     this.#generation += 1;
     this.backend.configure(null);
     this.#settings = null;
     this.#state = "not_configured";
     this.#lastErrorCode = null;
     this.#activeRequests = 0;
+    this.#credentialMask = null;
+    this.#revision = null;
+    // Явное отключение стирает секрет из локального файла, а не только из памяти.
+    if (this.persistence && options.erase !== false) {
+      const { connections, scope } = this.persistence;
+      void connections.clearConnection(scope.projectId, scope.userId).catch(() => undefined);
+    }
+  }
+
+  async #persistState(status: LocalAuthorProviderState, lastErrorCode: string | null): Promise<void> {
+    if (!this.persistence || this.#revision === null) return;
+    const { connections, scope } = this.persistence;
+    const updated = await connections.updateConnectionState({
+      ...scope,
+      expectedRevision: this.#revision,
+      status: status === "connected" ? "connected" : status === "error" ? "error" : "settings_saved",
+      lastErrorCode: lastErrorCode as never,
+      idempotencyKey: `probe-${this.#revision}-${status}`,
+      requestHash: `probe-${this.#revision}-${status}`,
+      updatedAtMs: Date.now()
+    });
+    if (updated.kind === "updated" || updated.kind === "replay") this.#revision = updated.connection.revision;
   }
 
   private observe(provider: ModelProvider, generation: number): ModelProvider {
@@ -105,6 +221,13 @@ export class LocalAuthorProvider {
       }
     });
   }
+}
+
+function mapStoredStatus(status: string): LocalAuthorProviderState {
+  if (status === "connected") return "connected";
+  if (status === "error") return "error";
+  if (status === "settings_saved" || status === "requesting") return "settings_saved";
+  return "not_configured";
 }
 
 export function isLocalOperatorRequest(request: any): boolean {
