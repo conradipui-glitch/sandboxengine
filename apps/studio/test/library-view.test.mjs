@@ -335,7 +335,7 @@ test("LIB-07: HTML в названии и описании экранирует�
 /* 8. Дата изменения                                                   */
 /* ------------------------------------------------------------------ */
 
-test("LIB-08: дата в читаемом виде ru-RU, при null — честное «нет данных»", () => {
+test("LIB-08: дата в читаемом виде ru-RU; без настоящей даты строки «Изменён» нет", () => {
   assert.equal(formatUpdatedAt(null), LIBRARY_NO_DATA);
   assert.equal(formatUpdatedAt(Number.NaN), LIBRARY_NO_DATA);
   const formatted = formatUpdatedAt(Date.UTC(2024, 5, 15, 12, 0, 0));
@@ -344,7 +344,13 @@ test("LIB-08: дата в читаемом виде ru-RU, при null — че�
   assert.doesNotMatch(formatted, /GMT|UTC|\d{4}-\d{2}-\d{2}/);
 
   const without = libraryCardHtml(ACCEPTANCE);
-  assert.match(without, /<dt class="lhp-meta-term">Изменён<\/dt><dd class="lhp-meta-value">нет данных<\/dd>/);
+  // Дата правки API не отдаёт: строки «Изменён» при отсутствии данных нет вовсе,
+  // а «нет данных» в карточке проекта не выводится.
+  assert.doesNotMatch(without, /lhp-meta-term">Изменён</);
+  assert.ok(!without.includes(LIBRARY_NO_DATA), `карточка не должна показывать «${LIBRARY_NO_DATA}»`);
+  // С настоящей датой строка «Изменён» на месте и читается по-русски.
+  const withDate = libraryCardHtml(card());
+  assert.match(withDate, /<dt class="lhp-meta-term">Изменён<\/dt><dd class="lhp-meta-value">[\s\S]*2024/);
   const withoutDescription = libraryCardHtml(card({ description: null, questCount: 0 }));
   assert.match(withoutDescription, new RegExp(LIBRARY_NO_DESCRIPTION));
   assert.match(withoutDescription, /<dt class="lhp-meta-term">Миссий<\/dt><dd class="lhp-meta-value">0<\/dd>/);
