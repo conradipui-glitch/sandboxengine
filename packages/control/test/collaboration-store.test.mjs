@@ -115,6 +115,7 @@ test("FIN-12 collaboration store: notes and comment threads are server-authorita
     const repliedThread = replied.view.threads.find((entry) => entry.threadId === thread.threadId);
     assert.equal(repliedThread.messages.length, 2);
     assert.equal(repliedThread.messages[1].authorUserId, "author-2");
+    assert.equal(repliedThread.messages[1].replyToMessageId, null);
     assert.equal(repliedThread.revision, 2);
 
     const resolved = await store.setThreadStatus("p1", "q1", {
