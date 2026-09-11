@@ -1,0 +1,79 @@
+✖ кнопка «Настроить подключение»: нажатие открывает форму подключения провайдера (22.5382ms)
+✖ кнопка «Настроить подключение»: три нажатия подряд остаются одним слушателем и нулём запросов (16.1978ms)
+✖ кнопка «Настроить подключение»: без блока подключения в оболочке панель объясняет это автору (14.0522ms)
+✖ панель ИИ-помощника: событие настройки уходит наверх и без слушателя не оставляет тишину (15.1258ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 0
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 187.6116
+
+✖ failing tests:
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:428:1
+✖ кнопка «Настроить подключение»: нажатие открывает форму подключения провайдера (22.5382ms)
+  AssertionError [ERR_ASSERTION]: блок подключения раскрыт после нажатия
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:446:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:470:1
+✖ кнопка «Настроить подключение»: три нажатия подряд остаются одним слушателем и нулём запросов (16.1978ms)
+  AssertionError [ERR_ASSERTION]: блок подключения открыт
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:479:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:487:1
+✖ кнопка «Настроить подключение»: без блока подключения в оболочке панель объясняет это автору (14.0522ms)
+  AssertionError [ERR_ASSERTION]: автор видит объяснение, а не тишину
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:497:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '<section class="ai-panel" data-ai-panel>\n    <header class="ai-panel-head">\n      <h2>ИИ-помощник</h2>\n      <p>Опишите идею словами — помощник сам соберёт сцены, финалы и выборы, а затем их можно будет отредактировать.</p>\n    </header>\n    <div class="ai-panel-body" data-ai-panel-body><div class="ai-unavailable" data-ai-unavailable>\n    <p class="ai-note" data-ai-unavailable-reason>Подключение к ИИ не настроено.</p>\n    <div class="ai-actions">\n      <button class="primary" type="button" data-action="ai-configure">Настроить подключение</button>\n      <button class="secondary" type="button" data-action="ai-recheck">Проверить снова</button>\n    </div>\n    <p class="ai-hint">После настройки вернитесь на эту вкладку и нажмите «Проверить снова» — появится поле для описания идеи.</p>\n  </div></div>\n  </section>',
+    expected: /data-ai-configure-notice/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:505:1
+✖ панель ИИ-помощника: событие настройки уходит наверх и без слушателя не оставляет тишину (15.1258ms)
+  AssertionError [ERR_ASSERTION]: оболочка может подтвердить открытие формы
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:528:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

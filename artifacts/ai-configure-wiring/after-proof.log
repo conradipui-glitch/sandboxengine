@@ -1,0 +1,19 @@
+[proof/after] repo=C:\Users\kato55\lhc-ai-configure
+[proof/after] studio=http://127.0.0.1:4216/ control=8926 cdp=http://127.0.0.1:9392
+[proof/after] копия базы стенда: C:\Users\kato55\lhc-ai-configure\data\living-history.sqlite
+[proof/after] стенд отвечает
+[proof/after] свой headless Chrome поднят
+[proof/after] Studio отрисована
+[proof/after] проекты: "ready"
+[proof/after] вкладка ИИ-помощника: "panel"
+[proof/after] до клика: {"dockOpen":false,"formVisible":false,"formRect":{"width":217,"height":813},"panelReason":"Подключение к ИИ не настроено или ключ отклонён.","requests":70}
+[proof/after] после клика: {"dockOpen":true,"formVisible":true,"formRect":{"width":631,"height":610},"formDisplay":"grid","statusText":"ИИ не подключён. Укажите провайдера, модель и ключ — соединение проверится первым запросом помощника.","controls":["preset","baseUrl","model","credential","Сохранить подключение","Отключить"],"focused":"preset","focusedInProviderForm":true,"panelNotice":null,"panelStillUnavailable":true,"aiPanelHosts":1}
+[proof/after] скриншот dark: data-theme=dark → C:\Users\kato55\lhc-ai-configure\artifacts\ai-configure-wiring\ai-configure-dark-4216.png
+[proof/after] скриншот light: data-theme=light → C:\Users\kato55\lhc-ai-configure\artifacts\ai-configure-wiring\ai-configure-light-4216.png
+[proof/after] проверка formOpened: ok
+[proof/after] проверка focusInField: ok
+[proof/after] проверка noExtraRequests: ok
+[proof/after] проверка panelKeptIntact: ok
+[proof/after] проверка consoleClean: ok
+[proof/after] проверка themesCaptured: ok
+[proof/after] отчёт: C:\Users\kato55\lhc-ai-configure\artifacts\ai-configure-wiring\browser-proof-after.json

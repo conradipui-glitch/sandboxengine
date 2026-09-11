@@ -1,0 +1,48 @@
+✖ кнопка «Настроить подключение»: нажатие открывает форму подключения провайдера (21.4452ms)
+✖ кнопка «Настроить подключение»: три нажатия подряд остаются одним слушателем и нулём запросов (17.5179ms)
+✔ кнопка «Настроить подключение»: без блока подключения в оболочке панель объясняет это автору (17.0946ms)
+✔ панель ИИ-помощника: событие настройки уходит наверх и без слушателя не оставляет тишину (17.8675ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 194.9251
+
+✖ failing tests:
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:428:1
+✖ кнопка «Настроить подключение»: нажатие открывает форму подключения провайдера (21.4452ms)
+  AssertionError [ERR_ASSERTION]: блок подключения раскрыт после нажатия
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:446:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at apps\studio\test\ai-configure-wiring.test.mjs:470:1
+✖ кнопка «Настроить подключение»: три нажатия подряд остаются одним слушателем и нулём запросов (17.5179ms)
+  AssertionError [ERR_ASSERTION]: блок подключения открыт
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-ai-configure/apps/studio/test/ai-configure-wiring.test.mjs:479:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
