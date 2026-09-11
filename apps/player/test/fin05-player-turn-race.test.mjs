@@ -73,7 +73,6 @@ function createTurnServer() {
     gets: 0,
     postLatency: () => 5,
     getFails: false,
-    conflictFirst: false
   };
   server.handle = async (rawUrl, init) => {
     const target = String(rawUrl);
@@ -81,9 +80,10 @@ function createTurnServer() {
     if (target.startsWith("/player-turn.json") && method === "POST") {
       const body = JSON.parse(String(init.body));
       server.posts.push(body);
-      await delay(server.postLatency(server.posts.length));
-      if (server.reply !== undefined) return server.reply(server, body, server.posts.length);
-      if (server.conflictFirst && server.posts.length === 1) {
+      const index = server.posts.length;
+      await delay(server.postLatency(index));
+      if (server.reply !== undefined) return server.reply(server, body, index);
+      if (server.conflictFirst && index === 1) {
         return jsonResponse(409, { error: { code: "TURN_CONFLICT", currentTurn: server.turn } });
       }
       if (body.baseTurn !== server.turn) {
