@@ -196,3 +196,17 @@
   margin: 0;
   flex: 1 1 320px;
 }
+
+/* Состояния несут нецветовой признак: глиф и подчёркивание, а не только цвет. */
+.publish-error-text::before,
+.si-status-error::before {
+  content: "✕  ";
+  font-weight: 700;
+}
+
+.publish-error,
+.si-status-error {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+}

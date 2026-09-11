@@ -181,6 +181,9 @@
 }
 
 .si-button-danger {
+  border-left: 3px solid var(--danger);
+  text-decoration: underline;
+
   border-color: var(--border-danger, #5c3430);
   background: var(--danger-bg, #2f1e1c);
   color: var(--danger-strong, #e8a79c);
@@ -461,7 +464,6 @@
   padding: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
-  white-space: nowrap;
   border: 0;
 }
 
@@ -469,4 +471,18 @@
   .si-inspector * {
     transition: none;
   }
+}
+
+/* Состояния несут нецветовой признак: глиф и подчёркивание, а не только цвет. */
+.publish-error-text::before,
+.si-status-error::before {
+  content: "✕  ";
+  font-weight: 700;
+}
+
+.publish-error,
+.si-status-error {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
 }
