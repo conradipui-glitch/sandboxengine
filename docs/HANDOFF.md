@@ -11,6 +11,15 @@
 Текущий блок: **M06 PARTIAL → исправления F01–F07 доставлены и подтверждены hosted. OPEN: R05 закрытие, C18 ролевые проверки, браузерный проход глазами игрока, второй независимый прогон; плюс четыре проблемы повторного аудита B01–B04 → FIN-01…FIN-04.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
+## FIN-05B — композиция экрана (2026-09-11, worktree `C:/Temp/lhc-fin05b-compose`, ветка `feat/fin05b-screen-composition`)
+
+Второй bounded-срез FIN-05: слои-материалы и ручная композиция экрана в Studio.
+
+- Модель `apps/studio/src/screen-composition.ts` (без новых полей контракта): update/duplicate/delete слоя, drag/resize(пропорц.)/rotate/flip/opacity/z-order/lock/visible, contain/cover + фокус и crop, наследование фона (own/inherited/none), preset + reduced-motion/пауза, реальные mute/play/blocked музыки, клавиатура; запись через тот же CAS `POST /mission`.
+- `apps/studio/src/screen-dom.ts` — живая сцена (drag, ручка resize, клавиатура); `app.ts` — инспектор слоёв с действиями и inline-формой, монтаж сцены с сохранением host между render'ами.
+- Проверка: `apps/studio/test/fin05b-screen-composition.test.mjs` **16/16** (RED до реализации — `ERR_MODULE_NOT_FOUND`); `test:studio` 142/0/1; Control 106/106, Server 141/141, Contracts 57/57; typecheck/boundaries/docs:check — exit 0.
+- **Не закрыто:** реальная библиотека материалов (hash/MIME/размеры, restart/другой браузер), воспроизведение сцены в Player/сайте/runtime, browser-приёмка 3+ сцен/2 финалов не-Florence. Карточка остаётся **PARTIAL**. Worklog: [worklog/2026-09-11-FIN05B-screen-composition.md](worklog/2026-09-11-FIN05B-screen-composition.md).
+
 ## Независимая проверка M06 и корректирующие работы (2026-09-11)
 
 Внешний аудит признал предыдущий отчёт о завершении M06 недействительным: hosted happy-path работал, но полная приёмка не проходила. Все семь дефектов воспроизведены регрессионными тестами и исправлены, кроме F07.

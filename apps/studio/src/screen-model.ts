@@ -53,6 +53,23 @@ export function screenForNode(doc: MissionDraft, nodeId: string): MissionSceneSc
   return (kind === "scene" ? doc.screens.scenes[nodeId] : doc.screens.endings[nodeId]) ?? defaultScreen();
 }
 
+/**
+ * M05 запись экрана целиком в правильный слот (scene/ending) за один шаг.
+ * Используется операциями над слоями (FIN-05B), чтобы не дублировать слот-логику.
+ */
+export function replaceScreen(doc: MissionDraft, nodeId: string, screen: MissionSceneScreen): ScreenMutationResult {
+  const kind = nodeKind(doc, nodeId);
+  if (kind === null) return { ok: false, error: "screen.node_missing" };
+  if (!validAsset(screen.background) || !validAsset(screen.music)) {
+    return { ok: false, error: "screen.asset_ref_invalid" };
+  }
+  const screens = copyScreens(doc);
+  const next = clone(screen);
+  if (kind === "scene") screens.scenes[nodeId] = next;
+  else screens.endings[nodeId] = next;
+  return { ok: true, mission: { ...doc, screens } };
+}
+
 export function updateScreen(doc: MissionDraft, nodeId: string, patch: ScreenPatch): ScreenMutationResult {
   const kind = nodeKind(doc, nodeId);
   if (kind === null) return { ok: false, error: "screen.node_missing" };
