@@ -1263,6 +1263,11 @@ async function routeControlRequest(
       sendJson(response, 409, { error: { code: "PUBLICATION_CONFLICT" } });
       return;
     }
+    if (staged.kind === "slug_conflict") {
+      // R-06: слаг каталога занят другой миссией; указатель релиза не двинулся.
+      sendJson(response, 409, { error: { code: "PUBLICATION_SLUG_CONFLICT" } });
+      return;
+    }
     if (staged.kind === "replay") {
       sendJson(response, 200, { publication: { kind: "replay" }, catalog: publicPublicationView(staged.record) });
       return;
@@ -1279,6 +1284,10 @@ async function routeControlRequest(
     const promoted = result.kind === "published" || result.kind === "unchanged" || result.kind === "replay";
     if (promoted && staged.kind === "ready") {
       const committed = await commitPublicationCandidate(releases, projectId, questId, staged.operationKey, releaseNowMs(releases, auth));
+      if (committed === "slug_conflict") {
+        sendJson(response, 409, { error: { code: "PUBLICATION_SLUG_CONFLICT" } });
+        return;
+      }
       if (!committed) {
         sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
         return;
@@ -1338,8 +1347,11 @@ async function routeControlRequest(
     // cannot write the catalog record must leave the release pointer exactly
     // where it was, the same way a rejected publish does.
     const publication = await beginPublicationCandidate(releases, missionStore, projectId, questId, body.targetReleaseId, idempotencyKey, releaseNowMs(releases, auth), "rollback", preflight.kind === "resolved" ? preflight : undefined);
-    if (publication.kind === "conflict" || publication.kind === "source_stale") {
-      sendJson(response, 409, { error: { code: publication.kind === "conflict" ? "PUBLICATION_CONFLICT" : "PUBLICATION_SOURCE_STALE" } });
+    if (publication.kind === "conflict" || publication.kind === "source_stale" || publication.kind === "slug_conflict") {
+      const code = publication.kind === "conflict"
+        ? "PUBLICATION_CONFLICT"
+        : publication.kind === "source_stale" ? "PUBLICATION_SOURCE_STALE" : "PUBLICATION_SLUG_CONFLICT";
+      sendJson(response, 409, { error: { code } });
       return;
     }
     if (publication.kind === "bundle_unavailable") {
@@ -1365,6 +1377,10 @@ async function routeControlRequest(
     });
     if (publication.kind === "ready" && (result.kind === "rolled_back" || result.kind === "unchanged" || result.kind === "replay")) {
       const committed = await commitPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
+      if (committed === "slug_conflict") {
+        sendJson(response, 409, { error: { code: "PUBLICATION_SLUG_CONFLICT" } });
+        return;
+      }
       if (!committed) {
         sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
         return;
@@ -2088,6 +2104,9 @@ type PublicationStaging =
   | { readonly kind: "replay"; readonly record: ControlPublicationRecord }
   | { readonly kind: "source_stale" | "not_attempted" }
   | { readonly kind: "bundle_unavailable"; readonly code: string }
+  // R-06: слаг каталога уже занят другой миссией. Обнаруживается до сдвига
+  // указателя, поэтому публикация отвергается честно и без следа.
+  | { readonly kind: "slug_conflict" }
   | { readonly kind: "store_failure" }
   | { readonly kind: "conflict" };
 
@@ -2155,6 +2174,9 @@ async function beginPublicationCandidate(
   });
   if (begun.kind === "invalid_request") return { kind: "store_failure" };
   if (begun.kind === "operation_conflict") return { kind: "conflict" };
+  // R-06: занятый слаг отвергается здесь — до того, как сервер двинет указатель
+  // релиза. Иначе каталог остаётся без записи, а операция висит pending вечно.
+  if (begun.kind === "slug_conflict") return { kind: "slug_conflict" };
   if (begun.kind === "replay") {
     // The same request already finished: there is nothing left to do, and the
     // answer must name the content that is actually live.
@@ -2172,11 +2194,14 @@ async function commitPublicationCandidate(
   questId: string,
   operationKey: string,
   committedAtMs: number
-): Promise<ControlPublicationRecord | null> {
+): Promise<ControlPublicationRecord | "slug_conflict" | null> {
   const publicationStore = releases.publicationStore;
   if (!publicationStore) return null;
   const result = await publicationStore.commitPublicationOperation({ projectId, questId, operationKey, committedAtMs });
   if (result.kind === "committed" || result.kind === "replay") return result.publication;
+  // R-06: гонка — слаг заняли между началом операции и коммитом. Стор уже
+  // пометил операцию `aborted`, поэтому достаточно назвать причину вызывающему.
+  if (result.kind === "slug_conflict") return "slug_conflict";
   return null;
 }
 
@@ -2244,6 +2269,13 @@ async function settleInterruptedPublications(
           operation.operationKey,
           nowMs
         );
+        if (committed === "slug_conflict") {
+          console.error(
+            "control: publication operation %s lost its catalog slug to another mission; the operation was abandoned, the release pointer keeps naming the staged release",
+            operation.operationKey
+          );
+          continue;
+        }
         if (!committed) {
           console.error(
             "control: publication operation %s was interrupted after the release pointer moved and is still uncommitted",

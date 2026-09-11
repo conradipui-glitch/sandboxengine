@@ -88,6 +88,10 @@ export type BeginPublicationOperationResult =
   | { readonly kind: "pending"; readonly operation: ControlPublicationOperation }
   | { readonly kind: "replay"; readonly operation: ControlPublicationOperation }
   | { readonly kind: "operation_conflict"; readonly operation: ControlPublicationOperation }
+  // R-06: занятый slug обязан обнаруживаться до того, как сдвинется указатель
+  // релиза. Иначе запись каталога не появляется, а операция навсегда остаётся
+  // pending и каждая попытка (включая startup-settle) падает снова.
+  | { readonly kind: "slug_conflict" }
   | { readonly kind: "invalid_request" };
 
 export type CommitPublicationOperationResult =
@@ -229,6 +233,10 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     if (!validOperation(operation)) return frozen({ kind: "invalid_request" });
     const key = operationMapKey(operation.projectId, operation.questId, operation.operationKey);
     const existing = this.#operations.get(key);
+    const slugTaken = [...this.#records.values()].some(
+      (record) => record.slug === operation.candidate.slug && record.publicMissionId !== operation.candidate.publicMissionId
+    );
+    if (slugTaken) return frozen({ kind: "slug_conflict" });
     if (existing) {
       if (existing.requestHash !== operation.requestHash) return frozen({ kind: "operation_conflict", operation: clone(existing) });
       // R-03: усиленная переигровка уже отменённой операции опасна. `aborted`
@@ -261,7 +269,13 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     }
     if (operation.state !== "pending") return frozen({ kind: "not_pending" });
     const slugCollision = [...this.#records.values()].find((record) => record.slug === operation.candidate.slug && record.publicMissionId !== operation.candidate.publicMissionId);
-    if (slugCollision) return frozen({ kind: "slug_conflict" });
+    if (slugCollision) {
+      // R-06: коммит обнаружил занятый slug уже после сдвига указателя. Ничего
+      // видимого не появилось, поэтому операцию нельзя оставлять `pending` —
+      // иначе startup-settle будет повторять заведомо падающий коммит вечно.
+      this.#operations.set(key, clone({ ...operation, state: "aborted" as const, finishedAtMs: input.committedAtMs }));
+      return frozen({ kind: "slug_conflict" });
+    }
     const stored = clone({ ...operation.candidate, status: "published" as const });
     this.#records.set(stored.publicMissionId, stored);
     this.#operations.set(key, clone({ ...operation, state: "committed" as const, finishedAtMs: input.committedAtMs }));
@@ -453,6 +467,11 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
     const operation = input.operation;
     if (!validOperation(operation)) return frozen({ kind: "invalid_request" });
     return this.#transaction(() => {
+      // R-06: занятый slug проверяется здесь, до сдвига указателя релиза, — см.
+      // MemoryControlPublicationStore.beginPublicationOperation.
+      const taken = this.#db.prepare("SELECT public_mission_id FROM control_publication_records WHERE slug = ? AND public_mission_id <> ? LIMIT 1")
+        .get(operation.candidate.slug, operation.candidate.publicMissionId);
+      if (taken) return frozen({ kind: "slug_conflict" });
       const row = this.#db.prepare("SELECT * FROM control_publication_operations WHERE project_id = ? AND quest_id = ? AND operation_key = ? LIMIT 1")
         .get(operation.projectId, operation.questId, operation.operationKey);
       if (row) {
@@ -498,7 +517,13 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
       }
       if (operation.state !== "pending") return frozen({ kind: "not_pending" });
       const collision = this.#db.prepare("SELECT public_mission_id FROM control_publication_records WHERE slug = ? AND public_mission_id <> ? LIMIT 1").get(operation.candidate.slug, operation.candidate.publicMissionId);
-      if (collision) return frozen({ kind: "slug_conflict" });
+      if (collision) {
+        // R-06: ничего видимого не появилось, поэтому операция не остаётся
+        // `pending` — иначе startup-settle повторял бы падающий коммит вечно.
+        this.#db.prepare("UPDATE control_publication_operations SET state = 'aborted', finished_at_ms = ? WHERE project_id = ? AND quest_id = ? AND operation_key = ?")
+          .run(input.committedAtMs, input.projectId, input.questId, input.operationKey);
+        return frozen({ kind: "slug_conflict" });
+      }
       const stored = clone({ ...operation.candidate, status: "published" as const });
       this.#db.prepare(`INSERT INTO control_publication_records
         (public_mission_id, slug, project_id, quest_id, draft_revision, draft_content_hash, release_id, content_hash, channel, status, listing_json, published_at_ms)
