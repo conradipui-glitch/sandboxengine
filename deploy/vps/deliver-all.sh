@@ -28,12 +28,20 @@ REPO="${LHC_REPO:-$(cd "$SELF_DIR/../.." && pwd)}"
 ENV_FILE="${LHC_ENV_FILE:-deploy/vps/.env}"
 COMPOSE_FILE="deploy/vps/docker-compose.yml"
 REMOTE="origin"
-REMOTE_REF="${LHC_DELIVERY_REF:-origin/HEAD}"
+# Ветка доставки. Клон на стенде может не иметь origin/HEAD (его создаёт только
+# git clone с --no-single-branch), поэтому по умолчанию берём ветку, на которой
+# стоит рабочий каталог стенда: доставка идёт в неё, а пин проверяется по ней.
+REMOTE_REF="${LHC_DELIVERY_REF:-}"
 WITH_SITE=0
 SITE_ROOT=""
 DRY_RUN=0
 PIN=""
 PIN_VERIFIED=0
+
+if [ -z "$REMOTE_REF" ]; then
+  LOCAL_BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+  REMOTE_REF="origin/${LOCAL_BRANCH}"
+fi
 
 # Keys that must exist (by NAME only) in deploy/vps/.env. Values are never read
 # or printed by this script — compose resolves them from the file.
