@@ -43,6 +43,7 @@ import type { PlaytestTraceReader } from "@living-history/runtime";
 import { buildControlRelease } from "./release-authority.js";
 import { publishControlRelease, rollbackControlRelease } from "./release-publication.js";
 import { routeDraftVersionHttp } from "./draft-version-http.js";
+import { createPresenceHttpService, type PresenceHttpService } from "./presence.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
 import { buildInstalledAuthorContextCapabilityCatalog } from "./author-context-catalog.js";
 import {
@@ -124,6 +125,23 @@ interface LoginFailureState {
   blockedUntilMs: number;
 }
 
+/**
+ * One presence service per auth runtime: cursors are member-scoped and live only
+ * in memory, so the service is created lazily and closed with the server.
+ */
+const presenceServices = new WeakMap<object, PresenceHttpService>();
+
+function presenceServiceFor(auth: AuthRuntime): PresenceHttpService {
+  const existing = presenceServices.get(auth);
+  if (existing) return existing;
+  const created = createPresenceHttpService({
+    security: auth.security,
+    allowedOrigins: [...auth.allowedOrigins]
+  });
+  presenceServices.set(auth, created);
+  return created;
+}
+
 export function createControlHttpServer(dependencies: ControlServerDependencies): ControlHttpServer {
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
@@ -198,6 +216,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
       });
     },
     close(): Promise<void> {
+      if (auth) presenceServices.get(auth)?.close();
       if (!server.listening) return Promise.resolve();
       return new Promise((resolve, reject) => {
         server.close((error: unknown) => error ? reject(error) : resolve());
@@ -248,6 +267,10 @@ async function routeControlRequest(
       return;
     }
   }
+
+  // Presence (FIN-13) owns its own origin/session/role gates, so it dispatches
+  // before the generic router and hands anything unrecognised back.
+  if (auth && await presenceServiceFor(auth).handleRequest(request, response)) return;
 
   const publicMissionMatch = /^\/public\/v1\/missions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199}))?$/.exec(publicPathname);
   if (method === "GET" && releases?.publicationStore && publicMissionMatch) {
@@ -711,13 +734,17 @@ async function routeControlRequest(
     if (replyMatch) {
       const write = await beginCollaborationWrite();
       if (!write) return;
-      if (!hasExactKeys(write.body, ["text"]) || typeof write.body.text !== "string") {
+      const replyKeys = Object.keys(write.body).sort().join(",");
+      if ((replyKeys !== "text" && replyKeys !== "expectedRevision,text")
+        || typeof write.body.text !== "string"
+        || (write.body.expectedRevision !== undefined && !isRevision(write.body.expectedRevision))) {
         sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
         return;
       }
       sendCollaboration(await collaborationStore.addMessage(projectId, questId, {
         threadId: replyMatch[1]!,
         text: write.body.text,
+        ...(write.body.expectedRevision === undefined ? {} : { expectedRevision: write.body.expectedRevision }),
         idempotencyKey: write.idempotencyKey,
         actorUserId: collaborationActorUserId
       }));

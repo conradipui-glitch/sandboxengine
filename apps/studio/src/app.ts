@@ -50,6 +50,12 @@ import {
   edgeToDraftChange
 } from "./board-model.js";
 import { mountBoard } from "./board-dom.js";
+import {
+  createPresenceClient,
+  mountPresence,
+  type PresenceClient,
+  type PresenceHandle
+} from "./presence.js";
 import { BoardLifecycle } from "./board-lifecycle.js";
 import {
   createBlockForKind,
@@ -110,6 +116,7 @@ import {
   renderAuthorAssistantPanel,
   type AuthorAssistantPanelState
 } from "./author-assistant.js";
+import { renderStudioError, type StudioErrorBannerHandle } from "./onboarding.js";
 import {
   collabField,
   collaborationAnchorFromForm,
@@ -251,6 +258,33 @@ export class StudioApp {
 
   private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
   private boardHost: HTMLElement | null = null;
+  private presenceClient: PresenceClient | null = null;
+  private presenceHandle: PresenceHandle | null = null;
+  private presenceContext: { projectId: string; questId: string } | null = null;
+  private loadErrorBanner: StudioErrorBannerHandle | null = null;
+
+  /**
+   * Русский баннер ошибки на месте сломанного блока с рабочим «Повторить»:
+   * автор видит, что именно не загрузилось, и может повторить попытку.
+   */
+  private syncLoadErrorBanner(): void {
+    if (typeof this.root.querySelector !== "function") return;
+    const slot = this.root.querySelector<HTMLElement>("[data-error-slot]");
+    this.loadErrorBanner?.dispose();
+    this.loadErrorBanner = null;
+    if (!slot) return;
+    const code = slot.getAttribute("data-error-code") === "player-launch" ? "player-launch" : "asset-load";
+    this.loadErrorBanner = renderStudioError(slot, code, () => {
+      if (code === "player-launch") {
+        void this.launchCurrentPlayer();
+        return;
+      }
+      const questId = this.state.selectedQuestId;
+      if (questId !== null) void this.selectQuest(questId);
+      else this.render();
+    });
+  }
+
   private boardContext: { readonly projectId: string; readonly questId: string } | null = null;
   private storyHandle: StoryDomHandle | null = null;
   private storyHost: HTMLElement | null = null;
@@ -2361,6 +2395,7 @@ export class StudioApp {
       this.root.innerHTML = this.renderProjects();
     } else {
       this.root.innerHTML = this.renderEditor();
+      this.syncLoadErrorBanner();
     }
 
     if (preservedBoardHost) {
@@ -2422,9 +2457,48 @@ export class StudioApp {
       selectedNodeId: this.state.selectedBoardNodeId,
       ...this.boardCallbacks(projectId, questId)
     });
+    this.mountPresenceIfNeeded(host, projectId, questId);
+  }
+
+  /**
+   * Курсоры коллег (FIN-13): только на живой доске, только для участников проекта.
+   * Права и сессию проверяет серверный presence-модуль на каждом запросе.
+   */
+  private mountPresenceIfNeeded(host: HTMLElement, projectId: string, questId: string): void {
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    if (this.presenceContext?.projectId === projectId && this.presenceContext.questId === questId) return;
+    this.destroyPresence();
+    const client = createPresenceClient({
+      projectId,
+      questId,
+      csrfToken: () => this.api.currentCsrfToken(),
+      onChange: () => this.presenceHandle?.refresh()
+    });
+    this.presenceClient = client;
+    this.presenceContext = { projectId, questId };
+    this.presenceHandle = mountPresence(host, {
+      client,
+      getViewport: () =>
+        this.boardLifecycle.getViewport(projectId, questId) ?? { scale: 1, panX: 0, panY: 0 },
+      pointFromEvent: (event) => {
+        const rect = host.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      }
+    });
+    client.attach();
+  }
+
+  private destroyPresence(): void {
+    this.presenceClient?.leave();
+    this.presenceClient?.stop();
+    this.presenceHandle?.destroy();
+    this.presenceClient = null;
+    this.presenceHandle = null;
+    this.presenceContext = null;
   }
 
   private destroyBoard(): void {
+    this.destroyPresence();
     this.boardLifecycle.destroy();
     this.boardHost = null;
     this.boardContext = null;
@@ -3259,7 +3333,7 @@ export class StudioApp {
 
   private renderStoryView(allowEdit: boolean): string {
     if (this.state.missionLoadError) {
-      return `<div class="empty-workspace"><h1>Сюжет</h1><p>${escapeHtml(this.state.missionLoadError)}</p></div>`;
+      return `<div class="empty-workspace"><h1>Сюжет</h1><p data-error-slot data-error-code="asset-load">${escapeHtml(this.state.missionLoadError)}</p></div>`;
     }
     const mission = this.state.mission;
     if (!mission) {
@@ -3765,7 +3839,7 @@ function playtestPanel(
       ${options.playerUrl
         ? `<p>Player запущен: <a href="${escapeAttr(options.playerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(options.playerUrl)}</a></p>`
         : `<button class="primary" data-action="launch-player" ${options.playerLaunching ? "disabled" : ""}>${options.playerLaunching ? "Запускаем Player…" : "Открыть в Player"}</button>`}
-      ${options.playerError ? `<p class="stale-note">${escapeHtml(options.playerError)}</p>` : ""}
+      ${options.playerError ? `<p class="stale-note" data-error-slot data-error-code="player-launch">${escapeHtml(options.playerError)}</p>` : ""}
       <details class="launch-commands"><summary>Запуск вручную из терминала</summary>
         <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
         <code>macOS/Linux: LH_PLAYTEST_ID=${attrId} npm run dev:player</code>

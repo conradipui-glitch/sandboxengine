@@ -355,6 +355,11 @@ export class ControlApiClient {
     return this.csrfToken !== null;
   }
 
+  /** CSRF-токен для модулей, которые ходят в Control сами (presence, FIN-13). */
+  currentCsrfToken(): string | null {
+    return this.csrfToken;
+  }
+
   async login(username: string, password: string): Promise<ControlAuthView> {
     const body = await this.request<ControlLoginResponse>(
       "POST",
