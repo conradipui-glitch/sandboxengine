@@ -1,0 +1,218 @@
+/*
+ * Библиотека материалов Studio — стили панели (apps/studio/src/materials-panel.ts).
+ *
+ * Правило владельца: текст не обрезается многоточием. Здесь нет и не должно быть
+ * `text-overflow: ellipsis`, `-webkit-line-clamp` и `white-space: nowrap`:
+ * длинные имена файлов и описания переносятся по строкам.
+ */
+
+.materials-panel {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: inherit;
+}
+
+.materials-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.materials-panel h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+/* Статус: смысл передаётся текстом, цвет — только подсказка. */
+.mat-status {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.mat-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 0 0 12px;
+}
+
+.mat-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.mat-file,
+.mat-alt {
+  max-width: 100%;
+}
+
+.mat-upload-submit {
+  padding: 6px 12px;
+}
+
+.mat-upload-submit[disabled] {
+  opacity: 0.6;
+}
+
+/* Ошибка: текст плюс действие, а не только цвет. */
+.mat-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid currentColor;
+  border-left-width: 4px;
+}
+
+.mat-error-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.mat-error-label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.mat-retry {
+  padding: 4px 10px;
+}
+
+.mat-assigned {
+  margin: 0 0 12px;
+}
+
+.mat-assigned-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  list-style: none;
+}
+
+.mat-assigned-item {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.mat-assigned-label {
+  font-weight: 600;
+}
+
+.mat-assigned-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.mat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mat-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 6px;
+}
+
+.mat-preview {
+  flex: 0 0 auto;
+}
+
+/* Миниатюра: вписывается в рамку без искажений, ничего не растягивается. */
+.mat-thumb {
+  display: block;
+  width: 96px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.mat-audio {
+  width: 240px;
+  max-width: 100%;
+}
+
+.mat-no-preview,
+.mat-unusable {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.mat-meta {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.mat-name {
+  margin: 0 0 4px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.mat-type,
+.mat-alt-text,
+.mat-duration {
+  display: block;
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.mat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mat-target-label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mat-target {
+  max-width: 100%;
+}
+
+.mat-use,
+.mat-play {
+  padding: 6px 10px;
+}
+
+/* Видимый фокус для клавиатуры: доступность не зависит от цвета заливки. */
+.materials-panel button:focus-visible,
+.materials-panel input:focus-visible,
+.materials-panel select:focus-visible,
+.materials-panel audio:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
