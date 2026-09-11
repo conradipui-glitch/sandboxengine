@@ -113,3 +113,83 @@ test("M01 mission: hash changes on text edit and on layer move", async () => {
   assert.notEqual(await missionContentHash(layerMove), base);
   assert.equal(await missionContentHash(twoBranchMission()), base);
 });
+
+// --- FACT-2: choice.conditions / choice.effects validation ---
+
+function hasError(errors, prefix) {
+  return errors.some((error) => error.startsWith(prefix));
+}
+
+test("FACT-2: unknown key inside a choice condition is rejected with a field path", () => {
+  const doc = twoBranchMission();
+  doc.story.scenes[0].choices[0].conditions = [{ nope: 1 }];
+  const errors = validateMissionDraft(doc);
+  assert.ok(hasError(errors, "mission.choice_condition_invalid"), JSON.stringify(errors));
+  assert.ok(
+    errors.includes("mission.choice_condition_invalid:depot.c1.conditions[0]"),
+    JSON.stringify(errors)
+  );
+});
+
+test("FACT-2: stale schemaVersion inside a condition is rejected", () => {
+  const doc = twoBranchMission();
+  doc.story.scenes[0].choices[0].conditions = [
+    { schemaVersion: "9.9", type: "resource.atLeast", resourceId: "res", value: 1 }
+  ];
+  assert.ok(hasError(validateMissionDraft(doc), "mission.choice_condition_invalid"));
+});
+
+test("FACT-2: non-integer condition value is rejected", () => {
+  const doc = twoBranchMission();
+  doc.story.scenes[0].choices[0].conditions = [
+    { schemaVersion: "1.0", type: "resource.atLeast", resourceId: "res", value: 1.5 }
+  ];
+  assert.ok(hasError(validateMissionDraft(doc), "mission.choice_condition_invalid"));
+});
+
+test("FACT-2: unknown key inside a choice effect is rejected with a field path", () => {
+  const doc = twoBranchMission();
+  doc.story.scenes[0].choices[0].effects = [{ junk: 1 }];
+  const errors = validateMissionDraft(doc);
+  assert.ok(hasError(errors, "mission.choice_effect_invalid"), JSON.stringify(errors));
+  assert.ok(
+    errors.includes("mission.choice_effect_invalid:depot.c1.effects[0]"),
+    JSON.stringify(errors)
+  );
+});
+
+test("FACT-2: non-integer effect delta is rejected", () => {
+  const doc = twoBranchMission();
+  doc.story.scenes[0].choices[0].effects = [
+    { schemaVersion: "1.0", type: "resource.change", sourceId: "src", resourceId: "res", delta: 1.5 }
+  ];
+  assert.ok(hasError(validateMissionDraft(doc), "mission.choice_effect_invalid"));
+});
+
+test("FACT-2: non-array conditions/effects are rejected", () => {
+  const doc = twoBranchMission();
+  const choice = doc.story.scenes[0].choices[0];
+  choice.conditions = { not: "array" };
+  choice.effects = "nope";
+  const errors = validateMissionDraft(doc);
+  assert.ok(errors.includes("mission.choice_conditions_missing:depot.c1"), JSON.stringify(errors));
+  assert.ok(errors.includes("mission.choice_effects_missing:depot.c1"), JSON.stringify(errors));
+});
+
+test("FACT-2: well-formed conditions and effects still validate clean", () => {
+  const doc = twoBranchMission();
+  const choice = doc.story.scenes[0].choices[0];
+  choice.conditions = [
+    { schemaVersion: "1.0", type: "resource.atLeast", resourceId: "res", value: 5 },
+    {
+      schemaVersion: "1.0",
+      type: "all",
+      conditions: [{ schemaVersion: "1.0", type: "entity.at", entityId: "e1", locationId: "depot" }]
+    }
+  ];
+  choice.effects = [
+    { schemaVersion: "1.0", type: "resource.change", sourceId: "src", resourceId: "res", delta: -1 },
+    { schemaVersion: "1.0", type: "entity.move", sourceId: "src", entityId: "e1", locationId: "depot" }
+  ];
+  assert.deepEqual(validateMissionDraft(doc), []);
+});
