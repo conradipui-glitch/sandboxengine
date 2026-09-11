@@ -371,3 +371,26 @@ contracts 68 · core 75 · runtime 31 · player 29 · ai 48 · control 141 · se
 - `apps/studio/src/app.ts` и `apps/player/app.js` сохраняют собственные копии `escapeHtml`/`isId`/`isTurnPosition`. Для `app.js` вынос **заблокирован тестом** `apps/player/test/fin05-player-turn-race.test.mjs`: он вырезает из исходника все строки импорта и запрещает сам токен `import`, поэтому внешний импорт стражей ломает харнесс (`ReferenceError: isTurnPosition is not defined`). Разблокировка требует правки теста и не делалась.
 - `apps/server/src/control-server.ts` (горячий файл) остаётся с 10 локальными копиями помощников (`readCookie`/`readJsonBody`/`readHeader`/`sendNotFound`/`sendJson`/`isPlainObject`/`hasExactKeys`/`isId`/`isTitle`/`isRevision`).
 - Не слиты осознанно (разная семантика, снабжены комментариями): `result.isRecord` vs строгий plain-record; `isPositiveInteger`/`isNonNegativeInteger` vs `isSafeNonNegativeInteger`; `shortHash` 7 vs 8 символов; три семантики `parseJson` (байты-пакет / сырой SyntaxError / fail-closed `invalid stored JSON`); `parseJsonColumn` vs `playtest-trace.parseJson`; `nextFencingToken` memory vs sqlite; проекции строк операций.
+
+## Фиксы по находкам финального ревью (R-31…R-35), приёмка лично
+
+Ветки (база `9908863`, влиты в `63054b0`):
+- `fix/review-references-null` `d3f24b5` — **R-31**: `hasValidWorldStateReferences` пропускал `null` в `locations`/`resources`, дальше `TypeError` в условиях/эффектах. Единый проход по всем коллекциям с проверкой «элемент — объект».
+- `fix/review-story-duplicate` `f9f4d6a` — **R-32**: дублирование сцены/выбора в Studio теряло `conditions`/`effects` (`[]`), т.е. молчаливую потерю авторской логики. Теперь глубокое копирование (`copyChoicePayload`).
+- `fix/review-control-session-anchor` `62644e5` — **R-34**: идемпотентный повтор `createMissionSession` отдавал чужому участнику сессию владельца. `actorUserId` включён в канонический хеш запроса + вторая линия защиты (сохранённый владелец должен совпасть с вызывающим). **R-33**: сцена резолвится в своём id-пространстве (совпавший id блока больше не «оживляет» чужой scene-якорь); layer/field не сверяются с плоским множеством id.
+- `fix/review-l07-cdp` `2c68e47` — **R-35**: `l07-cdp.mjs` молча выбрасывал шаги `fill`/`key` и всегда выходил 0. Шаги реализованы, неизвестное действие — явная ошибка, код возврата считается по результатам.
+
+Личные мутации на `63054b0` (сборка → красный прогон → откат → зелёный):
+- R-31: 78/76+**2f** → 78/78/0
+- R-32: 254/252+**1f** → 254/253/0 (1 skip)
+- R-34: 162/161+**1f** → 162/162/0 — мутация снимает **обе** линии защиты; при снятии только канонизации тест зелёный, т.е. вторая линия отдельным тестом не покрыта (остаток).
+- R-35: 39/35+**4f** → 39/39/0
+
+Полный прогон на `63054b0`: 11 наборов, **1051 тест, 0 падений**, `tsc -b --force` = 0, `check:boundaries` ok, `docs:check` ok.
+Смок живого контура на `63dd706`: **18/18 PASS** (S13→422, S17→409).
+
+Остатки, которые не закрыты и требуют решения (не выдаются за готовое):
+- Публикация и откат остаются двумя неатомарными транзакциями с разными хранилищами (FIN-01 window) — серверная CAS-проверка указателя перед коммитом не сделана.
+- `l07-cdp` проверяется юнит-прогоном `computeExitCode`, а не сквозным запуском CLI с живым Chrome.
+- Вторая линия защиты R-34 не покрыта отдельным тестом.
+- `app.ts` / `app.js` сохраняют собственные копии помощников (для `app.js` вынос заблокирован его же тестом).
