@@ -45,6 +45,8 @@ export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
   readonly playerLauncher?: PlayerLauncher;
+  /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
+  readonly importBodyLimitBytes?: number;
 }
 
 export interface StudioDevServer {
@@ -64,6 +66,9 @@ function launchPlayerSerialized(launcher: PlayerLauncher, playtestId: string): P
 export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
   const control = new URL(options.controlOrigin);
   if (!isLoopbackHost(control.hostname)) throw new Error("Studio proxy may target loopback Control only in B05-02");
+  const importLimitBytes = Number.isSafeInteger(options.importBodyLimitBytes) && (options.importBodyLimitBytes as number) > 0
+    ? (options.importBodyLimitBytes as number)
+    : STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -112,7 +117,7 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
       }
       if (url.pathname.startsWith("/control/")) {
         if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
-        await proxyControl(request, response, control, url);
+        await proxyControl(request, response, control, url, importLimitBytes);
         return;
       }
       await serveStatic(response, url.pathname);
@@ -153,13 +158,13 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   });
 }
 
-async function proxyControl(request: any, response: any, control: URL, url: URL): Promise<void> {
+async function proxyControl(request: any, response: any, control: URL, url: URL, importLimitBytes: number): Promise<void> {
   const target = new URL(url.pathname + url.search, control);
   const method = String(request.method ?? "GET").toUpperCase();
   if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
   let body: ArrayBuffer | undefined;
   try {
-    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname));
+    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname, importLimitBytes));
   } catch (error) {
     if (error instanceof StudioProxyRequestError) {
       sendJson(response, error.status, { error: { code: error.code } });
@@ -258,23 +263,22 @@ async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_
 
 // Must stay at or above the base64-encoded .lhquest.zip import payload accepted
 // by Control: MAX_LHQUEST_ARCHIVE_BYTES (8 MiB) becomes ceil(bytes / 3) * 4
-// base64 chars plus the JSON envelope and idempotency metadata. Control
-// re-validates the archive; the proxy only forwards it, so this limit must not
-// be smaller than Control's MAX_CONTROL_IMPORT_BODY_CHARS.
-const STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = Math.ceil((8 * 1024 * 1024) / 3) * 4 + 64 * 1024;
+// base64 chars plus the JSON envelope and idempotency metadata
+// (MAX_CONTROL_IMPORT_BODY_CHARS). Control re-validates the archive; the proxy
+// only forwards it, so the default below (64 MiB) is deliberately headroom, not
+// a second, weaker gate: anything Control refuses is still refused there.
+const STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 // Must stay equal to DEFAULT_ASSET_LIMITS.maxInputBytes + 1 from
 // @living-history/assets; Control re-validates, the proxy only forwards.
 const STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES = 20 * 1024 * 1024 + 1;
 
-const STUDIO_PROXY_IMPORT_PATH_PATTERN = /^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/;
-
-function proxyBodyLimit(pathname: string): number {
-  if (STUDIO_PROXY_IMPORT_PATH_PATTERN.test(pathname)) {
-    return STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
-  }
+function proxyBodyLimit(pathname: string, importLimitBytes: number): number {
   if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/assets$/.test(pathname)) {
     return STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES;
+  }
+  if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/.test(pathname)) {
+    return Math.max(STUDIO_PROXY_BODY_LIMIT_BYTES, importLimitBytes);
   }
   return STUDIO_PROXY_BODY_LIMIT_BYTES;
 }
