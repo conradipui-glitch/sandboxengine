@@ -13,6 +13,7 @@ import {
   type DraftView,
   type PlaytestTraceView,
   type PlaytestView,
+  type ProjectAssetView,
   type ProjectView,
   type QuestSummaryView,
   type ValidationView
@@ -107,6 +108,7 @@ import {
 } from "./story-model.js";
 import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
+import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -213,7 +215,7 @@ interface StudioState {
     | { readonly kind: "choice"; readonly sourceId: string; readonly targetId: string; readonly targetKind: "scene" | "ending" }
     | null;
   editorMenuOpen: boolean;
-  utilityPanel: "versions" | "portability" | "settings" | null;
+  utilityPanel: "versions" | "portability" | "settings" | "materials" | null;
   blockModalKind: InspectorBlockKind | null;
   inspectorDraft: { readonly blockId: string; readonly fields: Readonly<Record<string, string | boolean>>; readonly dirty: boolean } | null;
   focusAfterRender: string | null;
@@ -286,6 +288,9 @@ export class StudioApp {
   /** Текущий живой экран проектов (модуль library-view): dispose снимается при смене хоста. */
   private libraryDispose: (() => void) | null = null;
   private libraryHost: HTMLElement | null = null;
+  /** Живая панель материалов: dispose снимается при закрытии панели или смене проекта. */
+  private materialsDispose: (() => void) | null = null;
+  private materialsHost: HTMLElement | null = null;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -599,7 +604,7 @@ export class StudioApp {
     }
     if (action === "open-utility-panel") {
       const panel = target.dataset.panel;
-      if (panel === "versions" || panel === "portability" || panel === "settings") {
+      if (panel === "versions" || panel === "portability" || panel === "settings" || panel === "materials") {
         this.state.utilityPanel = panel;
         this.state.editorMenuOpen = false;
         this.render();
@@ -2537,6 +2542,121 @@ export class StudioApp {
     this.mountStoryEditableIfNeeded();
     this.mountScreenIfNeeded();
     this.mountLibraryIfNeeded();
+    this.mountMaterialsIfNeeded();
+  }
+
+  /**
+   * Панель материалов (список, загрузка, «Использовать в сцене»): живёт в панели утилит
+   * рядом с историей версий. Назначение материала пишется в документ миссии — в экран
+   * выбранной сцены (фон/звук) или слоем (портрет), тем же путём, что и остальное оформление.
+   */
+  private mountMaterialsIfNeeded(): void {
+    if (this.state.view !== "editor" || this.state.utilityPanel !== "materials") return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-materials-host]");
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    if (!host || !projectId || !questId) return;
+    if (this.materialsHost === host) return;
+    if (this.materialsDispose) {
+      this.materialsDispose();
+      this.materialsDispose = null;
+    }
+    this.materialsHost = host;
+    this.materialsDispose = renderMaterialsPanel({
+      root: host,
+      projectId,
+      questId,
+      listMaterials: async () => {
+        const assets = await this.api.listProjectAssets(projectId, { includeUnlisted: true });
+        return assets.map((asset) => this.toMaterialItem(projectId, asset));
+      },
+      uploadMaterial: async (file, meta) => {
+        const manifest = await this.api.uploadProjectAsset(projectId, {
+          assetId: materialAssetIdFromFilename(file.name),
+          filename: file.name,
+          mimeType: file.type.length > 0 ? file.type : "application/octet-stream",
+          ...(meta.altText === undefined ? {} : { altText: meta.altText }),
+          bytes: await file.arrayBuffer()
+        });
+        return {
+          assetId: manifest.id,
+          filename: file.name,
+          mimeType: manifest.mimeType,
+          kind: materialKindOf(manifest.kind),
+          byteLength: file.size,
+          url: this.api.projectAssetUrl(projectId, manifest.id, manifest.hash),
+          thumbnailUrl: materialKindOf(manifest.kind) === "image"
+            ? this.api.projectAssetUrl(projectId, manifest.id, manifest.hash)
+            : null,
+          altText: manifest.altText
+        };
+      },
+      onUseMaterial: (item, target) => void this.useMaterialInScene(item, target),
+      onError: (error) => {
+        this.state.message = describeControlError(error);
+        this.render();
+      }
+    });
+  }
+
+  /** Запись материала в документ миссии: фон/звук экрана или слой-портрет выбранной сцены. */
+  private async useMaterialInScene(item: MaterialItem, target: MaterialTarget): Promise<void> {
+    const nodeId = this.state.selectedStoryNodeId ?? this.state.selectedBoardNodeId;
+    if (!nodeId) {
+      this.state.message = "Сначала выберите сцену на доске или в разделе «Сюжет» — материал встанет в неё.";
+      this.render();
+      return;
+    }
+    const assetRef = assetRefFromMaterial(item);
+    if (target === "character-portrait") {
+      const applied = await this.saveMissionDocument("Портрет добавлен в сцену как слой.", (doc) =>
+        addScreenLayer(doc, nodeId, {
+          id: `${nodeId}-${item.assetId}`,
+          kind: "actor",
+          name: item.filename,
+          asset: assetRef,
+          x: 0.5,
+          y: 0.62,
+          scale: 1,
+          rotation: 0,
+          flipH: false,
+          flipV: false,
+          opacity: 1,
+          z: 10,
+          visible: true,
+          locked: false
+        }));
+      if (!applied) this.state.message = "Не удалось добавить портрет в сцену.";
+      return;
+    }
+    const applied = await this.saveMissionDocument(
+      target === "scene-audio" ? "Звук сцены сохранён." : "Фон сцены сохранён.",
+      (doc) => {
+        const screen = screenForNode(doc, nodeId) ?? defaultScreen();
+        return updateScreen(doc, nodeId, {
+          background: target === "scene-background" ? assetRef : screen.background,
+          inheritBackground: target === "scene-background" ? false : screen.inheritBackground,
+          music: target === "scene-audio" ? assetRef : screen.music
+        });
+      }
+    );
+    if (!applied) this.state.message = "Не удалось назначить материал в сцену.";
+  }
+
+  private toMaterialItem(projectId: string, asset: ProjectAssetView): MaterialItem {
+    const url = this.api.projectAssetUrl(projectId, asset.assetId, asset.hash);
+    const kind = materialKindOf(asset.kind);
+    return {
+      assetId: asset.assetId,
+      filename: asset.filename ?? asset.assetId,
+      mimeType: asset.mimeType,
+      kind,
+      byteLength: asset.byteLength,
+      url,
+      thumbnailUrl: kind === "image" ? url : null,
+      altText: null
+    };
   }
 
   /**
@@ -3388,6 +3508,7 @@ export class StudioApp {
                 <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
                 <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
+                <button data-action="open-utility-panel" data-panel="materials" role="menuitem">Материалы</button>
                 <button data-action="open-utility-panel" data-panel="portability" role="menuitem">Импорт и экспорт</button>
                 <button data-action="open-utility-panel" data-panel="settings" role="menuitem">Настройки проекта и доступа</button>
               </div>` : ``}
@@ -3724,7 +3845,9 @@ export class StudioApp {
       ? "История версий"
       : this.state.utilityPanel === "portability"
         ? "Импорт и экспорт"
-        : "Настройки проекта и доступа";
+        : this.state.utilityPanel === "materials"
+          ? "Материалы"
+          : "Настройки проекта и доступа";
     const body = this.state.utilityPanel === "versions"
       ? renderVersionsPanel(
         this.state.versions,
@@ -3744,8 +3867,10 @@ export class StudioApp {
         ? draft
           ? renderPortabilityPanel(draft, this.state.versions, allowEdit)
           : `<p class="empty-panel">Сначала откройте миссию, чтобы импортировать или экспортировать её.</p>`
-        : `<section class="settings-panel">
-            <h2>Настройки проекта и доступа</h2>
+        : this.state.utilityPanel === "materials"
+          ? `<div class="materials-host" data-materials-host></div>`
+          : `<section class="settings-panel">
+              <h2>Настройки проекта и доступа</h2>
             <p>Права редактирования определяет сервер. Владелец проекта не получает глобальные права Studio автоматически.</p>
             ${renderAccessPanel(this.state.access, project)}
             <details class="diagnostics" open>
@@ -3961,6 +4086,48 @@ function isAcceptanceProject(projectId: string, title: string): boolean {
   if (/^m06-/i.test(projectId)) return true;
   return /приём|прием|acceptance/i.test(title);
 }
+
+/** Материал → ссылка в документе миссии: адрес неизменяем, поэтому хеш обязателен. */
+function assetRefFromMaterial(item: MaterialItem): { readonly assetId: string; readonly hash: string } {
+  const hash = assetHashFromUrl(item.url);
+  return { assetId: item.assetId, hash };
+}
+
+/** Хеш берётся из адреса байтов (?hash=…): другого источника у клиента нет. */
+function assetHashFromUrl(url: string): string {
+  const match = /[?&]hash=([0-9a-f]{64})/i.exec(url);
+  return match?.[1] ?? "";
+}
+
+function materialKindOf(kind: string): MaterialItem["kind"] {
+  if (kind === "image" || kind === "audio") return kind;
+  return "other";
+}
+
+/**
+ * Идентификатор материала из имени файла: латиница/цифры/дефис (сервер принимает только
+ * `[A-Za-z0-9][A-Za-z0-9._:-]{0,199}`), кириллица транслитерируется, к имени добавляется
+ * короткий случайный хвост — повторная загрузка того же файла не перезаписывает прежние байты.
+ */
+function materialAssetIdFromFilename(filename: string): string {
+  const base = filename.replace(/\.[^.]+$/, "");
+  const transliterated = base
+    .replace(/[а-яё]/gi, (letter) => TRANSLITERATION[letter.toLowerCase()] ?? "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 40);
+  const prefix = transliterated.length > 0 ? transliterated : "material";
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-${suffix}`;
+}
+
+const TRANSLITERATION: Readonly<Record<string, string>> = Object.freeze({
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i",
+  й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
+  у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "",
+  э: "e", ю: "yu", я: "ya"
+});
 
 function projectCard(item: ProjectView, questCount: number): string {
   return `<button class="project-card" data-action="open-project" data-project-id="${escapeAttr(item.projectId)}">
