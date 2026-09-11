@@ -74,9 +74,10 @@ test("§2.4 стили: базовый :root объявляет тёмную п�
   // Тёмные значения живут в блоке с селектором `:root,` — он применяется и без data-theme.
   const darkSelector = dark.selector.replace(/\s+/g, " ");
   assert.match(darkSelector, /^:root,/);
-  assert.equal(darkVars.canvas, "#12110f");
-  assert.equal(darkVars.text, "#ded7c8");
-  assert.equal(darkVars.primary, "#c94c36");
+  // Графитовая основа и единственный изумрудный акцент (направление 2026-09-11).
+  assert.equal(darkVars.canvas, "#14171a");
+  assert.equal(darkVars.text, "#e8edf2");
+  assert.equal(darkVars.primary, "#31a473");
 });
 
 test("§2.4 стили: тёмный и светлый наборы объявляют ровно одни и те же имена цветов", () => {

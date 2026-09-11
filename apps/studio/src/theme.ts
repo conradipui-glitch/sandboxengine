@@ -5,8 +5,10 @@
  * Чистый vanilla-TS модуль: без импортов, без DOM-фреймворков, безопасен к «фейковому»
  * root/document (SSR, тесты, node) — при отсутствии настоящего корня операции становятся no-op.
  *
- * Источник палитры — тёмная тема сайта: фон `#12110f`, текст `#ded7c8`, акцент `#c94c36`
- * (ADR docs/decisions/2026-09-10-mission-site-route.md).
+ * Тёмная мастерская — графитовая нейтральная основа с ОДНИМ изумрудным акцентом:
+ * фон `#14171a`, текст `#e8edf2`, акцент `#31a473`. Эталон токенов для новых панелей —
+ * `theme-graphite.ts`; значения ниже обязаны совпадать со `styles.css` (это проверяет
+ * `test/theme-styles.test.mjs`).
  */
 
 export type ThemeName = "dark" | "light";
@@ -125,48 +127,48 @@ export type ThemePalette = Readonly<Record<string, string>>;
 
 /** Тёмная палитра — основная (§2.4). */
 export const DARK_PALETTE: ThemePalette = {
-  "canvas": "#12110f",  // фон сайта
-  "surface": "#1b1a16",  // карточки и панели
-  "surface-soft": "#211f1b",  // вложенные подложки
-  "surface-sunken": "#26241f",  // поля кода и бейджи
-  "surface-code": "#0b0a08",  // терминал/JSON-вывод
-  "text-code": "#cfc8b9",  // текст на surface-code
-  "border": "#33302a",  // тихие границы
-  "border-strong": "#45413a",  // границы кнопок
-  "border-subtle": "#2b2924",  // внутренние разделители
-  "border-accent": "#3f5170",  // граница info
-  "border-success": "#2f4a38",  // граница success
-  "border-danger": "#5c3430",  // граница danger
-  "border-warning": "#5c4526",  // граница warning
+  "canvas": "#14171a",  // графитовый фон
+  "surface": "#1b2024",  // карточки и панели
+  "surface-soft": "#20262b",  // вложенные подложки
+  "surface-sunken": "#262d33",  // поля кода и бейджи
+  "surface-code": "#0e1114",  // терминал/JSON-вывод
+  "text-code": "#c3ccd6",  // текст на surface-code
+  "border": "#313a42",  // тихие границы
+  "border-strong": "#43505c",  // границы кнопок
+  "border-subtle": "#262d34",  // внутренние разделители
+  "border-accent": "#2c4a63",  // граница info
+  "border-success": "#2c4a37",  // граница success
+  "border-danger": "#5a3330",  // граница danger
+  "border-warning": "#5a4526",  // граница warning
   "border-admin": "#4a3b63",  // граница admin
-  "text": "#ded7c8",  // основной текст (сайт)
-  "text-strong": "#f2ecdf",  // заголовки/сильные подписи
-  "text-secondary": "#b3ab9c",  // вторичный текст
-  "muted": "#9c9484",  // приглушённый текст
-  "muted-strong": "#b0a898",  // метки и подписи полей
-  "muted-soft": "#8a8272",  // самый тихий текст
-  "primary": "#c94c36",  // акцент сайта
-  "primary-hover": "#e0644c",  // акцент, наведение
-  "selected": "#2c231f",  // выбранное состояние
-  "on-accent": "#FFFFFF",  // текст на акценте
-  "focus": "#e6a184",  // фокус-контур
+  "text": "#e8edf2",  // основной текст
+  "text-strong": "#f6f9fc",  // заголовки/сильные подписи
+  "text-secondary": "#c0c9d3",  // вторичный текст
+  "muted": "#a9b4bf",  // приглушённый текст
+  "muted-strong": "#b6c1cc",  // метки и подписи полей
+  "muted-soft": "#8b96a1",  // самый тихий текст
+  "primary": "#31a473",  // единственный акцент — изумрудный
+  "primary-hover": "#3cbc88",  // акцент, наведение
+  "selected": "#16302a",  // выбранное состояние (изумрудная подложка)
+  "on-accent": "#0b0d0f",  // текст на акценте: тёмный, контраст 6.2:1
+  "focus": "#3fbf85",  // фокус-контур
   "info": "#74a8e8",  // информационный акцент
   "info-strong": "#a8c8ff",  // info-текст
   "info-bg": "#232a3d",  // info-подложка
-  "success": "#6fbf8a",  // успех
-  "success-strong": "#8fd8a6",  // успех, сильный текст
-  "success-bg": "#1e2f24",  // успех-подложка
+  "success": "#7cc576",  // успех
+  "success-strong": "#97d78f",  // успех, сильный текст
+  "success-bg": "#16251c",  // успех-подложка
   "success-muted": "#8fae9b",  // успех, тихий текст
-  "danger": "#e5705f",  // опасность
-  "danger-strong": "#f0a094",  // danger-текст
-  "danger-bg": "#35211d",  // danger-подложка
+  "danger": "#ef6b62",  // опасность
+  "danger-strong": "#f5a09a",  // danger-текст
+  "danger-bg": "#2a1b1b",  // danger-подложка
   "danger-muted": "#c59b93",  // danger, тихий текст
-  "warning": "#e0a94a",  // предупреждение
+  "warning": "#e0a63c",  // предупреждение
   "warning-strong": "#ecc06a",  // warning-текст
-  "warning-bg": "#3a2f16",  // warning-подложка
-  "node-location": "#5b8bf0",  // узел «локация»
-  "node-character": "#a07cf5",  // узел «персонаж»
-  "node-resource": "#d98a3c",  // узел «ресурс»
+  "warning-bg": "#2a2418",  // warning-подложка
+  "node-location": "#5b8bf0",  // узел «локация» — смысловая метка, не акцент
+  "node-character": "#a07cf5",  // узел «персонаж» — смысловая метка, не акцент
+  "node-resource": "#d98a3c",  // узел «ресурс» — смысловая метка, не акцент
   "overlay": "rgba(0, 0, 0, .62)",  // затемнение модалок
   "shadow-xs": "rgba(0, 0, 0, .30)",  // тень-xs
   "shadow-node": "rgba(0, 0, 0, .35)",  // тень узла
@@ -175,14 +177,14 @@ export const DARK_PALETTE: ThemePalette = {
   "shadow-lg": "rgba(0, 0, 0, .50)",  // тень-lg
   "shadow-xl": "rgba(0, 0, 0, .55)",  // тень-xl
   "shadow-drag": "rgba(0, 0, 0, .60)",  // тень перетаскивания
-  "focus-ring": "rgba(230, 161, 132, .45)",  // фокус, плотный
-  "focus-ring-soft": "rgba(230, 161, 132, .32)",  // фокус, мягкий
-  "focus-blue": "rgba(230, 161, 132, .28)",  // фокус полей
-  "focus-blue-soft": "rgba(230, 161, 132, .34)",  // фокус кнопок
-  "tour-ring": "rgba(230, 161, 132, .55)",  // подсветка тура
-  "board-dot": "rgba(222, 215, 200, .10)",  // сетка доски
-  "board-selected": "rgba(201, 76, 54, .35)",  // кольцо выбранного узла
-  "board-valid": "rgba(201, 76, 54, .60)",  // валидная связь
+  "focus-ring": "rgba(63, 191, 133, .45)",  // фокус, плотный
+  "focus-ring-soft": "rgba(63, 191, 133, .32)",  // фокус, мягкий
+  "focus-blue": "rgba(63, 191, 133, .28)",  // фокус полей
+  "focus-blue-soft": "rgba(63, 191, 133, .34)",  // фокус кнопок
+  "tour-ring": "rgba(63, 191, 133, .55)",  // подсветка тура
+  "board-dot": "rgba(232, 237, 242, .10)",  // сетка доски
+  "board-selected": "rgba(49, 164, 115, .40)",  // кольцо выбранного узла
+  "board-valid": "rgba(49, 164, 115, .60)",  // валидная связь
   "conflict-tint": "rgba(229, 112, 95, .12)",  // тон конфликта
   "presence-shadow": "rgba(0, 0, 0, .50)",  // тень панели присутствия
   "presence-shadow-strong": "rgba(0, 0, 0, .60)",  // тень курсоров

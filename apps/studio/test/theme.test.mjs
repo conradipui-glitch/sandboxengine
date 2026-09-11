@@ -100,10 +100,12 @@ test("§2.4 тема: есть оба набора переменных и он�
   }
 });
 
-test("§2.4 тема: тёмная палитра берёт цвета сайта (#12110f / #ded7c8 / #c94c36)", () => {
-  assert.equal(DARK_PALETTE.canvas, "#12110f");
-  assert.equal(DARK_PALETTE.text, "#ded7c8");
-  assert.equal(DARK_PALETTE.primary, "#c94c36");
+test("§2.4 тема: тёмная палитра — графит и один изумрудный акцент (#14171a / #e8edf2 / #31a473)", () => {
+  // Направление изменено владельцем 2026-09-11: графитовая нейтральная основа и один
+  // изумрудный акцент вместо тёплого фона сайта и оранжево-красного акцента.
+  assert.equal(DARK_PALETTE.canvas, "#14171a");
+  assert.equal(DARK_PALETTE.text, "#e8edf2");
+  assert.equal(DARK_PALETTE.primary, "#31a473");
   // Светлая мастерская остаётся прежней.
   assert.equal(LIGHT_PALETTE.canvas, "#F5F3EE");
   assert.equal(LIGHT_PALETTE.primary, "#176B56");
