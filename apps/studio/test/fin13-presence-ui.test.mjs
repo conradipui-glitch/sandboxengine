@@ -217,10 +217,16 @@ test("FIN-13 UI: бар и курсоры рисуют только реальн
   const options = { viewport: { scale: 1, panX: 0, panY: 0 }, selfConnectionId: "presence_conn_self", focusedUserId: null };
   const empty = emptyPresenceState("project", "quest");
   assert.doesNotMatch(renderPresenceCursors(empty, options), /class="presence-cursor"/);
-  assert.match(renderPresenceBar(empty, options), /Кроме вас никого нет/);
+  // Правка плашки присутствия: без подтверждённого потока (idle) честный
+  // статус «Подключение…» — вместо ложных «На доске: 0» / «Кроме вас никого
+  // нет» (требование владельца, presence-layout.test.mjs).
+  const idleBar = renderPresenceBar(empty, options);
+  assert.match(idleBar, /Подключение к присутствию/);
+  assert.doesNotMatch(idleBar, /На доске:/);
 
   const state = Object.freeze({
     ...empty,
+    streamState: "open",
     participants: Object.freeze([
       participant({ connectionId: "presence_conn_self", userId: "owner", displayName: "owner.user" }),
       participant({
@@ -253,6 +259,7 @@ test("FIN-13 UI: бар и курсоры рисуют только реальн
   // Отрисовка экранирует имена и id: чужие данные не становятся разметкой.
   const hostile = Object.freeze({
     ...empty,
+    streamState: "open",
     participants: Object.freeze([participant({
       connectionId: "presence_conn_d", displayName: '<img src=x onerror="boom()">',
       cursor: Object.freeze({ x: 1, y: 1 }), editing: Object.freeze({ kind: "field", targetId: '" onmouseover="x' })
@@ -535,7 +542,10 @@ test("FIN-13 UI: два клиента Studio видят курсоры друг
         outsider.attach();
         await new Promise((resolve) => setTimeout(resolve, 200));
         assert.deepEqual(outsider.state().participants, []);
-        assert.equal(outsider.state().streamState, "closed");
+        // Правка плашки присутствия: поток чужого проекта отклонён сервером и
+        // клиент честно переподключается — «connecting», а не финальное
+        // «closed» (требование владельца, presence-layout.test.mjs).
+        assert.equal(outsider.state().streamState, "connecting");
 
         // Никаких записей в SQLite от присутствия: драфт и заметки не двигались.
         assert.equal((await store.getDraft("project", "quest")).draftRevision, 0);
