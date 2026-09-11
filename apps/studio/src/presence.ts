@@ -1,4 +1,5 @@
 import type { FetchLike } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
 
 /*
  * FIN-13 (V08) — присутствие реальных участников на доске в Studio.
@@ -589,14 +590,6 @@ function initials(displayName: string): string {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
 }
 
 /* ──────────────────────────────── монтирование ─────────────────────────────── */

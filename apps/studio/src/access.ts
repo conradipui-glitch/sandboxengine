@@ -5,6 +5,7 @@ import {
   type ControlProjectMemberView,
   type ProjectView
 } from "./api.js";
+import { escapeHtml } from "./dom-escape.js";
 
 export type StudioAccessMode = "probing" | "local-owner" | "anonymous" | "authenticated";
 
@@ -215,15 +216,6 @@ function hasMutationTransport(access: StudioAccessState): boolean {
 
 function shortId(value: string): string {
   return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function freeze<const T extends object>(value: T): Readonly<T> {

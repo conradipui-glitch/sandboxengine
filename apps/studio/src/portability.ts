@@ -3,6 +3,8 @@ import {
   type DraftView,
   type QuestExportView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
+import { shortHashWide as shortHash } from "./short-hash.js";
 import type { VersionsReadModel } from "./versions.js";
 
 export function renderPortabilityPanel(
@@ -102,16 +104,4 @@ function readPayloadString(payload: unknown, key: string): string | null {
   if (error === null || typeof error !== "object" || Array.isArray(error)) return null;
   const value = (error as Record<string, unknown>)[key];
   return typeof value === "string" ? value : null;
-}
-
-function shortHash(value: string): string {
-  return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
 }

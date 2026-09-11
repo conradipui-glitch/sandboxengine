@@ -5,7 +5,7 @@ import type {
   MissionSceneScreen,
   MissionScreenLayer
 } from "@living-history/contracts";
-import { replaceScreen, screenForNode, type ScreenMutationResult } from "./screen-model.js";
+import { clone, replaceScreen, screenForNode, validAsset, type ScreenMutationResult } from "./screen-model.js";
 
 /**
  * FIN-05B — ручная композиция экрана.
@@ -56,16 +56,6 @@ export type ScreenLayerPatch = Partial<
     "name" | "visible" | "locked" | "asset" | "x" | "y" | "scale" | "rotation" | "flipH" | "flipV" | "opacity" | "z"
   >
 >;
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function validAsset(ref: AssetRefV2 | null): boolean {
-  return ref === null
-    || (typeof ref.assetId === "string" && ref.assetId.length > 0
-      && typeof ref.hash === "string" && /^[0-9a-f]{64}$/.test(ref.hash));
-}
 
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;

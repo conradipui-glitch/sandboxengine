@@ -4,6 +4,7 @@ import {
   ControlApiError,
   type DraftComparisonView
 } from "./api.js";
+import { escapeHtml } from "./dom-escape.js";
 
 export interface ConflictState {
   readonly changes: readonly DraftChange[];
@@ -73,15 +74,6 @@ function renderComparison(conflict: ConflictState): string {
       ? `<div class="conflict-diff-empty">Authoring objects не изменились.</div>`
       : `<ul>${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>`}
   </div>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function deepFreeze<T>(value: T): T {

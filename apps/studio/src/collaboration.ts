@@ -7,6 +7,7 @@ import {
   type CollaborationThreadView,
   type CollaborationView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
 
 /*
  * FIN-12 (V07) — панель заметок и обсуждений в Studio.
@@ -376,12 +377,4 @@ function renderMessage(
 
 function canTouch(options: CollaborationRenderOptions, authorUserId: string): boolean {
   return options.isOwner || (options.currentUserId !== null && options.currentUserId === authorUserId);
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
 }
