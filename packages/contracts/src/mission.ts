@@ -1,5 +1,7 @@
 import type { Condition } from "./condition.js";
+import { isCondition } from "./condition.js";
 import type { GameplayEffect } from "./gameplay-effect.js";
+import { isGameplayEffect } from "./gameplay-effect.js";
 import type { AssetRefV2 } from "./presentation-v2.js";
 
 export const MISSION_SCHEMA_VERSION = "1.0" as const;
@@ -191,6 +193,27 @@ export function validateMissionDraft(doc: MissionDraft): readonly string[] {
       if (!choice || !isNonEmptyString(choice.id) || !isNonEmptyString(choice.label)) {
         errors.push("mission.choice_invalid");
         continue;
+      }
+      const choicePath = `${scene.id}.${choice.id}`;
+      const conditions: unknown = choice.conditions;
+      const effects: unknown = choice.effects;
+      if (!Array.isArray(conditions)) {
+        errors.push(`mission.choice_conditions_missing:${choicePath}`);
+      } else {
+        conditions.forEach((condition: unknown, index: number) => {
+          if (!isCondition(condition)) {
+            errors.push(`mission.choice_condition_invalid:${choicePath}.conditions[${index}]`);
+          }
+        });
+      }
+      if (!Array.isArray(effects)) {
+        errors.push(`mission.choice_effects_missing:${choicePath}`);
+      } else {
+        effects.forEach((effect: unknown, index: number) => {
+          if (!isGameplayEffect(effect)) {
+            errors.push(`mission.choice_effect_invalid:${choicePath}.effects[${index}]`);
+          }
+        });
       }
       const hasScene = isNonEmptyString(choice.targetSceneId);
       const hasEnding = isNonEmptyString(choice.endingId);
