@@ -256,11 +256,23 @@ async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_
   return result.buffer;
 }
 
+// Must stay at or above the base64-encoded .lhquest.zip import payload accepted
+// by Control: MAX_LHQUEST_ARCHIVE_BYTES (8 MiB) becomes ceil(bytes / 3) * 4
+// base64 chars plus the JSON envelope and idempotency metadata. Control
+// re-validates the archive; the proxy only forwards it, so this limit must not
+// be smaller than Control's MAX_CONTROL_IMPORT_BODY_CHARS.
+const STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = Math.ceil((8 * 1024 * 1024) / 3) * 4 + 64 * 1024;
+
 // Must stay equal to DEFAULT_ASSET_LIMITS.maxInputBytes + 1 from
 // @living-history/assets; Control re-validates, the proxy only forwards.
 const STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES = 20 * 1024 * 1024 + 1;
 
+const STUDIO_PROXY_IMPORT_PATH_PATTERN = /^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/;
+
 function proxyBodyLimit(pathname: string): number {
+  if (STUDIO_PROXY_IMPORT_PATH_PATTERN.test(pathname)) {
+    return STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
+  }
   if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/assets$/.test(pathname)) {
     return STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES;
   }
