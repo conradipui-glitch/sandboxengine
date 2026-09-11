@@ -381,3 +381,210 @@ test("B10.a author job capability grant denies ungranted mutation without consum
   assert.equal(job.toolCallsUsed, 0);
   assert.equal(job.activeTimeMsUsed, 0);
 });
+
+const RESULT_KIND_COVERAGE = [
+  {
+    operationKind: "draft.read",
+    wrongResult: { kind: "proposal_applied", proposalId: "proposal-1", resultRevision: 4, resultContentHash: HASH_D },
+    wrongResultKind: "proposal_applied",
+    rightResult: { kind: "read_blocks", blockCount: 2 }
+  },
+  {
+    operationKind: "proposal.preview",
+    wrongResult: { kind: "read_blocks", blockCount: 2 },
+    wrongResultKind: "read_blocks",
+    rightResult: { kind: "proposal_previewed", proposalId: "proposal-1", stale: false, applyAllowed: true }
+  },
+  {
+    operationKind: "proposal.apply",
+    wrongResult: { kind: "read_blocks", blockCount: 2 },
+    wrongResultKind: "read_blocks",
+    rightResult: { kind: "proposal_applied", proposalId: "proposal-1", resultRevision: 4, resultContentHash: HASH_D }
+  },
+  {
+    operationKind: "docs.reference.read",
+    wrongResult: { kind: "proposal_previewed", proposalId: "proposal-1", stale: false, applyAllowed: true },
+    wrongResultKind: "proposal_previewed",
+    rightResult: {
+      kind: "reference_read",
+      outcome: "completed",
+      connectionId: "conn-1",
+      serverId: "srv-1",
+      version: "1.0.0",
+      targetVersion: null,
+      queryHash: HASH_E,
+      outputJson: "{\"text\":\"ok\"}",
+      outputHash: HASH_C,
+      errorCode: null
+    }
+  }
+];
+
+async function exerciseResultKindMismatch(store) {
+  const created = await store.createJob(createInput({
+    allowedOperations: ["draft.read", "proposal.preview", "proposal.apply", "docs.reference.read"],
+    maxToolCalls: 8,
+    maxActiveTimeMs: 10_000
+  }));
+  assert.equal(created.kind, "created");
+  assert.equal((await store.transitionJob("job-1", { expectedJobVersion: 0, to: "running", atMs: 1001 })).kind, "updated");
+
+  let expectedVersion = 1;
+  let index = 0;
+  for (const entry of RESULT_KIND_COVERAGE) {
+    index += 1;
+    const operationId = `op-${index}`;
+    const requestHash = HASH_A.slice(0, 64 - 2) + String(index).padStart(2, "0");
+    const reserved = await store.reserveOperation("job-1", {
+      expectedJobVersion: expectedVersion,
+      operationId,
+      operationKind: entry.operationKind,
+      baseRevision: 3,
+      requestHash,
+      atMs: 1002 + index
+    });
+    assert.equal(reserved.kind, "reserved", `reserve ${entry.operationKind}`);
+    expectedVersion += 1;
+    const reservedVersion = reserved.job.jobVersion;
+    const reservedToolCalls = reserved.job.toolCallsUsed;
+    const reservedActiveTime = reserved.job.activeTimeMsUsed;
+
+    const rejected = await store.completeOperation("job-1", {
+      operationId,
+      requestHash,
+      result: entry.wrongResult,
+      activeTimeMs: 1,
+      atMs: 2100 + index
+    });
+    assert.deepEqual(rejected, {
+      kind: "result_kind_mismatch",
+      operationKind: entry.operationKind,
+      resultKind: entry.wrongResultKind
+    });
+
+    const untouched = await store.getJob("job-1");
+    assert.equal(untouched.jobVersion, reservedVersion, `job version unchanged after ${entry.operationKind} mismatch`);
+    assert.equal(untouched.toolCallsUsed, reservedToolCalls);
+    assert.equal(untouched.activeTimeMsUsed, reservedActiveTime);
+    assert.equal(untouched.state, "running");
+    const pending = await store.reserveOperation("job-1", {
+      expectedJobVersion: 1,
+      operationId,
+      operationKind: entry.operationKind,
+      baseRevision: 3,
+      requestHash,
+      atMs: 2200 + index
+    });
+    assert.equal(pending.kind, "pending", `operation ${operationId} stays pending`);
+    assert.equal(pending.operation.status, "pending");
+    assert.equal(pending.operation.result, null);
+
+    const accepted = await store.completeOperation("job-1", {
+      operationId,
+      requestHash,
+      result: entry.rightResult,
+      activeTimeMs: 1,
+      atMs: 2300 + index
+    });
+    assert.equal(accepted.kind, "completed", `complete ${entry.operationKind}`);
+    assert.equal(accepted.operation.status, "completed");
+    assert.deepEqual(accepted.operation.result, entry.rightResult);
+    expectedVersion = accepted.job.jobVersion;
+
+    const mismatchedReplay = await store.completeOperation("job-1", {
+      operationId,
+      requestHash,
+      result: entry.wrongResult,
+      activeTimeMs: 1,
+      atMs: 2400 + index
+    });
+    assert.equal(mismatchedReplay.kind, "result_kind_mismatch");
+    assert.equal((await store.getJob("job-1")).jobVersion, expectedVersion);
+  }
+}
+
+test("B10.a Memory AuthorAgentJob rejects completion whose result kind does not match the reserved operation kind", async () => {
+  await exerciseResultKindMismatch(new MemoryAuthorAgentJobStore());
+});
+
+test("B10.a SQLite AuthorAgentJob rejects result kind mismatch without rewriting the durable journal", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lh-b10-agent-job-kind-"));
+  const path = join(root, "control.sqlite");
+  try {
+    let store = new SQLiteAuthorAgentJobStore({ path });
+    assert.equal((await store.createJob(createInput({
+      allowedOperations: ["draft.read", "proposal.preview", "proposal.apply", "docs.reference.read"],
+      maxToolCalls: 8,
+      maxActiveTimeMs: 10_000
+    }))).kind, "created");
+    assert.equal((await store.transitionJob("job-1", { expectedJobVersion: 0, to: "running", atMs: 1001 })).kind, "updated");
+    const reserved = await store.reserveOperation("job-1", {
+      expectedJobVersion: 1,
+      operationId: "read-kind",
+      operationKind: "draft.read",
+      baseRevision: 3,
+      requestHash: HASH_B,
+      atMs: 1002
+    });
+    assert.equal(reserved.kind, "reserved");
+    const rejected = await store.completeOperation("job-1", {
+      operationId: "read-kind",
+      requestHash: HASH_B,
+      result: { kind: "proposal_applied", proposalId: "proposal-1", resultRevision: 4, resultContentHash: HASH_D },
+      activeTimeMs: 7,
+      atMs: 1003
+    });
+    assert.deepEqual(rejected, { kind: "result_kind_mismatch", operationKind: "draft.read", resultKind: "proposal_applied" });
+    store.close();
+
+    store = new SQLiteAuthorAgentJobStore({ path });
+    const reopened = await store.reserveOperation("job-1", {
+      expectedJobVersion: 1,
+      operationId: "read-kind",
+      operationKind: "draft.read",
+      baseRevision: 3,
+      requestHash: HASH_B,
+      atMs: 1004
+    });
+    assert.equal(reopened.kind, "pending");
+    assert.equal(reopened.operation.result, null);
+    assert.equal(reopened.job.jobVersion, 2);
+    assert.equal(reopened.job.activeTimeMsUsed, 0);
+
+    const accepted = await store.completeOperation("job-1", {
+      operationId: "read-kind",
+      requestHash: HASH_B,
+      result: { kind: "read_blocks", blockCount: 4 },
+      activeTimeMs: 7,
+      atMs: 1005
+    });
+    assert.equal(accepted.kind, "completed");
+    assert.equal(accepted.operation.result.kind, "read_blocks");
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("B10.a author job still rejects malformed completion payloads with invalid_request", async () => {
+  const store = new MemoryAuthorAgentJobStore();
+  assert.equal((await store.createJob(createInput({ maxToolCalls: 4 }))).kind, "created");
+  assert.equal((await store.transitionJob("job-1", { expectedJobVersion: 0, to: "running", atMs: 1001 })).kind, "updated");
+  assert.equal((await store.reserveOperation("job-1", {
+    expectedJobVersion: 1,
+    operationId: "op-shape",
+    operationKind: "draft.read",
+    baseRevision: 3,
+    requestHash: HASH_B,
+    atMs: 1002
+  })).kind, "reserved");
+  const malformed = await store.completeOperation("job-1", {
+    operationId: "op-shape",
+    requestHash: HASH_B,
+    result: { kind: "read_blocks", blockCount: -1 },
+    activeTimeMs: 1,
+    atMs: 1003
+  });
+  assert.deepEqual(malformed, { kind: "invalid_request" });
+  assert.equal((await store.getJob("job-1")).jobVersion, 2);
+});
