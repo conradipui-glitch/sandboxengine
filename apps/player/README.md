@@ -11,7 +11,11 @@
 - действие через существующий Core resolver;
 - player-safe resource/time/result projection;
 - Reset как новая session из **того же** frozen playtest;
-- responsive browser surface без client-side gameplay math.
+- responsive browser surface без client-side gameplay math;
+- экраны истории intro/scene/dialogue/choice/ending из pinned mission того же
+  playtest на общем renderer (`presentation-renderer.js`): «Далее»/«Начать» с
+  не-submit навигацией вступлений, листание диалога кликом/тапом и клавишами
+  Enter/Space/стрелки/PageDown, выборы, финал с выходом/повтором.
 
 ## Рекомендуемый путь
 

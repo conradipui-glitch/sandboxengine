@@ -45,10 +45,16 @@ export interface PlayerPresentationProxyOptions {
   readonly assetReader?: PlayerAssetReader;
 }
 
+export interface PlayerStoryOptions {
+  /** Canonical `MissionDraft`-shaped content pinned to the frozen playtest. */
+  readonly mission: JsonValue;
+}
+
 export interface PlayerDevServerOptions {
   readonly runtimeOrigin: string;
   readonly metadata: PlayerSurfaceMetadata;
   readonly presentation?: PlayerPresentationProxyOptions;
+  readonly story?: PlayerStoryOptions;
 }
 
 export interface PlayerDevServer {
@@ -62,6 +68,7 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
   if (!isLoopbackHost(runtime.hostname)) throw new Error("Player proxy may target loopback Runtime only in B05-03");
   const metadata = validateMetadata(options.metadata);
   const presentation = options.presentation ? validatePresentationProxy(options.presentation) : null;
+  const story = options.story ? validateStory(options.story) : null;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -69,6 +76,12 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
       const method = String(request.method ?? "GET").toUpperCase();
       if (url.pathname === "/player-meta.json" && method === "GET") {
         sendJson(response, 200, metadata);
+        return;
+      }
+
+      if (url.pathname === "/player-story.json" && method === "GET") {
+        if (story === null) sendJson(response, 404, { error: { code: "STORY_NOT_FOUND" } });
+        else sendJson(response, 200, { mission: story.mission });
         return;
       }
 
@@ -267,6 +280,11 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
       await sendFile(response, join(playerRoot, name));
       return;
     }
+    // FIN-05: чистая модель экранов истории (скомпилирована вместе с src).
+    if (name === "story-screens.js") {
+      await sendFile(response, join(playerRoot, "dist/src/story-screens.js"));
+      return;
+    }
     sendText(response, 404, "Not found");
     return;
   }
@@ -352,6 +370,27 @@ function validatePresentationProxy(value: PlayerPresentationProxyOptions): Reado
 
 function releaseMatches(value: unknown, expected: PlayerPresentationReleaseIdentity): boolean {
   return isRecord(value) && value.questId === expected.questId && value.releaseId === expected.releaseId;
+}
+
+/**
+ * Fail-closed валидация экранного контента: без `story.entrySceneId`, сцен,
+ * финалов и списка вступлений Player не отдаёт историю, а не изобретает экран.
+ */
+function validateStory(value: PlayerStoryOptions): Readonly<PlayerStoryOptions> {
+  const mission = value.mission;
+  if (!isRecord(mission)) throw new TypeError("invalid Player story mission");
+  const record = mission as Record<string, any>;
+  const story = record.story;
+  const screens = record.screens;
+  if (!isRecord(story) || !isRecord(screens)) {
+    throw new TypeError("invalid Player story mission");
+  }
+  if (typeof story.entrySceneId !== "string" || story.entrySceneId.length === 0
+    || !Array.isArray(story.scenes) || !Array.isArray(story.endings)
+    || !Array.isArray(screens.intros) || !isRecord(screens.scenes) || !isRecord(screens.endings)) {
+    throw new TypeError("invalid Player story mission");
+  }
+  return Object.freeze({ mission: deepFreeze(mission as JsonValue) });
 }
 
 function safeModulePath(value: string): string | null {
