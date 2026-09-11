@@ -32,13 +32,12 @@ const state = {
 };
 const renderer = new BrowserPresentationRenderer(() => state.session);
 const executor = new PresentationExecutor(renderer);
-
 /**
- * Порядок ходов. Пока ход в полёте, новый ввод игнорируется, а ответ
- * применяется только если он принадлежит последнему запросу той же серверной
- * сессии. Устаревший ответ (предыдущий ход/сессия) не трогает состояние.
+ * Гонка хода истории. `inFlight` не даёт двум кликам отправить два POST с одним
+ * baseTurn; `ordinal` монотонно растёт на каждый отправленный запрос, поэтому
+ * поздний ответ устаревшего запроса не может перезаписать более новый ход.
  */
-const storyTurn = { inFlight: false, sequence: 0, subject: null };
+const storyTurnGuard = { inFlight: false, ordinal: 0 };
 
 root.addEventListener("submit", (event) => void onSubmit(event));
 root.addEventListener("click", (event) => void onClick(event));
@@ -116,10 +115,6 @@ async function onStoryKey(event) {
 
 async function applyStory(input) {
   if (!state.story) return;
-  // «Повторить историю» — единственный ввод, разрешённый во время хода: он
-  // аннулирует полёт (resetStorySession), чтобы поздний ответ не вернулся.
-  const restarts = input.kind === "restart";
-  if (storyTurn.inFlight && !restarts) return;
   const result = storyScreensInput(state.story.screens, state.story.mission, input);
   if (!result.handled) return;
   // Ход не применяется локально: позицию назначает ответ сервера.
@@ -134,24 +129,35 @@ async function applyStory(input) {
 }
 
 /**
- * Отправляет ход на сервер и переходит ровно по его ответу. Пока ход в полёте,
- * повторная отправка невозможна; устаревший ответ (другой запрос/сессия)
- * отбрасывается и не откатывает уже применённое состояние.
+ * Отправляет ход на сервер и переходит ровно по его ответу. Недоступный выбор
+ * и недоступный сервер оставляют позицию неизменной с понятным сообщением.
+ *
+ * Пока ход в полёте, повторный клик не отправляется (иначе два POST с одним
+ * baseTurn: поздний 409 откатил бы уже применённый ход). Ответ устаревшего
+ * запроса (ordinal меньше текущего) игнорируется целиком.
  */
 async function commitStoryTurn(turnRequest) {
-  const story = state.story;
-  if (!story || storyTurn.inFlight) return;
-  const base = story.screens;
+  if (!state.story) return;
+  if (storyTurnGuard.inFlight) return;
+  storyTurnGuard.inFlight = true;
+  try {
+    await runStoryTurn(turnRequest);
+  } finally {
+    storyTurnGuard.inFlight = false;
+  }
+}
+
+async function runStoryTurn(turnRequest) {
+  if (!state.story) return;
+  const base = state.story.screens;
+  const ordinal = ++storyTurnGuard.ordinal;
+  // Привязка к серверной сессии: ответ, пришедший уже после смены сессии,
+  // не применяется к новой — иначе ход чужой/старой сессии перепишет позицию.
   const sessionId = storySessionId();
-  const sequence = storyTurn.sequence + 1;
-  storyTurn.sequence = sequence;
-  storyTurn.inFlight = true;
-  storyTurn.subject = Object.freeze({ sequence, sessionId });
   state.message = "Сервер применяет ход…";
   render();
 
-  let resolution = null;
-  let superseded = false;
+  let resolution;
   try {
     const response = await fetch("/player-turn.json", {
       method: "POST",
@@ -164,71 +170,76 @@ async function commitStoryTurn(turnRequest) {
       })
     });
     const body = await response.json().catch(() => null);
-    if (!isCurrentStoryTurn(sequence, sessionId)) {
-      // Ответ предыдущего хода/сессии: применять его нельзя.
-      superseded = true;
-    } else {
-      const position = readTurnPosition(body);
-      if (response.ok && position !== null) {
-        // Позиция берётся только из типизированного ответа сервера.
-        resolution = storyScreensTurnApplied(base, position);
-        if (resolution.ok) {
-          story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: resolution.state.turns });
-        }
+    // Поздний ответ запроса, который уже устарел: не трогаем более новую позицию.
+    if (ordinal !== storyTurnGuard.ordinal || storySessionId() !== sessionId) return;
+    const position = body?.state?.position ?? null;
+    if (response.ok) {
+      if (isTurnPosition(position)) {
+        resolution = storyScreensTurnApplied(base, {
+          turn: position.turn,
+          sceneId: position.sceneId,
+          endingId: position.endingId
+        });
+        state.story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: position.turn });
       } else {
+        // Ответ 200 без пригодной позиции — честный отказ, а не «успех» с чужими полями.
         resolution = storyScreensTurnRejected(base, {
           network: false,
           status: response.status,
-          code: response.ok ? "INVALID_TURN_REPLY" : (typeof body?.error?.code === "string" ? body.error.code : null)
+          code: "TURN_POSITION_INVALID"
+        });
+        resolution = Object.freeze({
+          ...resolution,
+          message: "Сервер вернул ход без корректной позиции: позиция не изменена."
         });
       }
+    } else if (response.status === 409 && body?.error?.code === "TURN_CONFLICT") {
+      // Ход устарел: сервер уже ушёл вперёд. Применённую позицию НЕ откатываем —
+      // добираем авторитетное состояние хода через GET.
+      resolution = await syncStoryTurnFromServer(base);
+    } else {
+      resolution = storyScreensTurnRejected(base, {
+        network: false,
+        status: response.status,
+        code: typeof body?.error?.code === "string" ? body.error.code : null
+      });
     }
   } catch {
-    if (isCurrentStoryTurn(sequence, sessionId)) {
-      resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
-    } else {
-      superseded = true;
-    }
-  } finally {
-    if (storyTurn.sequence === sequence) {
-      storyTurn.inFlight = false;
-      storyTurn.subject = null;
-    }
+    resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
   }
 
-  if (superseded) {
-    state.message = "Устаревший ответ сервера проигнорирован: позиция не изменена.";
-    render();
-    return;
-  }
-  if (resolution === null) return;
-  story.screens = resolution.state;
+  if (ordinal !== storyTurnGuard.ordinal || storySessionId() !== sessionId) return;
+  state.story.screens = resolution.state;
   state.message = resolution.message;
   render();
   await renderStoryScreen();
 }
 
-/** Ход всё ещё последний и принадлежит той же серверной сессии. */
-function isCurrentStoryTurn(sequence, sessionId) {
-  if (!storyTurn.inFlight || storyTurn.subject === null) return false;
-  if (storyTurn.sequence !== sequence || storyTurn.subject.sessionId !== sessionId) return false;
-  if (!state.story) return false;
-  return state.storySessionId === sessionId;
-}
-
 /**
- * Разбор позиции из ответа сервера: недоверенный вход принимается только с
- * целым ходом и ID-подобными sceneId/endingId (типы проверяет
- * storyScreensTurnApplied). Мусор отклоняется целиком и никогда не попадает
- * в состояние или innerHTML.
+ * Конфликт устаревшего baseTurn: серверный ход уже случился. Клиент не откатывает
+ * свою позицию, а синхронизируется с авторитетным состоянием сессии хода (GET),
+ * иначе следующий ход снова ушёл бы с устаревшим baseTurn и застрял навсегда.
  */
-function readTurnPosition(body) {
-  if (body === null || typeof body !== "object") return null;
-  const turnState = body.state;
-  if (turnState === null || typeof turnState !== "object") return null;
-  const position = turnState.position;
-  if (position === null || typeof position !== "object") return null;
-  return position;
+async function syncStoryTurnFromServer(base) {
+  try {
+    const response = await fetch(`/player-turn.json?sessionId=${encodeURIComponent(storySessionId())}`, {
+      headers: { accept: "application/json" }
+    });
+    const body = await response.json().catch(() => null);
+    const position = body?.state?.position ?? null;
+    if (response.ok && isTurnPosition(position)) {
+      const synced = storyScreensTurnApplied(base, {
+        turn: position.turn,
+        sceneId: position.sceneId,
+        endingId: position.endingId
+      });
+      return Object.freeze({
+        ...synced,
+        message: `Ход синхронизирован с сервером (ход ${position.turn}); позиция не откатывалась.`
+      });
+    }
+  } catch { /* деградация ниже: позиция остаётся, экран получает понятное сообщение */ }
+  return storyScreensTurnRejected(base, { network: false, status: 409, code: "TURN_CONFLICT" });
 }
 
 async function renderStoryScreen() {
@@ -658,10 +669,10 @@ function storySessionId() {
 }
 
 function resetStorySession() {
-  // Новый предмет хода: ответы по старой сессии становятся устаревшими.
-  storyTurn.sequence += 1;
-  storyTurn.inFlight = false;
-  storyTurn.subject = null;
+  // Смена сессии аннулирует любой ход в полёте: поздний ответ старой сессии
+  // не должен вернуться и переписать позицию новой.
+  storyTurnGuard.ordinal += 1;
+  storyTurnGuard.inFlight = false;
   state.storySessionId = null;
   try { sessionStorage.removeItem(STORY_SESSION_STORAGE_KEY); } catch { /* no-op */ }
 }
@@ -711,6 +722,21 @@ function formatSeconds(value) {
   const minutes = Math.floor(value / 60);
   const seconds = value % 60;
   return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+}
+
+function isId(value) {
+  return typeof value === "string" && ID_PATTERN.test(value);
+}
+
+/**
+ * Валидация позиции из ответа хода. Ответ — недоверенный ввод: без неё любое
+ * поле сервера (включая `turn`) уехало бы прямо в разметку экрана.
+ */
+function isTurnPosition(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!Number.isSafeInteger(value.turn) || value.turn < 0) return false;
+  if (!isId(value.sceneId)) return false;
+  return value.endingId === null || isId(value.endingId);
 }
 
 function isMetadata(value) {

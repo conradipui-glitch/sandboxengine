@@ -1,419 +1,327 @@
-// FIN-05 (Player): гонки хода истории и XSS-сток ответа сервера.
+// FIN-05 ход (Player): гонка хода истории и валидация ответа.
 //
-// Тест выполняет НАСТОЯЩИЙ apps/player/app.js: исходник читается с диска,
-// импорты абсолютных путей Player переписываются на реальные dist-модули
-// (story-screens.js) и минимальные стабы, после чего модуль поднимается в
-// DOM-шиме поверх управляемого fetch. Поэтому любая правка app.js меняет
-// поведение этих тестов (см. отчёт: мутации guard/валидации/экранирования).
-//
-// Проверяется:
-//  (а) повторный клик во время полёта не отправляет и не применяет второй ход;
-//  (б) поздний отказ не откатывает уже применённый ход, клиент остаётся
-//      синхронным с сервером и следующий клик работает;
-//  (в) вредоносная строка из ответа сервера не становится разметкой в DOM.
+// Характеризующий набор: он исполняет НАСТОЯЩИЙ apps/player/app.js в
+// минимальном DOM-шиме (imports браузерных модулей подменены, всё остальное —
+// код из файла) и упирается в два дефекта:
+//   1) onClick story-choice → commitStoryTurn без блокировки: два клика дают
+//      два POST с одним baseTurn, поздний 409 откатывает уже применённый ход
+//      и клиент застревает навсегда (baseTurn больше не двигается);
+//   2) ответ хода не валидировался, и position.turn уезжал в innerHTML без
+//      escapeHtml.
+// Тест красный, если убрать in-flight блокировку, ordinal-проверку,
+// синхронизацию по GET при TURN_CONFLICT, валидацию позиции или escapeHtml.
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import {
   createStoryScreens,
-  isStoryScreensTurnReply,
+  isSelfActivatingControl,
+  storyScreensInput,
+  storyScreensKeyInput,
   storyScreensMission,
   storyScreensTurnApplied,
-  storyScreensTurnFailureMessage
+  storyScreensTurnRejected,
+  storyScreensView
 } from "../dist/src/story-screens.js";
 
-const APP_PATH = fileURLToPath(new URL("../app.js", import.meta.url));
-const STORY_SCREENS_DIST = fileURLToPath(new URL("../dist/src/story-screens.js", import.meta.url));
-const PRESENTATION_RENDERER = fileURLToPath(new URL("../presentation-renderer.js", import.meta.url));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const HOSTILE = "<img src=x onerror=alert(1)>";
-const HOSTILE_SCRIPT = "<script>alert(1)</script>";
+function mission() {
+  return storyScreensMission({
+    story: {
+      entrySceneId: "start",
+      scenes: [
+        { id: "start", title: "Начало", text: "", dialogue: [], choices: [{ id: "go", label: "Идти", targetSceneId: "painted" }] },
+        { id: "painted", title: "Готово", text: "", dialogue: [], choices: [] }
+      ],
+      endings: [{ id: "win", title: "Победа", text: "" }]
+    },
+    screens: { intros: [], scenes: {}, endings: {} }
+  });
+}
 
-const METADATA = Object.freeze({
+function jsonResponse(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+function positionBody(server) {
+  return {
+    state: {
+      sessionId: "player-story-session",
+      position: {
+        turn: server.turn,
+        sceneId: server.sceneId,
+        endingId: server.endingId,
+        terminal: server.endingId !== null,
+        target: null
+      },
+      options: [],
+      world: null
+    }
+  };
+}
+
+/** Фейковый сервер хода: тот же контракт, что у /player-turn.json. */
+function createTurnServer() {
+  const server = {
+    turn: 0,
+    sceneId: "start",
+    endingId: null,
+    posts: [],
+    gets: 0,
+    postLatency: () => 5,
+    getFails: false,
+  };
+  server.handle = async (rawUrl, init) => {
+    const target = String(rawUrl);
+    const method = String(init?.method ?? "GET").toUpperCase();
+    if (target.startsWith("/player-turn.json") && method === "POST") {
+      const body = JSON.parse(String(init.body));
+      server.posts.push(body);
+      const index = server.posts.length;
+      await delay(server.postLatency(index));
+      if (server.reply !== undefined) return server.reply(server, body, index);
+      if (server.conflictFirst && index === 1) {
+        return jsonResponse(409, { error: { code: "TURN_CONFLICT", currentTurn: server.turn } });
+      }
+      if (body.baseTurn !== server.turn) {
+        return jsonResponse(409, { error: { code: "TURN_CONFLICT", currentTurn: server.turn } });
+      }
+      server.turn += 1;
+      server.sceneId = "painted";
+      return jsonResponse(200, positionBody(server));
+    }
+    if (target.startsWith("/player-turn.json") && method === "GET") {
+      server.gets += 1;
+      await delay(2);
+      if (server.getFails) return jsonResponse(503, { error: { code: "RUNTIME_UNAVAILABLE" } });
+      return jsonResponse(200, positionBody(server));
+    }
+    if (target.startsWith("/player-meta.json")) return jsonResponse(404, {});
+    if (target.startsWith("/player-story.json")) return jsonResponse(404, {});
+    throw new Error(`unexpected fetch: ${method} ${target}`);
+  };
+  return server;
+}
+
+/** Загружает реальный app.js в vm-контекст с заглушками браузера. */
+async function loadPlayerApp(server) {
+  const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
+  const stripped = source.replace(/import[\s\S]*?from\s+"[^"]+";\s*/g, "");
+  assert.ok(!/\bimport\b/.test(stripped), "imports браузерных модулей должны быть сняты шимом");
+
+  class HTMLElement {}
+  class Element {}
+  class HTMLFormElement {}
+  class PlayerClientError extends Error {}
+  class RuntimePlayerClient { constructor() {} }
+  class PresentationExecutor { constructor() {} cancelActive() {} }
+  class BrowserPresentationRenderer {
+    constructor() {} dispose() {} prepareTargetFrame() {} renderStoryScreens() {} applyFrame() {} restore() {}
+  }
+
+  const root = new HTMLElement();
+  root.innerHTML = "";
+  root.addEventListener = () => {};
+
+  const storage = new Map();
+  const sandbox = {
+    HTMLElement, Element, HTMLFormElement,
+    PlayerClientError, RuntimePlayerClient, PresentationExecutor, BrowserPresentationRenderer,
+    createStoryScreens, isSelfActivatingControl, storyScreensInput, storyScreensKeyInput,
+    storyScreensMission, storyScreensTurnApplied, storyScreensTurnRejected, storyScreensView,
+    document: { querySelector: (selector) => (selector === "#app" ? root : null), addEventListener: () => {} },
+    window: { location: { origin: "http://player.test" }, addEventListener: () => {} },
+    sessionStorage: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => { storage.set(key, String(value)); },
+      removeItem: (key) => { storage.delete(key); }
+    },
+    crypto: globalThis.crypto,
+    setTimeout, clearTimeout,
+    fetch: (url, init) => server.handle(url, init)
+  };
+  sandbox.globalThis = sandbox;
+
+  const transformed = `${stripped}\nglobalThis.__playerApp = { state, storyTurnGuard, commitStoryTurn, runStoryTurn, syncStoryTurnFromServer, applyStory, onClick, render, renderStoryShell, isTurnPosition, isId, escapeHtml, root };\n`;
+  vm.createContext(sandbox);
+  vm.runInContext(transformed, sandbox, { filename: "app.js" });
+  await delay(5); // дать start() упасть на заглушке metadata и успокоиться
+
+  const app = sandbox.__playerApp;
+  assert.ok(app, "app.js должен быть исполнен в контексте");
+  return app;
+}
+
+const META = Object.freeze({
   templateId: "minimal-paint",
   playtestId: "playtest-race",
-  questTitle: "Гонки хода",
+  questTitle: "Квест",
   locationTitle: "Мастерская",
-  sceneText: "Текст.",
-  resourceId: "paint",
+  sceneText: "текст",
+  resourceId: "blue_paint",
   resourceTitle: "Краска",
   resourceUnit: "portion",
   actionId: "paint",
   actionTitle: "Рисовать"
 });
 
-function mission() {
-  return {
-    schemaVersion: "1.0",
-    projectId: "project",
-    questId: "quest",
-    contentRevision: 1,
-    contentHash: "c".repeat(64),
-    listing: {
-      title: "Гонки хода",
-      slug: "player-race",
-      summary: "",
-      coverAssetId: null,
-      period: "",
-      place: "",
-      playerRole: "",
-      estimatedMinutes: 5,
-      supportedModes: ["choice"]
-    },
-    story: {
-      entrySceneId: "start",
-      scenes: [
-        {
-          id: "start",
-          title: "Начало",
-          text: "",
-          dialogue: [],
-          choices: [{ id: "go-deep", label: "Глубже", targetSceneId: "deep", endingId: null, conditions: [], effects: [] }]
-        },
-        {
-          id: "deep",
-          title: "Глубина",
-          text: "",
-          dialogue: [],
-          choices: [{ id: "go-mid", label: "Ещё", targetSceneId: "mid", endingId: null, conditions: [], effects: [] }]
-        },
-        {
-          id: "mid",
-          title: "Середина",
-          text: "",
-          dialogue: [],
-          choices: [{ id: "go-end", label: "Финал", targetSceneId: null, endingId: "win", conditions: [], effects: [] }]
-        }
-      ],
-      endings: [{ id: "win", title: "Победа", text: "" }]
-    },
-    screens: { intros: [], scenes: {}, endings: {} },
-    defaults: { background: null, theme: "", animationPreset: "fade" }
+function installStory(app) {
+  app.state.meta = META;
+  app.state.session = {
+    templateId: "minimal-paint",
+    sessionId: "player-session",
+    credential: "P".repeat(32),
+    lastOperationId: null,
+    playerView: { revision: 0, resources: [], clock: { elapsedSeconds: 0 }, release: { releaseId: "release-1" } }
   };
+  app.state.phase = "ready";
+  app.state.story = { mission: mission(), screens: createStoryScreens(mission()), view: null, lastTurn: null, exited: false };
 }
 
-// --- Минимальный DOM-шим -------------------------------------------------
+test("FIN-05 гонка: второй клик не отправляет второй POST и не откатывает ход", async () => {
+  const server = createTurnServer();
+  server.postLatency = (n) => (n === 1 ? 30 : 5); // первый клик медленный, второй быстрый
+  const app = await loadPlayerApp(server);
+  installStory(app);
 
-class ShimElement {
-  constructor(tag = "DIV") {
-    this.tagName = tag;
-    this.dataset = {};
-    this.closestTarget = null;
-    this.innerHTML = "";
-    this.textContent = "";
-  }
-  closest() { return this.closestTarget; }
-  addEventListener() { /* listeners are captured by the shim root */ }
-  querySelector() { return null; }
-  setAttribute() { /* no-op */ }
-  appendChild() { /* no-op */ }
-  remove() { /* no-op */ }
-}
-class ShimHTMLElement extends ShimElement {}
-class ShimFormElement extends ShimHTMLElement {}
+  const before = app.state.story.screens;
+  const first = app.commitStoryTurn({ choiceId: "go", baseTurn: 0 });
+  const second = app.commitStoryTurn({ choiceId: "go", baseTurn: 0 });
+  await Promise.all([first, second]);
 
-function installGlobals({ root, listeners, turnRequests }) {
-  const storage = new Map();
-  globalThis.Element = ShimElement;
-  globalThis.HTMLElement = ShimHTMLElement;
-  globalThis.HTMLFormElement = ShimFormElement;
-  globalThis.document = {
-    querySelector(selector) { return selector === "#app" ? root : null; },
-    createElement(tag) { return new ShimElement(String(tag).toUpperCase()); },
-    createDocumentFragment() { return new ShimElement("#fragment"); }
-  };
-  globalThis.window = {
-    location: { origin: "http://player.test" },
-    addEventListener(type, handler) { (listeners[type] ??= []).push(handler); }
-  };
-  globalThis.sessionStorage = {
-    getItem(key) { return storage.has(key) ? storage.get(key) : null; },
-    setItem(key, value) { storage.set(key, String(value)); },
-    removeItem(key) { storage.delete(key); }
-  };
-  globalThis.fetch = async (input, init = {}) => {
-    const url = String(typeof input === "string" ? input : input?.url ?? input);
-    const method = String(init.method ?? "GET").toUpperCase();
-    if (url.endsWith("/player-meta.json")) return okJson(200, METADATA);
-    if (url.endsWith("/player-story.json")) return okJson(200, { mission: mission() });
-    if (url.endsWith("/player-turn.json") && method === "POST") {
-      const record = { body: JSON.parse(String(init.body ?? "{}")), resolve: null, reject: null };
-      record.promise = new Promise((resolve, reject) => { record.resolve = resolve; record.reject = reject; });
-      turnRequests.push(record);
-      return record.promise;
+  assert.equal(server.posts.length, 1, "два клика не дают двух POST с одним baseTurn");
+  assert.equal(app.storyTurnGuard.inFlight, false, "блокировка снимается после ответа");
+  assert.equal(app.state.story.screens.turns, 1);
+  assert.equal(app.state.story.screens.sceneId, "painted", "применённый ход не откатывается");
+  assert.notEqual(app.state.story.screens, before);
+  assert.equal(app.state.story.lastTurn.turn, 1);
+});
+
+test("FIN-05 гонка: поздний ответ устаревшего ordinal игнорируется", async () => {
+  const server = createTurnServer();
+  // Лок делает перекрытие недопустимым через клики; ordinal — страж порядка
+  // для уже отправленного запроса, чей ответ приходит позже нового.
+  server.reply = async (_server, body, index) => {
+    if (index === 1) {
+      await delay(40); // старый запрос отвечает последним
+      return jsonResponse(200, { state: { position: { turn: 5, sceneId: "painted", endingId: null } } });
     }
-    throw new Error(`unexpected fetch ${method} ${url}`);
+    await delay(3);
+    return jsonResponse(200, { state: { position: { turn: 9, sceneId: "start", endingId: null } } });
   };
-}
+  const app = await loadPlayerApp(server);
+  installStory(app);
 
-function okJson(status, body) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) };
-}
+  await Promise.all([
+    app.runStoryTurn({ choiceId: "go", baseTurn: 0 }),
+    app.runStoryTurn({ choiceId: "go", baseTurn: 0 })
+  ]);
 
-// --- Загрузка настоящего app.js ------------------------------------------
+  assert.equal(server.posts.length, 2);
+  assert.equal(app.state.story.screens.turns, 9, "старый ответ не перезаписывает более новый ход");
+  assert.equal(app.state.story.screens.sceneId, "start");
+});
 
-const CLIENT_STUB = `
-export class PlayerClientError extends Error {
-  constructor(status, code) { super(String(code)); this.status = status; this.code = code; }
-}
-export class RuntimePlayerClient {
-  constructor(baseUrl) { this.baseUrl = String(baseUrl); }
-  async createSession(templateId) {
-    const sessionId = "player-race-session-1";
-    return Object.freeze({
-      templateId,
-      sessionId,
-      credential: "C".repeat(32),
-      presentationFrame: null,
-      lastOperationId: null,
-      playerView: Object.freeze({
-        sessionId,
-        revision: 0,
-        resources: [],
-        clock: Object.freeze({ elapsedSeconds: 0 }),
-        release: Object.freeze({ releaseId: "release-race" })
-      })
-    });
+test("FIN-05 гонка: TURN_CONFLICT синхронизирует через GET, а не откатывает позицию", async () => {
+  const server = createTurnServer();
+  const app = await loadPlayerApp(server);
+  installStory(app);
+  // Клиент уже применил ход 2 (позиция не должна откатиться к 0/2), сервер ушёл на 3.
+  app.state.story.screens = storyScreensTurnApplied(createStoryScreens(mission()), {
+    turn: 2, sceneId: "painted", endingId: null
+  }).state;
+  server.turn = 3;
+  server.sceneId = "start";
+
+  await app.commitStoryTurn({ choiceId: "go", baseTurn: 2 });
+
+  assert.equal(server.posts.length, 1);
+  assert.equal(server.gets, 1, "конфликт добирает авторитетное состояние через GET");
+  assert.equal(app.state.story.screens.turns, 3, "позиция синхронизирована, а не откачена");
+  assert.equal(app.state.story.screens.sceneId, "start");
+  assert.match(app.state.message, /синхронизирован/i);
+
+  // Главное: клиент не застревает — следующий ход уже уходит с актуальным baseTurn.
+  await app.commitStoryTurn({ choiceId: "go", baseTurn: app.state.story.screens.turns });
+  assert.equal(server.posts.length, 2);
+  assert.equal(app.state.story.screens.turns, 4);
+});
+
+test("FIN-05 гонка: конфликт без доступного GET оставляет позицию и сообщает об этом", async () => {
+  const server = createTurnServer();
+  server.getFails = true;
+  const app = await loadPlayerApp(server);
+  installStory(app);
+  server.turn = 1; // сервер ушёл вперёд, клиент на 0
+
+  await app.commitStoryTurn({ choiceId: "go", baseTurn: 0 });
+
+  assert.equal(server.gets, 1);
+  assert.equal(app.state.story.screens.turns, 0, "позиция не меняется, ход не выдумывается");
+  assert.match(app.state.message, /устарел/i);
+});
+
+test("FIN-05 XSS: позиция из ответа валидируется, иначе честный отказ", async () => {
+  const server = createTurnServer();
+  const app = await loadPlayerApp(server);
+  installStory(app);
+  const hostile = [
+    { turn: "<img src=x onerror=alert(1)>", sceneId: "start", endingId: null },
+    { turn: -1, sceneId: "start", endingId: null },
+    { turn: 1.5, sceneId: "start", endingId: null },
+    { turn: 1, sceneId: "<script>alert(1)</script>", endingId: null },
+    { turn: 1, sceneId: 42, endingId: null },
+    { turn: 1, sceneId: "start", endingId: "" },
+    { turn: 1, sceneId: "start", endingId: "<img src=x>" },
+    { turn: 1 },
+    null
+  ];
+  for (const position of hostile) {
+    assert.equal(app.isTurnPosition(position), false, `недоверенная позиция: ${JSON.stringify(position)}`);
   }
-  async resume() { throw new Error("resume is not used by this harness"); }
-  async reset(session) { return this.createSession(session.templateId); }
-  async paint() { throw new Error("paint is not used by this harness"); }
-}
-`;
+  assert.equal(app.isTurnPosition({ turn: 0, sceneId: "start", endingId: null }), true);
+  assert.equal(app.isTurnPosition({ turn: 7, sceneId: "painted", endingId: "win" }), true);
 
-const EXECUTOR_STUB = `
-export class PresentationExecutor {
-  constructor(renderer) { this.renderer = renderer; }
-  cancelActive() {}
-  skipActive() {}
-  async present() { return { outcome: "recovered", currentFrame: null }; }
-  async restore(frame) { return { outcome: "recovered", currentFrame: frame }; }
-}
-`;
+  server.reply = async () => jsonResponse(200, { state: { position: { turn: "<img src=x onerror=alert(1)>", sceneId: "start", endingId: null } } });
+  await app.commitStoryTurn({ choiceId: "go", baseTurn: 0 });
 
-async function loadPlayer(t) {
-  const directory = await mkdtemp(join(tmpdir(), "lh-player-race-"));
-  if (t) t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 }));
-
-  const clientPath = join(directory, "client-stub.mjs");
-  const executorPath = join(directory, "executor-stub.mjs");
-  await writeFile(clientPath, CLIENT_STUB, "utf8");
-  await writeFile(executorPath, EXECUTOR_STUB, "utf8");
-
-  const source = await readFile(APP_PATH, "utf8");
-  const rewritten = source
-    .replace(/"\/player-lib\/client\.js"/, JSON.stringify(pathToFileURL(clientPath).href))
-    .replace(/"\/player-lib\/presentation-executor\.js"/, JSON.stringify(pathToFileURL(executorPath).href))
-    .replace(/"\/player-assets\/presentation-renderer\.js"/, JSON.stringify(pathToFileURL(PRESENTATION_RENDERER).href))
-    .replace(/"\/player-assets\/story-screens\.js"/, JSON.stringify(pathToFileURL(STORY_SCREENS_DIST).href));
-  assert.equal(rewritten.includes("/player-lib/client.js"), false, "импорты app.js переписаны на реальные модули и стабы");
-  assert.equal(rewritten.includes("story-screens.js\""), true, "модель экранов подключена из dist");
-
-  const entryPath = join(directory, "app-under-test.mjs");
-  await writeFile(entryPath, rewritten, "utf8");
-
-  const root = new ShimHTMLElement("MAIN");
-  const listeners = {};
-  const turnRequests = [];
-  root.addEventListener = (type, handler) => { (listeners[type] ??= []).push(handler); };
-  installGlobals({ root, listeners, turnRequests });
-
-  await import(`${pathToFileURL(entryPath).href}?instance=${Math.random()}`);
-  await settle(20);
-  assert.match(root.innerHTML, /Ходы:/, "история загружена и отрисована");
-
-  return {
-    root,
-    turnRequests,
-    async settle(times = 20) { await settle(times); },
-    click(action, data = {}) {
-      const target = new ShimHTMLElement("BUTTON");
-      target.dataset = { action, ...data };
-      target.closestTarget = target;
-      for (const handler of listeners.click ?? []) handler({ target });
-    },
-    async choose(choiceId) {
-      this.click("story-choice", { choiceId });
-      await this.settle();
-    },
-    turnCount() {
-      const match = /Ходы:\s*([^<]*)/.exec(root.innerHTML);
-      return match === null ? null : match[1].trim();
-    },
-    respond(index, status, body) {
-      turnRequests[index].resolve(okJson(status, body));
-    },
-    fail(index, error = new TypeError("network down")) {
-      turnRequests[index].reject(error);
-    }
-  };
-}
-
-async function settle(times) {
-  for (let i = 0; i < times; i += 1) await new Promise((resolve) => setImmediate(resolve));
-}
-
-function position(turn, sceneId, endingId = null) {
-  return { state: { position: { turn, sceneId, endingId, terminal: false, target: null } } };
-}
-
-// --- (а) повторная отправка нереентерабельна ------------------------------
-
-test("FIN-05 гонка хода: клик во время полёта не отправляет второй ход и не применяется дважды", async (t) => {
-  const player = await loadPlayer(t);
-  assert.equal(player.turnCount(), "0");
-
-  await player.choose("go-deep");
-  assert.equal(player.turnRequests.length, 1, "первый клик отправляет ровно один ход");
-  assert.equal(player.turnRequests[0].body.baseTurn, 0);
-  assert.equal(player.turnRequests[0].body.choiceId, "go-deep");
-
-  // Второй и третий клики приходят, пока ответ сервера ещё не пришёл.
-  player.click("story-choice", { choiceId: "go-deep" });
-  player.click("story-choice", { choiceId: "go-deep" });
-  await player.settle();
-  assert.equal(player.turnRequests.length, 1, "повторные клики игнорируются, пока ход в полёте");
-  assert.equal(player.turnCount(), "0", "второй ход не применён ложно");
-
-  // Ответ приходит позже и применяется один раз.
-  player.respond(0, 200, position(1, "deep"));
-  await player.settle();
-  assert.equal(player.turnCount(), "1");
-  assert.match(player.root.innerHTML, /выбор go-deep/);
-
-  // После завершения полёта ввод снова доступен.
-  await player.choose("go-mid");
-  assert.equal(player.turnRequests.length, 2, "следующий ход отправляется после завершения предыдущего");
-  assert.equal(player.turnRequests[1].body.baseTurn, 1, "базовый ход взят из применённого состояния");
-  player.respond(1, 200, position(2, "mid"));
-  await player.settle();
-  assert.equal(player.turnCount(), "2");
+  assert.equal(app.state.story.screens.turns, 0, "ход с невалидной позицией не применяется");
+  assert.equal(app.state.story.screens.sceneId, "start");
+  assert.equal(app.state.story.lastTurn, null);
+  assert.match(app.state.message, /без корректной позиции/i);
+  assert.doesNotMatch(app.root.innerHTML, /<img/i, "ответ сервера не попадает в разметку сырым");
 });
 
-// --- (б) поздний отказ не откатывает применённое состояние ----------------
+test("FIN-05 XSS: turn из ответа/позиции не интерполируется в innerHTML сырым", async () => {
+  const server = createTurnServer();
+  const app = await loadPlayerApp(server);
+  installStory(app);
+  const payload = "<img src=x onerror=alert(1)>";
 
-test("FIN-05 гонка хода: поздний отказ не откатывает применённый ход, клиент остаётся синхронным", async (t) => {
-  const player = await loadPlayer(t);
+  app.state.story.screens = Object.freeze({ ...app.state.story.screens, turns: payload });
+  app.state.story.lastTurn = Object.freeze({ choiceId: payload, turn: payload });
+  app.renderStoryShell();
 
-  await player.choose("go-deep");
-  player.respond(0, 200, position(1, "deep"));
-  await player.settle();
-  assert.equal(player.turnCount(), "1");
-
-  // Ход #2 уходит и получает поздний отказ: состояние не откатывается.
-  await player.choose("go-mid");
-  player.respond(1, 409, { error: { code: "TURN_CONFLICT" } });
-  await player.settle();
-  assert.equal(player.turnCount(), "1", "отказ сервера не откатывает уже применённый ход");
-  assert.match(player.root.innerHTML, /устарел/);
-
-  // Клиент снова синхронен с сервером: baseTurn = 1, а не 0.
-  await player.choose("go-mid");
-  assert.equal(player.turnRequests.length, 3, "повторный клик после отказа снова отправляет ход");
-  assert.equal(player.turnRequests[2].body.baseTurn, 1);
-  player.respond(2, 200, position(2, "mid"));
-  await player.settle();
-  assert.equal(player.turnCount(), "2");
-
-  // Сетевой отказ тоже не залипает: следующий клик работает.
-  await player.choose("go-end");
-  player.fail(3);
-  await player.settle();
-  assert.equal(player.turnCount(), "2", "сетевой отказ не меняет позицию");
-  assert.match(player.root.innerHTML, /недоступен/);
-
-  await player.choose("go-end");
-  assert.equal(player.turnRequests.length, 5, "после сетевого отказа ход можно повторить");
-  assert.equal(player.turnRequests[4].body.baseTurn, 2);
-  player.respond(4, 200, position(3, "mid", "win"));
-  await player.settle();
-  assert.equal(player.turnCount(), "3");
+  const html = app.root.innerHTML;
+  assert.ok(html.length > 0, "экран истории отрисован");
+  assert.doesNotMatch(html, /<img/i, "payload не стал элементом разметки");
+  assert.match(html, /&lt;img/, "payload отрисован как экранированный текст");
+  assert.match(html, /Ходы: &lt;img/);
 });
 
-test("FIN-05 гонка хода: устаревший ответ предыдущей сессии не применяется", async (t) => {
-  const player = await loadPlayer(t);
+test("FIN-05 ход не сломан: успешный ответ по-прежнему переводит по серверу", async () => {
+  const server = createTurnServer();
+  const app = await loadPlayerApp(server);
+  installStory(app);
 
-  await player.choose("go-deep");
-  assert.equal(player.turnRequests.length, 1);
-  const staleSession = player.turnRequests[0].body.sessionId;
+  await app.commitStoryTurn({ choiceId: "go", baseTurn: 0 });
 
-  // «Повторить историю» разрешено во время полёта и аннулирует его.
-  player.click("story-repeat");
-  await player.settle();
-  assert.equal(player.turnCount(), "0", "история начата заново");
-
-  player.respond(0, 200, position(7, "mid"));
-  await player.settle();
-  assert.equal(player.turnCount(), "0", "поздний ответ старой сессии не применяется");
-  assert.doesNotMatch(player.root.innerHTML, /Ходы: 7/);
-
-  // Новая сессия хода: другой sessionId, baseTurn 0.
-  await player.choose("go-deep");
-  assert.equal(player.turnRequests.length, 2);
-  assert.notEqual(player.turnRequests[1].body.sessionId, staleSession);
-  assert.equal(player.turnRequests[1].body.baseTurn, 0);
-  player.respond(1, 200, position(1, "deep"));
-  await player.settle();
-  assert.equal(player.turnCount(), "1");
-});
-
-// --- (в) XSS-сток ---------------------------------------------------------
-
-test("FIN-05 XSS: модель отвергает ответ сервера с нечисловым/вредоносным ходом", () => {
-  const screens = createStoryScreens(storyScreensMission(mission()));
-
-  const hostileTurn = storyScreensTurnApplied(screens, { turn: HOSTILE, sceneId: "deep", endingId: null });
-  assert.equal(hostileTurn.ok, false, "строка вместо хода не применяется");
-  assert.equal(hostileTurn.state, screens, "состояние остаётся прежним");
-
-  const hostileScene = storyScreensTurnApplied(screens, { turn: 1, sceneId: HOSTILE, endingId: null });
-  assert.equal(hostileScene.ok, false, "разметка вместо sceneId не применяется");
-  assert.equal(hostileScene.state, screens);
-
-  const hostileEnding = storyScreensTurnApplied(screens, { turn: 1, sceneId: "deep", endingId: HOSTILE_SCRIPT });
-  assert.equal(hostileEnding.ok, false, "разметка вместо endingId не применяется");
-
-  assert.equal(isStoryScreensTurnReply({ turn: "1", sceneId: "deep", endingId: null }), false);
-  assert.equal(isStoryScreensTurnReply({ turn: -1, sceneId: "deep", endingId: null }), false);
-  assert.equal(isStoryScreensTurnReply({ turn: 1, sceneId: "deep", endingId: null }), true);
-
-  // Ход назад (устаревший ответ) не откатывает уже применённое состояние.
-  const advanced = storyScreensTurnApplied(screens, { turn: 3, sceneId: "mid", endingId: null });
-  assert.equal(advanced.ok, true);
-  const regress = storyScreensTurnApplied(advanced.state, { turn: 1, sceneId: "start", endingId: null });
-  assert.equal(regress.ok, false, "ход назад не применяется");
-  assert.equal(regress.state, advanced.state);
-});
-
-test("FIN-05 XSS: вредоносный ответ сервера не становится разметкой в DOM", async (t) => {
-  const player = await loadPlayer(t);
-
-  await player.choose("go-deep");
-  player.respond(0, 200, position(HOSTILE, "deep"));
-  await player.settle();
-
-  const html = player.root.innerHTML;
-  assert.equal(player.turnCount(), "0", "вредоносный ход не применён");
-  assert.equal(/<img|<script/i.test(html), false, "разметка из ответа сервера не попала в DOM");
-  assert.equal(html.includes("onerror"), false, "мусор от сервера не попал в разметку вообще");
-
-  // Мусор вместо position тоже не ломает рендер.
-  await player.choose("go-deep");
-  player.respond(1, 200, { state: { position: HOSTILE } });
-  await player.settle();
-  assert.equal(player.turnCount(), "0");
-  assert.equal(/<img|<script/i.test(player.root.innerHTML), false);
-
-  // Строка сервера, которая обычно попадает в сообщение, экранируется.
-  await player.choose("go-deep");
-  player.respond(2, 500, { error: { code: HOSTILE } });
-  await player.settle();
-  const messageHtml = player.root.innerHTML;
-  assert.equal(/<img|<script/i.test(messageHtml), false, "код ошибки сервера не стал элементом");
-  assert.match(messageHtml, /&lt;img/, "вредоносная строка видна только как экранированный текст");
-  assert.equal(storyScreensTurnFailureMessage({ network: false, status: 500, code: HOSTILE }).includes(HOSTILE), true);
+  assert.equal(server.posts.length, 1);
+  assert.equal(server.gets, 0, "успешный ход не ходит в GET");
+  assert.equal(app.state.story.screens.turns, 1);
+  assert.equal(app.state.story.screens.sceneId, "painted");
+  assert.equal(app.state.story.lastTurn.choiceId, "go");
 });
