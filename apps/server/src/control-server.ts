@@ -906,6 +906,10 @@ async function routeControlRequest(
       if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
       const session = await missionStore.getMissionSession(sessionId);
       if (!session || session.projectId !== projectId || session.questId !== questId) sendNotFound(response);
+      // FIN-05 (R-25): сессия хода закреплена за участником — проверка владельца
+      // обязана стоять на HTTP-границе, а не только в сервисе createPlayerTurnService.
+      // Чужая сессия неотличима от отсутствующей (та же 404-семантика).
+      else if (auth && session.actorUserId !== identity!.user.userId) sendNotFound(response);
       else sendJson(response, 200, { session });
       return;
     }
@@ -922,6 +926,11 @@ async function routeControlRequest(
       }
       const existing = await missionStore.getMissionSession(sessionId);
       if (!existing || existing.projectId !== projectId || existing.questId !== questId) {
+        sendNotFound(response);
+        return;
+      }
+      // FIN-05 (R-25): вести ход может только участник, за которым закреплена сессия.
+      if (auth && existing.actorUserId !== identity!.user.userId) {
         sendNotFound(response);
         return;
       }
@@ -2681,8 +2690,23 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
  */
 const WORLD_STATE_COLLECTIONS = ["locations", "entities", "resources", "items"] as const;
 
+/**
+ * R-26: `terminal` — либо null (активный мир), либо объект WorldTerminal. Ключа
+ * может не быть вовсе: ядро считает такой мир активным (missionTerminalStatus),
+ * поэтому отсутствие не отвергается. А вот испорченное значение (число, строка,
+ * объект без outcome) отсекается на границе — иначе оно оседает в сессии и ломает
+ * проекцию хода (500 CONTROL_INTERNAL_ERROR).
+ */
+function isWorldTerminalShape(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return isPlainObject(value)
+    && typeof (value as Record<string, unknown>).reason === "string"
+    && typeof (value as Record<string, unknown>).outcome === "string";
+}
+
 function isWorldStateShape(value: Record<string, any>): boolean {
   return WORLD_STATE_COLLECTIONS.every((key) => Array.isArray(value[key]))
+    && isWorldTerminalShape(value.terminal)
     && value.locations.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
     && value.entities.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
     && value.resources.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
