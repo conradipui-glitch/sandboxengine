@@ -299,6 +299,14 @@ test("FIN-12 UI: текст заметок и сообщений экранир�
   assert.match(fin12, /\.collab-panel/);
   assert.match(fin12, /\.ed-body\.notes-open/);
   assert.match(fin12, /width:\s*100%/);
+
+  // R-29: обрезка многоточием запрещена во ВСЁМ интерфейсе, а не только в блоке FIN-12:
+  // `-webkit-line-clamp` рисует то же многоточие, но старый страж его не видел.
+  assert.doesNotMatch(css, /text-overflow:\s*ellipsis/, "интерфейс не обрезает текст многоточием");
+  assert.doesNotMatch(css, /-webkit-line-clamp/, "line-clamp = та же обрезка многоточием; нужен перенос строк");
+  const descBlock = css.slice(css.indexOf(".node-desc {"), css.indexOf(".node-meta"));
+  assert.match(descBlock, /overflow-wrap:\s*anywhere/, "описание карточки доски переносится, а не обрезается");
+  assert.doesNotMatch(descBlock, /overflow:\s*hidden/, "описание карточки доски не прячет строки");
 });
 
 /* ------------------------------------------------------------------ */

@@ -991,7 +991,13 @@ function createClientIdempotencyKey(): string {
 
 async function parseJson(response: Response): Promise<unknown> {
   const text = await response.text();
-  if (text.length === 0) return null;
+  if (text.length === 0) {
+    // 204/205 — законный ответ без тела. Пустое тело с любым другим кодом —
+    // не структурный ответ Control, и раньше это превращалось в TypeError
+    // (`null.projects`) где-то у вызывающего, без внятной причины.
+    if (response.status === 204 || response.status === 205) return null;
+    throw new ControlApiError(response.status, "INVALID_CONTROL_RESPONSE", "empty body");
+  }
   try {
     return JSON.parse(text);
   } catch {
