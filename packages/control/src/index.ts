@@ -213,6 +213,19 @@ export {
   type SQLiteControlReleaseStoreOptions
 } from "./release-stores.js";
 export {
+  backupLegacyDatabase,
+  inspectLegacyReleaseMigration,
+  readSchemaObjects,
+  type LegacyDatabaseBackup,
+  type LegacyMigrationReport,
+  type LegacyMigrationSchemaChange,
+  type LegacyPublicationFinding,
+  type LegacyPublicationVerdict,
+  type LegacyReleaseFinding,
+  type LegacyReleaseProvenance,
+  type LegacyReleaseVerdict
+} from "./release-migration.js";
+export {
   MemoryControlPublicationStore,
   SQLiteControlPublicationStore,
   type ControlPublicationRecord,
