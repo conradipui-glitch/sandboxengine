@@ -161,6 +161,78 @@
       "summary": "Owner/editor atomic CAS layout update with required idempotency-key"
     },
     {
+      "id": "control.collaboration.get",
+      "method": "GET",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Server-authoritative заметки и треды комментариев проекта (не часть release/gameplay)"
+    },
+    {
+      "id": "control.collaboration.notes.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Editor создаёт стикер-заметку с позицией на доске (idempotency-key обязателен)"
+    },
+    {
+      "id": "control.collaboration.notes.change",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/changes",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Автор заметки (или owner) меняет текст/позицию с CAS expectedRevision"
+    },
+    {
+      "id": "control.collaboration.notes.delete",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/delete",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Автор заметки (или owner) удаляет заметку с CAS expectedRevision"
+    },
+    {
+      "id": "control.collaboration.comments.create",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments",
+      "readiness": "available",
+      "successStatus": 201,
+      "summary": "Editor открывает тред комментариев, привязанный к сцене/слою/полю или месту на доске"
+    },
+    {
+      "id": "control.collaboration.comments.reply",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Editor добавляет сообщение-ответ в существующий тред"
+    },
+    {
+      "id": "control.collaboration.comments.message.change",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/changes",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Автор сообщения (или owner) правит текст с CAS expectedRevision"
+    },
+    {
+      "id": "control.collaboration.comments.message.delete",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/delete",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Автор сообщения (или owner) удаляет сообщение, сохраняя место в треде"
+    },
+    {
+      "id": "control.collaboration.comments.status",
+      "method": "POST",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/status",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Editor закрывает (resolve) или переоткрывает (reopen) тред с CAS expectedRevision"
+    },
+    {
       "id": "control.mission.get",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/quests/{questId}/mission",

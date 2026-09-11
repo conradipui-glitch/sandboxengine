@@ -20,6 +20,8 @@ import {
   type ControlSessionRecord,
   type ControlStore,
   type BoardDocumentStore,
+  type CollaborationStore,
+  type CollaborationWriteResult,
   type ControlUserRecord,
   type DraftSnapshot,
   type DraftValidationRecord,
@@ -83,6 +85,7 @@ export interface ControlReleaseModeOptions {
 export interface ControlServerDependencies {
   readonly store: ControlStore;
   readonly boardStore?: BoardDocumentStore;
+  readonly collaborationStore?: CollaborationStore;
   readonly missionStore?: MissionDocumentStore & MissionSessionStore;
   readonly assetStorage?: LocalAssetStore;
   readonly assetLibrary?: ProjectAssetLibrary;
@@ -125,6 +128,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   const auth = dependencies.auth ? buildAuthRuntime(dependencies.auth) : null;
   const releases = dependencies.releases ?? null;
   const boardStore = dependencies.boardStore ?? (isBoardDocumentStore(dependencies.store) ? dependencies.store as BoardDocumentStore : null);
+  const collaborationStore = dependencies.collaborationStore ?? (isCollaborationStore(dependencies.store) ? dependencies.store as CollaborationStore : null);
   const missionStore = dependencies.missionStore ?? (isMissionStore(dependencies.store) ? dependencies.store as MissionDocumentStore & MissionSessionStore : null);
   const assetLibrary = dependencies.assetLibrary ?? (isProjectAssetLibrary(dependencies.store) ? dependencies.store as ProjectAssetLibrary : null);
   const authorAssistant = dependencies.authorAssistant
@@ -142,6 +146,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         response,
         dependencies.store,
         boardStore,
+        collaborationStore,
         missionStore,
         dependencies.assetStorage ?? null,
         assetLibrary,
@@ -203,6 +208,7 @@ async function routeControlRequest(
   response: any,
   store: ControlStore,
   boardStore: BoardDocumentStore | null,
+  collaborationStore: CollaborationStore | null,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
   assetStorage: LocalAssetStore | null,
   assetLibrary: ProjectAssetLibrary | null,
@@ -517,6 +523,213 @@ async function routeControlRequest(
       }
       return;
     }
+    sendNotFound(response);
+    return;
+  }
+
+  const collaborationMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/collaboration(\/.*)?$/.exec(url.pathname);
+  if (collaborationMatch) {
+    const projectId = collaborationMatch[1];
+    const questId = collaborationMatch[2];
+    const rest = collaborationMatch[3] ?? "";
+    if (!projectId || !questId) { sendNotFound(response); return; }
+    if (collaborationStore === null) {
+      sendJson(response, 501, { error: { code: "COLLABORATION_STORAGE_UNAVAILABLE" } });
+      return;
+    }
+
+    const sendCollaboration = (result: CollaborationWriteResult): void => {
+      if (result.kind === "created") sendJson(response, 201, { collaboration: result.view });
+      else if (result.kind === "updated") sendJson(response, 200, { collaboration: result.view });
+      else if (result.kind === "replay") sendJson(response, 200, { collaboration: result.view, replay: true });
+      else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "not_found") sendNotFound(response);
+      else if (result.kind === "forbidden") sendJson(response, 403, { error: { code: "COLLABORATION_FORBIDDEN" } });
+      else if (result.kind === "revision_conflict") {
+        sendJson(response, 409, { error: { code: "COLLABORATION_REVISION_CONFLICT", currentRevision: result.currentRevision } });
+      } else if (result.kind === "idempotency_key_reused") {
+        sendJson(response, 409, { error: { code: "COLLABORATION_IDEMPOTENCY_KEY_REUSED" } });
+      } else {
+        sendJson(response, 422, { error: { code: "INVALID_COLLABORATION_REQUEST", details: result.errors } });
+      }
+    };
+
+    const beginCollaborationWrite = async (): Promise<{ idempotencyKey: string; body: Record<string, any> } | null> => {
+      if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return null;
+      if (auth && !(await requireMutationProof(request, response, auth, identity!))) return null;
+      const idempotencyKey = requireIdempotencyKey(request, response);
+      if (idempotencyKey === null) return null;
+      const body = await requireJsonObject(request, response);
+      if (body === null) return null;
+      return { idempotencyKey, body };
+    };
+
+    const collaborationActorUserId = identity?.user.userId ?? "local-owner";
+    const collaborationActorRole = auth && identity
+      ? (await auth.security.getProjectRole(projectId, identity.user.userId)) ?? "tester"
+      : "owner";
+
+    if (rest === "" || rest === "/") {
+      if (method !== "GET") { sendNotFound(response); return; }
+      if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
+      const view = await collaborationStore.getCollaboration(projectId, questId);
+      if (!view) sendNotFound(response);
+      else sendJson(response, 200, { collaboration: view });
+      return;
+    }
+
+    if (method !== "POST") {
+      // Reads beyond the collection root are not part of the FIN-12 surface.
+      sendNotFound(response);
+      return;
+    }
+
+    const noteChangeMatch = /^\/notes\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/changes$/.exec(rest);
+    if (noteChangeMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["expectedRevision", "text", "position"])
+        || !isRevision(write.body.expectedRevision) || !isPlainObject(write.body.position) || typeof write.body.text !== "string") {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.changeNote(projectId, questId, {
+        noteId: noteChangeMatch[1]!,
+        expectedRevision: write.body.expectedRevision,
+        text: write.body.text,
+        position: write.body.position as any,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId,
+        actorRole: collaborationActorRole
+      }));
+      return;
+    }
+
+    const noteDeleteMatch = /^\/notes\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/delete$/.exec(rest);
+    if (noteDeleteMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["expectedRevision"]) || !isRevision(write.body.expectedRevision)) {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.deleteNote(projectId, questId, {
+        noteId: noteDeleteMatch[1]!,
+        expectedRevision: write.body.expectedRevision,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId,
+        actorRole: collaborationActorRole
+      }));
+      return;
+    }
+
+    if (rest === "/notes") {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["text", "position"]) || !isPlainObject(write.body.position) || typeof write.body.text !== "string") {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.createNote(projectId, questId, {
+        text: write.body.text,
+        position: write.body.position as any,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId
+      }));
+      return;
+    }
+
+    if (rest === "/comments") {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["anchor", "text"]) || !isPlainObject(write.body.anchor) || typeof write.body.text !== "string") {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.createThread(projectId, questId, {
+        anchor: write.body.anchor as any,
+        text: write.body.text,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId
+      }));
+      return;
+    }
+
+    const messageChangeMatch = /^\/comments\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/messages\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/changes$/.exec(rest);
+    if (messageChangeMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["expectedRevision", "text"])
+        || !isRevision(write.body.expectedRevision) || typeof write.body.text !== "string") {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.changeMessage(projectId, questId, {
+        threadId: messageChangeMatch[1]!,
+        messageId: messageChangeMatch[2]!,
+        expectedRevision: write.body.expectedRevision,
+        text: write.body.text,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId,
+        actorRole: collaborationActorRole
+      }));
+      return;
+    }
+
+    const messageDeleteMatch = /^\/comments\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/messages\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/delete$/.exec(rest);
+    if (messageDeleteMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["expectedRevision"]) || !isRevision(write.body.expectedRevision)) {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.deleteMessage(projectId, questId, {
+        threadId: messageDeleteMatch[1]!,
+        messageId: messageDeleteMatch[2]!,
+        expectedRevision: write.body.expectedRevision,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId,
+        actorRole: collaborationActorRole
+      }));
+      return;
+    }
+
+    const replyMatch = /^\/comments\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/messages$/.exec(rest);
+    if (replyMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["text"]) || typeof write.body.text !== "string") {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.addMessage(projectId, questId, {
+        threadId: replyMatch[1]!,
+        text: write.body.text,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId
+      }));
+      return;
+    }
+
+    const statusMatch = /^\/comments\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/status$/.exec(rest);
+    if (statusMatch) {
+      const write = await beginCollaborationWrite();
+      if (!write) return;
+      if (!hasExactKeys(write.body, ["expectedRevision", "status"])
+        || !isRevision(write.body.expectedRevision) || (write.body.status !== "open" && write.body.status !== "resolved")) {
+        sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
+        return;
+      }
+      sendCollaboration(await collaborationStore.setThreadStatus(projectId, questId, {
+        threadId: statusMatch[1]!,
+        expectedRevision: write.body.expectedRevision,
+        status: write.body.status,
+        idempotencyKey: write.idempotencyKey,
+        actorUserId: collaborationActorUserId
+      }));
+      return;
+    }
+
     sendNotFound(response);
     return;
   }
@@ -2010,6 +2223,19 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 function isBoardDocumentStore(value: ControlStore): value is ControlStore & BoardDocumentStore {
   return typeof (value as Partial<BoardDocumentStore>).getBoardDocument === "function"
     && typeof (value as Partial<BoardDocumentStore>).applyBoardChanges === "function";
+}
+
+function isCollaborationStore(value: ControlStore): value is ControlStore & CollaborationStore {
+  const candidate = value as Partial<CollaborationStore>;
+  return typeof candidate.getCollaboration === "function"
+    && typeof candidate.createNote === "function"
+    && typeof candidate.changeNote === "function"
+    && typeof candidate.deleteNote === "function"
+    && typeof candidate.createThread === "function"
+    && typeof candidate.addMessage === "function"
+    && typeof candidate.changeMessage === "function"
+    && typeof candidate.deleteMessage === "function"
+    && typeof candidate.setThreadStatus === "function";
 }
 
 function isMissionStore(value: ControlStore): value is ControlStore & MissionDocumentStore & MissionSessionStore {

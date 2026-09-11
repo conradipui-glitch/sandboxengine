@@ -96,6 +96,15 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
 - `GET /control/v1/projects/{projectId}/quests/{questId}/board` — Получение server-authoritative layout BoardDocument отдельно от canonical draft
 - `POST /control/v1/projects/{projectId}/quests/{questId}/board/changes` — Owner/editor atomic CAS layout update with required idempotency-key
+- `GET /control/v1/projects/{projectId}/quests/{questId}/collaboration` — Server-authoritative заметки и треды комментариев проекта (не часть release/gameplay)
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes` — Editor создаёт стикер-заметку с позицией на доске (idempotency-key обязателен)
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/changes` — Автор заметки (или owner) меняет текст/позицию с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/delete` — Автор заметки (или owner) удаляет заметку с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments` — Editor открывает тред комментариев, привязанный к сцене/слою/полю или месту на доске
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages` — Editor добавляет сообщение-ответ в существующий тред
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/changes` — Автор сообщения (или owner) правит текст с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/delete` — Автор сообщения (или owner) удаляет сообщение, сохраняя место в треде
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/status` — Editor закрывает (resolve) или переоткрывает (reopen) тред с CAS expectedRevision
 - `GET /control/v1/projects/{projectId}/quests/{questId}/mission` — Получение server-authoritative MissionDraft отдельно от canonical draft
 - `POST /control/v1/projects/{projectId}/quests/{questId}/mission` — Owner/editor atomic CAS mission save with validation and required idempotency-key
 - `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions` — Owner/editor mission session bound to an exact content revision
