@@ -25,11 +25,11 @@ import {
   type AuthoredScenarioSidecarData
 } from "./authored-scenario.js";
 import type { PublishedSessionBindingStore } from "./published-session-binding.js";
+import { readJsonBody, readHeader, sendJson, sendNotFound } from "./http-primitives.js";
+import { isId, isPlainObject, hasExactKeys } from "./input-guards.js";
 
-const MAX_BODY_CHARS = 16_384;
 const DEFAULT_LEASE_MS = 30_000;
 const DEFAULT_INTENT_DEADLINE_MS = 25_000;
-const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const CREDENTIAL = /^[A-Za-z0-9_-]{32,256}$/;
 
 export interface AuthoredRuntimeServerDependencies {
@@ -480,62 +480,8 @@ async function authenticate(request: any, access: RuntimeGuestSessionAccess, ses
   return isCredential(credential) && access.verifyGuestAccess(sessionId, sha256(credential));
 }
 
-async function readJsonBody(request: any): Promise<
-  | { readonly ok: true; readonly value: unknown }
-  | { readonly ok: false; readonly status: number; readonly code: string }
-> {
-  const contentType = readHeader(request, "content-type");
-  if (typeof contentType !== "string" || !/^application\/json(?:\s*;|$)/i.test(contentType)) {
-    return Object.freeze({ ok: false, status: 415, code: "UNSUPPORTED_MEDIA_TYPE" });
-  }
-  request.setEncoding("utf8");
-  let body = "";
-  for await (const chunk of request) {
-    body += String(chunk);
-    if (body.length > MAX_BODY_CHARS) return Object.freeze({ ok: false, status: 413, code: "BODY_TOO_LARGE" });
-  }
-  try {
-    return Object.freeze({ ok: true, value: JSON.parse(body) });
-  } catch {
-    return Object.freeze({ ok: false, status: 400, code: "INVALID_JSON" });
-  }
-}
-
-function sendNotFound(response: any): void {
-  sendJson(response, 404, { error: { code: "NOT_FOUND" } });
-}
-
-function sendJson(response: any, status: number, body: unknown): void {
-  const json = JSON.stringify(body);
-  response.statusCode = status;
-  response.setHeader("content-type", "application/json; charset=utf-8");
-  response.setHeader("cache-control", "no-store");
-  response.end(json);
-}
-
-function readHeader(request: any, name: string): string | undefined {
-  const value = request.headers?.[name];
-  return typeof value === "string" ? value : undefined;
-}
-
 function releaseKey(release: PinnedReleaseIdentity): string {
   return `${release.questId}\u0000${release.releaseId}\u0000${release.contentHash}`;
-}
-
-function isPlainObject(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID.test(value);
 }
 
 function isCredential(value: unknown): value is string {

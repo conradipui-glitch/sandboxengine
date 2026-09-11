@@ -7,6 +7,7 @@ import type {
 } from "@living-history/control";
 import type { PluginRegistrySnapshot } from "@living-history/plugins";
 import { preflightStoredControlRelease } from "./release-authority.js";
+import { isId, isPlainObject, hasExactKeys } from "./input-guards.js";
 
 export interface ControlPublicationDependencies {
   readonly releaseStore: ControlReleaseStore;
@@ -109,7 +110,7 @@ function hashRequest(value: unknown): string {
 }
 
 function isPublishInput(value: unknown): value is PublishControlReleaseInput {
-  return isRecord(value)
+  return isPlainObject(value)
     && hasExactKeys(value, [
       "projectId", "questId", "releaseId", "expectedCurrentReleaseId", "actorUserId", "createdAtMs", "idempotencyKey"
     ])
@@ -123,7 +124,7 @@ function isPublishInput(value: unknown): value is PublishControlReleaseInput {
 }
 
 function isRollbackInput(value: unknown): value is RollbackControlReleaseInput {
-  return isRecord(value)
+  return isPlainObject(value)
     && hasExactKeys(value, [
       "projectId", "questId", "targetReleaseId", "expectedCurrentReleaseId", "actorUserId", "createdAtMs", "idempotencyKey"
     ])
@@ -136,20 +137,7 @@ function isRollbackInput(value: unknown): value is RollbackControlReleaseInput {
     && isId(value.idempotencyKey);
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 function isTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function isRecord(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
 }
 function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }

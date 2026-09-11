@@ -25,10 +25,10 @@ import type {
   MissionSessionStore
 } from "@living-history/control";
 import type { WorldState } from "@living-history/contracts";
+import { isId, isRevision } from "./input-guards.js";
 
 export const PLAYER_TURN_SCHEMA_VERSION = "1.0" as const;
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
 /** Стор, которого достаточно для применения хода: сессии + пиновка ревизии. */
 export type PlayerTurnStore = MissionSessionStore & Pick<MissionDocumentStore, "getMissionAtRevision">;
@@ -315,14 +315,8 @@ function validateTurnInput(input: {
   return errors;
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
-}
 
 function isKey(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 200;
 }
 
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
