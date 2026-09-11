@@ -232,3 +232,20 @@ export {
   hasValidQuestReleaseReferences,
   hasValidWorldStateReferences
 } from "./references.js";
+
+export {
+  MAX_PROVIDER_API_KEY_LENGTH,
+  MAX_PROVIDER_API_KEY_MASK_LENGTH,
+  MAX_PROVIDER_CONNECTION_BASE_URL_LENGTH,
+  MAX_PROVIDER_CONNECTION_MODEL_LENGTH,
+  MAX_PROVIDER_CONNECTION_PRESET_LENGTH,
+  PROVIDER_CONNECTION_ERROR_CODES,
+  PROVIDER_CONNECTION_STATUSES,
+  isProviderConnectionErrorCode,
+  isProviderConnectionStatus,
+  type ControlProviderConnectionConfig,
+  type ControlProviderConnectionSummary,
+  type ProviderConnectionErrorCode,
+  type ProviderConnectionProbeOutcome,
+  type ProviderConnectionStatus
+} from "./provider-connections.js";
