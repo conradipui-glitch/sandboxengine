@@ -41,7 +41,8 @@ function fakeTransport(options = {}) {
     }),
     async initialize(request) {
       calls.initialize.push(request);
-      return options.initializeResult ?? { ok: true, requestId: "init-1", observedProtocol: options.observedProtocol ?? PIN };
+      const next = Array.isArray(options.initializeResults) ? options.initializeResults.shift() : undefined;
+      return next ?? options.initializeResult ?? { ok: true, requestId: "init-1", observedProtocol: options.observedProtocol ?? PIN };
     },
     async startAuthorThread(request) {
       calls.startThread.push(request);
@@ -171,6 +172,62 @@ test("B10.c.13 initialize-time protocol drift and auth/rate-limit failures stay 
     assert.equal(fixture.calls.initialize.length, 1);
     assert.equal(fixture.calls.startThread.length, 0);
   }
+});
+
+test("B10.c.13 a retryable initialize failure is not cached: the next openSession retries initialization", async () => {
+  const fixture = fakeTransport({ initializeResults: [
+    { ok: false, error: { code: "timeout", message: "initialize timed out", requestId: "init-timeout" } },
+    { ok: true, requestId: "init-2", observedProtocol: PIN }
+  ] });
+  const adapter = backend(fixture.transport);
+
+  const first = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 5_000 });
+  assert.equal(first.ok, false);
+  assert.equal(first.error.code, "timeout");
+  assert.equal(first.error.retryable, true);
+  assert.equal(fixture.calls.initialize.length, 1);
+  assert.equal(fixture.calls.startThread.length, 0);
+
+  // The failed initialize must not be cached as a permanent result: a second
+  // openSession has to attempt initialize again because the error is retryable.
+  const second = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 5_000 });
+  assert.equal(second.ok, true);
+  assert.equal(fixture.calls.initialize.length, 2);
+  assert.equal(fixture.calls.startThread.length, 1);
+
+  // A successful initialize is still memoized: a third openSession reuses it.
+  const third = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 5_000 });
+  assert.equal(third.ok, true);
+  assert.equal(fixture.calls.initialize.length, 2);
+  assert.equal(fixture.calls.startThread.length, 2);
+});
+
+test("B10.c.13 initialize retry honors the transport retryAfterMs cooldown before attempting again", async () => {
+  let now = 1_000;
+  const fixture = fakeTransport({ initializeResults: [
+    { ok: false, error: { code: "rate_limited", message: "slow down", retryAfterMs: 12_000 } },
+    { ok: true, requestId: "init-2", observedProtocol: PIN }
+  ] });
+  const adapter = backend(fixture.transport, { nowMs: () => now });
+
+  const first = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 5_000 });
+  assert.equal(first.ok, false);
+  assert.equal(first.error.code, "rate_limited");
+  assert.equal(first.error.retryAfterMs, 12_000);
+  assert.equal(fixture.calls.initialize.length, 1);
+
+  // Inside the cooldown the cached failure is returned without hitting the transport again.
+  const duringCooldown = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 60_000 });
+  assert.equal(duringCooldown.ok, false);
+  assert.equal(duringCooldown.error.code, "rate_limited");
+  assert.equal(fixture.calls.initialize.length, 1);
+
+  // Once retryAfterMs has elapsed the retry is allowed and can succeed.
+  now = 13_000;
+  const afterCooldown = await adapter.openSession({ profileId: "codex-profile", deadlineAtMs: 60_000 });
+  assert.equal(afterCooldown.ok, true);
+  assert.equal(fixture.calls.initialize.length, 2);
+  assert.equal(fixture.calls.startThread.length, 1);
 });
 
 test("B10.c.13 forbidden native activity fails closed and triggers interrupt instead of returning model output", async () => {

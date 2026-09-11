@@ -204,6 +204,20 @@ const AUTHOR_THREAD_INSTRUCTIONS = [
 
 const EMPTY_USAGE: ProviderUsage = Object.freeze({ inputTokens: null, outputTokens: null, totalTokens: null });
 
+/**
+ * A retryable initialize failure without an explicit retryAfterMs may be
+ * retried immediately. A transport-provided retryAfterMs (e.g. rate_limited)
+ * is always honored as a cooldown, so a failed initialize cannot be retried
+ * faster than the server asked for.
+ */
+const INITIALIZE_RETRY_COOLDOWN_MS = 0;
+
+interface InitializeFailureCache {
+  readonly error: AgentBackendError;
+  /** null means the failure is not retryable and stays cached; otherwise the earliest retry instant. */
+  readonly retryAtMs: number | null;
+}
+
 export class CodexAppServerAgentBackend implements AgentBackend {
   readonly safeView: AgentBackendSafeView;
   readonly #profileId: string;
@@ -214,6 +228,7 @@ export class CodexAppServerAgentBackend implements AgentBackend {
   readonly #nowMs: () => number;
   readonly #sessions = new Map<string, OpenCodexSession>();
   #initializePromise: Promise<AgentBackendError | null> | null = null;
+  #initializeFailure: InitializeFailureCache | null = null;
   #sessionOrdinal = 0;
 
   constructor(options: CodexAppServerAgentBackendOptions) {
@@ -335,10 +350,27 @@ export class CodexAppServerAgentBackend implements AgentBackend {
   }
 
   async #ensureInitialized(request: OpenAgentSessionRequest): Promise<AgentBackendError | null> {
+    const cachedFailure = this.#initializeFailure;
+    if (cachedFailure !== null) {
+      if (cachedFailure.retryAtMs === null || this.#nowMs() < cachedFailure.retryAtMs) return cachedFailure.error;
+      this.#initializeFailure = null;
+    }
     if (this.#initializePromise === null) {
       this.#initializePromise = this.#initialize(request);
     }
-    return this.#initializePromise;
+    const error = await this.#initializePromise;
+    if (error !== null) {
+      // An unsuccessful initialize must never be cached as if it were a success:
+      // retryable failures (timeout/rate_limited/backend_error) have to let a
+      // later openSession attempt initialize again, bounded by the cooldown the
+      // transport asked for so a rate-limited server is not hammered.
+      this.#initializePromise = null;
+      this.#initializeFailure = {
+        error,
+        retryAtMs: error.retryable ? this.#nowMs() + initializeCooldownMs(error.retryAfterMs) : null
+      };
+    }
+    return error;
   }
 
   async #initialize(request: OpenAgentSessionRequest): Promise<AgentBackendError | null> {
@@ -488,6 +520,10 @@ function token(value: number | null | undefined): number | null {
 
 function normalizeRetryAfter(value: number | null | undefined): number | null {
   return value === null || value === undefined || !Number.isSafeInteger(value) || value < 0 ? null : value;
+}
+
+function initializeCooldownMs(retryAfterMs: number | null): number {
+  return retryAfterMs === null ? INITIALIZE_RETRY_COOLDOWN_MS : retryAfterMs;
 }
 
 function requestId(value: string | null | undefined): string | null {
