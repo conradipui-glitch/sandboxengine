@@ -1,0 +1,168 @@
+/*
+ * Графитовая тёмная тема Studio — статический лист.
+ * Единственный акцент — изумруд (#31a473, семейство #2f9e6f).
+ * Холодные графитовые нейтрали: #14171a (фон) … #313a42 (границы).
+ *
+ * Значения блока токенов обязаны совпадать с GRAPHITE_TOKENS из src/theme-graphite.ts
+ * (проверяется apps/studio/test/theme-graphite.test.mjs).
+ *
+ * Состояния (ошибка/предупреждение/успех) различаются не только цветом:
+ * глиф-префикс, стиль подчёркивания, толщина шрифта и левая граница.
+ */
+
+/* ==== graphite theme tokens: start ==== */
+:root {
+  --graphite-background: #14171a;
+  --graphite-surface: #1b2024;
+  --graphite-surface-raised: #232a30;
+  --graphite-border: #313a42;
+  --graphite-text: #e8edf2;
+  --graphite-text-muted: #a9b4bf;
+  --graphite-accent: #31a473;
+  --graphite-accent-text: #0b0d0f;
+  --graphite-danger: #ef6b62;
+  --graphite-warning: #e0a63c;
+  --graphite-success: #7cc576;
+  --graphite-focus-ring: #3fbf85;
+  --graphite-board-grid: #252b31;
+  --graphite-danger-bg: #2a1b1b;
+  --graphite-warning-bg: #2a2418;
+  --graphite-success-bg: #16251c;
+  --graphite-accent-soft: #16302a;
+  --graphite-font-size-xs: 12px;
+  --graphite-font-size-sm: 13px;
+  --graphite-font-size-base: 14px;
+  --graphite-font-size-lg: 16px;
+  --graphite-font-size-xl: 20px;
+  --graphite-line-height: 1.5;
+  --graphite-font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --graphite-space-1: 4px;
+  --graphite-space-2: 8px;
+  --graphite-space-3: 12px;
+  --graphite-space-4: 16px;
+  --graphite-space-6: 24px;
+  --graphite-space-8: 32px;
+  --graphite-radius-s: 6px;
+  --graphite-radius-m: 10px;
+  --graphite-radius-l: 14px;
+}
+/* ==== graphite theme tokens: end ==== */
+
+:root[data-theme="graphite"] {
+  color-scheme: dark;
+}
+
+body,
+.lh-studio {
+  background: var(--graphite-background);
+  color: var(--graphite-text);
+  font-family: var(--graphite-font-family);
+  font-size: var(--graphite-font-size-base);
+  line-height: var(--graphite-line-height);
+}
+
+.lh-panel,
+.panel {
+  background: var(--graphite-surface);
+  border: 1px solid var(--graphite-border);
+  color: var(--graphite-text);
+}
+
+.lh-card,
+.popover,
+.dialog {
+  background: var(--graphite-surface-raised);
+  border: 1px solid var(--graphite-border);
+  border-radius: var(--graphite-radius-m);
+  color: var(--graphite-text);
+}
+
+.lh-muted {
+  color: var(--graphite-text-muted);
+}
+
+/* Единственный акцент: интерактивные элементы. */
+.button-primary,
+.lh-button--primary {
+  background: var(--graphite-accent);
+  color: var(--graphite-accent-text);
+  border: 1px solid var(--graphite-accent);
+  border-radius: var(--graphite-radius-s);
+}
+
+a {
+  color: var(--graphite-accent);
+}
+
+/* Спокойная сетка доски. */
+.board-grid,
+.board-host {
+  background-color: var(--graphite-background);
+  background-image: linear-gradient(var(--graphite-board-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--graphite-board-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Состояния: цвет — не единственный признак                           */
+/* ------------------------------------------------------------------ */
+
+.lh-state {
+  border-left: 3px solid var(--graphite-border);
+  padding-left: var(--graphite-space-3);
+  font-weight: 600;
+}
+
+.lh-state[data-state="error"] {
+  color: var(--graphite-danger);
+  background: var(--graphite-danger-bg);
+  border-left-color: var(--graphite-danger);
+  text-decoration: underline;
+  text-decoration-style: wavy;
+}
+
+.lh-state[data-state="error"]::before {
+  content: "\2715  ";
+  font-weight: 700;
+}
+
+.lh-state[data-state="warning"] {
+  color: var(--graphite-warning);
+  background: var(--graphite-warning-bg);
+  border-left-color: var(--graphite-warning);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.lh-state[data-state="warning"]::before {
+  content: "\26A0  ";
+  font-weight: 700;
+}
+
+.lh-state[data-state="success"] {
+  color: var(--graphite-success);
+  background: var(--graphite-success-bg);
+  border-left-color: var(--graphite-success);
+}
+
+.lh-state[data-state="success"]::before {
+  content: "\2713  ";
+  font-weight: 700;
+}
+
+[aria-invalid="true"] {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  border-color: var(--graphite-danger);
+}
+
+/* Видимое фокус-кольцо. */
+:focus-visible {
+  outline: 2px solid var(--graphite-focus-ring);
+  outline-offset: 2px;
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--graphite-focus-ring);
+  outline-offset: 2px;
+}
