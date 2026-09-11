@@ -40,3 +40,21 @@ naming writers that must themselves be declared components.
 - No check that a stale Control writer is actually detected at runtime —
   only that the manifest declares the writers (the second test documents the
   two-writer topology as it stands).
+
+## Independent reproduction is now green (2026-09-11)
+
+The repro worktree `C:/Temp/lhc-fin-repro` (branch `feat/fin-repro-b01-b04`) was
+written **before** the fix and was RED by construction: `fin04-delivery-manifest`
+1 pass / 1 fail (`no delivery manifest found`), `fin03-open-session-assets` 0/3.
+
+After fetching and merging the current acceptance branch (`eba5ca0`), both suites are
+green on that merged state:
+
+| Suite | Before | After |
+|---|---|---|
+| `fin04-delivery-manifest.test.mjs` | 1 pass / 1 fail | **2 pass / 0 fail** |
+| `fin03-open-session-assets.test.mjs` | 0 pass / 3 fail | **3 pass / 0 fail** |
+
+The manifest itself is committed as `01cbbd6`, an ancestor of `743a948`, so the fix is
+in the delivered tree and not only on a working disk.
+
