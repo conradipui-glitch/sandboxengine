@@ -2637,7 +2637,8 @@ export class StudioApp {
       }),
       onError: (error) => {
         this.state.message = describeControlError(error);
-        this.render();
+        // Панель показывает ошибку сама: полная перерисовка заменила бы её хост,
+        // панель смонтировалась бы заново и грузила список по кругу вместо «Повторить».
       }
     });
   }
@@ -2743,7 +2744,8 @@ export class StudioApp {
       },
       onError: (error) => {
         this.state.message = describeControlError(error);
-        this.render();
+        // Панель показывает ошибку сама: полная перерисовка заменила бы её хост,
+        // панель смонтировалась бы заново и грузила список по кругу вместо «Повторить».
       }
     });
   }
@@ -2798,7 +2800,8 @@ export class StudioApp {
       onUseMaterial: (item, target) => void this.useMaterialInScene(item, target),
       onError: (error) => {
         this.state.message = describeControlError(error);
-        this.render();
+        // Панель показывает ошибку сама: полная перерисовка заменила бы её хост,
+        // панель смонтировалась бы заново и грузила список по кругу вместо «Повторить».
       }
     });
   }
