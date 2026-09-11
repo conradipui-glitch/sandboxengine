@@ -255,3 +255,37 @@ scripts 15 — **862 теста, 0 падений**; `check:boundaries` = ok (39
 - R-16: scene-якорь без mission-документа всё ещё может считаться удалённым (булев тип и UI не поддерживают третье состояние).
 - R-14: mock-стабы `client/executor` в тестовом стенде; живой браузерный прогон плеера не делался.
 - R-12: `apps/server/src/player-turn.ts:241` содержит ту же проверку `terminal !== null` — вне зоны задачи, действителен.
+
+## Волна 3 — приёмка и интеграция шести исправлений (HEAD `72d2137`)
+
+Диспетчер `deleg_7c31d5a2` (6 листовых задач, база `2c8112f`, 37 минут). Все ветки сверены по SHA перед слиянием, каждая — свой worktree.
+
+| № | Зона | Ветка / SHA | Что закрыто |
+|---|---|---|---|
+| R-19 | `packages/control/src/release-stores.ts` | `fix/release-replay-cas` / `685be02` | replay публикации/отката возвращал `currentReleaseId` на момент первого выполнения, не сверяя живой указатель: после publish-2 → rollback на release-1 повторная доставка того же Idempotency-Key отдавала `{kind:"replay", outcome:"published", currentReleaseId:"release-2"}`. Теперь расхождение даёт `current_release_conflict` (сервер отвечает 409), а не фальшивый успех. |
+| R-20 | `packages/control/src/lhquest-package.ts` | `fix/lhquest-deepjson` / `974ceec` | пакет 40 КБ с ~20 000 уровней вложенности валил импорт `RangeError: Maximum call stack size exceeded` вместо `{kind:'invalid_package'}`. Добавлен `MAX_PACKAGE_JSON_DEPTH = 64`, итеративный зонд глубины, `containsForbiddenKey` на явном стеке и fail-closed `try/catch` вокруг разбора. |
+| R-21 | `packages/ai/src/codex-app-server-backend.ts` | `fix/ai-codex-init-retry` / `2eb1583` | `#initializePromise` кэшировался навсегда: одна retryable-ошибка инициализации (timeout/rate_limited) воспроизводилась при каждом `openSession`. Теперь кэш сбрасывается, отказ помнится только до `retryAtMs` (для retryable с `retryAfterMs` — кулдаун, иначе повтор сразу), non-retryable остаётся fail-fast. |
+| R-22 | `packages/control/src/author-agent-jobs.ts` | `fix/author-agent-result-kind-mismatch` / `7dcd4c4` | `completeOperation` принимал результат чужого вида: операцию `draft.read` можно было закрыть результатом `proposal_applied` и наоборот. Добавлена карта `OPERATION_RESULT_KIND` (read_blocks↔draft.read, proposal_previewed↔proposal.preview, proposal_applied↔proposal.apply, reference_read↔docs.reference.read), новый исход `result_kind_mismatch`, проверка до записи (в SQLite — с ROLLBACK), отвергается и противоречивая durable-запись. |
+| R-23 | `apps/studio` (screen-dom, styles) | `fix/studio-svg-and-resize` / `4e871cb` | ручка resize сцены создавалась один раз и не скрывалась в ветке «нет выделения», оставались старые `left/top` последнего слоя; CSS не гасил `data-layer-id=""`. Добавлены `hidden`/`display:none`/очистка геометрии и правило `.screen-resize-handle[hidden], [data-layer-id=""]`. |
+| R-24 | `apps/player/app.js` | `fix/player-app-turn-race` / `68332ae` | гонка хода и XSS — но эта ветка **пересекалась с уже влитым R-14**; см. ниже. |
+
+### Пересечения с волной 1 и как они разрешены
+
+1. **`apps/player/app.js` (R-24 поверх R-14).** Обе волны независимо чинили один дефект. Версия волны 3 полнее по постановке карточки N8: монотонный `ordinal` вместо счётчика-пары, при `409 TURN_CONFLICT` — не откат, а **пересинхронизация через `GET /player-turn.json?sessionId=`**, и полная валидация позиции в самом `app.js`. Версия волны 1 дополнительно привязывала ответ к серверной сессии (`sessionId`), чего в волне 3 не было.
+   **Разрешение:** взята реализация волны 3 + мной возвращена привязка к сессии — `commitStoryTurn` фиксирует `sessionId` на момент отправки, поздний ответ применяется только если `ordinal` актуален **и** `storySessionId()` не сменилась, а `resetStorySession()` инкрементирует `ordinal` (гасит ход в полёте). Это не косметика: тест волны 1 «устаревший ответ предыдущей сессии не применяется» на чистой версии волны 3 **падал** (`turns` уезжал с `0` на `7`).
+   Оба набора тестов сохранены: `apps/player/test/fin05-player-turn-race.test.mjs` (волна 3, 7 тестов) и `fin05-player-turn-race-r14.test.mjs` (волна 1, 5 тестов). Файл `fin05-player-turn-race-r14.test.mjs` создан именно потому, что ветки дали **одноимённые** файлы (add/add-конфликт).
+2. **`apps/studio/src/story-dom.ts` (R-23 поверх R-17).** Обе ветки правили `paintEdges` и пришли к **идентичному коду** (`viewBox = 0 0 worldW worldH`, ширина/высота в world-пикселях); различались только комментарии. Оставлен вариант R-17 (комментарий полнее), из R-23 взяты уникальные части — `screen-dom.ts` и `styles.css`.
+
+### Проверено лично на смёрженном HEAD `72d2137`
+
+`tsc -b --force` = 0; `check:boundaries` = ok (39 файлов); `docs:check` = ok.
+
+contracts 68 · core 75 · runtime 31 · player 29 · ai 48 · control 141 · server 219 (218 pass, 1 skip) · studio 241 (240 pass, 1 skip) · apps/player 35 · builder-runner 26 · scripts 15 — **928 тестов, 0 падений**.
+
+Мутации, снятые и откаченные мной на смёрженном дереве (все три покраснели, откат вернул зелёное, рабочее дерево чистое):
+
+| Фикс | Что снято | Красное | После отката |
+|---|---|---|---|
+| R-19 | `if (current !== replay.releaseId)` → `false &&` (все 4 ветки: Memory/SQLite × publish/rollback) | `pass 0 / fail 2` | `pass 2 / fail 0` |
+| R-20 | лимит глубины JSON отключён | `pass 1 / fail 3` | `pass 4 / fail 0` |
+| R-21 | `retryAtMs` для retryable снова `null` (вечное кэширование) | `pass 46 / fail 2` | `pass 48 / fail 0` |
