@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   SCREEN_MAX_SCALE,
@@ -40,7 +43,20 @@ import { StudioApp } from "../dist/src/app.js";
 globalThis.document ??= { activeElement: null };
 globalThis.HTMLElement ??= class {};
 
-const ref = { assetId: "asset-bg", hash: "b".repeat(64) };
+// Материал фикстуры — настоящий файл продукта (examples/florence/assets), тот же,
+// что грузит scripts/seed-real-content.mjs. Хеш считается из байтов файла, а не
+// сочиняется: выдуманная пара (assetId, hash) описывает материал, которого нет в
+// библиотеке проекта, и сервер обязан отклонить такой документ кодом
+// MISSION_ASSET_UNKNOWN (422, ничего не записано). Тест, который сохраняет документ
+// через продуктовый API, дополнительно регистрирует этот материал в библиотеке
+// проекта настоящей загрузкой и берёт хеш из манифеста загрузки.
+const REAL_ASSET_ID = "workshop-background";
+const REAL_ASSET_PATH = fileURLToPath(
+  new URL("../../../examples/florence/assets/visuals/workshop-background.webp", import.meta.url)
+);
+const REAL_ASSET_BYTES = readFileSync(REAL_ASSET_PATH);
+const REAL_ASSET_HASH = createHash("sha256").update(REAL_ASSET_BYTES).digest("hex");
+const ref = Object.freeze({ assetId: REAL_ASSET_ID, hash: REAL_ASSET_HASH });
 
 function layer(id, over = {}) {
   return {
@@ -50,7 +66,7 @@ function layer(id, over = {}) {
   };
 }
 
-function mission() {
+function mission(material = ref) {
   return {
     schemaVersion: "1.0", projectId: "p", questId: "q", contentRevision: 1, contentHash: "c".repeat(64),
     listing: {
@@ -64,7 +80,7 @@ function mission() {
     },
     screens: {
       intros: [],
-      scenes: { s1: { background: null, inheritBackground: true, layers: [layer("l1", { z: 1 }), layer("l2", { z: 2 })], music: null } },
+      scenes: { s1: { background: null, inheritBackground: true, layers: [layer("l1", { z: 1, asset: material }), layer("l2", { z: 2, asset: material })], music: null } },
       endings: {}
     },
     defaults: { background: null, theme: "", animationPreset: "fade" }
@@ -449,6 +465,7 @@ test("FIN-05B screen composition persists through canonical /mission without a n
   const { SQLiteControlStore, SQLiteControlReleaseStore } = await import("../../../packages/control/dist/index.js");
   const { buildPluginRegistry } = await import("../../../packages/plugins/dist/index.js");
   const { DICE_CHECK_MANIFEST } = await import("../../../packages/plugins/dist/dice-check.js");
+  const { LocalAssetStore } = await import("../../../packages/assets/dist/index.js");
   const { createControlHttpServer } = await import("../../server/dist/control-server.js");
   const { ControlApiClient } = await import("../dist/src/api.js");
   const { createStudioDevServer } = await import("../dist/src/dev-server.js");
@@ -460,7 +477,17 @@ test("FIN-05B screen composition persists through canonical /mission without a n
   const releaseStore = new SQLiteControlReleaseStore({ path });
   const registry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
   assert.equal(registry.ok, true);
-  const control = createControlHttpServer({ store, releases: { store: releaseStore, pluginRegistry: registry.registry, nowMs: () => 1000 } });
+  const control = createControlHttpServer({
+    store,
+    // Материалы живут в той же базе, рядом с ней хранятся байты — ровно та разводка,
+    // что делает продуктовый вход Studio (apps/studio/src/main.ts). Без assetStorage
+    // маршрут материалов отвечает 501, и материал нельзя загрузить продуктовым путём.
+    boardStore: store,
+    missionStore: store,
+    assetLibrary: store,
+    assetStorage: new LocalAssetStore(join(dir, "assets")),
+    releases: { store: releaseStore, pluginRegistry: registry.registry, nowMs: () => 1000 }
+  });
   const controlAddress = await control.listen(0, "127.0.0.1");
   const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}` });
   const studioAddress = await studio.listen(0, "127.0.0.1");
@@ -472,8 +499,29 @@ test("FIN-05B screen composition persists through canonical /mission without a n
       projectId: "fin05b-project", questId: "fin05b-quest", title: "FIN-05B",
       entryLocationId: "s1", initialBlocks: [createInitialLocationBlock("s1", "Старт")]
     });
-    const created = await api.saveMission("fin05b-project", "fin05b-quest", 0, { ...mission(), projectId: "fin05b-project", questId: "fin05b-quest" });
+    // Материал появляется продуктовым путём: та же загрузка в библиотеку проекта,
+    // что делает Studio (ControlApiClient -> POST /control/v1/projects/<id>/assets
+    // через прокси dev-сервера). Хеш берём из манифеста загрузки, а не придумываем:
+    // документ ниже ссылается ровно на зарегистрированный материал.
+    const manifest = await api.uploadProjectAsset("fin05b-project", {
+      assetId: REAL_ASSET_ID,
+      filename: "Мастерская-ночь.webp",
+      mimeType: "image/webp",
+      altText: "Ночная мастерская во Флоренции",
+      bytes: REAL_ASSET_BYTES,
+      idempotencyKey: "fin05b-real-fixture-asset"
+    });
+    assert.equal(manifest.id, REAL_ASSET_ID, "материал зарегистрирован под ожидаемым id");
+    assert.equal(manifest.hash, REAL_ASSET_HASH, "библиотека проекта вернула хеш реальных байтов файла");
+    const material = { assetId: manifest.id, hash: manifest.hash };
+
+    const created = await api.saveMission("fin05b-project", "fin05b-quest", 0, { ...mission(material), projectId: "fin05b-project", questId: "fin05b-quest" });
     const doc = created.mission;
+    assert.deepEqual(
+      doc.screens.scenes.s1.layers.map((entry) => entry.asset),
+      [material, material],
+      "сохранённый документ ссылается на реально загруженный материал"
+    );
 
     const added = addScreenLayer(doc, "s1", layer("l3", { x: 0.1, y: 0.9, scale: 1.4, rotation: 30, z: 3 }));
     assert.equal(added.ok, true);
