@@ -229,3 +229,29 @@ HTTP-сервер Control, четыре неполные формы мира п�
 Полный прогон на смёрженном HEAD `e9a20f2`: `tsc -b --force` = 0; contracts 57, core 64, runtime 22, player 29, control 129, server 216 (215 pass, 1 skip), studio 236 (235 pass, 1 skip), apps/player 23, builder-runner 26 — суммарно 802 теста, 0 падений.
 
 Открытая HTTP-половина R-09: маршруты `control-server.ts` зовут `applyMissionTurn` напрямую, минуя сервис с проверкой владельца. Проверка передана в финальную волну ревью `deleg_20ef1318` (8 ревьюеров, read-only, зоны: контракты+ядро, runtime+клиент плеера, хранилище/схема, публикация/релизы/пакеты, серверные границы, модули Studio, плеер+builder-runner+app.ts, скрипты+доки).
+
+## Волна 1 — приёмка и интеграция восьми исправлений (HEAD 417893d)
+
+Восемь листовых веток (диспетчер `deleg_165e5aac`, база `370b571`) смёржены в `feat/b13-acceptance-closure`:
+`65aad0a` (contracts), `b1c17c7` (core), `5bc8429` (runtime), `4f2c977` (player), `acd060b` (server-resilience),
+`804aed8` (anchors), `bb15992` (studio-board-svg), `417893d` (scripts).
+
+| № | Дефект | Ветка / head_sha | Проверка |
+|---|---|---|---|
+| R-11 | `hasValidWorldStateReferences` бросал `TypeError` на `{}`/`null`; `validateMissionDraft` не проверял `choice.conditions`/`choice.effects` | `fix/contracts-worldstate` / `43dd626` | SHA совпал, tsc 0, contracts 68/68; мутации A/B ребёнка: 6 fail и 2 fail → откат зелёный |
+| R-12 | отсутствие ключа `world.terminal` трактовалось как «история окончена» (`undefined !== null`) | `fix/core-terminal` / `d54fb5f` | SHA совпал, core 75/75; мутация: 9 fail из 11 → откат 11/11 |
+| R-13 | рантайм принимал `WorldState` без `terminal` и без проверки формы; `projectPlayerView` падал `TypeError` | `fix/runtime-worldstate` / `ac7fe3b` | SHA совпал; **моя мутация на смёрженном HEAD**: снятие обоих guard'ов → runtime 27 pass / **4 fail**, откат → 31 pass / 0 fail, дерево чистое |
+| R-14 | ход в `apps/player/app.js` не защищён от повторной отправки и устаревшего ответа; ответ сервера шёл в `innerHTML` без валидации/экранирования | `fix/player-turn` / `4f60583` | SHA совпал, app-player 28/28; 4 мутации ребёнка (снятие блокировки, валидации, `escapeHtml`) краснили набор |
+| R-15 | `void advance()` в таймерах presence/editing-lock → unhandled rejection роняет сервер; `catch {}` в `handleAction` навсегда фиксировал ход `failed` при `SQLiteStorageBusyError` | `fix/server-resilience` / `8f0c6b6` | SHA совпал, server 219 (218 pass, 1 skip); мутации: 2 fail и `500 !== 503` → откат зелёный |
+| R-16 | `anchorDeleted` всегда `true` для якорей `kind=layer`/`field` → UI рисовал «Элемент удалён» для существующего объекта | `fix/anchors-deleted` / `964ea5a` | SHA совпал, control 132/132; мутация ребёнка: 3/3 fail → откат 3/3 |
+| R-17 | SVG связей доски двойное преобразование (`viewBox` со сдвигом pan при уже трансформированном `.story-world`); отдельный лимит прокси для `/imports` | `fix/studio-board-svg` / `8a58bfb` | SHA совпал, studio 239 (238 pass, 1 skip); **конфликт по `dev-server.ts` разрешён вручную** — оставлены одна константа `STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = 64 МиБ` и сигнатура `proxyBodyLimit(pathname, importLimitBytes)`; оба теста волны 2 и задачи 7 зелёные (3/3) |
+| R-18 | `check-boundaries.mjs` обходился динамическим `import()` и не читал вложенные каталоги; приёмочный drill `b13-b2` при `FAIL` возвращал exit 0 | `fix/scripts-guards` / `4c0345d` | SHA совпал, scripts 15/15; **моя мутация на смёрженном HEAD**: игнор dynamic-import → 7 pass / **3 fail**, откат → 15/15 |
+
+Полный прогон на смёрженном HEAD `417893d`: `tsc -b --force` = 0; contracts 68, core 75, runtime 31, player 29,
+control 132, server 219 (218 pass, 1 skip), studio 239 (238 pass, 1 skip), apps/player 28, builder-runner 26,
+scripts 15 — **862 теста, 0 падений**; `check:boundaries` = ok (39 файлов); `docs:check` = ok.
+
+Остаточные ограничения, названные исполнителями и принятые сознательно:
+- R-16: scene-якорь без mission-документа всё ещё может считаться удалённым (булев тип и UI не поддерживают третье состояние).
+- R-14: mock-стабы `client/executor` в тестовом стенде; живой браузерный прогон плеера не делался.
+- R-12: `apps/server/src/player-turn.ts:241` содержит ту же проверку `terminal !== null` — вне зоны задачи, действителен.
