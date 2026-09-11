@@ -700,20 +700,19 @@ function isBusy() {
   return state.phase === "acting" || state.phase === "presenting" || state.phase === "resetting";
 }
 
-function makeIdempotencyKey() {
+function idempotencySuffix() {
   const randomUuid = globalThis.crypto?.randomUUID;
-  const suffix = typeof randomUuid === "function"
+  return typeof randomUuid === "function"
     ? randomUuid.call(globalThis.crypto)
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `player-paint-${suffix}`;
+}
+
+function makeIdempotencyKey() {
+  return `player-paint-${idempotencySuffix()}`;
 }
 
 function makeTurnIdempotencyKey() {
-  const randomUuid = globalThis.crypto?.randomUUID;
-  const suffix = typeof randomUuid === "function"
-    ? randomUuid.call(globalThis.crypto)
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `player-turn-${suffix}`;
+  return `player-turn-${idempotencySuffix()}`;
 }
 
 function formatSeconds(value) {
@@ -724,6 +723,14 @@ function formatSeconds(value) {
   return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
 }
 
+/**
+ * Правило идентификатора и валидация позиции хода дублируют канонический
+ * `story-guards.ts` намеренно: `fin05-player-turn-race.test.mjs` снимает из
+ * app.js все строки импорта браузерных модулей и обращается к
+ * `isId`/`isTurnPosition`/`escapeHtml` как к top-level символам файла, поэтому
+ * браузерный вход не может брать их внешним модулем (см. отчёт: блокер выноса).
+ * Канонический источник — `story-guards.ts`; при правке правила менять обе точки.
+ */
 function isId(value) {
   return typeof value === "string" && ID_PATTERN.test(value);
 }

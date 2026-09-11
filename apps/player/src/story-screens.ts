@@ -17,6 +17,13 @@ import type {
   MissionScene,
   MissionSceneScreen
 } from "@living-history/contracts";
+import { isId, isNonNegativeSafeInteger } from "./story-guards.js";
+
+// Единые стражи недоверенного ввода живут в `story-guards.ts`; здесь они ещё и
+// реэкспортируются, потому что скомпилированный `story-screens.js` — единственный
+// `/player-assets`-модуль, который браузерный `app.js` грузит как ES-модуль.
+export { ID_PATTERN, escapeHtml, isId, isNonNegativeSafeInteger, isTurnPosition } from "./story-guards.js";
+export type { StoryTurnPosition } from "./story-guards.js";
 
 export const STORY_SCREENS_SCHEMA_VERSION = "1.0" as const;
 
@@ -374,9 +381,6 @@ export interface StoryScreensTurnResolution {
   readonly message: string;
 }
 
-/** Идентификатор позиции/сцены приходит только из доверенного формата ID. */
-const TURN_REPLY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
-
 /**
  * Ответ сервера — недоверенный вход. Позиция принимается только если все три
  * поля имеют ожидаемый тип: целый неотрицательный ход и ID-подобные
@@ -385,10 +389,9 @@ const TURN_REPLY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 export function isStoryScreensTurnReply(value: unknown): value is StoryScreensTurnReply {
   if (value === null || typeof value !== "object") return false;
   const reply = value as { readonly turn?: unknown; readonly sceneId?: unknown; readonly endingId?: unknown };
-  if (typeof reply.turn !== "number" || !Number.isSafeInteger(reply.turn) || reply.turn < 0) return false;
-  if (typeof reply.sceneId !== "string" || !TURN_REPLY_ID_PATTERN.test(reply.sceneId)) return false;
-  if (!(reply.endingId === null || (typeof reply.endingId === "string" && TURN_REPLY_ID_PATTERN.test(reply.endingId)))) return false;
-  return true;
+  if (!isNonNegativeSafeInteger(reply.turn)) return false;
+  if (!isId(reply.sceneId)) return false;
+  return reply.endingId === null || isId(reply.endingId);
 }
 
 /**
