@@ -32,6 +32,12 @@ const state = {
 };
 const renderer = new BrowserPresentationRenderer(() => state.session);
 const executor = new PresentationExecutor(renderer);
+/**
+ * Гонка хода истории. `inFlight` не даёт двум кликам отправить два POST с одним
+ * baseTurn; `ordinal` монотонно растёт на каждый отправленный запрос, поэтому
+ * поздний ответ устаревшего запроса не может перезаписать более новый ход.
+ */
+const storyTurnGuard = { inFlight: false, ordinal: 0 };
 
 root.addEventListener("submit", (event) => void onSubmit(event));
 root.addEventListener("click", (event) => void onClick(event));
@@ -125,10 +131,26 @@ async function applyStory(input) {
 /**
  * Отправляет ход на сервер и переходит ровно по его ответу. Недоступный выбор
  * и недоступный сервер оставляют позицию неизменной с понятным сообщением.
+ *
+ * Пока ход в полёте, повторный клик не отправляется (иначе два POST с одним
+ * baseTurn: поздний 409 откатил бы уже применённый ход). Ответ устаревшего
+ * запроса (ordinal меньше текущего) игнорируется целиком.
  */
 async function commitStoryTurn(turnRequest) {
   if (!state.story) return;
+  if (storyTurnGuard.inFlight) return;
+  storyTurnGuard.inFlight = true;
+  try {
+    await runStoryTurn(turnRequest);
+  } finally {
+    storyTurnGuard.inFlight = false;
+  }
+}
+
+async function runStoryTurn(turnRequest) {
+  if (!state.story) return;
   const base = state.story.screens;
+  const ordinal = ++storyTurnGuard.ordinal;
   state.message = "Сервер применяет ход…";
   render();
 
@@ -145,14 +167,33 @@ async function commitStoryTurn(turnRequest) {
       })
     });
     const body = await response.json().catch(() => null);
+    // Поздний ответ запроса, который уже устарел: не трогаем более новую позицию.
+    if (ordinal !== storyTurnGuard.ordinal) return;
     const position = body?.state?.position ?? null;
-    if (response.ok && position !== null) {
-      resolution = storyScreensTurnApplied(base, {
-        turn: position.turn,
-        sceneId: position.sceneId,
-        endingId: position.endingId
-      });
-      state.story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: position.turn });
+    if (response.ok) {
+      if (isTurnPosition(position)) {
+        resolution = storyScreensTurnApplied(base, {
+          turn: position.turn,
+          sceneId: position.sceneId,
+          endingId: position.endingId
+        });
+        state.story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: position.turn });
+      } else {
+        // Ответ 200 без пригодной позиции — честный отказ, а не «успех» с чужими полями.
+        resolution = storyScreensTurnRejected(base, {
+          network: false,
+          status: response.status,
+          code: "TURN_POSITION_INVALID"
+        });
+        resolution = Object.freeze({
+          ...resolution,
+          message: "Сервер вернул ход без корректной позиции: позиция не изменена."
+        });
+      }
+    } else if (response.status === 409 && body?.error?.code === "TURN_CONFLICT") {
+      // Ход устарел: сервер уже ушёл вперёд. Применённую позицию НЕ откатываем —
+      // добираем авторитетное состояние хода через GET.
+      resolution = await syncStoryTurnFromServer(base);
     } else {
       resolution = storyScreensTurnRejected(base, {
         network: false,
@@ -164,10 +205,38 @@ async function commitStoryTurn(turnRequest) {
     resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
   }
 
+  if (ordinal !== storyTurnGuard.ordinal) return;
   state.story.screens = resolution.state;
   state.message = resolution.message;
   render();
   await renderStoryScreen();
+}
+
+/**
+ * Конфликт устаревшего baseTurn: серверный ход уже случился. Клиент не откатывает
+ * свою позицию, а синхронизируется с авторитетным состоянием сессии хода (GET),
+ * иначе следующий ход снова ушёл бы с устаревшим baseTurn и застрял навсегда.
+ */
+async function syncStoryTurnFromServer(base) {
+  try {
+    const response = await fetch(`/player-turn.json?sessionId=${encodeURIComponent(storySessionId())}`, {
+      headers: { accept: "application/json" }
+    });
+    const body = await response.json().catch(() => null);
+    const position = body?.state?.position ?? null;
+    if (response.ok && isTurnPosition(position)) {
+      const synced = storyScreensTurnApplied(base, {
+        turn: position.turn,
+        sceneId: position.sceneId,
+        endingId: position.endingId
+      });
+      return Object.freeze({
+        ...synced,
+        message: `Ход синхронизирован с сервером (ход ${position.turn}); позиция не откатывалась.`
+      });
+    }
+  } catch { /* деградация ниже: позиция остаётся, экран получает понятное сообщение */ }
+  return storyScreensTurnRejected(base, { network: false, status: 409, code: "TURN_CONFLICT" });
 }
 
 async function renderStoryScreen() {
@@ -470,7 +539,7 @@ function renderStoryShell() {
   const lastTurn = story.lastTurn;
   const lastTurnText = lastTurn === null || lastTurn === undefined
     ? ""
-    : `<p class="story-turn">Сервер зафиксировал ход ${lastTurn.turn}: выбор ${escapeHtml(lastTurn.choiceId)}.</p>`;
+    : `<p class="story-turn">Сервер зафиксировал ход ${escapeHtml(lastTurn.turn)}: выбор ${escapeHtml(lastTurn.choiceId)}.</p>`;
 
   // Story shell uses only local metadata; SceneFrame/story content is never
   // interpolated here — the shared renderer below builds it with createElement.
@@ -482,7 +551,7 @@ function renderStoryShell() {
           <div class="brand-subtitle">Frozen playtest · экраны истории</div>
         </div>
         <div class="session-state">
-          <strong>Ходы: ${story.screens.turns}</strong>
+          <strong>Ходы: ${escapeHtml(story.screens.turns)}</strong>
           ${escapeHtml(state.message)}
         </div>
       </header>
@@ -646,6 +715,21 @@ function formatSeconds(value) {
   const minutes = Math.floor(value / 60);
   const seconds = value % 60;
   return seconds === 0 ? `${minutes} мин` : `${minutes} мин ${seconds} сек`;
+}
+
+function isId(value) {
+  return typeof value === "string" && ID_PATTERN.test(value);
+}
+
+/**
+ * Валидация позиции из ответа хода. Ответ — недоверенный ввод: без неё любое
+ * поле сервера (включая `turn`) уехало бы прямо в разметку экрана.
+ */
+function isTurnPosition(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!Number.isSafeInteger(value.turn) || value.turn < 0) return false;
+  if (!isId(value.sceneId)) return false;
+  return value.endingId === null || isId(value.endingId);
 }
 
 function isMetadata(value) {
