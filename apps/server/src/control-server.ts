@@ -735,8 +735,14 @@ async function routeControlRequest(
       const write = await beginCollaborationWrite();
       if (!write) return;
       const replyKeys = Object.keys(write.body).sort().join(",");
-      if ((replyKeys !== "text" && replyKeys !== "expectedRevision,text")
+      if ((replyKeys !== "text"
+          && replyKeys !== "expectedRevision,text"
+          && replyKeys !== "replyToMessageId,text"
+          && replyKeys !== "expectedRevision,replyToMessageId,text")
         || typeof write.body.text !== "string"
+        || (write.body.replyToMessageId !== undefined
+          && (typeof write.body.replyToMessageId !== "string"
+            || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(write.body.replyToMessageId)))
         || (write.body.expectedRevision !== undefined && !isRevision(write.body.expectedRevision))) {
         sendJson(response, 400, { error: { code: "INVALID_COLLABORATION_REQUEST" } });
         return;
@@ -744,6 +750,7 @@ async function routeControlRequest(
       sendCollaboration(await collaborationStore.addMessage(projectId, questId, {
         threadId: replyMatch[1]!,
         text: write.body.text,
+        ...(write.body.replyToMessageId === undefined ? {} : { replyToMessageId: write.body.replyToMessageId }),
         ...(write.body.expectedRevision === undefined ? {} : { expectedRevision: write.body.expectedRevision }),
         idempotencyKey: write.idempotencyKey,
         actorUserId: collaborationActorUserId
