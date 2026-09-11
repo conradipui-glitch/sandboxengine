@@ -1143,3 +1143,61 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .screen-layer-row.is-selected { border-left: 2px solid var(--primary); }
 .screen-layer-edit { border-top: 1px dashed var(--border); padding-top: 8px; margin-bottom: 8px; }
 
+
+/* FIN-12 (V07) — заметки и обсуждения: рабочая поверхность в правой вкладке.
+   Требования продукта: панель занимает всю доступную ширину без мёртвых
+   боковых полей, текст никогда не обрезается многоточием (переносится на
+   вторую строку), а скролл-контейнер доходит до последней строки. Поэтому
+   здесь нет обрезки по ширине — только overflow-wrap: anywhere, и нижний
+   отступ, чтобы последняя строка не залипала под краем скролла. */
+.ed-body.notes-open { grid-template-columns: 240px minmax(0, 1fr) minmax(400px, 480px); }
+.collab-panel { display: grid; gap: var(--gap-3); width: 100%; min-width: 0; padding-bottom: 28px; }
+.collab-head { display: grid; gap: 6px; }
+.collab-head h2 { margin: 0; font-size: 18px; }
+.collab-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.collab-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.collab-meta code { overflow-wrap: anywhere; }
+.collab-meta strong { color: var(--text); }
+.collab-help { border: 1px dashed var(--border); border-radius: var(--radius-s); padding: var(--gap-2) var(--gap-3); font-size: 12.5px; color: var(--muted); }
+.collab-help summary { cursor: pointer; font-weight: 650; color: var(--text); }
+.collab-help p { margin: 6px 0 0; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.collab-help code { overflow-wrap: anywhere; }
+.collab-conflict { display: grid; gap: 6px; justify-items: start; padding: var(--gap-3); border: 1px solid var(--danger); border-radius: var(--radius-s); background: rgba(176, 58, 46, .06); }
+.collab-conflict p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.collab-conflict small { color: var(--muted); line-height: 1.4; }
+.collab-notice, .collab-readonly { margin: 0; padding: 10px 12px; border-radius: var(--radius-s); background: var(--selected); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.collab-unavailable { display: grid; gap: var(--gap-2); justify-items: start; padding: var(--gap-3); border: 1px dashed var(--border); border-radius: var(--radius-s); color: var(--muted); }
+.collab-unavailable p { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.collab-section { display: grid; gap: var(--gap-2); min-width: 0; }
+.collab-section-head { display: flex; align-items: baseline; gap: 8px; }
+.collab-section-head h3 { margin: 0; font-size: 15px; }
+.collab-count { color: var(--muted); font-size: 12px; }
+.collab-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; min-width: 0; }
+.collab-empty { margin: 0; padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius-s); color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.collab-note, .collab-thread { display: grid; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface); }
+.collab-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 12px; color: var(--muted); min-width: 0; }
+.collab-row-head strong { color: var(--text); overflow-wrap: anywhere; }
+.collab-text { margin: 0; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.collab-anchor-deleted { margin: 0; font-size: 12px; color: var(--danger); line-height: 1.4; overflow-wrap: anywhere; }
+.collab-status { padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); }
+.collab-status.open { color: var(--primary); border-color: var(--primary); }
+.collab-status.closed { color: var(--muted); }
+.collab-messages { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--border); display: grid; gap: 8px; min-width: 0; }
+.collab-message { display: grid; gap: 2px; min-width: 0; }
+.collab-message.deleted { opacity: .7; }
+.collab-message-author { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.collab-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.collab-row-actions button { min-height: 32px; }
+.collab-form { display: grid; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--canvas); }
+.collab-form.inline { padding: 8px 10px; }
+.collab-form label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 650; }
+.collab-form textarea { resize: vertical; min-height: 56px; }
+.collab-form-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.collab-form-row label { flex: 0 1 96px; }
+.collab-form-row input[type="number"] { min-height: 34px; }
+.collab-form-row button { min-height: 36px; }
+.collab-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+@media (max-width: 1100px) {
+  .ed-body.notes-open { grid-template-columns: 200px minmax(0, 1fr); height: auto; }
+  .ed-body.notes-open .ed-inspector { display: block; grid-column: 1 / -1; height: auto; max-height: 70vh; border-left: 0; border-top: 1px solid var(--border); }
+}
