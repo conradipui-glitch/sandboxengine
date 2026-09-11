@@ -282,7 +282,12 @@ const BOARD_DOM_CSS = `
 .board-port:hover { opacity: 1; box-shadow: 0 0 0 5px rgba(36, 91, 215, .18); }
 .board-node:hover .board-port { opacity: 1; }
 .board-port--out { background: var(--primary, #245BD7); }
-.board-port--in { border-color: var(--muted, #65716B); }
+.board-port--in {
+  background: var(--surface, #fff);
+  border-color: var(--primary, #245BD7);
+  opacity: .55;
+}
+.board-port--in:hover { background: var(--primary, #245BD7); opacity: 1; }
 .board-port--right { right: -7px; top: 50%; transform: translateY(-50%); }
 .board-port--left { left: -7px; top: 50%; transform: translateY(-50%); }
 .board-port--top { top: -7px; left: 50%; transform: translateX(-50%); }
