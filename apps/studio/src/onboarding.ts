@@ -396,6 +396,10 @@ export function resolveStudioRole(doc: Document): ProjectRole {
   return "editor";
 }
 
+export function studioPreferenceStore(): PreferenceStore | null {
+  return browserPreferenceStore();
+}
+
 function browserPreferenceStore(): PreferenceStore | null {
   try {
     return typeof globalThis.localStorage === "undefined" ? null : globalThis.localStorage;

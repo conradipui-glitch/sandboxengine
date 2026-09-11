@@ -147,6 +147,11 @@ test("FIN-03/B04: a started game keeps the assets of its own pinned revision aft
     projectId: "project", questId: "quest", releaseId: "release-2", draftRevision: 0, validationId: secondValidation.validation.validationId, idempotencyKey: "build-2"
   });
   assert.equal(secondRelease.kind, "created");
+  // Второй релиз тоже замораживается: без пина его публиковать нельзя.
+  assert.equal((await freezeReleaseBundle(
+    { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+    { projectId: "project", questId: "quest", releaseId: "release-2" }
+  )).kind, "frozen");
   const secondPublish = await fetch(`${base}/control/v1/projects/project/quests/quest/publish`, {
     method: "POST", headers: { "content-type": "application/json", "idempotency-key": "publish-2" },
     body: JSON.stringify({ releaseId: "release-2", expectedCurrentReleaseId: "release-1" })

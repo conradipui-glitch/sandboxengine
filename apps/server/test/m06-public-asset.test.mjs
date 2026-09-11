@@ -96,7 +96,7 @@ test("R03/F05: public asset bytes are served only for the pinned published revis
   assert.equal(release.kind, "created");
   assert.equal((await freezeReleaseBundle(
     { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
-    { projectId: "project", questId: "quest", releaseId }
+    { projectId: "project", questId: "quest", releaseId: "release-1" }
   )).kind, "frozen");
 
   const publish = await fetch(`${base}/control/v1/projects/project/quests/quest/publish`, {

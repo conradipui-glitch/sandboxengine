@@ -34,13 +34,9 @@ import {
 } from "./onboarding-tour.js";
 import type { PreferenceStore } from "./onboarding.js";
 
-// FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, доступ к
-// localStorage даёт этот адаптер — сам модуль о браузере ничего не знает.
-const tourPreferenceStore: PreferenceStore = {
-  getItem: (key: string) => (typeof localStorage === "undefined" ? null : localStorage.getItem(key)),
-  setItem: (key: string, value: string) => { if (typeof localStorage !== "undefined") localStorage.setItem(key, value); },
-  removeItem: (key: string) => { if (typeof localStorage !== "undefined") localStorage.removeItem(key); }
-};
+// FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, а само
+// браузерное хранилище отдаёт onboarding.ts — Studio не трогает его напрямую.
+const tourPreferenceStore: PreferenceStore | null = studioPreferenceStore();
 let onboardingTourState: OnboardingTourState = loadOnboardingTourProgress(tourPreferenceStore);
 import {
   createInitialLocationBlock,
@@ -144,6 +140,7 @@ import {
   type AuthorAssistantPanelState
 } from "./author-assistant.js";
 import { renderStudioError, type StudioErrorBannerHandle } from "./onboarding.js";
+import { studioPreferenceStore } from "./onboarding.js";
 import {
   collabField,
   collaborationAnchorFromForm,
@@ -2448,12 +2445,12 @@ export class StudioApp {
   private setError(error: unknown): void {
     this.state.phase = "error";
     if (error instanceof ControlApiError) {
-      const described = describeControlError(error);
+      this.state.message = describeControlError(error);
       // FIN-10: к известному коду добавляется действие — что именно сделать.
       const explained = explainStudioError(error.code, { detailCode: (error as { detailCode?: string | null }).detailCode ?? null });
-      this.state.message = explained.action.length > 0 && !described.includes(explained.action)
-        ? `${described} ${explained.action}`
-        : described;
+      if (explained.action.length > 0 && !this.state.message.includes(explained.action)) {
+        this.state.message = `${this.state.message} ${explained.action}`;
+      }
       return;
     }
     this.state.message = error instanceof Error ? error.message : "Неизвестная ошибка Studio.";
