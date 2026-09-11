@@ -75,6 +75,7 @@ import {
   edgeToDraftChange
 } from "./board-model.js";
 import { mountBoard } from "./board-dom.js";
+import { fitBoardContent } from "./board-viewport.js";
 import {
   createPresenceClient,
   mountPresence,
