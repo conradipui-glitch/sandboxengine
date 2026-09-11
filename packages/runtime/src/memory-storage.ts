@@ -1,6 +1,22 @@
-import type { JsonValue, WorldState } from "@living-history/contracts";
+import type { WorldState } from "@living-history/contracts";
+import {
+  canonicalRequestHash,
+  cloneJson,
+  cloneAndFreeze,
+  deepFreeze,
+  frozen,
+  isLeaseEndSafe,
+  isPositiveSafeInteger,
+  isPublicResponse,
+  isRuntimeId,
+  isSafeNonNegativeInteger,
+  isValidCandidateState,
+  isValidClaimInput,
+  isValidRenewInput,
+  isValidSeedSession,
+  isValidTurnRecord
+} from "./json-guards.js";
 import type { ServiceClock } from "./service-clock.js";
-import { isValidWorldState } from "./world-state-validation.js";
 import type {
   ClaimOperationInput,
   ClaimOperationResult,
@@ -17,8 +33,9 @@ import type {
   TurnRecordBoundary
 } from "./storage.js";
 
-export const MAX_LEASE_DURATION_MS = 300_000;
-export const MAX_PUBLIC_RESPONSE_JSON_CHARS = 100_000;
+// Bounded policy now lives in json-guards.ts; re-exported here so the package's
+// long-standing public names (index.ts imports them from this module) are unchanged.
+export { MAX_LEASE_DURATION_MS, MAX_PUBLIC_RESPONSE_JSON_CHARS } from "./json-guards.js";
 
 type OperationIdFactory = (ordinal: number) => string;
 
@@ -302,106 +319,14 @@ function snapshotOperation(operation: OperationRecord): OperationRecord {
 }
 
 function cloneAndFreezePublicResponse(response: RuntimePublicResponse): RuntimePublicResponse {
-  return deepFreeze(cloneJson(response));
+  return cloneAndFreeze(response);
 }
 
-function isValidSeedSession(session: SessionRecord): boolean {
-  return isRuntimeId(session.sessionId)
-    && session.activeOperationId === null
-    && isRuntimeId(session.release.questId)
-    && isRuntimeId(session.release.releaseId)
-    && isSha256(session.release.contentHash)
-    && isSafeNonNegativeInteger(session.revision)
-    && session.state.revision === session.revision
-    && isValidWorldState(session.state);
-}
-
-function isValidClaimInput(input: ClaimOperationInput): boolean {
-  return isRuntimeId(input.sessionId)
-    && isIdempotencyKey(input.idempotencyKey)
-    && isSha256(input.requestHash)
-    && isSafeNonNegativeInteger(input.expectedRevision)
-    && isValidLeaseDuration(input.leaseDurationMs);
-}
-
-function isValidRenewInput(input: RenewLeaseInput): boolean {
-  return isRuntimeId(input.sessionId)
-    && isRuntimeId(input.operationId)
-    && isPositiveSafeInteger(input.fencingToken)
-    && isValidLeaseDuration(input.leaseDurationMs);
-}
-
-function isValidLeaseDuration(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= MAX_LEASE_DURATION_MS;
-}
-
-function isLeaseEndSafe(now: number, duration: number): boolean {
-  return Number.isSafeInteger(now + duration);
-}
-
-function isValidCandidateState(state: WorldState, expectedRevision: number): boolean {
-  if (expectedRevision === Number.MAX_SAFE_INTEGER) return false;
-  return isValidWorldState(state) && state.revision === expectedRevision + 1;
-}
-
-function isValidTurnRecord(record: TurnRecordBoundary, operation: OperationRecord, expectedRevision: number): boolean {
-  return isRuntimeId(record.turnId)
-    && record.operationId === operation.operationId
-    && record.sessionId === operation.sessionId
-    && record.beforeRevision === expectedRevision
-    && record.afterRevision === expectedRevision + 1
-    && isSha256(record.stateHash);
-}
-
-function isPublicResponse(value: RuntimePublicResponse): boolean {
-  if (!isPlainObject(value) || !isJsonValue(value, 0)) return false;
-  try {
-    return JSON.stringify(value).length <= MAX_PUBLIC_RESPONSE_JSON_CHARS;
-  } catch {
-    return false;
-  }
-}
-
-function isJsonValue(value: unknown, depth: number): value is JsonValue {
-  if (depth > 20) return false;
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length <= 1_000 && value.every((entry) => isJsonValue(entry, depth + 1));
-  if (!isPlainObject(value)) return false;
-  const entries = Object.entries(value);
-  return entries.length <= 1_000 && entries.every(([key, entry]) => key.length <= 200 && isJsonValue(entry, depth + 1));
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function isRuntimeId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isIdempotencyKey(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
-}
-
-function canonicalRequestHash(value: string): string {
-  return value.toLowerCase();
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isPositiveSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
-}
-
+/**
+ * DIVERGENT from `sqlite-storage.ts#nextFencingToken(current: number)`: the SQLite
+ * copy additionally re-validates its counter because it reads it back from a row,
+ * while this one trusts an internal in-memory invariant. Kept separate on purpose.
+ */
 function nextFencingToken(session: MutableSession): number | null {
   if (session.fencingCounter === Number.MAX_SAFE_INTEGER) return null;
   return session.fencingCounter + 1;
@@ -409,20 +334,4 @@ function nextFencingToken(session: MutableSession): number | null {
 
 function operationKey(sessionId: string, idempotencyKey: string): string {
   return `${sessionId}\u0000${idempotencyKey}`;
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-function frozen<T extends object>(value: T): Readonly<T> {
-  return Object.freeze(value);
 }

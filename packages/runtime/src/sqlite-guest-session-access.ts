@@ -1,16 +1,25 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0 where node:sqlite is built in; no @types/node dependency is installed yet.
 import { DatabaseSync } from "node:sqlite";
 import {
-  DEFAULT_SQLITE_BUSY_TIMEOUT_MS,
-  MAX_SQLITE_BUSY_TIMEOUT_MS,
-  SQLiteStorageBusyError,
-  SQLiteStorageCorruptionError
-} from "./sqlite-storage.js";
+  cloneAndFreeze,
+  frozen,
+  isNonEmptyPath,
+  isRuntimeId,
+  isSafeNonNegativeInteger,
+  isSha256,
+  normalizeContentHash
+} from "./json-guards.js";
 import type {
   CreateGuestSessionInput,
   CreateGuestSessionResult,
   RuntimeGuestSessionAccess
 } from "./session-access.js";
+import { SESSION_INSERT_SQL, sessionInsertParameters } from "./session-rows.js";
+import {
+  DEFAULT_SQLITE_BUSY_TIMEOUT_MS,
+  MAX_SQLITE_BUSY_TIMEOUT_MS
+} from "./sqlite-storage.js";
+import { SQLiteStorageCorruptionError, normalizeSQLiteError } from "./sqlite-errors.js";
 import type { SessionRecord } from "./storage.js";
 import { isValidWorldState } from "./world-state-validation.js";
 
@@ -31,7 +40,7 @@ export class SQLiteGuestSessionAccess implements RuntimeGuestSessionAccess {
   #closed = false;
 
   constructor(options: SQLiteGuestSessionAccessOptions) {
-    if (typeof options.path !== "string" || options.path.length < 1 || options.path.length > 4_096) {
+    if (!isNonEmptyPath(options.path)) {
       throw new TypeError("SQLite path is required");
     }
     const busyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_SQLITE_BUSY_TIMEOUT_MS;
@@ -62,35 +71,22 @@ export class SQLiteGuestSessionAccess implements RuntimeGuestSessionAccess {
       const existing = this.#db.prepare("SELECT 1 AS found FROM sessions WHERE session_id = ?").get(input.sessionId);
       if (existing) return frozen({ kind: "session_exists" });
 
-      const stateJson = JSON.stringify(input.initialState);
-      this.#db.prepare(`
-        INSERT INTO sessions (
-          session_id, quest_id, release_id, content_hash, state_json, revision,
-          active_operation_id, fencing_counter
-        ) VALUES (?, ?, ?, ?, ?, ?, NULL, 0)
-      `).run(
-        input.sessionId,
-        input.release.questId,
-        input.release.releaseId,
-        input.release.contentHash.toLowerCase(),
-        stateJson,
-        input.initialState.revision
-      );
-      this.#db.prepare(`
-        INSERT INTO guest_session_access (session_id, credential_hash) VALUES (?, ?)
-      `).run(input.sessionId, input.credentialHash.toLowerCase());
-
       const session: SessionRecord = frozen({
         sessionId: input.sessionId,
         release: frozen({
           questId: input.release.questId,
           releaseId: input.release.releaseId,
-          contentHash: input.release.contentHash.toLowerCase()
+          contentHash: normalizeContentHash(input.release.contentHash)
         }),
-        state: deepFreeze(cloneJson(input.initialState)),
+        state: cloneAndFreeze(input.initialState),
         revision: input.initialState.revision,
         activeOperationId: null
       });
+      this.#db.prepare(SESSION_INSERT_SQL).run(...sessionInsertParameters(session));
+      this.#db.prepare(`
+        INSERT INTO guest_session_access (session_id, credential_hash) VALUES (?, ?)
+      `).run(input.sessionId, normalizeContentHash(input.credentialHash));
+
       return frozen({ kind: "created", session });
     });
   }
@@ -101,7 +97,7 @@ export class SQLiteGuestSessionAccess implements RuntimeGuestSessionAccess {
     const row = this.#db.prepare(`
       SELECT credential_hash FROM guest_session_access WHERE session_id = ?
     `).get(sessionId);
-    return Boolean(row && String(row.credential_hash) === credentialHash.toLowerCase());
+    return Boolean(row && String(row.credential_hash) === normalizeContentHash(credentialHash));
   }
 
   #initializeSchema(): void {
@@ -163,39 +159,4 @@ function isValidCreateInput(input: CreateGuestSessionInput): boolean {
     && isSha256(input.release.contentHash)
     && isValidWorldState(input.initialState)
     && input.initialState.revision === 0;
-}
-
-function isRuntimeId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-function frozen<T extends object>(value: T): Readonly<T> {
-  return Object.freeze(value);
-}
-
-function normalizeSQLiteError(error: unknown): unknown {
-  if (error instanceof SQLiteStorageBusyError || error instanceof SQLiteStorageCorruptionError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  if (/database is locked|SQLITE_BUSY/i.test(message)) return new SQLiteStorageBusyError(message);
-  return error;
 }
