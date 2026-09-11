@@ -12,7 +12,18 @@
 Текущий блок: **M06 PARTIAL → исправления F01–F07 доставлены и подтверждены hosted. OPEN: R05 закрытие, C18 ролевые проверки, браузерный проход глазами игрока, второй независимый прогон; плюс четыре проблемы повторного аудита B01–B04 → FIN-01…FIN-04.**
 Рабочая ветка: `feat/b13-acceptance-closure`. Входной SHA correction: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`. Авторизация `@living_history_gate_bot` и V00 asset namespaces не меняются. Карточка: [2026-09-10-STUDIO-V00-V02-correction.md](worklog/2026-09-10-STUDIO-V00-V02-correction.md).
 
-## FIN-03 (B04) и FIN-04 (B01) — ассеты открытых сессий и манифест доставки (2026-09-11)
+## FIN-01 (B02), второй проход — публичный контур был не закрыт (2026-09-11)
+
+Независимая adversarial-проверка (`origin/feat/fin01-adversarial-verify`) нашла три живые дыры в **публичном** контуре; все три закрыты в этой ветке:
+
+- сборка замораживает пин **до** создания релиза; если заморозить нельзя (нет ассета) — `422 RELEASE_FREEZE_FAILED`, релиз не регистрируется (раньше `201` + релиз без пина);
+- пин фиксирует ревизию **на момент сборки**; публикация/rollback резолвят её, а не «текущий черновик» (закрыт кейс «собран на r1 — отдаёт r2»);
+- создание публичной сессии сверяет манифест пина с библиотекой → `409 PUBLIC_MISSION_ASSET_CHANGED` при дрейфе;
+- adopted legacy-пин сохраняет уже объявленный `contentHash` (один `releaseId` не меняет identity).
+
+Доказательство: `apps/server/test/fin01-release-contract.test.mjs` 4/4 (3 из 4 были RED до правки). Характеризующий набор `fin01-verify-*.test.mjs` (описывал старое поведение) намеренно не переносится в эту ветку — он остаётся в ветке субагента как исторический снимок. Worklog: [worklog/2026-09-11-FIN01-adversarial-fixes.md](worklog/2026-09-11-FIN01-adversarial-fixes.md).
+
+
 
 - **FIN-03 engine-половина (B04):** открытая сессия теперь получает ассеты по session-pinned маршруту `/public/v1/missions/:id/sessions/:sid/assets/:assetId`; credential сессии обязателен (нет/подделка → 401, чужая сессия или миссия → 404), отдача `private`. Оба маршрута (публичный и session) отдают байты **pinned digest** релиза, а не текущую запись библиотеки — иначе повторная загрузка того же `assetId` подменяла содержимое под `cache-control: immutable`. Тесты: `apps/server/test/fin03-session-assets.test.mjs` **3/3** (3-й кейс был RED: 2/3), независимый репро-тест субагента `apps/server/test/fin03-open-session-assets.test.mjs` **3/3** против этой ветки (до фикса 2/3). Site-половина — отдельный репозиторий, ветка `feat/fin03-site-session-assets` (`6eb4f9c`): BFF запрашивает тот же session-pinned URL. Worklog: [worklog/2026-09-11-FIN03-engine-session-assets.md](worklog/2026-09-11-FIN03-engine-session-assets.md).
 - **FIN-04 (B01) — манифест состава:** `deploy/vps/delivery-manifest.json` (генерируется `deploy/vps/delivery-manifest.mjs`) перечисляет версии компонентов состава (engine/authored/studio — commit exact-SHA, gate — SHA-256 файла) и объявляет общего писателя общей БД. Тест `apps/server/test/fin04-delivery-manifest.test.mjs` **2/2** (RED до манифеста 1/2; тест написан субагентом-репро). Worklog: [worklog/2026-09-11-FIN04-delivery-manifest.md](worklog/2026-09-11-FIN04-delivery-manifest.md). **Не закрыто:** runtime-детекция «старый Control пишет в общую БД» и hosted-проверка; манифест — снимок доставленного SHA.

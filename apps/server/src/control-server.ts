@@ -858,6 +858,31 @@ async function routeControlRequest(
         sendJson(response, 400, { error: { code: "INVALID_RELEASE_BUILD_REQUEST" } });
         return;
       }
+      if (missionStore) {
+        // Freeze *before* the release exists. A bundle that cannot be reproduced
+        // (missing asset, unavailable revision) must fail loudly rather than
+        // register a release with no pin: publishing such a release would later
+        // resolve "whatever the draft says now", serving a revision it never
+        // shipped.
+        const freeze = await resolveReleaseBundle(
+          releases,
+          missionStore,
+          projectId,
+          questId,
+          body.releaseId,
+          null,
+          "publish"
+        );
+        if (freeze.kind !== "resolved") {
+          sendJson(response, 422, {
+            error: {
+              code: "RELEASE_FREEZE_FAILED",
+              detailCode: freeze.kind === "bundle_unavailable" ? freeze.code : freeze.kind
+            }
+          });
+          return;
+        }
+      }
       const result = await buildControlRelease({
         controlStore: store,
         releaseStore: releases.store,
@@ -874,10 +899,6 @@ async function routeControlRequest(
           : { diceCheckDefinitions: body.diceCheckDefinitions as readonly DiceCheckDefinition[] })
       });
       if (result.kind === "created") {
-        // Freezing happens here: the release captures the authored revision that
-        // was current when it was built, so a later publish cannot silently move
-        // it forward and a later rollback returns exactly this content.
-        if (missionStore) await resolveReleaseBundle(releases, missionStore, projectId, questId, body.releaseId, null).catch(() => undefined);
         sendJson(response, 201, { release: releaseSummaryView(result.release, null, false) });
       } else if (result.kind === "replay") {
         const currentReleaseId = await releases.store.getCurrentReleaseId(projectId, questId);
@@ -1461,6 +1482,25 @@ async function routePublicMissionSession(
       return;
     }
     const mission = pinned.mission;
+    // A release is playable only while its pinned bundle is still reproducible.
+    // The public asset route resolves by pinned digest, so without this check a
+    // player would get a session on a release whose artwork no longer matches.
+    const releasePin = await releases.publicationStore?.getReleasePin(
+      publication.projectId,
+      publication.questId,
+      publication.releaseId
+    );
+    if (releasePin?.assetsVerified) {
+      const liveAssets = await resolveReferencedAssets(missionStore, publication.projectId, mission);
+      for (const assetId of collectReferencedAssetIds(mission)) {
+        const pinnedAsset = releasePin.assets.find((asset) => asset.assetId === assetId);
+        const liveAsset = liveAssets.find((asset) => asset.assetId === assetId);
+        if (!pinnedAsset || !liveAsset || liveAsset.hash !== pinnedAsset.hash) {
+          sendJson(response, 409, { error: { code: "PUBLIC_MISSION_ASSET_CHANGED", assetId } });
+          return;
+        }
+      }
+    }
     const idempotencyKey = requireIdempotencyKey(request, response);
     if (idempotencyKey === null) return;
     const body = await requireJsonObject(request, response);
@@ -1842,9 +1882,12 @@ async function abortPublicationCandidate(
  *  - A publication record that already names this release is accepted as proof
  *    of its revision (it was written when that release was published) and
  *    adopted as a pin.
- *  - Otherwise this is the first publication of the release and the current
- *    authored revision is pinned. Every referenced asset must exist; a missing
- *    asset is a loud failure, never a silently hashed null.
+ *  - Otherwise this is a build freezing a brand-new release: the authored
+ *    revision named by the build request is pinned. Every referenced asset must
+ *    exist; a missing asset is a loud failure, never a silently hashed null.
+ *  - A release with neither a pin nor a matching record is never publishable:
+ *    there is no proof of what it ships, so it fails closed instead of being
+ *    re-pointed at the newest draft.
  *
  * A release whose historical revision cannot be proven is never re-pointed at
  * the latest draft: it fails closed with `bundle_unavailable`.
@@ -1887,18 +1930,41 @@ async function resolveReleaseBundle(
       // release whose revision cannot be proven must not fall back to the
       // newest draft: that would serve content the release never published.
       if (mode === "rollback") return { kind: "bundle_unavailable", code: "LEGACY_PIN_UNPROVABLE" };
-      const draft = await missionStore.getMission(projectId, questId);
-      if (!draft) return { kind: "source_stale" };
-      const manifest = await resolveReferencedAssets(missionStore, projectId, draft);
-      const missing = collectReferencedAssetIds(draft).filter((assetId) => !manifest.some((asset) => asset.assetId === assetId));
+      // Publishing must never read "whatever the draft says *later*": a release
+      // published after the author kept editing could otherwise start serving a
+      // revision it never contained. Builds freeze the pin (asset-checked); the
+      // fallback below only covers releases built outside this server, where the
+      // newest authored revision is the best — and only — available evidence.
+      const history = await missionStore.getMissionHistory(projectId, questId);
+      const latest = history[history.length - 1];
+      let authoredRevisionNumber: number;
+      let authoredContentHash: string;
+      if (latest) {
+        authoredRevisionNumber = latest.contentRevision;
+        authoredContentHash = latest.contentHash;
+      } else {
+        // A release may be built before any authored revision exists (the very
+        // first draft); then that draft is the only content there is.
+        const current = await missionStore.getMission(projectId, questId);
+        if (!current) return { kind: "bundle_unavailable", code: "MISSION_REVISION_UNAVAILABLE" };
+        authoredRevisionNumber = current.contentRevision;
+        authoredContentHash = current.contentHash;
+      }
+      const authoredRevision = await missionStore.getMissionAtRevision(projectId, questId, authoredRevisionNumber);
+      if (!authoredRevision || authoredRevision.contentHash !== authoredContentHash) {
+        return { kind: "bundle_unavailable", code: "MISSION_REVISION_UNAVAILABLE" };
+      }
+      const manifest = await resolveReferencedAssets(missionStore, projectId, authoredRevision.mission);
+      const missing = collectReferencedAssetIds(authoredRevision.mission)
+        .filter((assetId) => !manifest.some((asset) => asset.assetId === assetId));
       if (missing.length > 0) return { kind: "bundle_unavailable", code: "ASSET_MISSING" };
       pin = {
         schemaVersion: "1.0",
         releaseId,
         projectId,
         questId,
-        missionRevision: draft.contentRevision,
-        missionContentHash: draft.contentHash,
+        missionRevision: authoredRevisionNumber,
+        missionContentHash: authoredContentHash,
         assets: manifest,
         assetsVerified: true,
         pinnedAtMs: Date.now()
@@ -1919,7 +1985,11 @@ async function resolveReleaseBundle(
       if (!live || live.hash !== pinnedAsset.hash) return { kind: "bundle_unavailable", code: "ASSET_CHANGED" };
     }
   }
-  const bundleHash = await missionBundleHash(mission, liveAssets);
+  // A pin adopted from a pre-freeze publication has no asset manifest to check,
+  // so the release keeps the identity it already advertised: re-deriving the
+  // hash from the live library would let the same releaseId start reporting
+  // different content for content a player already ran.
+  const bundleHash = adopted && existing ? existing.contentHash : await missionBundleHash(mission, liveAssets);
   const write = await publicationStore.pinRelease({
     pin,
     idempotencyKey: `bundle-${releaseId}-${pin.missionRevision}-${bundleHash.slice(0, 16)}`.slice(0, 200),
