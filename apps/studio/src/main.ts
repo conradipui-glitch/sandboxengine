@@ -43,6 +43,16 @@ const controlAllowedOrigins = String(process.env.CONTROL_ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
+// Единый вход через существующий Telegram-бот: секрет, которым gate подписывает
+// ассерт личности (тот же LHC_GATE_IDENTITY_SECRET на стороне gate). Пока секрет
+// не задан, Studio работает как раньше; как только он задан в authenticated-режиме,
+// идентичность берётся ТОЛЬКО из проверенной серверной сессии gate, и парольного
+// входа в Studio нет вовсе. Пустая или короткая строка — явная ошибка запуска,
+// а не тихий откат к «вошли все».
+const gateIdentitySecret = String(process.env.LH_GATE_IDENTITY_SECRET ?? "");
+if (gateIdentitySecret.length > 0 && gateIdentitySecret.length < 32) {
+  throw new Error("LH_GATE_IDENTITY_SECRET must be at least 32 chars");
+}
 
 const store = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
@@ -111,7 +121,9 @@ const control = controlServerModule.createControlHttpServer({
     security: controlSecurity,
     allowedOrigins: controlAllowedOrigins,
     secureCookies: controlSecureCookies,
-    nowMs: () => Date.now()
+    nowMs: () => Date.now(),
+    // Один вход через бот: идентичность — из подписанного ассерта сессии gate.
+    ...(gateIdentitySecret.length >= 32 ? { gateIdentity: { secret: gateIdentitySecret } } : {})
   } : undefined,
   authorAssistant: {
     jobs: authorJobs,

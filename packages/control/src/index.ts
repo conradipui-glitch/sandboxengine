@@ -176,9 +176,13 @@ export {
 } from "./draft-history-service.js";
 export {
   CONTROL_ROLES,
+  CONTROL_TELEGRAM_USER_PREFIX,
+  controlUserIdForTelegram,
+  controlUsernameForTelegram,
   createControlOpaqueSecret,
   createControlSessionId,
   createPasswordVerifier,
+  ensureControlIdentityUser,
   hashControlOpaqueSecret,
   isControlProjectRole,
   isControlSecretHash,
@@ -192,6 +196,7 @@ export {
   type ControlSessionRecord,
   type ControlUserRecord,
   type CreateControlSessionResult,
+  type EnsureControlIdentityUserResult,
   type ProvisionControlUserResult,
   type RemoveProjectMemberResult,
   type SetProjectMemberResult

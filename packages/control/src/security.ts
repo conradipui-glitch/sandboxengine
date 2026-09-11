@@ -69,6 +69,12 @@ export interface ControlSecurityStore {
   }): Promise<CreateControlSessionResult>;
   getSessionByTokenHash(tokenHash: string, nowMs: number): Promise<ControlSessionRecord | null>;
   validateSessionCsrf(sessionId: string, csrfHash: string, nowMs: number): Promise<boolean>;
+  /**
+   * Перевыпуск подтверждения запроса для уже существующей сессии: клиент
+   * (Studio) держит CSRF только в памяти вкладки, поэтому после перезагрузки
+   * ему нужно новое подтверждение — без второго входа и без нового пароля.
+   */
+  rotateSessionCsrf(sessionId: string, csrfHash: string): Promise<boolean>;
   revokeSession(sessionId: string): Promise<boolean>;
   createProjectAsOwner(input: CreateProjectInput, userId: string): Promise<CreateProjectResult>;
   listProjectsForUser(userId: string): Promise<readonly ProjectRecord[]>;
@@ -158,6 +164,66 @@ export function timingSafeControlHashEqual(left: string, right: string): boolean
   } catch {
     return false;
   }
+}
+
+/**
+ * Личность из проверенной серверной сессии Telegram-gate живёт в Control как
+ * постоянный пользователь `telegram:<numeric id>`. Права на проекты берутся из
+ * `control_project_members`: вход в gate сам по себе НЕ делает человека
+ * владельцем ни одного проекта.
+ */
+export const CONTROL_TELEGRAM_USER_PREFIX = "telegram:";
+
+export function controlUserIdForTelegram(telegramId: unknown): string | null {
+  if (typeof telegramId !== "string" || !/^\d{4,15}$/.test(telegramId)) return null;
+  const userId = `${CONTROL_TELEGRAM_USER_PREFIX}${telegramId}`;
+  return isControlUserId(userId) ? userId : null;
+}
+
+/**
+ * Устойчивое имя пользователя для Telegram-личности. Ник (@handle) только
+ * отображается человеку и может меняться; ключ личности — числовой ID, поэтому
+ * имя всегда выводится из него и не зависит от текущего ника.
+ */
+export function controlUsernameForTelegram(telegramId: string, username?: unknown): string {
+  const handle = typeof username === "string" ? username.trim().replace(/^@/, "") : "";
+  if (/^[A-Za-z0-9][A-Za-z0-9_]{4,31}$/.test(handle)) return `tg_${handle}`;
+  return `tg-id-${telegramId}`;
+}
+
+export type EnsureControlIdentityUserResult =
+  | { readonly kind: "ready"; readonly user: ControlUserRecord }
+  | { readonly kind: "invalid_request" }
+  | { readonly kind: "conflict" };
+
+/**
+ * Идемпотентно приводит подтверждённую Telegram-личность к постоянному
+ * пользователю Control. Пароль у такой личности тайный и никому не выдаётся:
+ * единственный путь входа — проверенный ассерт gate, поэтому парольный вход в
+ * неё невозможен (bootstrap-учётка не заменяет идентичность участника).
+ */
+export async function ensureControlIdentityUser(
+  security: ControlSecurityStore,
+  input: { readonly telegramId: string; readonly username?: string | null }
+): Promise<EnsureControlIdentityUserResult> {
+  const userId = controlUserIdForTelegram(input.telegramId);
+  if (userId === null) return Object.freeze({ kind: "invalid_request" });
+  const existing = await security.getUser(userId);
+  if (existing) return Object.freeze({ kind: "ready", user: existing });
+
+  const fallback = `tg-id-${input.telegramId}`;
+  const preferred = controlUsernameForTelegram(input.telegramId, input.username);
+  for (const username of preferred === fallback ? [preferred] : [preferred, fallback]) {
+    const provisioned = await security.provisionUser({ userId, username, password: createControlOpaqueSecret() });
+    if (provisioned.kind === "created") return Object.freeze({ kind: "ready", user: provisioned.user });
+    if (provisioned.kind === "invalid_request") return Object.freeze({ kind: "invalid_request" });
+    if (provisioned.kind === "user_exists") {
+      const raced = await security.getUser(userId);
+      if (raced) return Object.freeze({ kind: "ready", user: raced });
+    }
+    // `username_exists` — имя занято другой учёткой: пробуем резервное имя по ID.
+  }
+  return Object.freeze({ kind: "conflict" });
 }
 
 function derivePassword(password: string, salt: any): any {

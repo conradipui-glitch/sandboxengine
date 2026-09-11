@@ -115,6 +115,15 @@ export class MemoryControlSecurityStore implements ControlSecurityStore {
     return true;
   }
 
+  async rotateSessionCsrf(sessionId: string, csrfHash: string): Promise<boolean> {
+    if (!isControlUserId(sessionId) || !isControlSecretHash(csrfHash)) return false;
+    const entry = this.#sessions.get(sessionId);
+    if (!entry || entry.revoked) return false;
+    const next = { session: entry.session, tokenHash: entry.tokenHash, csrfHash, revoked: false };
+    this.#sessions.set(sessionId, next);
+    return true;
+  }
+
   async createProjectAsOwner(input: CreateProjectInput, userId: string): Promise<CreateProjectResult> {
     if (!this.#users.has(userId)) return frozen({ kind: "invalid_request" });
     const result = await this.#control.createProject(input);
@@ -274,6 +283,13 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
     this.#assertOpen();
     if (!isControlUserId(sessionId)) return false;
     const result = this.#db.prepare("UPDATE control_auth_sessions SET revoked = 1 WHERE session_id = ? AND revoked = 0").run(sessionId);
+    return Number(result.changes ?? 0) === 1;
+  }
+
+  async rotateSessionCsrf(sessionId: string, csrfHash: string): Promise<boolean> {
+    this.#assertOpen();
+    if (!isControlUserId(sessionId) || !isControlSecretHash(csrfHash)) return false;
+    const result = this.#db.prepare("UPDATE control_auth_sessions SET csrf_hash = ? WHERE session_id = ? AND revoked = 0").run(csrfHash, sessionId);
     return Number(result.changes ?? 0) === 1;
   }
 

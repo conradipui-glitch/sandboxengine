@@ -28,6 +28,8 @@
 // Run: node lhc-gate.mjs  (слушает 127.0.0.1:8744, nginx проксирует /gate/;
 //        в том же процессе — polling Telegram getUpdates отдельным ботом).
 // Env: LHC_TELEGRAM_BOT_TOKEN (или TELEGRAM_BOT_TOKEN), LHC_GATE_SECRET (>=32),
+//      LHC_GATE_IDENTITY_SECRET (>=32, по умолчанию = LHC_GATE_SECRET) — секрет
+//      ассерта личности, тот же обязан быть у Studio в LH_GATE_IDENTITY_SECRET,
 //      LHC_OWNER_TELEGRAM_ID (default 332664273),
 //      LHC_BOT_USERNAME (default living_history_gate_bot),
 //      LHC_GATE_PORT, LHC_STORE, LHC_BOT_POLLING=0 чтобы отключить polling.
@@ -38,6 +40,9 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 export const TICKET_TTL_MS = 90 * 1000;
 export const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+// Ассерт личности короткоживущий: отзыв доступа в боте закрывает вход Studio
+// не позже, чем истечёт уже выпущенный ассерт.
+export const DEFAULT_IDENTITY_TTL_MS = 120 * 1000;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_CONSUME = 20;
 
@@ -102,11 +107,38 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
   const ownerId = String(config.ownerId);
   const botUsername = String(config.botUsername || "living_history_gate_bot");
   const studioOrigin = String(config.studioOrigin || "https://85.137.95.104.sslip.io:8741").replace(/\/+$/, "");
+  // Секрет ассерта личности: знает только серверная сторона (gate + Control),
+  // браузер его не получает, поэтому подделать ассерт он не может.
+  const identitySecret = String(config.identitySecret || config.gateSecret || "");
+  const identityTtlMs = Number(config.identityTtlMs ?? DEFAULT_IDENTITY_TTL_MS);
 
   const save = () => config.persist?.();
 
   function sign(value) {
     return createHmac("sha256", config.gateSecret).update(value).digest("base64url");
+  }
+
+  /**
+   * Подписанный ассерт проверенной сессии gate — то, что край (nginx) передаёт
+   * Studio заголовком `x-lhc-gate-identity`. Формат общий с
+   * `apps/server/src/gate-auth-identity.ts` и зафиксирован тестом:
+   *   v1.<base64url(payload)>.<base64url(hmacSha256(secret, "v1."+payload))>
+   */
+  function identityAssertion(telegramId) {
+    if (identitySecret.length < 32) return null;
+    const id = String(telegramId);
+    if (!/^\d{4,15}$/.test(id)) return null;
+    // Отозванной личности gate не выдаёт и ассерта: подтверждение невозможно.
+    if (!isAuthorized(id)) return null;
+    const payload = JSON.stringify({
+      v: 1,
+      sub: id,
+      username: String(state.users[id]?.username || ""),
+      iat: now(),
+      exp: now() + identityTtlMs,
+    });
+    const body = `v1.${Buffer.from(payload).toString("base64url")}`;
+    return `${body}.${createHmac("sha256", identitySecret).update(body).digest("base64url")}`;
   }
 
   // --- пользователи и права ---
@@ -519,6 +551,7 @@ export function createGate({ state, config, tg, now = () => Date.now() }) {
 
   return {
     isOwner, isAuthorized, addUser, revokeUser, listUsers,
+    identityAssertion,
     issueSession, sessionCookie, readSession,
     createTicket, ticketInfo, consumeTicket, sweep,
     handleUpdate, handleCallback, handleStart,
@@ -605,6 +638,11 @@ export function wireHttp(gate, config) {
         const s = gate.readSession(req.headers.cookie);
         if (!s) return json(res, 401, { error: "no session" });
         res.setHeader("x-telegram-id", s.telegramId);
+        // Подписанный ассерт личности: nginx передаёт его Studio как
+        // `x-lhc-gate-identity` (auth_request_set). Значение подписано секретом,
+        // которого у браузера нет, — заголовок от клиента доказательством не был.
+        const assertion = gate.identityAssertion(s.telegramId);
+        if (assertion) res.setHeader("x-lhc-gate-identity", assertion);
         return json(res, 200, { ok: true, telegramId: s.telegramId });
       }
       // Старый invite/widget-путь удалён.
@@ -631,6 +669,8 @@ if (!process.env.LHC_GATE_NO_AUTOSTART && (isMain || process.env.LHC_GATE_FORCE_
   const OWNER_ID = String(process.env.LHC_OWNER_TELEGRAM_ID ?? "332664273");
   const BOT_USERNAME = String(process.env.LHC_BOT_USERNAME ?? "living_history_gate_bot");
   const STUDIO_ORIGIN = String(process.env.LHC_STUDIO_ORIGIN ?? "https://85.137.95.104.sslip.io:8741");
+  const IDENTITY_SECRET = String(process.env.LHC_GATE_IDENTITY_SECRET ?? GATE_SECRET);
+  if (IDENTITY_SECRET.length < 32) throw new Error("LHC_GATE_IDENTITY_SECRET must be >= 32 chars");
   const POLLING = process.env.LHC_BOT_POLLING !== "0";
 
   const state = migrateState(readJson(STORE_PATH, null) ?? defaultState());
@@ -639,7 +679,7 @@ if (!process.env.LHC_GATE_NO_AUTOSTART && (isMain || process.env.LHC_GATE_FORCE_
     catch (e) { console.log("persist failed:", e?.message ?? e); }
   };
   const tg = realTelegram(BOT_TOKEN);
-  const gate = createGate({ state, config: { ownerId: OWNER_ID, botUsername: BOT_USERNAME, studioOrigin: STUDIO_ORIGIN, gateSecret: GATE_SECRET, persist }, tg });
+  const gate = createGate({ state, config: { ownerId: OWNER_ID, botUsername: BOT_USERNAME, studioOrigin: STUDIO_ORIGIN, gateSecret: GATE_SECRET, identitySecret: IDENTITY_SECRET, persist }, tg });
   persist();
 
   const server = wireHttp(gate, { polling: POLLING });

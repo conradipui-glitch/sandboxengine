@@ -7,6 +7,7 @@ import {
   MAX_LHQUEST_ARCHIVE_BYTES,
   createControlOpaqueSecret,
   createControlSessionId,
+  ensureControlIdentityUser,
   hashControlOpaqueSecret,
   isAllowedLocalHttpRequest,
   isControlProjectRole,
@@ -52,6 +53,11 @@ import { createPresenceHttpService, type PresenceHttpService } from "./presence.
 import { createEditingLockHttpService, type EditingLockHttpService } from "./editing-lock.js";
 import { resolvePublicAssetCache } from "./public-asset-cache.js";
 import { projectPlayerTurnState } from "./player-turn.js";
+import {
+  GATE_IDENTITY_HEADER,
+  createGateIdentityVerifier,
+  type GateIdentityVerifier
+} from "./gate-auth-identity.js";
 import type { AuthorAssistantDependencies } from "./author-assistant.js";
 import { buildInstalledAuthorContextCapabilityCatalog } from "./author-context-catalog.js";
 import {
@@ -72,6 +78,17 @@ const DEFAULT_LOGIN_WINDOW_MS = 60_000;
 const DEFAULT_LOGIN_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_LOGIN_ATTEMPTS = 5;
 
+export interface ControlGateIdentityOptions {
+  /**
+   * Секрет, которым gate подписывает ассерт личности (>= 32 символов). Тот же
+   * секрет должен быть у gate (`LHC_GATE_IDENTITY_SECRET`); браузер его не знает.
+   */
+  readonly secret: string;
+  readonly assertionTtlMs?: number;
+  readonly clockSkewMs?: number;
+  readonly nowMs?: () => number;
+}
+
 export interface ControlAuthenticatedModeOptions {
   readonly security: ControlSecurityStore;
   readonly allowedOrigins: readonly string[];
@@ -81,6 +98,13 @@ export interface ControlAuthenticatedModeOptions {
   readonly loginCooldownMs?: number;
   readonly maxLoginAttempts?: number;
   readonly nowMs?: () => number;
+  /**
+   * Единый вход через Telegram-gate: идентичность берётся только из подписанного
+   * ассерта проверенной серверной сессии gate. Если режим включён, запрос без
+   * действующего ассерта не получает доступа вообще — ни сессии, ни гостевой
+   * роли владельца.
+   */
+  readonly gateIdentity?: ControlGateIdentityOptions;
 }
 
 export interface ControlReleaseModeOptions {
@@ -120,11 +144,14 @@ interface AuthRuntime {
   readonly loginCooldownMs: number;
   readonly maxLoginAttempts: number;
   readonly nowMs: () => number;
+  readonly gateIdentity: GateIdentityVerifier | null;
 }
 
 interface AuthIdentity {
   readonly user: ControlUserRecord;
   readonly session: ControlSessionRecord;
+  /** Идентичность подтверждена ассертом gate, а не cookie сессии Control. */
+  readonly gateVerified: boolean;
 }
 
 interface LoginFailureState {
@@ -345,13 +372,21 @@ async function routeControlRequest(
   }
 
   if (auth && url.pathname === "/control/v1/auth/login" && method === "POST") {
+    // В режиме единого входа через Telegram-бот парольного входа нет вовсе:
+    // bootstrap-учётка не является ни решением, ни путём входа в Studio.
+    if (auth.gateIdentity) { sendNotFound(response); return; }
     await handleLogin(request, response, auth, failures);
     return;
   }
 
-  const identity = auth ? await resolveIdentity(request, auth) : null;
+  const identity = auth ? await resolveIdentity(request, response, auth) : null;
   if (auth && !identity) {
     sendJson(response, 401, { error: { code: "CONTROL_AUTH_REQUIRED" } });
+    return;
+  }
+
+  if (auth && auth.gateIdentity && url.pathname === "/control/v1/auth/gate/session" && method === "POST") {
+    await handleGateSession(request, response, auth, identity!);
     return;
   }
 
@@ -1583,15 +1618,97 @@ async function handleLogin(
   });
 }
 
-async function resolveIdentity(request: any, auth: AuthRuntime): Promise<AuthIdentity | null> {
+/**
+ * Определяет действующую личность запроса.
+ *
+ * Без `gateIdentity` — прежнее поведение: cookie `lh_control_session`.
+ *
+ * С `gateIdentity` (единый вход через Telegram-бот) источником правды является
+ * подписанный ассерт проверенной сессии gate. Запрос без действующего ассерта не
+ * получает доступа вовсе — ни чужой сессии, ни роли владельца «по умолчанию»;
+ * отзыв доступа в боте закрывает вход по истечении короткого ассерта.
+ */
+async function resolveIdentity(request: any, response: any, auth: AuthRuntime): Promise<AuthIdentity | null> {
   const token = readCookie(request, CONTROL_SESSION_COOKIE);
-  if (!token) return null;
-  let tokenHash: string;
-  try { tokenHash = hashControlOpaqueSecret(token); } catch { return null; }
-  const session = await auth.security.getSessionByTokenHash(tokenHash, auth.nowMs());
-  if (!session) return null;
-  const user = await auth.security.getUser(session.userId);
-  return user ? Object.freeze({ user, session }) : null;
+  let tokenHash: string | null = null;
+  if (token !== null) {
+    try { tokenHash = hashControlOpaqueSecret(token); } catch { tokenHash = null; }
+  }
+  const cookieSession = tokenHash === null ? null : await auth.security.getSessionByTokenHash(tokenHash, auth.nowMs());
+  const cookieUser = cookieSession === null ? null : await auth.security.getUser(cookieSession.userId);
+
+  if (auth.gateIdentity === null) {
+    return cookieSession !== null && cookieUser !== null
+      ? Object.freeze({ user: cookieUser, session: cookieSession, gateVerified: false })
+      : null;
+  }
+
+  const assertion = auth.gateIdentity.verify(readHeader(request, GATE_IDENTITY_HEADER));
+  if (assertion === null) return null;
+  const identity = await ensureControlIdentityUser(auth.security, {
+    telegramId: assertion.telegramId,
+    username: assertion.username
+  });
+  // Личность не привязывается к пользователю — доступ не выдаётся (fail closed).
+  if (identity.kind !== "ready") return null;
+  const user = identity.user;
+  if (cookieSession !== null && cookieUser !== null && cookieUser.userId === user.userId) {
+    return Object.freeze({ user: cookieUser, session: cookieSession, gateVerified: true });
+  }
+  // Сессия Control выдаётся сама: это не второй вход, а серверная привязка уже
+  // подтверждённой личности к проверкам прав, ревизий, CSRF и идемпотентности.
+  const issued = await issueIdentitySession(auth, user.userId);
+  if (issued === null) return null;
+  response.setHeader("set-cookie", sessionCookie(issued.token, auth));
+  return Object.freeze({ user, session: issued.session, gateVerified: true });
+}
+
+async function issueIdentitySession(
+  auth: AuthRuntime,
+  userId: string
+): Promise<{ readonly session: ControlSessionRecord; readonly token: string; readonly csrfToken: string } | null> {
+  const nowMs = auth.nowMs();
+  const expiresAtMs = nowMs + auth.sessionTtlMs;
+  if (!Number.isSafeInteger(expiresAtMs)) return null;
+  const token = createControlOpaqueSecret();
+  const csrfToken = createControlOpaqueSecret();
+  const created = await auth.security.createSession({
+    sessionId: createControlSessionId(),
+    userId,
+    tokenHash: hashControlOpaqueSecret(token),
+    csrfHash: hashControlOpaqueSecret(csrfToken),
+    createdAtMs: nowMs,
+    expiresAtMs
+  });
+  if (created.kind !== "created") return null;
+  return Object.freeze({ session: created.session, token, csrfToken });
+}
+
+/**
+ * Обмен подтверждённой сессии gate на подтверждение запроса (CSRF) для текущей
+ * сессии Control. Studio держит CSRF только в памяти вкладки, поэтому после
+ * перезагрузки ему нужно новое подтверждение — без логина и пароля.
+ */
+async function handleGateSession(
+  request: any,
+  response: any,
+  auth: AuthRuntime,
+  identity: AuthIdentity
+): Promise<void> {
+  const csrfToken = createControlOpaqueSecret();
+  const rotated = await auth.security.rotateSessionCsrf(
+    identity.session.sessionId,
+    hashControlOpaqueSecret(csrfToken)
+  );
+  if (!rotated) {
+    sendJson(response, 500, { error: { code: "CONTROL_SESSION_CREATE_FAILED" } });
+    return;
+  }
+  sendJson(response, 200, {
+    user: identity.user,
+    session: safeSessionView(identity.session),
+    csrfToken
+  });
 }
 
 async function requireMutationProof(
@@ -1673,7 +1790,15 @@ function buildAuthRuntime(options: ControlAuthenticatedModeOptions): AuthRuntime
     loginWindowMs,
     loginCooldownMs,
     maxLoginAttempts,
-    nowMs: options.nowMs ?? (() => Date.now())
+    nowMs: options.nowMs ?? (() => Date.now()),
+    gateIdentity: options.gateIdentity
+      ? createGateIdentityVerifier({
+          secret: options.gateIdentity.secret,
+          ...(options.gateIdentity.assertionTtlMs === undefined ? {} : { ttlMs: options.gateIdentity.assertionTtlMs }),
+          ...(options.gateIdentity.clockSkewMs === undefined ? {} : { clockSkewMs: options.gateIdentity.clockSkewMs }),
+          ...(options.gateIdentity.nowMs === undefined ? {} : { nowMs: options.gateIdentity.nowMs })
+        })
+      : null
   });
 }
 
