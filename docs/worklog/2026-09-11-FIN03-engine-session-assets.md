@@ -27,6 +27,15 @@ all: `GET /public/v1/missions/:id/sessions/:sid/assets/:assetId` 404'd.
   does not exist are all refused; an unknown session answers 404 (the route does
   not confirm existence) and a foreign mission identifier answers 404.
 - Assets are served `cache-control: private` because the URL is credential-bound.
+- Both asset routes (public catalog and session) now serve the bytes the release
+  **pinned** (`ControlPublicationReleasePin.assets`, matched by asset id), not the
+  library's current entry. A session finds its release through the pin whose
+  `missionRevision`/`missionContentHash` match the session; the catalog resolves
+  the pin of its `releaseId`. Without a matching pin, or for an asset the pinned
+  revision does not reference, the answer is 404 — the previous behaviour served
+  whatever bytes the library held under that asset id, under an
+  `immutable, max-age=31536000` header, so re-uploading an asset silently rewrote
+  the artwork of an already published mission.
 
 Defect reproduction first: with the branch disabled the new test fails
 (`pass 0 / fail 1`) — the first session asset request answers 404 instead of 200.

@@ -1560,12 +1560,15 @@ async function routePublicMissionAsset(
   }
   // Only assets actually referenced by the pinned revision are published.
   if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
-  const entries = await assetLibrary.listProjectAssets(publication.projectId, false);
-  const entry = entries.find((candidate) => candidate.assetId === assetId) ?? null;
-  if (!entry) { sendNotFound(response); return; }
+  // The bytes come from the release's immutable asset pin, never from "whatever
+  // the library entry points at now": re-uploading an assetId later must not
+  // rewrite what an already published revision serves under a one-year
+  // `immutable` cache header.
+  const pinnedHash = await resolvePinnedAssetHash(releases, publication.projectId, publication.questId, publication.releaseId, assetId);
+  if (pinnedHash === null) { sendNotFound(response); return; }
   let stored;
   try {
-    stored = await assetStorage.read(assetId, entry.hash);
+    stored = await assetStorage.read(assetId, pinnedHash);
   } catch (error) {
     if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
       sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
@@ -1634,12 +1637,13 @@ async function routePublicMissionSessionAsset(
   }
   // Only assets the *pinned* revision references are served through the session.
   if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
-  const entries = await assetLibrary.listProjectAssets(existing.projectId, false);
-  const entry = entries.find((candidate) => candidate.assetId === assetId) ?? null;
-  if (!entry) { sendNotFound(response); return; }
+  // Same rule as the catalog route, but the revision is the one the session is
+  // pinned to — its own asset pin, not the currently published one.
+  const pinnedHash = await resolvePinnedAssetHashForRevision(releases, existing.projectId, existing.questId, existing, assetId);
+  if (pinnedHash === null) { sendNotFound(response); return; }
   let stored;
   try {
-    stored = await assetStorage.read(assetId, entry.hash);
+    stored = await assetStorage.read(assetId, pinnedHash);
   } catch (error) {
     if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
       sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
@@ -1657,6 +1661,50 @@ async function routePublicMissionSessionAsset(
   response.setHeader("etag", `"${existing.contentHash.slice(0, 32)}-${assetId}"`);
   response.setHeader("x-content-type-options", "nosniff");
   response.end(stored.bytes);
+}
+
+/**
+ * Resolves the bytes an immutable published revision pinned for one asset.
+ *
+ * `null` means "this release never pinned that asset", which callers turn into a
+ * 404: falling back to the library's current entry would let a later re-upload
+ * silently rewrite content a player was already promised.
+ */
+async function resolvePinnedAssetHash(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  releaseId: string,
+  assetId: string
+): Promise<string | null> {
+  const pin = await releases.publicationStore?.getReleasePin(projectId, questId, releaseId);
+  return pin?.assets.find((entry) => entry.assetId === assetId)?.hash ?? null;
+}
+
+/**
+ * The same question for a *started game*: it knows only the revision it was
+ * created from, so the release carrying that exact revision is found first.
+ */
+async function resolvePinnedAssetHashForRevision(
+  releases: ControlReleaseModeOptions,
+  projectId: string,
+  questId: string,
+  revision: { readonly contentRevision: number; readonly contentHash: string },
+  assetId: string
+): Promise<string | null> {
+  const publicationStore = releases.publicationStore;
+  if (!publicationStore) return null;
+  // A session only records the revision it started on, so the release has to be
+  // found by that revision — and a release pin is exactly the record that says
+  // which revision it publishes.
+  const known = await releases.store.listReleases(projectId, questId);
+  for (const candidate of known) {
+    const pin = await publicationStore.getReleasePin(projectId, questId, candidate.releaseId);
+    if (!pin) continue;
+    if (pin.missionRevision !== revision.contentRevision || pin.missionContentHash !== revision.contentHash) continue;
+    return pin.assets.find((entry) => entry.assetId === assetId)?.hash ?? null;
+  }
+  return null;
 }
 
 function publicMissionCredential(secret: string, publicMissionId: string, sessionId: string): string {
