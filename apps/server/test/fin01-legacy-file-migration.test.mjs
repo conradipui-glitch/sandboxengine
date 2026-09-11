@@ -213,17 +213,11 @@ test("FIN-01 legacy file: migration keeps the catalog and adoption proves the re
   assert.equal(dir.length > 0, true);
 });
 
-// Skipped on purpose: it documents a defect this wave is not allowed to fix.
-// `resolveReleaseBundle` falls back to the newest authored revision for any
-// release that has no pin and is not named by the stored publication record,
-// and marks the resulting pin `assetsVerified: true`. On a real pre-fix
-// database that attributes the CURRENT draft to an old release, even though
-// `control_releases.draft_revision` records the revision it was built from.
-// The fix belongs in apps/server/src/control-server.ts (out of this wave's
-// surface); the migration tool refuses to write such a pin instead.
-test("FIN-01 legacy file: publishing an unprovable legacy release must not attribute the newest draft", {
-  skip: "control-server.ts (not owned by this wave) still pins the newest draft for an unpinned legacy release"
-}, async (t) => {
+// Дефект закрыт в control-server.ts: релиз без пина, не названный записью
+// публикации, больше не публикуется (409 LEGACY_PIN_UNPROVABLE) — новейший
+// черновик не подставляется. Тест включён, ветка статуса 200 оставлена для
+// случая, если публикация когда-нибудь станет доказуемой иначе.
+test("FIN-01 legacy file: publishing an unprovable legacy release must not attribute the newest draft", async (t) => {
   const { app, dbPath, v3 } = await preFixDatabase(t);
   const before = await app.publications.getPublicationForQuest("project", "quest");
   const published = await publish(app, "release-1", "release-2", "publish-unprovable");

@@ -1165,9 +1165,8 @@ async function routeControlRequest(
       if (missionStore) {
         // Freeze *before* the release exists. A bundle that cannot be reproduced
         // (missing asset, unavailable revision) must fail loudly rather than
-        // register a release with no pin: publishing such a release would later
-        // resolve "whatever the draft says now", serving a revision it never
-        // shipped.
+        // register a release with no pin: релиз без пина публиковать нельзя,
+        // а доказать его содержание нечем — см. resolveReleaseBundle.
         const freeze = await resolveReleaseBundle(
           releases,
           missionStore,
@@ -1298,6 +1297,12 @@ async function routeControlRequest(
         sendJson(response, 409, { error: { code: "PUBLICATION_SLUG_CONFLICT" } });
         return;
       }
+      if (committed === "stale") {
+        // Указатель релиза ушёл вперёд, пока эта операция готовилась: видимого
+        // ничего не появилось, а каталог остался за живым релизом.
+        sendJson(response, 409, { error: { code: "PUBLICATION_CANDIDATE_STALE" } });
+        return;
+      }
       if (!committed) {
         sendJson(response, 500, { error: { code: "PUBLICATION_COMMIT_FAILED" } });
         return;
@@ -1389,6 +1394,12 @@ async function routeControlRequest(
       const committed = await commitPublicationCandidate(releases, projectId, questId, publication.operationKey, releaseNowMs(releases, auth));
       if (committed === "slug_conflict") {
         sendJson(response, 409, { error: { code: "PUBLICATION_SLUG_CONFLICT" } });
+        return;
+      }
+      if (committed === "stale") {
+        // Указатель релиза ушёл вперёд, пока эта операция готовилась: видимого
+        // ничего не появилось, а каталог остался за живым релизом.
+        sendJson(response, 409, { error: { code: "PUBLICATION_CANDIDATE_STALE" } });
         return;
       }
       if (!committed) {
@@ -2148,7 +2159,7 @@ async function beginPublicationCandidate(
   // and the digests of the assets that revision references. Resolving through
   // the pin is what makes rollback truthful — the catalog is repointed, the
   // content behind it is not re-read from the latest draft.
-  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing, kind);
+  const resolved = preResolved ?? await resolveReleaseBundle(releases, missionStore, projectId, questId, releaseId, existing, kind, release);
   if (resolved.kind !== "resolved") return resolved;
   const { mission, bundleHash } = resolved;
   const record: ControlPublicationRecord = {
@@ -2204,10 +2215,22 @@ async function commitPublicationCandidate(
   questId: string,
   operationKey: string,
   committedAtMs: number
-): Promise<ControlPublicationRecord | "slug_conflict" | null> {
+): Promise<ControlPublicationRecord | "slug_conflict" | "stale" | null> {
   const publicationStore = releases.publicationStore;
   if (!publicationStore) return null;
-  const result = await publicationStore.commitPublicationOperation({ projectId, questId, operationKey, committedAtMs });
+  // FIN-01/конкурентные публикации: каталог не имеет права разойтись с
+  // указателем релиза. Кандидат, чей релиз уже не является текущим, не должен
+  // становиться видимым — иначе проигравшая гонку публикация подменяет каталог.
+  const pointed = await releases.store.getCurrentReleaseId(projectId, questId);
+  const operation = await publicationStore.getPublicationOperation(projectId, questId, operationKey);
+  if (operation && pointed !== null && pointed !== operation.targetReleaseId) {
+    await publicationStore.abortPublicationOperation({ projectId, questId, operationKey, abortedAtMs: committedAtMs });
+    return "stale";
+  }
+  const result = await publicationStore.commitPublicationOperation({ projectId, questId, operationKey, committedAtMs, expectedCurrentReleaseId: pointed });
+  // Стор мог обнаружить расхождение уже внутри своей транзакции (гонка между
+  // чтением выше и записью каталога) — тогда видимым ничего не стало.
+  if (result.kind === "stale_candidate") return "stale";
   if (result.kind === "committed" || result.kind === "replay") return result.publication;
   // R-06: гонка — слаг заняли между началом операции и коммитом. Стор уже
   // пометил операцию `aborted`, поэтому достаточно назвать причину вызывающему.
@@ -2380,7 +2403,8 @@ async function resolveReleaseReadiness(
  *    re-pointed at the newest draft.
  *
  * A release whose historical revision cannot be proven is never re-pointed at
- * the latest draft: it fails closed with `bundle_unavailable`.
+ * the latest draft: it fails closed with `bundle_unavailable`. Публикация и
+ * откат отвечают на это кодом `LEGACY_PIN_UNPROVABLE`.
  */
 async function resolveReleaseBundle(
   releases: ControlReleaseModeOptions,
@@ -2389,7 +2413,8 @@ async function resolveReleaseBundle(
   questId: string,
   releaseId: string,
   existing: ControlPublicationRecord | null,
-  mode: "publish" | "rollback" = "publish"
+  mode: "publish" | "rollback" = "publish",
+  release: ControlReleaseRecord | null = null
 ): Promise<
   | ResolvedReleaseBundle
   | { readonly kind: "source_stale" | "not_attempted" }
@@ -2420,24 +2445,32 @@ async function resolveReleaseBundle(
       // release whose revision cannot be proven must not fall back to the
       // newest draft: that would serve content the release never published.
       if (mode === "rollback") return { kind: "bundle_unavailable", code: "LEGACY_PIN_UNPROVABLE" };
-      // Publishing must never read "whatever the draft says *later*": a release
-      // published after the author kept editing could otherwise start serving a
-      // revision it never contained. Builds freeze the pin (asset-checked); the
-      // fallback below only covers releases built outside this server, where the
-      // newest authored revision is the best — and only — available evidence.
-      const authored = await resolveAuthoredMissionRevision(missionStore, projectId, questId);
-      if (!authored.ok) return { kind: "bundle_unavailable", code: authored.code };
-      pin = {
-        schemaVersion: "1.0",
-        releaseId,
-        projectId,
-        questId,
-        missionRevision: authored.revisionNumber,
-        missionContentHash: authored.contentHash,
-        assets: authored.assets,
-        assetsVerified: true,
-        pinnedAtMs: Date.now()
-      };
+      if (release) {
+        // Релиз существует, но пин не сохранился (собран прежней версией
+        // сервера). Доказать его содержание нечем: запись релиза хранит ревизию
+        // и хэш ДОСКИ, а не авторской ревизии документа миссии. Публикация
+        // такого релиза отдала бы игрокам текущий черновик — содержание, которого
+        // релиз не содержал. Отказ честный и совпадает с поведением отката.
+        return { kind: "bundle_unavailable", code: "LEGACY_PIN_UNPROVABLE" };
+      } else {
+        // Сборка нового релиза: релиза ещё нет, поэтому единственное доступное
+        // доказательство — новейшая авторская ревизия. Ассеты проверяются здесь
+        // же, а buildControlRelease закрепляет пин. Именно этот шаг делает релиз
+        // доказуемым: без пина публикация запрещена.
+        const authored = await resolveAuthoredMissionRevision(missionStore, projectId, questId);
+        if (!authored.ok) return { kind: "bundle_unavailable", code: authored.code };
+        pin = {
+          schemaVersion: "1.0",
+          releaseId,
+          projectId,
+          questId,
+          missionRevision: authored.revisionNumber,
+          missionContentHash: authored.contentHash,
+          assets: authored.assets,
+          assetsVerified: true,
+          pinnedAtMs: Date.now()
+        };
+      }
     }
   }
   const pinnedMission = await missionStore.getMissionAtRevision(projectId, questId, pin.missionRevision);

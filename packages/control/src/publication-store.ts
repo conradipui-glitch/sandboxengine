@@ -99,6 +99,9 @@ export type CommitPublicationOperationResult =
   | { readonly kind: "replay"; readonly publication: ControlPublicationRecord }
   | { readonly kind: "not_pending" }
   | { readonly kind: "slug_conflict" }
+  // Конкурентные публикации: указатель релиза уже указывает на другой релиз,
+  // значит этот кандидат устарел и не имеет права стать видимым.
+  | { readonly kind: "stale_candidate"; readonly currentReleaseId: string | null }
   | { readonly kind: "invalid_request" };
 
 export interface ControlPublicationStore {
@@ -130,6 +133,11 @@ export interface ControlPublicationStore {
     readonly questId: string;
     readonly operationKey: string;
     readonly committedAtMs: number;
+    // Живой указатель релиза, каким его видит вызывающий. Если он указывает не
+    // на релиз кандидата, коммит отвергается: каталог не должен расходиться с
+    // указателем из-за проигранной гонки. `undefined` — вызывающий не проверял
+    // (тогда решает только собственная проверка стора).
+    readonly expectedCurrentReleaseId?: string | null;
   }): Promise<CommitPublicationOperationResult>;
   abortPublicationOperation(input: {
     readonly projectId: string;
@@ -261,7 +269,7 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     return frozen({ kind: "pending", operation: clone(stored) });
   }
 
-  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number }): Promise<CommitPublicationOperationResult> {
+  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number; readonly expectedCurrentReleaseId?: string | null }): Promise<CommitPublicationOperationResult> {
     if (!isId(input.projectId) || !isId(input.questId) || !isIdempotency(input.operationKey)) return frozen({ kind: "invalid_request" });
     const key = operationMapKey(input.projectId, input.questId, input.operationKey);
     const operation = this.#operations.get(key);
@@ -269,6 +277,13 @@ export class MemoryControlPublicationStore implements ControlPublicationStore {
     if (operation.state === "committed") {
       const committed = this.#records.get(operation.candidate.publicMissionId);
       return committed ? frozen({ kind: "replay", publication: clone(committed) }) : frozen({ kind: "not_pending" });
+    }
+    // FIN-01/конкурентные публикации: коммит сверяется с живым указателем
+    // релиза. Проигравшая гонку публикация иначе переписала бы каталог
+    // содержимым релиза, который больше не является текущим.
+    if (input.expectedCurrentReleaseId !== undefined && input.expectedCurrentReleaseId !== operation.targetReleaseId) {
+      this.#operations.set(key, clone({ ...operation, state: "aborted" as const, finishedAtMs: input.committedAtMs }));
+      return frozen({ kind: "stale_candidate", currentReleaseId: input.expectedCurrentReleaseId });
     }
     if (operation.state !== "pending") return frozen({ kind: "not_pending" });
     const slugCollision = [...this.#records.values()].find((record) => record.slug === operation.candidate.slug && record.publicMissionId !== operation.candidate.publicMissionId);
@@ -508,7 +523,7 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
     });
   }
 
-  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number }): Promise<CommitPublicationOperationResult> {
+  async commitPublicationOperation(input: { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly committedAtMs: number; readonly expectedCurrentReleaseId?: string | null }): Promise<CommitPublicationOperationResult> {
     this.#assertOpen();
     if (!isId(input.projectId) || !isId(input.questId) || !isIdempotency(input.operationKey)) return frozen({ kind: "invalid_request" });
     return this.#transaction(() => {
@@ -521,6 +536,17 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
         return committedRow ? frozen({ kind: "replay", publication: publicationFromRow(committedRow) }) : frozen({ kind: "not_pending" });
       }
       if (operation.state !== "pending") return frozen({ kind: "not_pending" });
+      // FIN-01/конкурентные публикации: указатель релиза читается здесь же,
+      // внутри транзакции BEGIN IMMEDIATE, — проверка не оставляет окна между
+      // чтением и записью каталога. Таблицы указателя может не быть, если стор
+      // используется отдельно; тогда решает значение, переданное вызывающим.
+      const pointed = this.#readPointedRelease(operation.projectId, operation.questId);
+      const expectedReleaseId = pointed.known ? pointed.releaseId : (input.expectedCurrentReleaseId ?? null);
+      if (expectedReleaseId !== null && expectedReleaseId !== operation.targetReleaseId) {
+        this.#db.prepare("UPDATE control_publication_operations SET state = 'aborted', finished_at_ms = ? WHERE project_id = ? AND quest_id = ? AND operation_key = ?")
+          .run(input.committedAtMs, input.projectId, input.questId, input.operationKey);
+        return frozen({ kind: "stale_candidate", currentReleaseId: expectedReleaseId });
+      }
       const collision = this.#db.prepare("SELECT public_mission_id FROM control_publication_records WHERE slug = ? AND public_mission_id <> ? LIMIT 1").get(operation.candidate.slug, operation.candidate.publicMissionId);
       if (collision) {
         // R-06: ничего видимого не появилось, поэтому операция не остаётся
@@ -583,6 +609,17 @@ export class SQLiteControlPublicationStore implements ControlPublicationStore {
     this.#db.prepare("INSERT INTO control_publication_idempotency (operation_kind, public_mission_id, idempotency_key, request_hash, result_json) VALUES (?, ?, ?, ?, ?)").run(operation, publicMissionId, key, requestHash, JSON.stringify(record));
   }
   #transaction<T>(work: () => T): T { this.#assertOpen(); this.#db.exec("BEGIN IMMEDIATE"); try { const value = work(); this.#db.exec("COMMIT"); return value; } catch (error) { try { this.#db.exec("ROLLBACK"); } catch {} throw error; } }
+  /**
+   * Живой указатель релиза из той же базы. `known: false` означает, что таблицы
+   * указателя в этой базе нет (публикационный стор применяется отдельно): тогда
+   * доказательства нет, и решение принимает вызывающий.
+   */
+  #readPointedRelease(projectId: string, questId: string): { readonly known: boolean; readonly releaseId: string | null } {
+    const table = this.#db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'control_release_pointers' LIMIT 1").get();
+    if (!table) return { known: false, releaseId: null };
+    const row = this.#db.prepare("SELECT current_release_id FROM control_release_pointers WHERE project_id = ? AND quest_id = ? LIMIT 1").get(projectId, questId);
+    return { known: true, releaseId: row ? String(row.current_release_id) : null };
+  }
   #assertOpen(): void { if (this.#closed) throw new Error("SQLiteControlPublicationStore is closed"); }
 }
 
