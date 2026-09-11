@@ -169,12 +169,15 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
   return Object.freeze({
     server,
     accessMode: auth ? "authenticated" as const : "local-loopback-owner" as const,
-    listen(port = 0, host = "127.0.0.1"): Promise<{ readonly port: number; readonly host: string }> {
+    async listen(port = 0, host = "127.0.0.1"): Promise<{ readonly port: number; readonly host: string }> {
       if (!isLoopbackHost(host)) {
-        if (!auth) return Promise.reject(new Error("Control API may listen on non-loopback only in authenticated mode"));
-        if (!auth.secureCookies) return Promise.reject(new Error("authenticated non-loopback Control requires Secure cookies"));
-        if (auth.allowedOrigins.size < 1) return Promise.reject(new Error("authenticated non-loopback Control requires at least one allowed origin"));
+        if (!auth) throw new Error("Control API may listen on non-loopback only in authenticated mode");
+        if (!auth.secureCookies) throw new Error("authenticated non-loopback Control requires Secure cookies");
+        if (auth.allowedOrigins.size < 1) throw new Error("authenticated non-loopback Control requires at least one allowed origin");
       }
+      // Before the first request: a crash between the two durable publish stages
+      // would otherwise keep the catalog and the release pointer apart for good.
+      await settleInterruptedPublications(releases, auth);
       return new Promise((resolve, reject) => {
         const onError = (error: unknown) => {
           server.off("listening", onListening);
@@ -2084,6 +2087,68 @@ async function abortPublicationCandidate(
     await publicationStore.abortPublicationOperation({ projectId, questId, operationKey, abortedAtMs });
   } catch {
     // The staged record was never visible; a stuck operation is recoverable.
+  }
+}
+
+/**
+ * Settles publications that a crash left halfway between their two durable
+ * stages: the release pointer is promoted first, the catalog record becomes
+ * visible second. A process that dies in between leaves a staged operation in
+ * `control_publication_operations`, a promoted pointer, and a catalog that
+ * still serves the previous release. Nothing in the request path can observe
+ * that state, so the server settles it on start-up, before it accepts a
+ * request:
+ *
+ *  - the pointer already names the staged release — the publish did happen, so
+ *    the catalog record is committed (the commit is idempotent, so repeating it
+ *    is safe);
+ *  - the pointer names another release — the publish never happened, and since
+ *    the staged record was never visible there is nothing to undo, so the
+ *    operation is abandoned;
+ *  - the pointer names the staged release but the record cannot be committed —
+ *    the operation stays pending and the pointer is left alone. That is loud in
+ *    the log and recoverable by hand; guessing a repair would be worse.
+ *
+ * `rollback` operations settle the same way: their target release is equally
+ * named by the pointer.
+ */
+async function settleInterruptedPublications(
+  releases: ControlReleaseModeOptions | null,
+  auth: AuthRuntime | null
+): Promise<void> {
+  const publicationStore = releases?.publicationStore;
+  if (!releases || !publicationStore) return;
+  let pending: readonly { readonly projectId: string; readonly questId: string; readonly operationKey: string; readonly targetReleaseId: string }[];
+  try {
+    pending = await publicationStore.listPendingPublicationOperations();
+  } catch (error) {
+    console.error("control: could not list interrupted publication operations", error);
+    return;
+  }
+  const nowMs = releaseNowMs(releases, auth);
+  for (const operation of pending) {
+    try {
+      const current = await releases.store.getCurrentReleaseId(operation.projectId, operation.questId);
+      if (current === operation.targetReleaseId) {
+        const committed = await commitPublicationCandidate(
+          releases,
+          operation.projectId,
+          operation.questId,
+          operation.operationKey,
+          nowMs
+        );
+        if (!committed) {
+          console.error(
+            "control: publication operation %s was interrupted after the release pointer moved and is still uncommitted",
+            operation.operationKey
+          );
+        }
+        continue;
+      }
+      await abortPublicationCandidate(releases, operation.projectId, operation.questId, operation.operationKey, nowMs);
+    } catch (error) {
+      console.error("control: could not settle publication operation %s", operation.operationKey, error);
+    }
   }
 }
 
