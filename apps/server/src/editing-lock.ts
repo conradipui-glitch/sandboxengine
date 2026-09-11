@@ -631,6 +631,8 @@ export interface EditingLockHttpService {
   handleRequest(request: any, response: any): Promise<boolean>;
   /** Один тик времени: истечение TTL и перепроверка сессий/членства активных аренд. */
   advance(nowMs?: number): Promise<void>;
+  /** Диагностика фонового таймера: сбои стора в тике не роняют процесс. */
+  readonly clockState: { readonly ticks: number; readonly tickFailures: number; readonly lastTickErrorMessage: string | null };
   /** Немедленно снять аренды отозванной сессии. */
   revokeSession(sessionId: string): number;
   /** Немедленно снять аренды исключённого участника проекта. */
@@ -650,9 +652,24 @@ export function createEditingLockHttpService(options: EditingLockHttpServiceOpti
   const hub = new EditingLockHub({ nowMs, leaseTtlMs });
   let timer: ReturnType<typeof setInterval> | null = null;
 
+  const clockState = { ticks: 0, tickFailures: 0, lastTickErrorMessage: null as string | null };
+
+  const reportTickFailure = (error: unknown): void => {
+    // Сбой стора в фоновом тике не должен ронять процесс и не должен терять тик:
+    // фиксируем проблему в счётчике/логе и продолжаем работу таймера.
+    clockState.tickFailures += 1;
+    clockState.lastTickErrorMessage = error instanceof Error ? error.message : String(error);
+    if (clockState.tickFailures === 1 || clockState.tickFailures % 100 === 0) {
+      console.warn(`[editing-lock] clock tick failed ${clockState.tickFailures} time(s): ${clockState.lastTickErrorMessage}`);
+    }
+  };
+
   const ensureTimer = (): void => {
     if (timer !== null) return;
-    timer = setInterval(() => { void advance(); }, clockIntervalMs);
+    timer = setInterval(() => {
+      clockState.ticks += 1;
+      advance().catch(reportTickFailure);
+    }, clockIntervalMs);
   };
 
   const stopTimerIfIdle = (): void => {
@@ -929,6 +946,7 @@ export function createEditingLockHttpService(options: EditingLockHttpServiceOpti
     hub,
     handleRequest,
     advance,
+    clockState,
     revokeSession(sessionId: string): number {
       const removed = hub.releaseBySession(sessionId, "session_revoked", nowMs());
       stopTimerIfIdle();

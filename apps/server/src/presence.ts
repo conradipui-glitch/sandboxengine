@@ -604,6 +604,8 @@ export interface PresenceHttpService {
   handleRequest(request: any, response: any): Promise<boolean>;
   /** Один тик времени: TTL, coalescing, ping и перепроверка прав. */
   advance(nowMs?: number): Promise<void>;
+  /** Диагностика фонового таймера: сбои стора в тике не роняют процесс. */
+  readonly clockState: { readonly ticks: number; readonly tickFailures: number; readonly lastTickErrorMessage: string | null };
   /** Закрывает все потоки и останавливает таймеры. */
   close(): void;
 }
@@ -625,10 +627,24 @@ export function createPresenceHttpService(options: PresenceHttpServiceOptions): 
   });
   const streams = new Set<PresenceStream>();
   let timer: ReturnType<typeof setInterval> | null = null;
+  const clockState = { ticks: 0, tickFailures: 0, lastTickErrorMessage: null as string | null };
+
+  const reportTickFailure = (error: unknown): void => {
+    // Сбой стора в фоновом тике не должен ронять процесс и не должен терять тик:
+    // фиксируем проблему в счётчике/логе и продолжаем работу таймера.
+    clockState.tickFailures += 1;
+    clockState.lastTickErrorMessage = error instanceof Error ? error.message : String(error);
+    if (clockState.tickFailures === 1 || clockState.tickFailures % 100 === 0) {
+      console.warn(`[presence] clock tick failed ${clockState.tickFailures} time(s): ${clockState.lastTickErrorMessage}`);
+    }
+  };
 
   const ensureTimer = (): void => {
     if (timer !== null) return;
-    timer = setInterval(() => { void advance(); }, clockIntervalMs);
+    timer = setInterval(() => {
+      clockState.ticks += 1;
+      advance().catch(reportTickFailure);
+    }, clockIntervalMs);
   };
 
   const stopTimerIfIdle = (): void => {
@@ -913,6 +929,7 @@ export function createPresenceHttpService(options: PresenceHttpServiceOptions): 
     hub,
     handleRequest,
     advance,
+    clockState,
     close(): void {
       for (const stream of [...streams]) stream.close();
       streams.clear();
