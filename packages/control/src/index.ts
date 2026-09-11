@@ -236,6 +236,26 @@ export {
   type UnpublishPublicationResult,
   type SQLiteControlPublicationStoreOptions
 } from "./publication-store.js";
+export {
+  DEFAULT_PROVIDER_PROBE_TIMEOUT_MS,
+  MAX_PROVIDER_PROBE_TIMEOUT_MS,
+  MemoryControlProviderConnectionStore,
+  PROVIDER_CONNECTION_DB_FILE_MODE,
+  PROVIDER_CONNECTION_SCHEMA_VERSION,
+  SQLiteControlProviderConnectionStore,
+  maskProviderApiKey,
+  probeProviderConnection,
+  type ControlProviderConnectionStore,
+  type ProbeProviderConnectionOptions,
+  type ProviderConnectionProbeTarget,
+  type ProviderProbeFetch,
+  type RevealProviderApiKeyInput,
+  type SaveProviderConnectionInput,
+  type SaveProviderConnectionResult,
+  type SQLiteControlProviderConnectionStoreOptions,
+  type UpdateProviderConnectionStateInput,
+  type UpdateProviderConnectionStateResult
+} from "./provider-connections-store.js";
 
 export type {
   ApplyBoardChangesInput,
