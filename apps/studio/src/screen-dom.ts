@@ -153,13 +153,23 @@ export function mountScreenComposition(
 
     const selected = selectedId ? layerByeId(selectedId) : null;
     if (selected) {
+      handle.hidden = false;
+      handle.style.display = "";
       handle.style.left = `${(selected.x + (SCREEN_LAYER_BASE_W * selected.scale) / 2) * box.width - 6}px`;
       handle.style.top = `${(selected.y + (SCREEN_LAYER_BASE_H * selected.scale) / 2) * box.height - 6}px`;
       handle.style.width = "12px";
       handle.style.height = "12px";
       handle.dataset.layerId = selected.id;
     } else {
+      // Без выделения ручки быть не должно: гасим её и стираем геометрию последнего
+      // выделенного слоя, иначе пустая ручка висит на старом месте и ловит клики.
       handle.dataset.layerId = "";
+      handle.hidden = true;
+      handle.style.display = "none";
+      handle.style.left = "";
+      handle.style.top = "";
+      handle.style.width = "";
+      handle.style.height = "";
     }
   };
 

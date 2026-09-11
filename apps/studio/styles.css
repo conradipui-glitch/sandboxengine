@@ -1284,6 +1284,10 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
   border-radius: 2px;
   cursor: nwse-resize;
 }
+/* Ручка существует в DOM постоянно, но без выделения обязана быть невидимой:
+   data-layer-id="" выставляется, когда выделенного слоя нет. */
+.screen-resize-handle[hidden],
+.screen-resize-handle[data-layer-id=""] { display: none; }
 .screen-hint { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted); pointer-events: none; }
 .screen-layer-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .screen-layer-actions .screen-layer-action { padding: 2px 6px; font-size: 12px; }
