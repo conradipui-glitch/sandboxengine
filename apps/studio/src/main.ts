@@ -10,6 +10,7 @@ import {
   SQLiteControlProviderConnectionStore,
   SQLiteControlPublicationStore,
   SQLiteControlReleaseStore,
+  SQLiteControlSecurityStore,
   SQLiteControlStore
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
@@ -25,6 +26,24 @@ declare const process: any;
 const databasePath = resolve(String(process.env.LH_DATABASE_PATH ?? "./data/living-history.sqlite"));
 await mkdir(dirname(databasePath), { recursive: true });
 
+// Studio's own Control is the identity/role authority INSIDE the gate perimeter.
+// The Telegram gate (nginx auth_request → :8744 /gate/check) admits the browser;
+// Control then resolves who acts and with which project role. Presence (FIN-13)
+// and editing locks are mounted only when `auth` is present, so a deployment that
+// omits it silently answers 404 on /auth/session and /presence. These are the same
+// environment names the persistent engine (apps/server/src/main.ts) already reads;
+// no new login path is introduced.
+const controlAuthMode = String(process.env.CONTROL_AUTH_MODE ?? "local");
+if (controlAuthMode !== "local" && controlAuthMode !== "authenticated") {
+  throw new Error("CONTROL_AUTH_MODE must be local or authenticated");
+}
+const controlAuthenticated = controlAuthMode === "authenticated";
+const controlSecureCookies = String(process.env.CONTROL_SECURE_COOKIES ?? "false") === "true";
+const controlAllowedOrigins = String(process.env.CONTROL_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+
 const store = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
 const publicationStore = new SQLiteControlPublicationStore({ path: databasePath });
@@ -35,6 +54,33 @@ const authorConversation = new SQLiteAuthorConversationStore(authorJobs, { path:
 // Ключ провайдера живёт в локальном файле стенда (не в памяти процесса) и
 // наружу отдаётся только маской: «Настройки → ИИ» переживают перезапуск.
 const providerConnections = new SQLiteControlProviderConnectionStore({ path: databasePath });
+// Auth-enabled Control keeps users/sessions/memberships in the same SQLite file.
+// Bootstrap credentials follow the engine's contract: id/username/password all
+// together or not at all; an existing id must keep the same username.
+const controlSecurity = controlAuthenticated ? new SQLiteControlSecurityStore({ path: databasePath }) : null;
+if (controlSecurity) {
+  const bootstrapUserId = process.env.CONTROL_BOOTSTRAP_USER_ID;
+  const bootstrapUsername = process.env.CONTROL_BOOTSTRAP_USERNAME;
+  const bootstrapPassword = process.env.CONTROL_BOOTSTRAP_PASSWORD;
+  const present = [bootstrapUserId, bootstrapUsername, bootstrapPassword]
+    .filter((value) => typeof value === "string" && value.length > 0).length;
+  if (present !== 0 && present !== 3) {
+    throw new Error("Control bootstrap requires user id, username and password together");
+  }
+  if (present === 3) {
+    const result = await controlSecurity.provisionUser({
+      userId: String(bootstrapUserId),
+      username: String(bootstrapUsername),
+      password: String(bootstrapPassword)
+    });
+    if (result.kind === "username_exists") throw new Error("Control bootstrap username already belongs to another user id");
+    if (result.kind === "invalid_request") throw new Error("Control bootstrap credentials are outside supported bounds");
+    if (result.kind === "user_exists") {
+      const existing = await controlSecurity.getUser(String(bootstrapUserId));
+      if (!existing || existing.username !== String(bootstrapUsername)) throw new Error("Control bootstrap user id exists with another username");
+    }
+  }
+}
 const authorProvider = new LocalAuthorProvider(undefined, {
   connections: providerConnections,
   scope: { projectId: "local-operator", userId: "local-owner" }
@@ -61,6 +107,12 @@ const control = controlServerModule.createControlHttpServer({
     nowMs: () => Date.now()
   },
   playtestTrace,
+  auth: controlSecurity ? {
+    security: controlSecurity,
+    allowedOrigins: controlAllowedOrigins,
+    secureCookies: controlSecureCookies,
+    nowMs: () => Date.now()
+  } : undefined,
   authorAssistant: {
     jobs: authorJobs,
     artifacts: authorArtifacts,
@@ -139,6 +191,7 @@ const shutdown = async () => {
   authorJobs.close();
   playtestTrace.close();
   providerConnections.close();
+  controlSecurity?.close();
   publicationStore.close();
   releaseStore.close();
   store.close();
