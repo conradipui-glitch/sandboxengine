@@ -171,14 +171,28 @@ export function renderPublishPanel(host: PublishPanelHost): { dispose: () => voi
 
   function statusText(): string {
     if (state.stage === "published" && state.lastAction === "revoke") return "Версия снята с публикации.";
+    // Строка состояния обязана называть то, что действительно сорвалось.
+    if (state.stage === "failed" && state.failedAction === "recheck") return "Проверка готовности не завершилась.";
+    if (state.stage === "failed" && state.failedAction === "revoke") return "Снятие с публикации не завершилось.";
     return STATUS[state.stage];
   }
 
   function errorBlock(): string {
     if (state.stage !== "failed" || state.error === null) return "";
+    // Причина и следующий шаг зависят от того, что именно сорвалось: неудачная
+    // ПРОВЕРКА не должна читаться как неудачная публикация и не должна обещать,
+    // что проверку «повторять не нужно».
+    const lead = state.failedAction === "recheck"
+      ? "Проверка готовности не завершилась."
+      : state.failedAction === "revoke"
+        ? "Снятие с публикации не завершилось."
+        : "Публикация не завершилась.";
+    const hint = state.failedAction === "recheck"
+      ? "Нажмите «Повторить» — проверка пойдёт заново, одной попыткой."
+      : "Проверка готовности сохранена — повторять её не нужно.";
     return `<div class="publish-error" role="alert" data-publish-error>
-      <p class="publish-error-text"><strong>Публикация не завершилась.</strong> ${escapeHtml(state.error)}</p>
-      <p class="publish-hint" data-publish-preserved>Проверка готовности сохранена — повторять её не нужно.</p>
+      <p class="publish-error-text"><strong>${escapeHtml(lead)}</strong> ${escapeHtml(state.error)}</p>
+      <p class="publish-hint" data-publish-preserved>${escapeHtml(hint)}</p>
     </div>`;
   }
 

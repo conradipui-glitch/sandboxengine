@@ -614,7 +614,9 @@ export function renderMaterialsPanel(host: MaterialsPanelHost): () => void {
   };
 
   const load = (): void => {
-    if (disposed) return;
+    // Пока попытка идёт, второй запуск не начинается: «Повторить» — ровно одна
+    // контролируемая попытка, а не лавина запросов при быстрых нажатиях.
+    if (disposed || busy) return;
     busy = true;
     status = "loading";
     notice = null;
@@ -648,7 +650,7 @@ export function renderMaterialsPanel(host: MaterialsPanelHost): () => void {
   };
 
   const startUpload = (file: File | null): void => {
-    if (disposed) return;
+    if (disposed || busy) return;
     if (file === null) {
       const noFile = new Error(MATERIAL_ERROR_SENTINELS.noFile);
       (noFile as unknown as { code: string }).code = MATERIAL_ERROR_SENTINELS.noFile;

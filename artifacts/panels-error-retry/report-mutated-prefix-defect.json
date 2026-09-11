@@ -1,0 +1,235 @@
+{
+  "ok": false,
+  "generatedAt": "2026-09-11T20:49:27.550Z",
+  "repo": "C:\\Users\\kato55\\lhc-panels-retry",
+  "gitHead": "7e207039b0b757ae5d52e54ae10a34d2a5bf7458",
+  "workdir": "C:\\Temp\\lhc-panels-retry",
+  "studioPort": 4199,
+  "controlPort": 8909,
+  "checks": [
+    {
+      "id": "setup.db-copy",
+      "ok": true,
+      "detail": "C:\\Users\\kato55\\Documents\\Codex\\2026-09-09-live-author-studio\\data\\living-history.sqlite -> C:\\Temp\\lhc-panels-retry\\harness.sqlite"
+    },
+    {
+      "id": "setup.seed",
+      "ok": true,
+      "detail": "реальный контент (материалы + документ миссии)"
+    },
+    {
+      "id": "setup.studio",
+      "ok": true,
+      "detail": "studio={\"ok\":true,\"status\":200} control={\"ok\":true,\"status\":200}"
+    },
+    {
+      "id": "setup.proxy",
+      "ok": true,
+      "detail": "прокси-счётчик на 127.0.0.1:4199 -> Studio 4200"
+    },
+    {
+      "id": "setup.stub-provider",
+      "ok": true,
+      "detail": "заглушка провайдера на 127.0.0.1:8821"
+    },
+    {
+      "id": "setup.chrome",
+      "ok": true,
+      "detail": "свой headless Chrome на 9359"
+    },
+    {
+      "id": "setup.cdp",
+      "ok": true,
+      "detail": "сессия B7B8A8942293934EF937EDEFCA1F12E0"
+    },
+    {
+      "id": "ui.editor-open",
+      "ok": true,
+      "detail": "редактор квеста открыт"
+    },
+    {
+      "id": "M1.materials-baseline",
+      "ok": true,
+      "detail": "карточек=12, ошибок нет, запросов списка=1"
+    },
+    {
+      "id": "M2.failure-no-flood",
+      "ok": false,
+      "detail": "за 4 с недоступного списка ушло 164 запрос(ов) (на дефектном коде — сотни)"
+    },
+    {
+      "id": "M2.error-inside-panel",
+      "ok": false,
+      "detail": "текст=\"null\", кнопка=\"null\""
+    },
+    {
+      "id": "M2.text-says-what-to-do",
+      "ok": false,
+      "detail": "панель предлагает повторить: \"null\""
+    },
+    {
+      "id": "M3.error-block-exists",
+      "ok": false,
+      "detail": "Error: блока ошибки материалов нет\n    at <anonymous>:3:23\n    at <anonymous>:6:5"
+    },
+    {
+      "id": "M3.host-not-replaced",
+      "ok": false,
+      "detail": "метка на блоке ошибки НЕ пережила 4 с: хост панели не подменяется"
+    },
+    {
+      "id": "M4.retry-button-visible",
+      "ok": false,
+      "detail": "Error: кнопки «Повторить» в панели материалов нет\n    at <anonymous>:3:20\n    at <anonymous>:6:5"
+    },
+    {
+      "id": "M4.retry-one-attempt",
+      "ok": false,
+      "detail": "нажатие «Повторить» -> 66 запрос(ов), из них отклонено прокси: 66"
+    },
+    {
+      "id": "M4.error-still-visible-while-down",
+      "ok": false,
+      "detail": "после повтора ошибка снова видна: \"null\""
+    },
+    {
+      "id": "M5.retry-button-visible",
+      "ok": false,
+      "detail": "Error: кнопки «Повторить» в панели материалов нет\n    at <anonymous>:3:20\n    at <anonymous>:6:5"
+    },
+    {
+      "id": "M5.retry-after-recovery-loads-list",
+      "ok": true,
+      "detail": "после восстановления списка карточек=12, ошибка убрана"
+    },
+    {
+      "id": "A1.no-loop-when-provider-down",
+      "ok": true,
+      "detail": "1 запрос(ов) готовности за 4 с (на дефектном коде — сотни)"
+    },
+    {
+      "id": "A1.explains-in-panel",
+      "ok": true,
+      "detail": "состояние=объяснение, текст=\"Подключение к ИИ не настроено.\", повтор=\"Проверить снова\""
+    },
+    {
+      "id": "A1.retry-control-visible",
+      "ok": true,
+      "detail": "действие повтора доступно"
+    },
+    {
+      "id": "A1.retry-one-attempt",
+      "ok": true,
+      "detail": "повтор -> 1 запрос(ов) готовности"
+    },
+    {
+      "id": "A2.ai-form-available",
+      "ok": true,
+      "detail": "состояние: {\"mounted\":true,\"error\":false,\"unavailable\":false,\"form\":true,\"text\":null,\"retryLabel\":null,\"recheckLabel\":null}"
+    },
+    {
+      "id": "A2.generate-error-inside-panel",
+      "ok": true,
+      "detail": "ошибка внутри панели, текст=\"ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.\", кнопка=\"Повторить\""
+    },
+    {
+      "id": "A2.retry-one-attempt",
+      "ok": true,
+      "detail": "«Повторить» -> 1 запрос(ов) миссии"
+    },
+    {
+      "id": "A2.idea-kept",
+      "ok": true,
+      "detail": "описание идеи осталось в поле после сбоя и повтора"
+    },
+    {
+      "id": "P1.check-button-visible",
+      "ok": true,
+      "detail": "кнопка проверки доступна"
+    },
+    {
+      "id": "P1.no-loop-when-draft-down",
+      "ok": true,
+      "detail": "1 запрос(ов) черновика за 4 с после запуска проверки (на дефектном коде — сотни)"
+    },
+    {
+      "id": "P1.error-inside-panel",
+      "ok": false,
+      "detail": "действие=\"publish\" («Опубликовать»), текст=\"null\""
+    },
+    {
+      "id": "P1.text-says-what-to-do",
+      "ok": false,
+      "detail": "панель объясняет причину: \"null\""
+    },
+    {
+      "id": "P1.retry-button-visible",
+      "ok": false,
+      "detail": "Error: кнопки «Повторить» в панели публикации нет\n    at <anonymous>:3:20\n    at <anonymous>:6:5"
+    },
+    {
+      "id": "P1.retry-one-attempt",
+      "ok": false,
+      "detail": "«Повторить» -> 0 запрос(ов) черновика"
+    },
+    {
+      "id": "browser.no-console-errors",
+      "ok": true,
+      "detail": "ошибок в консоли нет"
+    }
+  ],
+  "metrics": {
+    "M1.cards": 12,
+    "M1.assets-list-requests": 1,
+    "M2.assets-list-requests-in-4s": 164,
+    "M2.failed-requests-in-4s": 164,
+    "M2.browser-requests-to-assets-in-4s": 164,
+    "M3.assets-list-requests-in-next-4s": 172,
+    "M4.requests-per-retry-press": 66,
+    "M5.cards-after-recovery": 12,
+    "A1.provider-status-requests-in-4s": 1,
+    "A1.requests-per-retry-press": 1,
+    "A2.mission-draft-requests-per-attempt": 1,
+    "A2.mission-draft-requests-per-retry": 1,
+    "P1.draft-read-requests-in-4s": 1,
+    "P1.draft-read-requests-per-retry": 0
+  },
+  "notes": [
+    "Заглушка провайдера: POST /local/author-provider -> HTTP 200, состояние = connected (реальный сетевой вызов не делается)",
+    "Панель публикации стартует без автозапроса (состояние «Готовность ещё не проверена.»): проверку запускает автор кнопкой — измерение идёт от его нажатия."
+  ],
+  "screenshots": [
+    {
+      "name": "M2-materials-error",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\M2-materials-error.png"
+    },
+    {
+      "name": "M4-materials-retry-pressed",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\M4-materials-retry-pressed.png"
+    },
+    {
+      "name": "M5-materials-recovered",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\M5-materials-recovered.png"
+    },
+    {
+      "name": "A1-ai-provider-down",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\A1-ai-provider-down.png"
+    },
+    {
+      "name": "A2-ai-generate-error",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\A2-ai-generate-error.png"
+    },
+    {
+      "name": "A2-ai-retry-pressed",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\A2-ai-retry-pressed.png"
+    },
+    {
+      "name": "P1-publish-error",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\P1-publish-error.png"
+    },
+    {
+      "name": "P1-publish-retry-pressed",
+      "path": "C:\\Temp\\lhc-panels-retry\\shots\\P1-publish-retry-pressed.png"
+    }
+  ]
+}
