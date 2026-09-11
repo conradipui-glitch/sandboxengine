@@ -15,15 +15,25 @@
 //   6. dispatches + reconciles + smokes again (rollback of the rollback).
 //
 // EXIT CODE CONTRACT: a FAIL verdict is an acceptance failure, so it MUST surface
-// as a non-zero process exit code; PASS exits 0. The pure verdict/exit-code
-// helpers below are the load-bearing part and are exercised offline by
-// scripts/test/b13-b2-rollback-drill.test.mjs (no network / no deploy).
+// as a non-zero process exit code; PASS exits 0. The verdict/exit-code helpers and
+// the receipt/verdict reporting now live in scripts/lib/drill-harness.mjs;
+// computeRollbackVerdict and exitCodeForResult stay exported here because
+// scripts/test/b13-b2-rollback-drill.test.mjs imports them from this module.
 //
 // Offline fixture mode (tests only, no network):
 //   B13_B2_DRILL_FIXTURE=<path>        JSON: {rollbackSmoke, restoreSmoke, rollbackReceipt, restoreReceipt}
 //   B13_B2_DRILL_RECEIPT_PATH=<path>   optional receipt output path override
-import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import {
+  computeVerdict,
+  exitCodeForResult,
+  isMainModule,
+  loadFixture,
+  offlineFixture,
+  reportDrill,
+  resolveReceiptPath
+} from "./lib/drill-harness.mjs";
+
+export { exitCodeForResult };
 
 const REPO = "conradipui-glitch/sandbox";
 const REF = "feat/florence-vertical-slice";
@@ -33,14 +43,13 @@ const PREVIEW_URL = "https://living-history-florence-preview.conradipui.workers.
 const DEFAULT_RECEIPT_PATH = "docs/worklog/b13-b2-rollback-receipt.json";
 
 export function computeRollbackVerdict({ rollbackSmoke, restoreSmoke, rollbackReceipt, restoreReceipt }) {
-  const ok = rollbackSmoke?.status === 200 && rollbackSmoke?.matched === true
-    && restoreSmoke?.status === 200 && restoreSmoke?.matched === true
-    && rollbackReceipt?.runId !== restoreReceipt?.runId;
-  return ok ? "PASS" : "FAIL";
-}
-
-export function exitCodeForResult(result) {
-  return result === "PASS" ? 0 : 1;
+  return computeVerdict([
+    rollbackSmoke?.status === 200,
+    rollbackSmoke?.matched === true,
+    restoreSmoke?.status === 200,
+    restoreSmoke?.matched === true,
+    rollbackReceipt?.runId !== restoreReceipt?.runId
+  ]);
 }
 
 async function ghJson(args) {
@@ -72,6 +81,8 @@ async function moveRef(sha) {
 }
 
 async function adapterFor(sha) {
+  // Lazy import: the builder-runner build lives in this worktree, but offline
+  // fixture mode must not require it.
   const { createPreviewDeploymentPolicy, PreviewDeploymentAdapter, createGhPreviewDeploymentGateway } =
     await import("../apps/builder-runner/dist/index.js");
   const policy = createPreviewDeploymentPolicy({
@@ -130,17 +141,12 @@ function fixtureRun(fixture) {
 }
 
 export async function run({ fixturePath } = {}) {
-  const evidence = fixturePath ? fixtureRun(JSON.parse(readFileSync(fixturePath, "utf8"))) : await liveRun();
-  const receiptPath = process.env.B13_B2_DRILL_RECEIPT_PATH
-    ?? (fixturePath ? null : DEFAULT_RECEIPT_PATH);
-  if (receiptPath) writeFileSync(receiptPath, JSON.stringify(evidence, null, 2));
-  console.log("ROLLBACK DRILL:", evidence.result);
-  process.exitCode = exitCodeForResult(evidence.result);
+  const evidence = fixturePath ? fixtureRun(loadFixture(fixturePath)) : await liveRun();
+  const receiptPath = resolveReceiptPath({ defaultPath: DEFAULT_RECEIPT_PATH, fixtureMode: fixturePath !== undefined });
+  reportDrill({ label: "ROLLBACK DRILL", result: evidence.result, evidence, receiptPath });
   return evidence;
 }
 
-const invoked = process.argv[1] ? process.argv[1].replace(/\\/g, "/").toLowerCase() : "";
-const self = fileURLToPath(import.meta.url).replace(/\\/g, "/").toLowerCase();
-if (invoked && invoked === self) {
-  await run({ fixturePath: process.env.B13_B2_DRILL_FIXTURE });
+if (isMainModule(import.meta.url)) {
+  await run({ fixturePath: offlineFixture() });
 }

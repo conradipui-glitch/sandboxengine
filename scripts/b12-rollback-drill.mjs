@@ -1,7 +1,16 @@
+// B12 release rollback drill (root verify evidence): publish r1, publish r2,
+// roll back to r1, restart the runtime, and verify old sessions keep their pinned
+// release while new sessions get the rolled-back one. Fully local SQLite: no
+// network, no deploy.
+//
+// Verdict / exit code / JSON reporting are shared via scripts/lib/drill-harness.mjs:
+// PASS prints `result: "pass"` and exits 0; a failed assertion prints
+// `result: "fail"` with the error and exits non-zero.
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FAIL, PASS, reportDrill, runStep } from "./lib/drill-harness.mjs";
 import {
   SQLiteControlReleaseStore,
   SQLiteControlStore
@@ -19,6 +28,8 @@ import {
 } from "../apps/server/dist/release-publication.js";
 import { SQLitePublishedSessionBindingStore } from "../apps/server/dist/published-session-binding.js";
 import { createRuntimeHttpServer } from "../apps/server/dist/server.js";
+
+const DRILL_ID = "B12-release-rollback";
 
 const workshop = Object.freeze({
   schemaVersion: "1.0",
@@ -114,7 +125,7 @@ async function openRuntime(path, pluginRegistry, sessionIds, credentials) {
     templates: [],
     published: { releaseStore, pluginRegistry, bindings },
     createSessionId: () => sessionIds.shift() ?? "session-extra",
-    createCredential: () => credentials.shift() ?? "Z".repeat(32),
+    createCredential: () => "Z".repeat(32),
     leaseDurationMs: 1_000
   });
   const address = await runtime.listen();
@@ -170,144 +181,164 @@ function resourceValue(body) {
   return resource.value;
 }
 
-const directory = await mkdtemp(join(tmpdir(), "sandboxengine-b12-rollback-"));
-const path = join(directory, "engine.sqlite");
-const pluginRegistry = registry();
 let controlStore = null;
 let releaseStore = null;
 let runtime = null;
 
-try {
-  controlStore = new SQLiteControlStore({ path });
-  releaseStore = new SQLiteControlReleaseStore({ path });
+async function drill() {
+  const directory = await mkdtemp(join(tmpdir(), "sandboxengine-b12-rollback-"));
+  const path = join(directory, "engine.sqlite");
+  const pluginRegistry = registry();
 
-  assert.equal((await controlStore.createProject({ projectId: "project", title: "Проект" })).kind, "created");
-  assert.equal((await controlStore.createQuest({
-    projectId: "project",
-    questId: "quest",
-    title: "Квест",
-    entryLocationId: "workshop",
-    initialBlocks: [workshop, bluePaint, paintAction(1)]
-  })).kind, "created");
+  try {
+    controlStore = new SQLiteControlStore({ path });
+    releaseStore = new SQLiteControlReleaseStore({ path });
 
-  const validation1 = await controlStore.validateDraft("project", "quest", 0);
-  assert.equal(validation1.kind, "validated");
-  assert.equal(validation1.validation.status, "valid");
-  const release1 = await buildRelease(
-    controlStore,
-    releaseStore,
-    pluginRegistry,
-    "release-1",
-    0,
-    validation1.validation.validationId,
-    "build-release-1"
-  );
+    assert.equal((await controlStore.createProject({ projectId: "project", title: "Проект" })).kind, "created");
+    assert.equal((await controlStore.createQuest({
+      projectId: "project",
+      questId: "quest",
+      title: "Квест",
+      entryLocationId: "workshop",
+      initialBlocks: [workshop, bluePaint, paintAction(1)]
+    })).kind, "created");
 
-  const changed = await controlStore.applyDraftChanges("project", "quest", {
-    baseRevision: 0,
-    changes: [{ kind: "block.replace", blockId: "paint", block: paintAction(2) }]
+    const validation1 = await controlStore.validateDraft("project", "quest", 0);
+    assert.equal(validation1.kind, "validated");
+    assert.equal(validation1.validation.status, "valid");
+    const release1 = await buildRelease(
+      controlStore,
+      releaseStore,
+      pluginRegistry,
+      "release-1",
+      0,
+      validation1.validation.validationId,
+      "build-release-1"
+    );
+
+    const changed = await controlStore.applyDraftChanges("project", "quest", {
+      baseRevision: 0,
+      changes: [{ kind: "block.replace", blockId: "paint", block: paintAction(2) }]
+    });
+    assert.equal(changed.kind, "updated");
+    const validation2 = await controlStore.validateDraft("project", "quest", 1);
+    assert.equal(validation2.kind, "validated");
+    assert.equal(validation2.validation.status, "valid");
+    const release2 = await buildRelease(
+      controlStore,
+      releaseStore,
+      pluginRegistry,
+      "release-2",
+      1,
+      validation2.validation.validationId,
+      "build-release-2"
+    );
+
+    const immutableHashes = Object.freeze({
+      release1: release1.compiledContentHash,
+      release2: release2.compiledContentHash
+    });
+    assert.notEqual(immutableHashes.release1, immutableHashes.release2);
+
+    await publish(releaseStore, pluginRegistry, "release-1", null, "publish-release-1", 1_000);
+
+    runtime = await openRuntime(
+      path,
+      pluginRegistry,
+      ["session-a", "session-b"],
+      ["A".repeat(32), "B".repeat(32)]
+    );
+
+    const sessionA = await createSession(runtime.baseUrl);
+    assert.equal(sessionA.playerView.release.releaseId, "release-1");
+    assert.equal((await runtime.bindings.getBinding("session-a")).release.releaseId, "release-1");
+
+    await publish(releaseStore, pluginRegistry, "release-2", "release-1", "publish-release-2", 2_000);
+    const sessionB = await createSession(runtime.baseUrl);
+    assert.equal(sessionB.playerView.release.releaseId, "release-2");
+    assert.equal((await runtime.bindings.getBinding("session-b")).release.releaseId, "release-2");
+
+    await rollback(releaseStore, pluginRegistry, "release-1", "release-2", "rollback-release-1", 3_000);
+    assert.equal(await releaseStore.getCurrentReleaseId("project", "quest"), "release-1");
+
+    await runtime.close();
+    runtime = null;
+    releaseStore.close();
+    releaseStore = null;
+    controlStore.close();
+    controlStore = null;
+
+    runtime = await openRuntime(path, pluginRegistry, ["session-c"], ["C".repeat(32)]);
+    assert.equal(await runtime.releaseStore.getCurrentReleaseId("project", "quest"), "release-1");
+
+    const bindingA = await runtime.bindings.getBinding("session-a");
+    const bindingB = await runtime.bindings.getBinding("session-b");
+    assert.equal(bindingA.release.releaseId, "release-1");
+    assert.equal(bindingB.release.releaseId, "release-2");
+
+    const sessionC = await createSession(runtime.baseUrl);
+    assert.equal(sessionC.playerView.release.releaseId, "release-1");
+    assert.equal((await runtime.bindings.getBinding("session-c")).release.releaseId, "release-1");
+
+    const actionA = await paintOnce(runtime.baseUrl, sessionA, "rollback-a");
+    const actionB = await paintOnce(runtime.baseUrl, sessionB, "rollback-b");
+    const actionC = await paintOnce(runtime.baseUrl, sessionC, "rollback-c");
+    assert.equal(actionA.playerView.release.releaseId, "release-1");
+    assert.equal(actionB.playerView.release.releaseId, "release-2");
+    assert.equal(actionC.playerView.release.releaseId, "release-1");
+    assert.equal(resourceValue(actionA), 3, "pre-r2 session must retain release-1 cost=1");
+    assert.equal(resourceValue(actionB), 2, "pre-rollback release-2 session must retain cost=2");
+    assert.equal(resourceValue(actionC), 3, "post-rollback session must use release-1 cost=1");
+
+    const stored1 = await runtime.releaseStore.getRelease("project", "quest", "release-1");
+    const stored2 = await runtime.releaseStore.getRelease("project", "quest", "release-2");
+    assert.ok(stored1);
+    assert.ok(stored2);
+    assert.equal(stored1.compiledContentHash, immutableHashes.release1);
+    assert.equal(stored2.compiledContentHash, immutableHashes.release2);
+
+    const events = await runtime.releaseStore.listPublicationEvents("project", "quest");
+    assert.deepEqual(events.map((event) => [event.kind, event.fromReleaseId, event.toReleaseId]), [
+      ["publish", null, "release-1"],
+      ["publish", "release-1", "release-2"],
+      ["rollback", "release-2", "release-1"]
+    ]);
+
+    return {
+      currentReleaseAfterRestart: "release-1",
+      immutableReleaseHashesPreserved: true,
+      publicationHistory: ["publish:null->release-1", "publish:release-1->release-2", "rollback:release-2->release-1"],
+      sessions: {
+        preUpgrade: { sessionId: "session-a", pinnedRelease: "release-1", resourceAfterAction: 3 },
+        preRollback: { sessionId: "session-b", pinnedRelease: "release-2", resourceAfterAction: 2 },
+        postRollback: { sessionId: "session-c", pinnedRelease: "release-1", resourceAfterAction: 3 }
+      },
+      restartIncluded: true,
+      scope: "local SQLite Control releases + Runtime sessions/bindings; rollback changes current pointer for future sessions only"
+    };
+  } finally {
+    if (runtime) await runtime.close();
+    if (releaseStore) releaseStore.close();
+    if (controlStore) controlStore.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+const step = await runStep(DRILL_ID, drill);
+
+if (!step.ok) {
+  console.error(step.error);
+  reportDrill({
+    label: DRILL_ID,
+    result: FAIL,
+    printJson: true,
+    evidence: { drill: DRILL_ID, result: "fail", error: String(step.error?.message ?? step.error) }
   });
-  assert.equal(changed.kind, "updated");
-  const validation2 = await controlStore.validateDraft("project", "quest", 1);
-  assert.equal(validation2.kind, "validated");
-  assert.equal(validation2.validation.status, "valid");
-  const release2 = await buildRelease(
-    controlStore,
-    releaseStore,
-    pluginRegistry,
-    "release-2",
-    1,
-    validation2.validation.validationId,
-    "build-release-2"
-  );
-
-  const immutableHashes = Object.freeze({
-    release1: release1.compiledContentHash,
-    release2: release2.compiledContentHash
+} else {
+  reportDrill({
+    label: DRILL_ID,
+    result: PASS,
+    printJson: true,
+    evidence: { drill: DRILL_ID, result: "pass", ...step.value }
   });
-  assert.notEqual(immutableHashes.release1, immutableHashes.release2);
-
-  await publish(releaseStore, pluginRegistry, "release-1", null, "publish-release-1", 1_000);
-
-  runtime = await openRuntime(
-    path,
-    pluginRegistry,
-    ["session-a", "session-b"],
-    ["A".repeat(32), "B".repeat(32)]
-  );
-
-  const sessionA = await createSession(runtime.baseUrl);
-  assert.equal(sessionA.playerView.release.releaseId, "release-1");
-  assert.equal((await runtime.bindings.getBinding("session-a")).release.releaseId, "release-1");
-
-  await publish(releaseStore, pluginRegistry, "release-2", "release-1", "publish-release-2", 2_000);
-  const sessionB = await createSession(runtime.baseUrl);
-  assert.equal(sessionB.playerView.release.releaseId, "release-2");
-  assert.equal((await runtime.bindings.getBinding("session-b")).release.releaseId, "release-2");
-
-  await rollback(releaseStore, pluginRegistry, "release-1", "release-2", "rollback-release-1", 3_000);
-  assert.equal(await releaseStore.getCurrentReleaseId("project", "quest"), "release-1");
-
-  await runtime.close();
-  runtime = null;
-  releaseStore.close();
-  releaseStore = null;
-  controlStore.close();
-  controlStore = null;
-
-  runtime = await openRuntime(path, pluginRegistry, ["session-c"], ["C".repeat(32)]);
-  assert.equal(await runtime.releaseStore.getCurrentReleaseId("project", "quest"), "release-1");
-
-  const bindingA = await runtime.bindings.getBinding("session-a");
-  const bindingB = await runtime.bindings.getBinding("session-b");
-  assert.equal(bindingA.release.releaseId, "release-1");
-  assert.equal(bindingB.release.releaseId, "release-2");
-
-  const sessionC = await createSession(runtime.baseUrl);
-  assert.equal(sessionC.playerView.release.releaseId, "release-1");
-  assert.equal((await runtime.bindings.getBinding("session-c")).release.releaseId, "release-1");
-
-  const actionA = await paintOnce(runtime.baseUrl, sessionA, "rollback-a");
-  const actionB = await paintOnce(runtime.baseUrl, sessionB, "rollback-b");
-  const actionC = await paintOnce(runtime.baseUrl, sessionC, "rollback-c");
-  assert.equal(actionA.playerView.release.releaseId, "release-1");
-  assert.equal(actionB.playerView.release.releaseId, "release-2");
-  assert.equal(actionC.playerView.release.releaseId, "release-1");
-  assert.equal(resourceValue(actionA), 3, "pre-r2 session must retain release-1 cost=1");
-  assert.equal(resourceValue(actionB), 2, "pre-rollback release-2 session must retain cost=2");
-  assert.equal(resourceValue(actionC), 3, "post-rollback session must use release-1 cost=1");
-
-  const stored1 = await runtime.releaseStore.getRelease("project", "quest", "release-1");
-  const stored2 = await runtime.releaseStore.getRelease("project", "quest", "release-2");
-  assert.ok(stored1);
-  assert.ok(stored2);
-  assert.equal(stored1.compiledContentHash, immutableHashes.release1);
-  assert.equal(stored2.compiledContentHash, immutableHashes.release2);
-
-  const events = await runtime.releaseStore.listPublicationEvents("project", "quest");
-  assert.deepEqual(events.map((event) => [event.kind, event.fromReleaseId, event.toReleaseId]), [
-    ["publish", null, "release-1"],
-    ["publish", "release-1", "release-2"],
-    ["rollback", "release-2", "release-1"]
-  ]);
-
-  console.log(JSON.stringify({
-    drill: "B12-release-rollback",
-    result: "pass",
-    currentReleaseAfterRestart: "release-1",
-    immutableReleaseHashesPreserved: true,
-    publicationHistory: ["publish:null->release-1", "publish:release-1->release-2", "rollback:release-2->release-1"],
-    sessions: {
-      preUpgrade: { sessionId: "session-a", pinnedRelease: "release-1", resourceAfterAction: 3 },
-      preRollback: { sessionId: "session-b", pinnedRelease: "release-2", resourceAfterAction: 2 },
-      postRollback: { sessionId: "session-c", pinnedRelease: "release-1", resourceAfterAction: 3 }
-    },
-    restartIncluded: true,
-    scope: "local SQLite Control releases + Runtime sessions/bindings; rollback changes current pointer for future sessions only"
-  }));
-} finally {
-  if (runtime) await runtime.close();
-  if (releaseStore) releaseStore.close();
-  if (controlStore) controlStore.close();
-  await rm(directory, { recursive: true, force: true });
 }
