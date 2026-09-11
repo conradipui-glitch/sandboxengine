@@ -24,7 +24,7 @@ test("CONTRACT: after the pin exists, the public catalog must serve the pinned a
   const hash1 = sha256(original);
   assert.equal((await h.uploadPng("gate-bg", "asset-1", original)).status, 201);
   await h.saveMission("Ночь.", 0, "save-1", { assetId: "gate-bg", hash: hash1 });
-  await h.buildRelease("release-1", "build-1");
+  await h.buildReleaseHttp("release-1", "build-1");
   assert.equal((await h.publish("release-1", null, "publish-1")).status, 200);
   const pin = await h.publications.getReleasePin("project", "quest", "release-1");
   assert.deepEqual(pin.assets, [{ assetId: "gate-bg", hash: hash1 }]);
@@ -44,7 +44,7 @@ test("CONTRACT: a session must not be created for a release whose pinned bundle 
   const hash1 = sha256(original);
   assert.equal((await h.uploadPng("dock-bg", "asset-1", original)).status, 201);
   await h.saveMission("Ночь.", 0, "save-1", { assetId: "dock-bg", hash: hash1 });
-  await h.buildRelease("release-1", "build-1");
+  await h.buildReleaseHttp("release-1", "build-1");
   await h.publish("release-1", null, "publish-1");
   assert.equal((await h.uploadPng("dock-bg", "asset-2", pngBytes("contract2-replacement"))).status, 201);
 
@@ -88,7 +88,7 @@ test("CONTRACT: the same releaseId must always resolve to the same bundle hash",
   const hash1 = sha256(original);
   assert.equal((await h.uploadPng("mill-bg", "asset-1", original)).status, 201);
   await h.saveMission("Ночь.", 0, "save-1", { assetId: "mill-bg", hash: hash1 });
-  await h.buildRelease("release-1", "build-1");
+  await h.buildReleaseHttp("release-1", "build-1");
   await h.publish("release-1", null, "publish-1");
   const published = await h.publications.getPublicationForQuest("project", "quest");
 

@@ -11,7 +11,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { LocalAssetStore } from "@living-history/assets";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 function chunk(type, data) {
@@ -94,6 +94,10 @@ test("R03/F05: public asset bytes are served only for the pinned published revis
     projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: "build-1"
   });
   assert.equal(release.kind, "created");
+  assert.equal((await freezeReleaseBundle(
+    { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+    { projectId: "project", questId: "quest", releaseId: "release-1" }
+  )).kind, "frozen");
 
   const publish = await fetch(`${base}/control/v1/projects/project/quests/quest/publish`, {
     method: "POST", headers: { "content-type": "application/json", "idempotency-key": "publish-1" },

@@ -12,7 +12,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { LocalAssetStore } from "@living-history/assets";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 function world() {
@@ -108,6 +108,12 @@ async function harness(t, options = {}) {
       { projectId: "project", questId: "quest", releaseId, draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: key }
     );
     assert.equal(release.kind, "created");
+    const freeze = await freezeReleaseBundle(
+      { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+      { projectId: "project", questId: "quest", releaseId }
+    );
+    assert.equal(freeze.kind, "frozen", `заморозка релиза не удалась: ${freeze.code}`);
+
     return release.release;
   };
   const publish = (releaseId, expectedCurrentReleaseId, key) =>
@@ -284,6 +290,10 @@ test("FIN-01: the release to bundle pin survives a publication store restart", a
     { controlStore: store, releaseStore, pluginRegistry: built.registry },
     { projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: "build-1" }
   )).kind, "created");
+  assert.equal((await freezeReleaseBundle(
+    { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+    { projectId: "project", questId: "quest", releaseId: "release-1" }
+  )).kind, "frozen");
   assert.equal((await posts("/control/v1/projects/project/quests/quest/publish", { releaseId: "release-1", expectedCurrentReleaseId: null }, "publish-1")).status, 200);
 
   const pinned = await publications.getReleasePin("project", "quest", "release-1");
@@ -329,10 +339,9 @@ test("FIN-01: a release whose referenced asset bytes changed fails closed instea
   // A mission that references an asset which does not exist never becomes a bundle.
   const h2 = await harness(t);
   const v2 = await h2.saveMission("Ночь.", 0, "save-1", { assetId: "missing-bg", hash: "0".repeat(64) });
-  await h2.buildRelease("release-1", "build-1");
-  const missing = await h2.publish("release-1", null, "publish-1");
-  assert.equal(missing.status, 409);
-  assert.equal(missing.body.error.detailCode, "ASSET_MISSING");
+  // Заморозка при сборке отвергает такой релиз сразу: он не станет бандлом,
+  // поэтому и публиковать нечего (раньше отказ происходил при публикации).
+  await assert.rejects(() => h2.buildRelease("release-1", "build-1"), /ASSET_MISSING/);
   assert.equal(await h2.publications.getPublicationForQuest("project", "quest"), null);
   assert.equal(v2.contentRevision >= 1, true);
 });

@@ -25,7 +25,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { LocalAssetStore } from "@living-history/assets";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 const SECRET = "test-public-session-secret-123";
@@ -103,6 +103,13 @@ async function build(app, releaseId, key) {
     { projectId: "project", questId: "quest", releaseId, draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: key }
   );
   assert.equal(release.kind, "created");
+  // Заморозка — тот же шаг, что делает HTTP-маршрут сборки: без пина релиз
+  // публиковать нельзя (фикстура снимает пины позже, моделируя старую БД).
+  const freeze = await freezeReleaseBundle(
+    { releases: { store: app.releases, publicationStore: app.publications, pluginRegistry: buildPluginRegistry([]).registry }, missionStore: app.store },
+    { projectId: "project", questId: "quest", releaseId }
+  );
+  assert.equal(freeze.kind, "frozen", `заморозка релиза не удалась: ${freeze.code}`);
   return release.release;
 }
 const publish = (app, releaseId, expected, key) =>

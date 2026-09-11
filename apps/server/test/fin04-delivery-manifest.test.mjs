@@ -29,7 +29,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { LocalAssetStore } from "@living-history/assets";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 const COMPOSE_URL = new URL("../../../deploy/vps/docker-compose.yml", import.meta.url);
@@ -185,6 +185,11 @@ test("FIN-04/B01 (current topology): engine and studio are two independent Contr
     { controlStore: engineStore, releaseStore, pluginRegistry: built.registry },
     { projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: "build-1" }
   )).kind, "created");
+  // Заморозка пишет пин в стор движка — тот же путь, что у HTTP-маршрута сборки.
+  assert.equal((await freezeReleaseBundle(
+    { releases: { store: releaseStore, publicationStore: enginePublications, pluginRegistry: built.registry }, missionStore: engineStore },
+    { projectId: "project", questId: "quest", releaseId: "release-1" }
+  )).kind, "frozen");
 
   // The engine composition publishes through its own store instance.
   const published = await fetch(`${engineBase}/control/v1/projects/project/quests/quest/publish`, {

@@ -9,7 +9,7 @@ import {
   SQLiteControlStore
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 function world() {
@@ -104,6 +104,10 @@ async function harness(t, publicationStore) {
       { projectId: "project", questId: "quest", releaseId, draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: key }
     );
     assert.equal(release.kind, "created");
+    assert.equal((await freezeReleaseBundle(
+      { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+      { projectId: "project", questId: "quest", releaseId }
+    )).kind, "frozen");
     return release.release;
   };
   t.after(async () => {

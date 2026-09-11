@@ -26,7 +26,7 @@ import {
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { LocalAssetStore } from "@living-history/assets";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 const SECRET = "test-public-session-secret-123";
@@ -150,6 +150,12 @@ async function harness(t) {
       }
     );
     assert.equal(release.kind, "created");
+    const freeze = await freezeReleaseBundle(
+      { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+      { projectId: "project", questId: "quest", releaseId }
+    );
+    assert.equal(freeze.kind, "frozen", `заморозка релиза не удалась: ${freeze.code}`);
+
     return release.release;
   };
 

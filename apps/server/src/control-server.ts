@@ -1163,24 +1163,14 @@ async function routeControlRequest(
         return;
       }
       if (missionStore) {
-        // Freeze *before* the release exists. A bundle that cannot be reproduced
-        // (missing asset, unavailable revision) must fail loudly rather than
-        // register a release with no pin: релиз без пина публиковать нельзя,
+        // Заморозка идёт ДО создания релиза: релиз без пина публиковать нельзя,
         // а доказать его содержание нечем — см. resolveReleaseBundle.
-        const freeze = await resolveReleaseBundle(
-          releases,
-          missionStore,
-          projectId,
-          questId,
-          body.releaseId,
-          null,
-          "publish"
-        );
-        if (freeze.kind !== "resolved") {
+        const freeze = await freezeReleaseBundle({ releases, missionStore }, { projectId, questId, releaseId: body.releaseId });
+        if (freeze.kind === "failed") {
           sendJson(response, 422, {
             error: {
               code: "RELEASE_FREEZE_FAILED",
-              detailCode: freeze.kind === "bundle_unavailable" ? freeze.code : freeze.kind
+              detailCode: freeze.code
             }
           });
           return;
@@ -2506,6 +2496,32 @@ async function resolveReleaseBundle(
     assets: liveAssets,
     bundleHash
   };
+}
+
+/**
+ * Заморозка бандла релиза: пин с авторской ревизией и манифестом ассетов.
+ * Тот же путь, что использует HTTP-маршрут сборки, — экспортируется, чтобы
+ * инструменты и тесты замораживали релиз ровно так же, как продукт: релиз без
+ * пина публиковать нельзя (см. resolveReleaseBundle).
+ */
+export async function freezeReleaseBundle(
+  options: {
+    readonly releases: ControlReleaseModeOptions;
+    readonly missionStore: MissionDocumentStore & MissionSessionStore;
+  },
+  input: { readonly projectId: string; readonly questId: string; readonly releaseId: string }
+): Promise<{ readonly kind: "frozen" } | { readonly kind: "failed"; readonly code: string }> {
+  const resolved = await resolveReleaseBundle(
+    options.releases,
+    options.missionStore,
+    input.projectId,
+    input.questId,
+    input.releaseId,
+    null,
+    "publish"
+  );
+  if (resolved.kind === "resolved") return { kind: "frozen" };
+  return { kind: "failed", code: resolved.kind === "bundle_unavailable" ? resolved.code : resolved.kind };
 }
 
 /**

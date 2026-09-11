@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryControlPublicationStore, MemoryControlReleaseStore, SQLiteControlStore } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
 import { buildControlRelease } from "../dist/release-authority.js";
 
 function mission() {
@@ -34,6 +34,10 @@ test("M06 owner publish automatically creates catalog record from the current Mi
     projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: "release-build-1"
   });
   assert.equal(release.kind, "created");
+  assert.equal((await freezeReleaseBundle(
+    { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+    { projectId: "project", questId: "quest", releaseId: "release-1" }
+  )).kind, "frozen");
   const control = createControlHttpServer({ store, missionStore: store, releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry, publicMissionSessionSecret: "test-public-session-secret-123" } });
   const address = await control.listen();
   try {
