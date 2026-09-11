@@ -348,6 +348,88 @@ function isMissionDraft(value: StoryScreensMission | MissionDraft): value is Mis
   return (value as MissionDraft).story !== undefined;
 }
 
+// --- Серверный ход ---
+//
+// Модель не решает исход выбора: она принимает ответ сервера и переносит
+// позицию ровно туда, куда перевёл ход сервер. Отказ и недоступность сервера
+// оставляют позицию неизменной и дают понятное сообщение.
+
+/** Позиция из ответа сервера (`apps/server/src/player-turn.ts`). */
+export interface StoryScreensTurnReply {
+  readonly turn: number;
+  readonly sceneId: string;
+  readonly endingId: string | null;
+}
+
+export interface StoryScreensTurnFailure {
+  readonly network: boolean;
+  readonly status: number;
+  readonly code: string | null;
+}
+
+export interface StoryScreensTurnResolution {
+  readonly ok: boolean;
+  /** При отказе — ровно то же состояние, что и до хода. */
+  readonly state: StoryScreensState;
+  readonly message: string;
+}
+
+/** Переход по ответу сервера: диалог целевой сцены раскрывается заново. */
+export function storyScreensTurnApplied(
+  current: StoryScreensState,
+  reply: StoryScreensTurnReply
+): StoryScreensTurnResolution {
+  const phase: StoryScreenPhase = reply.endingId === null ? "scene" : "ending";
+  const state = Object.freeze({
+    phase,
+    introIndex: current.introIndex,
+    sceneId: reply.sceneId,
+    endingId: reply.endingId,
+    revealed: 0,
+    turns: reply.turn,
+    identity: current.identity
+  });
+  return Object.freeze({
+    ok: true,
+    state,
+    message: phase === "ending"
+      ? `Финал зафиксирован сервером (ход ${reply.turn}).`
+      : `Ход ${reply.turn} зафиксирован сервером: сцена ${reply.sceneId}.`
+  });
+}
+
+/** Отказ сервера или его недоступность: позиция не меняется. */
+export function storyScreensTurnRejected(
+  current: StoryScreensState,
+  failure: StoryScreensTurnFailure
+): StoryScreensTurnResolution {
+  return Object.freeze({
+    ok: false,
+    state: current,
+    message: storyScreensTurnFailureMessage(failure)
+  });
+}
+
+const TURN_FAILURE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+  TURN_CHOICE_BLOCKED: "Выбор недоступен: условия не выполнены. Позиция не изменена.",
+  TURN_CHOICE_NOT_IN_SCENE: "Этот выбор не принадлежит текущей сцене. Позиция не изменена.",
+  TURN_EFFECT_FAILED: "Эффект хода не применён. Позиция не изменена.",
+  TURN_MISSION_ENDED: "История уже завершена.",
+  TURN_CONFLICT: "Ход устарел: сервер уже ушёл вперёд. Обновите экран.",
+  TURN_IDEMPOTENCY_KEY_REUSED: "Ключ хода уже использован другим запросом.",
+  INVALID_TURN_REQUEST: "Сервер отклонил запрос хода как некорректный."
+});
+
+export function storyScreensTurnFailureMessage(failure: StoryScreensTurnFailure): string {
+  if (failure.network || failure.status === 0 || failure.status === 503) {
+    return "Сервер хода недоступен: позиция не изменена.";
+  }
+  if (failure.status === 404) return "Сессия хода не найдена на сервере: позиция не изменена.";
+  const code = typeof failure.code === "string" ? failure.code : "";
+  return TURN_FAILURE_MESSAGES[code]
+    ?? `Сервер отклонил ход (${failure.status}${code.length > 0 ? ` ${code}` : ""}). Позиция не изменена.`;
+}
+
 // --- Клавиатура ---
 
 export interface StoryScreensKeyEvent {

@@ -7,6 +7,8 @@ import {
   storyScreensInput,
   storyScreensKeyInput,
   storyScreensMission,
+  storyScreensTurnApplied,
+  storyScreensTurnRejected,
   storyScreensView
 } from "/player-assets/story-screens.js";
 
@@ -14,6 +16,8 @@ const root = document.querySelector("#app");
 if (!(root instanceof HTMLElement)) throw new Error("Player root is missing");
 
 const SESSION_STORAGE_KEY = "living-history.player.session.v1";
+const STORY_SESSION_STORAGE_KEY = "living-history.player.story-session.v1";
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const client = new RuntimePlayerClient(window.location.origin);
 const state = {
   meta: null,
@@ -23,7 +27,8 @@ const state = {
   phase: "loading",
   message: "Запускаем frozen playtest…",
   presentationMessage: "",
-  story: null
+  story: null,
+  storySessionId: null
 };
 const renderer = new BrowserPresentationRenderer(() => state.session);
 const executor = new PresentationExecutor(renderer);
@@ -45,7 +50,7 @@ async function start() {
     state.presentationFrame = state.session.presentationFrame;
     const story = await loadStory();
     if (story) {
-      state.story = { mission: story, screens: createStoryScreens(story), view: null, pendingTurn: null, exited: false };
+      state.story = { mission: story, screens: createStoryScreens(story), view: null, lastTurn: null, exited: false };
       state.message = "Экраны истории загружены из frozen playtest.";
       state.phase = "ready";
       persistSession(state.session);
@@ -106,9 +111,61 @@ async function applyStory(input) {
   if (!state.story) return;
   const result = storyScreensInput(state.story.screens, state.story.mission, input);
   if (!result.handled) return;
+  // Ход не применяется локально: позицию назначает ответ сервера.
+  if (result.turnRequest) {
+    await commitStoryTurn(result.turnRequest);
+    return;
+  }
   state.story.screens = result.state;
   state.story.exited = result.exited || state.story.exited;
-  if (result.turnRequest) state.story.pendingTurn = result.turnRequest;
+  render();
+  await renderStoryScreen();
+}
+
+/**
+ * Отправляет ход на сервер и переходит ровно по его ответу. Недоступный выбор
+ * и недоступный сервер оставляют позицию неизменной с понятным сообщением.
+ */
+async function commitStoryTurn(turnRequest) {
+  if (!state.story) return;
+  const base = state.story.screens;
+  state.message = "Сервер применяет ход…";
+  render();
+
+  let resolution;
+  try {
+    const response = await fetch("/player-turn.json", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sessionId: storySessionId(),
+        choiceId: turnRequest.choiceId,
+        baseTurn: turnRequest.baseTurn,
+        idempotencyKey: makeTurnIdempotencyKey()
+      })
+    });
+    const body = await response.json().catch(() => null);
+    const position = body?.state?.position ?? null;
+    if (response.ok && position !== null) {
+      resolution = storyScreensTurnApplied(base, {
+        turn: position.turn,
+        sceneId: position.sceneId,
+        endingId: position.endingId
+      });
+      state.story.lastTurn = Object.freeze({ choiceId: turnRequest.choiceId, turn: position.turn });
+    } else {
+      resolution = storyScreensTurnRejected(base, {
+        network: false,
+        status: response.status,
+        code: typeof body?.error?.code === "string" ? body.error.code : null
+      });
+    }
+  } catch {
+    resolution = storyScreensTurnRejected(base, { network: true, status: 0, code: null });
+  }
+
+  state.story.screens = resolution.state;
+  state.message = resolution.message;
   render();
   await renderStoryScreen();
 }
@@ -213,6 +270,7 @@ async function onClick(event) {
     return;
   }
   if (target.dataset.action === "story-repeat") {
+    resetStorySession();
     await applyStory({ kind: "restart" });
     return;
   }
@@ -409,10 +467,10 @@ function render() {
 function renderStoryShell() {
   const meta = state.meta;
   const story = state.story;
-  const pending = story.pendingTurn;
-  const pendingText = pending === null
+  const lastTurn = story.lastTurn;
+  const lastTurnText = lastTurn === null || lastTurn === undefined
     ? ""
-    : `<p class="story-turn">Зафиксирован ход: выбор ${escapeHtml(pending.choiceId)} (baseTurn ${pending.baseTurn}).</p>`;
+    : `<p class="story-turn">Сервер зафиксировал ход ${lastTurn.turn}: выбор ${escapeHtml(lastTurn.choiceId)}.</p>`;
 
   // Story shell uses only local metadata; SceneFrame/story content is never
   // interpolated here — the shared renderer below builds it with createElement.
@@ -442,7 +500,7 @@ function renderStoryShell() {
         </section>
 
         <footer class="player-footer">
-          ${pendingText}
+          ${lastTurnText}
           <p>Session ${escapeHtml(state.session.sessionId)}</p>
           <button class="secondary" type="button" data-action="story-repeat">Повторить историю</button>
         </footer>
@@ -520,6 +578,29 @@ function clearStoredSession() {
   try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch { /* no-op */ }
 }
 
+/**
+ * Идентификатор серверной сессии хода: живёт в sessionStorage, чтобы повтор
+ * хода после перезагрузки экрана остался тем же ключом, а не новой сессией.
+ */
+function storySessionId() {
+  if (typeof state.storySessionId === "string" && ID_PATTERN.test(state.storySessionId)) {
+    return state.storySessionId;
+  }
+  let stored = null;
+  try { stored = sessionStorage.getItem(STORY_SESSION_STORAGE_KEY); } catch { /* ephemeral persistence is optional */ }
+  const id = typeof stored === "string" && ID_PATTERN.test(stored)
+    ? stored
+    : `player-story-${makeIdempotencyKey()}`;
+  state.storySessionId = id;
+  try { sessionStorage.setItem(STORY_SESSION_STORAGE_KEY, id); } catch { /* no-op */ }
+  return id;
+}
+
+function resetStorySession() {
+  state.storySessionId = null;
+  try { sessionStorage.removeItem(STORY_SESSION_STORAGE_KEY); } catch { /* no-op */ }
+}
+
 function setError(error) {
   state.phase = "error";
   state.message = error instanceof PlayerClientError
@@ -549,6 +630,14 @@ function makeIdempotencyKey() {
     ? randomUuid.call(globalThis.crypto)
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `player-paint-${suffix}`;
+}
+
+function makeTurnIdempotencyKey() {
+  const randomUuid = globalThis.crypto?.randomUUID;
+  const suffix = typeof randomUuid === "function"
+    ? randomUuid.call(globalThis.crypto)
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `player-turn-${suffix}`;
 }
 
 function formatSeconds(value) {
