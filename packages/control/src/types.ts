@@ -445,6 +445,13 @@ export interface CreateThreadInput {
 export interface AddMessageInput {
   readonly threadId: string;
   readonly text: string;
+  /**
+   * Optional thread-level CAS guard. When present the reply is accepted only
+   * while the thread is still at this revision; a stale base is a
+   * `revision_conflict` and nothing is written. Omitted by the current HTTP
+   * reply route, which keeps the pre-existing lenient reply semantics.
+   */
+  readonly expectedRevision?: number;
   readonly idempotencyKey: string;
   readonly actorUserId: string;
 }

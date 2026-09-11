@@ -447,6 +447,117 @@ test("FIN-12 collaboration store: thread status is a CAS state machine over open
   }
 });
 
+test("FIN-12 collaboration store: a reply honours an optional thread CAS guard and writes nothing on a stale base", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    const opened = await store.createThread("p1", "q1", {
+      anchor: { kind: "board", targetId: null, position: { x: 1, y: 1 } },
+      text: "Тред под ответы", idempotencyKey: "reply-cas-thread", actorUserId: "author-1"
+    });
+    const threadId = opened.view.threads[0].threadId;
+    assert.equal(opened.view.threads[0].revision, 1);
+
+    // A stale thread revision is rejected before anything is written.
+    assert.deepEqual(await store.addMessage("p1", "q1", {
+      threadId, text: "устаревший ответ", expectedRevision: 9,
+      idempotencyKey: "reply-cas-stale", actorUserId: "author-2"
+    }), { kind: "revision_conflict", currentRevision: 1 });
+    assert.equal((await store.getCollaboration("p1", "q1")).threads[0].messages.length, 1);
+
+    // The matching revision is accepted and advances the thread by one.
+    const accepted = await store.addMessage("p1", "q1", {
+      threadId, text: "ответ по актуальной базе", expectedRevision: 1,
+      idempotencyKey: "reply-cas-ok", actorUserId: "author-2"
+    });
+    assert.equal(accepted.kind, "updated");
+    const after = accepted.view.threads.find((entry) => entry.threadId === threadId);
+    assert.equal(after.messages.length, 2);
+    assert.equal(after.messages[1].text, "ответ по актуальной базе");
+    assert.equal(after.revision, 2);
+
+    // A malformed guard is an invalid request, not a silent write.
+    const malformed = await store.addMessage("p1", "q1", {
+      threadId, text: "нулевая ревизия", expectedRevision: 0,
+      idempotencyKey: "reply-cas-malformed", actorUserId: "author-2"
+    });
+    assert.equal(malformed.kind, "invalid_request");
+    assert.deepEqual(malformed.errors, ["expectedRevision"]);
+    assert.equal((await store.getCollaboration("p1", "q1")).threads[0].messages.length, 2);
+
+    // Omitting the guard keeps the lenient pre-existing reply behaviour.
+    const lenient = await store.addMessage("p1", "q1", {
+      threadId, text: "ответ без guard", idempotencyKey: "reply-cas-lenient", actorUserId: "author-2"
+    });
+    assert.equal(lenient.kind, "updated");
+    assert.equal(lenient.view.threads.find((entry) => entry.threadId === threadId).messages.length, 3);
+  } finally {
+    await dispose(dir, store);
+  }
+});
+
+test("FIN-12 collaboration store: re-setting the same thread status is a true no-op", async () => {
+  const { dir, store } = await makeStore();
+  try {
+    const opened = await store.createThread("p1", "q1", {
+      anchor: { kind: "board", targetId: null, position: { x: 2, y: 2 } },
+      text: "Тред со статусом", idempotencyKey: "noop-thread", actorUserId: "author-1"
+    });
+    const threadId = opened.view.threads[0].threadId;
+    // createThread = collection rev 1
+    assert.equal(opened.view.revision, 1);
+
+    const resolved = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 1, status: "resolved", idempotencyKey: "noop-resolve",
+      actorUserId: "author-1"
+    });
+    assert.equal(resolved.kind, "updated");
+    const resolvedThread = resolved.view.threads[0];
+    assert.equal(resolvedThread.status, "resolved");
+    assert.equal(resolvedThread.revision, 2);
+    assert.equal(resolved.view.revision, 2);
+    const resolvedAtMs = resolvedThread.resolvedAtMs;
+    assert.equal(Number.isFinite(resolvedAtMs), true);
+
+    // Repeating the very same status changes nothing: no thread bump, no
+    // collection bump, the original resolvedAtMs stays.
+    const again = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 2, status: "resolved", idempotencyKey: "noop-resolve-again",
+      actorUserId: "author-1"
+    });
+    assert.equal(again.kind, "updated");
+    const againThread = again.view.threads[0];
+    assert.equal(againThread.status, "resolved");
+    assert.equal(againThread.revision, 2);
+    assert.equal(againThread.resolvedAtMs, resolvedAtMs);
+    assert.equal(again.view.revision, 2);
+    assert.equal(againThread.messages.length, 1);
+
+    // The no-op key is still consumed, so a replay is honest and repeatable.
+    const replay = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 2, status: "resolved", idempotencyKey: "noop-resolve-again",
+      actorUserId: "author-1"
+    });
+    assert.equal(replay.kind, "replay");
+    assert.equal(replay.view.threads[0].revision, 2);
+
+    // The no-op did not burn a revision: a genuine reopen still lands on the
+    // next revision from the unchanged base.
+    const reopened = await store.setThreadStatus("p1", "q1", {
+      threadId, expectedRevision: 2, status: "open", idempotencyKey: "noop-reopen",
+      actorUserId: "author-2"
+    });
+    assert.equal(reopened.kind, "updated");
+    const reopenedThread = reopened.view.threads[0];
+    assert.equal(reopenedThread.status, "open");
+    assert.equal(reopenedThread.revision, 3);
+    assert.equal(reopenedThread.resolvedAtMs, null);
+    assert.equal(reopened.view.revision, 3);
+    assert.equal(reopened.view.unresolvedThreadCount, 1);
+  } finally {
+    await dispose(dir, store);
+  }
+});
+
 test("FIN-12 collaboration store: unknown ids and a foreign quest stay not_found instead of silently creating", async () => {
   const { dir, store } = await makeStore();
   try {

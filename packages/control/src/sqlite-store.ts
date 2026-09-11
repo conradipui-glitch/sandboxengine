@@ -645,18 +645,26 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     const errors: string[] = [];
     if ("error" in text) errors.push(text.error);
     if (!isId(input.threadId)) errors.push("threadId");
+    if (input.expectedRevision !== undefined && !isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
     if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
     if (!isId(input.actorUserId)) errors.push("actorUserId");
     if (errors.length > 0) return invalidCollaboration(errors);
     const normalized = (text as { readonly text: string }).text;
+    // The optional CAS guard is part of the request identity only when it was
+    // supplied, so keys written before it existed still replay byte-for-byte.
+    const guard = input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision };
     return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.reply", {
-      threadId: input.threadId, text: normalized
+      threadId: input.threadId, text: normalized, ...guard
     }), input.idempotencyKey, input.actorUserId, (revision) => {
       const thread = this.#db.prepare(`
         SELECT revision FROM control_collaboration_threads
         WHERE project_id = ? AND quest_id = ? AND thread_id = ?
       `).get(projectId, questId, input.threadId);
       if (!thread) return { kind: "not_found" as const };
+      const currentRevision = Number(thread.revision);
+      if (input.expectedRevision !== undefined && currentRevision !== input.expectedRevision) {
+        return { kind: "revision_conflict" as const, currentRevision };
+      }
       const now = Date.now();
       this.#db.prepare(`
         INSERT INTO control_collaboration_messages (
@@ -667,7 +675,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       this.#db.prepare(`
         UPDATE control_collaboration_threads SET revision = ?, updated_at_ms = ?
         WHERE project_id = ? AND quest_id = ? AND thread_id = ?
-      `).run(Number(thread.revision) + 1, now, projectId, questId, input.threadId);
+      `).run(currentRevision + 1, now, projectId, questId, input.threadId);
       return { kind: "updated" as const };
     });
   }
@@ -753,12 +761,15 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       threadId: input.threadId, expectedRevision: input.expectedRevision, status: input.status
     }), input.idempotencyKey, input.actorUserId, (_revision) => {
       const thread = this.#db.prepare(`
-        SELECT revision FROM control_collaboration_threads
+        SELECT revision, status FROM control_collaboration_threads
         WHERE project_id = ? AND quest_id = ? AND thread_id = ?
       `).get(projectId, questId, input.threadId);
       if (!thread) return { kind: "not_found" as const };
       const currentRevision = Number(thread.revision);
       if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      // Setting the status a thread already holds changes nothing: no thread
+      // revision bump, no collection revision, the original resolvedAtMs stays.
+      if (String(thread.status) === input.status) return { kind: "noop" as const };
       const now = Date.now();
       this.#db.prepare(`
         UPDATE control_collaboration_threads SET status = ?, resolved_at_ms = ?, revision = ?, updated_at_ms = ?
@@ -797,6 +808,17 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       if (outcome.kind === "not_found") return frozen({ kind: "not_found" });
       if (outcome.kind === "forbidden") return frozen({ kind: "forbidden" });
       if (outcome.kind === "revision_conflict") return frozen({ kind: "revision_conflict", currentRevision: outcome.currentRevision });
+      if (outcome.kind === "noop") {
+        // Nothing changed, so neither the collection nor the thread revision
+        // moves; the key is still consumed so a replay stays honest.
+        const view = this.#collaborationViewAt(projectId, questId, currentRevision);
+        this.#db.prepare(`
+          INSERT INTO control_collaboration_idempotency (
+            project_id, quest_id, idempotency_key, request_hash, result_json, actor_user_id, created_at_ms
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(projectId, questId, idempotencyKey, requestHash, JSON.stringify(view), actorUserId, Date.now());
+        return frozen({ kind: "updated", view });
+      }
 
       this.#db.prepare(`
         INSERT INTO control_collaboration_state (project_id, quest_id, revision) VALUES (?, ?, ?)
@@ -2098,6 +2120,7 @@ function frozen<T extends object>(value: T): Readonly<T> { return Object.freeze(
 type CollaborationMutationOutcome =
   | { readonly kind: "created" }
   | { readonly kind: "updated" }
+  | { readonly kind: "noop" }
   | { readonly kind: "not_found" }
   | { readonly kind: "forbidden" }
   | { readonly kind: "revision_conflict"; readonly currentRevision: number };
