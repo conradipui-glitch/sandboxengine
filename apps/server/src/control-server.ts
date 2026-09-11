@@ -880,7 +880,8 @@ async function routeControlRequest(
       const body = await requireJsonObject(request, response);
       if (body === null) return;
       if (!hasExactKeys(body, ["sessionId", "initialWorld"])
-        || !isPlainObject(body.initialWorld)) {
+        || !isPlainObject(body.initialWorld)
+        || !isWorldStateShape(body.initialWorld)) {
         sendJson(response, 400, { error: { code: "INVALID_MISSION_SESSION_REQUEST" } });
         return;
       }
@@ -2669,6 +2670,23 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+/**
+ * R-07: граница недоверенного ввода для initialWorld. Раньше проверялся только
+ * `isPlainObject`, поэтому `{}` доходил до `createMissionSession` и падал
+ * `TypeError: Cannot read properties of undefined (reading 'map')` → клиент
+ * получал 500 вместо 4xx. Здесь отсекаются формы, у которых отсутствуют
+ * обязательные коллекции мира; глубокая валидация остаётся за хранилищем.
+ */
+const WORLD_STATE_COLLECTIONS = ["locations", "entities", "resources", "items"] as const;
+
+function isWorldStateShape(value: Record<string, any>): boolean {
+  return WORLD_STATE_COLLECTIONS.every((key) => Array.isArray(value[key]))
+    && value.locations.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
+    && value.entities.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
+    && value.resources.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id))
+    && value.items.every((entry: unknown) => isPlainObject(entry) && isId((entry as Record<string, any>).id));
 }
 
 function isBoardDocumentStore(value: ControlStore): value is ControlStore & BoardDocumentStore {

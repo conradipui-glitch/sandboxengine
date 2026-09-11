@@ -185,3 +185,32 @@ Studio объясняет отказ действием автора (`control-e
 падение ровно по существу дефекта — `actual: 'release-b'`, `expected: null` (указатель
 второй миссии сдвинулся, каталог её не получил). С правкой — 2/2 pass.
 
+
+## R-07 — `initialWorld` на границе HTTP: 500 вместо честного 4xx (исправлено)
+
+Находка N2 сводного ревью (зона `packages/control/src/sqlite-store.ts` +
+`packages/contracts/src/references.ts`), воспроизведена оркестратором лично на HEAD
+`2c8112f`: `hasValidWorldStateReferences({})` бросает
+`TypeError: Cannot read properties of undefined (reading 'map')`.
+
+HTTP-половина: `POST /control/v1/projects/:projectId/quests/:questId/mission/sessions`
+проверял только `isPlainObject(body.initialWorld)`, поэтому форма `{}` доходила до
+`createMissionSession` и роняла обработчик: клиент получал
+`500 CONTROL_INTERNAL_ERROR` на собственной ошибке ввода вместо 4xx.
+
+Правка (`apps/server/src/control-server.ts`): на границе добавлена структурная
+проверка `isWorldStateShape` — обязательные коллекции мира (`locations`, `entities`,
+`resources`, `items`) должны быть массивами, а их элементы — записями с `id`.
+Неполная форма отвергается `400 INVALID_MISSION_SESSION_REQUEST`; глубокая валидация
+мира остаётся за хранилищем (правило границы: недоверенный ввод падает в 4xx, а не в 500).
+
+Доказательство: `apps/server/test/fin-validate-initial-world-http.test.mjs` — живой
+HTTP-сервер Control, четыре неполные формы мира получают `400`, корректный мир
+по-прежнему создаёт сессию (`201`).
+Мутация: снятие `|| !isWorldStateShape(...)` → тест краснеет ровно по дефекту
+(`ожидался 400, получено 500 {"error":{"code":"CONTROL_INTERNAL_ERROR"}}`); после
+отката — 1 pass / 0 fail.
+
+Остаток (не входит в R-07, остаётся за хранилищем): `createMissionSession` в
+`packages/control/src/sqlite-store.ts` всё ещё бросает вместо возврата
+`{ kind: "invalid_request" }` — это исправляется в зоне хранилища.
