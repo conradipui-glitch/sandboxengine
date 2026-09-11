@@ -1,0 +1,118 @@
+{
+  "operationId": "smoke-2026-09-11",
+  "ranAtIso": "2026-09-11T09:23:52.077Z",
+  "verdict": "PASS",
+  "counts": {
+    "PASS": 18
+  },
+  "steps": [
+    {
+      "id": "S1",
+      "title": "Control отвечает списком проектов",
+      "status": "PASS",
+      "detail": "status 200"
+    },
+    {
+      "id": "S2",
+      "title": "на свежей базе публичный каталог пуст",
+      "status": "PASS",
+      "detail": "status 200, записей 0"
+    },
+    {
+      "id": "S3",
+      "title": "проект создаётся",
+      "status": "PASS",
+      "detail": "status 201, код —"
+    },
+    {
+      "id": "S4",
+      "title": "миссия создаётся в проекте",
+      "status": "PASS",
+      "detail": "status 201, код —"
+    },
+    {
+      "id": "S5",
+      "title": "документ миссии сохраняется с ревизией",
+      "status": "PASS",
+      "detail": "status 200, ревизия 1, код —"
+    },
+    {
+      "id": "S6",
+      "title": "проверка черновика даёт valid",
+      "status": "PASS",
+      "detail": "status 201, итог valid, id есть"
+    },
+    {
+      "id": "S7",
+      "title": "релиз собирается из проверенного черновика",
+      "status": "PASS",
+      "detail": "status 201, код —"
+    },
+    {
+      "id": "S8",
+      "title": "релиз публикуется",
+      "status": "PASS",
+      "detail": "status 200, код —"
+    },
+    {
+      "id": "S9",
+      "title": "указатель публикации смотрит на выпущенный релиз",
+      "status": "PASS",
+      "detail": "current smoke-release-1"
+    },
+    {
+      "id": "S10",
+      "title": "опубликованная миссия видна в публичном каталоге",
+      "status": "PASS",
+      "detail": "status 200, записей 1, адрес smoke-mission"
+    },
+    {
+      "id": "S11",
+      "title": "публичная карточка миссии отдаётся",
+      "status": "PASS",
+      "detail": "status 200"
+    },
+    {
+      "id": "S12",
+      "title": "неизвестная миссия — честный 404",
+      "status": "PASS",
+      "detail": "status 404"
+    },
+    {
+      "id": "S13",
+      "title": "битый initialWorld отвергается 4xx, а не падением 500",
+      "status": "PASS",
+      "detail": "status 422, код INVALID_PUBLIC_MISSION_SESSION_REQUEST"
+    },
+    {
+      "id": "S14",
+      "title": "игровая сессия стартует на опубликованной миссии",
+      "status": "PASS",
+      "detail": "status 201, код —"
+    },
+    {
+      "id": "S15",
+      "title": "состояние хода читается по credential, без него — 401",
+      "status": "PASS",
+      "detail": "с credential 200, без 401"
+    },
+    {
+      "id": "S16",
+      "title": "ход применяется и приводит к концовке миссии",
+      "status": "PASS",
+      "detail": "ход 200, итог ending/done"
+    },
+    {
+      "id": "S17",
+      "title": "повтор хода с тем же baseTurn отвергается 409",
+      "status": "PASS",
+      "detail": "status 409, код MISSION_TURN_CONFLICT"
+    },
+    {
+      "id": "S18",
+      "title": "публикация переживает перезапуск сервера",
+      "status": "PASS",
+      "detail": "status 200, записей 1"
+    }
+  ]
+}
