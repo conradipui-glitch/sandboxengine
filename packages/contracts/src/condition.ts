@@ -1,5 +1,6 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isRecord } from "./result.js";
+import { hasOnlyKeys, isId } from "./primitives.js";
 
 export const CONDITION_TYPES = [
   "resource.atLeast",
@@ -85,16 +86,4 @@ function isConditionAtDepth(value: unknown, depth: number): value is Condition {
     default:
       return false;
   }
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length >= 1
-    && value.length <= 200
-    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

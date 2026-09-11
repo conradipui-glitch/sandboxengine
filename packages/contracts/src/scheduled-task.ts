@@ -1,6 +1,7 @@
 import { isGameplayEffect, type GameplayEffect } from "./gameplay-effect.js";
 import { isRecord } from "./result.js";
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
+import { hasOnlyKeys, isBoundedId, isSafeNonNegativeInteger } from "./primitives.js";
 
 export const SCHEDULED_TASK_KIND = "core.task" as const;
 export const MAX_EFFECTS_PER_TASK_PHASE = 100;
@@ -50,17 +51,4 @@ function isEffectList(value: unknown): value is readonly GameplayEffect[] {
   return Array.isArray(value)
     && value.length <= MAX_EFFECTS_PER_TASK_PHASE
     && value.every(isGameplayEffect);
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isBoundedId(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= maxLength;
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

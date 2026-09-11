@@ -1,4 +1,5 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
+import { isId, isPlainRecord, isSafeNonNegativeInteger } from "./primitives.js";
 
 export const BLOCK_KINDS = [
   "core.location",
@@ -49,11 +50,11 @@ export type ActionBlock = BlockBase<"core.action", PaintActionBlockData>;
 export type Block = LocationBlock | CharacterBlock | ResourceBlock | ActionBlock;
 
 export function isBlock(value: unknown): value is Block {
-  if (!isRecord(value) || !hasExactKeys(value, ["schemaVersion", "id", "kind", "title", "description", "data"])) return false;
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["schemaVersion", "id", "kind", "title", "description", "data"])) return false;
   if (value.schemaVersion !== CONTRACT_SCHEMA_VERSION || !isId(value.id)) return false;
   if (typeof value.title !== "string" || value.title.length < 1 || value.title.length > 200) return false;
   if (typeof value.description !== "string" || value.description.length > 2_000) return false;
-  if (!isRecord(value.data)) return false;
+  if (!isPlainRecord(value.data)) return false;
 
   if (value.kind === "core.location") return hasExactKeys(value.data, []);
 
@@ -83,7 +84,7 @@ export function isBlock(value: unknown): value is Block {
     return value.data.actionType === "core.paint"
       && isId(value.data.resourceId)
       && isPositiveSafeInteger(value.data.resourceUnitsPerUnit)
-      && isNonNegativeSafeInteger(value.data.durationSecondsPerUnit)
+      && isSafeNonNegativeInteger(value.data.durationSecondsPerUnit)
       && typeof value.data.allowPartial === "boolean";
   }
 
@@ -137,23 +138,10 @@ export interface ResolvedIntent {
   readonly sourceInput: IntentSource;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length >= 1
-    && value.length <= 200
-    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
 
 function isSafeInteger(value: unknown): value is number {
@@ -162,8 +150,4 @@ function isSafeInteger(value: unknown): value is number {
 
 function isPositiveSafeInteger(value: unknown): value is number {
   return isSafeInteger(value) && value >= 1;
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return isSafeInteger(value) && value >= 0;
 }
