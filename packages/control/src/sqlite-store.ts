@@ -939,7 +939,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       WHERE project_id = ? AND quest_id = ?
       ORDER BY created_at_ms ASC, thread_id ASC
     `).all(projectId, questId);
-    const knownTargetIds = this.#collaborationKnownTargetIds(projectId, questId);
+    const anchorScope = this.#collaborationAnchorScope(projectId, questId);
     const threads: CollaborationThread[] = [];
     for (const row of threadRows as any[]) {
       const anchor = collaborationAnchorFromColumns(String(row.anchor_kind), row.target_id, row.position_x, row.position_y);
@@ -948,7 +948,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         projectId,
         questId,
         anchor,
-        anchorDeleted: anchor.targetId !== null && !knownTargetIds.has(anchor.targetId),
+        anchorDeleted: collaborationAnchorDeleted(anchor, anchorScope),
         status: String(row.status) === "resolved" ? "resolved" as const : "open" as const,
         revision: Number(row.revision),
         createdByUserId: String(row.created_by_user_id),
@@ -972,11 +972,21 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
 
   // A thread anchored to an object that is no longer present in the quest keeps
   // its whole discussion; the view marks it `anchorDeleted` so the UI can render
-  // «Элемент удалён». This is resolved at read time (draft blocks + authored
-  // mission scene ids) so nothing in the existing draft/mission write paths has
-  // to change.
-  #collaborationKnownTargetIds(projectId: string, questId: string): Set<string> {
-    const ids = new Set<string>();
+  // «Элемент удалён». This is resolved at read time against the draft snapshot
+  // (block ids) and the authored mission document (scene/ending/layer ids) so
+  // nothing in the existing draft/mission write paths has to change.
+  //
+  // `layer`/`field` anchors point at a nested object inside a block or scene, so
+  // the target id is rarely found in a flat id set. Those anchors are only
+  // reported as deleted when their enclosing scope is provably gone; anything
+  // that cannot be resolved honestly stays `false` (an honest «unknown» beats a
+  // false «удалён») — see `collaborationAnchorDeleted`.
+  #collaborationAnchorScope(projectId: string, questId: string): CollaborationAnchorScope {
+    const blockIds = new Set<string>();
+    const sceneIds = new Set<string>();
+    const layerIds = new Set<string>();
+    let draftAvailable = false;
+    let missionAvailable = false;
     const draftRow = this.#db.prepare(`
       SELECT s.snapshot_json FROM control_quests q
       JOIN control_draft_snapshots s
@@ -985,8 +995,9 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     `).get(projectId, questId);
     if (draftRow) {
       try {
-        for (const block of parseSnapshot(draftRow.snapshot_json).blocks) ids.add(block.id);
-      } catch { /* a broken snapshot leaves the anchor marked deleted, never dropped */ }
+        for (const block of parseSnapshot(draftRow.snapshot_json).blocks) blockIds.add(block.id);
+        draftAvailable = true;
+      } catch { /* a broken snapshot is not a statement about any anchor */ }
     }
     const missionRow = this.#db.prepare(`
       SELECT mission_json FROM control_mission_documents
@@ -994,11 +1005,30 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     `).get(projectId, questId);
     if (missionRow) {
       try {
-        const mission = parseJson(missionRow.mission_json) as { story?: { scenes?: readonly { id?: unknown }[] } };
-        for (const scene of mission?.story?.scenes ?? []) if (typeof scene.id === "string") ids.add(scene.id);
-      } catch { /* ignore a broken mission document for anchor resolution */ }
+        const mission = parseJson(missionRow.mission_json) as {
+          readonly story?: {
+            readonly scenes?: readonly { readonly id?: unknown }[];
+            readonly endings?: readonly { readonly id?: unknown }[];
+          };
+          readonly screens?: {
+            readonly intros?: readonly { readonly id?: unknown }[];
+            readonly scenes?: Readonly<Record<string, { readonly layers?: readonly { readonly id?: unknown }[] } | undefined>>;
+            readonly endings?: Readonly<Record<string, { readonly layers?: readonly { readonly id?: unknown }[] } | undefined>>;
+          };
+        };
+        for (const scene of mission?.story?.scenes ?? []) if (typeof scene.id === "string") sceneIds.add(scene.id);
+        for (const ending of mission?.story?.endings ?? []) if (typeof ending.id === "string") sceneIds.add(ending.id);
+        for (const intro of mission?.screens?.intros ?? []) if (typeof intro.id === "string") layerIds.add(intro.id);
+        for (const screen of Object.values(mission?.screens?.scenes ?? {})) {
+          for (const layer of screen?.layers ?? []) if (typeof layer.id === "string") layerIds.add(layer.id);
+        }
+        for (const screen of Object.values(mission?.screens?.endings ?? {})) {
+          for (const layer of screen?.layers ?? []) if (typeof layer.id === "string") layerIds.add(layer.id);
+        }
+        missionAvailable = true;
+      } catch { /* a broken mission document is not a statement about any anchor */ }
     }
-    return ids;
+    return Object.freeze({ blockIds, sceneIds, layerIds, draftAvailable, missionAvailable });
   }
 
   async getMission(projectId: string, questId: string): Promise<MissionDraft | null> {
@@ -2283,6 +2313,61 @@ function collaborationAnchorFromColumns(kind: string, targetId: unknown, x: unkn
     targetId: targetId === null || targetId === undefined ? null : String(targetId),
     position: null
   });
+}
+
+/**
+ * Ids the draft snapshot and the mission document currently contain, plus a flag
+ * per source telling whether it could actually be read. `anchorDeleted` is only
+ * derived from sources that were readable — a missing or broken document means
+ * «не знаю», not «удалён».
+ */
+interface CollaborationAnchorScope {
+  readonly blockIds: ReadonlySet<string>;
+  readonly sceneIds: ReadonlySet<string>;
+  readonly layerIds: ReadonlySet<string>;
+  readonly draftAvailable: boolean;
+  readonly missionAvailable: boolean;
+}
+
+// Top-level keys of the mission/quest documents. When a `layer`/`field` target id
+// starts with one of these it addresses a document namespace (`scenes.workshop.title`),
+// not a block or scene, so the prefix must not be read as a deleted scope.
+const COLLABORATION_SCOPE_NAMESPACES: ReadonlySet<string> = new Set([
+  "board", "defaults", "endings", "intros", "listing", "scenes", "screens", "story"
+]);
+
+/** The enclosing block/scene id of a `<scopeId>.<localId>` target, or `null`. */
+function collaborationAnchorScopeId(targetId: string): string | null {
+  const separator = targetId.indexOf(".");
+  if (separator <= 0) return null;
+  const scopeId = targetId.slice(0, separator);
+  if (COLLABORATION_SCOPE_NAMESPACES.has(scopeId)) return null;
+  return isId(scopeId) ? scopeId : null;
+}
+
+/**
+ * Honest `anchorDeleted` resolution per anchor kind:
+ *  - `board` pins are never deleted;
+ *  - `scene` targets live in the flat id set (draft blocks + mission scenes/endings);
+ *  - `layer`/`field` targets live *inside* a block or scene, so they are only
+ *    «deleted» when the enclosing scope is provably gone. A well-formed target
+ *    that cannot be placed (bare id, unknown namespace) stays `false`.
+ */
+function collaborationAnchorDeleted(anchor: CollaborationAnchor, scope: CollaborationAnchorScope): boolean {
+  if (anchor.kind === "board") return false;
+  const targetId = anchor.targetId;
+  if (targetId === null) return false;
+  // With no readable source there is nothing to compare against: report «не знаю».
+  if (!scope.draftAvailable && !scope.missionAvailable) return false;
+  if (anchor.kind === "scene") {
+    return !(scope.blockIds.has(targetId) || scope.sceneIds.has(targetId));
+  }
+  if (scope.blockIds.has(targetId) || scope.sceneIds.has(targetId) || scope.layerIds.has(targetId)) return false;
+  const scopeId = collaborationAnchorScopeId(targetId);
+  if (scopeId === null) return false;
+  if (scope.blockIds.has(scopeId) || scope.sceneIds.has(scopeId) || scope.layerIds.has(scopeId)) return false;
+  if (scope.blockIds.size === 0 && scope.sceneIds.size === 0 && scope.layerIds.size === 0) return false;
+  return true;
 }
 
 function collaborationViewFromJson(value: unknown): CollaborationView {
