@@ -5,7 +5,7 @@ import {
   renderConflictPanel,
   type ConflictState
 } from "./conflict.js";
-import type { ActionBlock, Block, MissionDraft, MissionScreenLayer } from "@living-history/contracts";
+import type { ActionBlock, Block, Condition, GameplayEffect, MissionDraft, MissionScreenLayer } from "@living-history/contracts";
 import {
   ControlApiClient,
   ControlApiError,
@@ -101,10 +101,12 @@ import {
   removeStoryChoice,
   removeStoryNode,
   renameStoryChoice,
+  setStoryChoiceTarget,
   storyDeletionImpact,
   storyRendererPositions,
   storyPositionKey,
   updateStoryNode,
+  updateStoryNodeContent,
   type StoryBoardModel,
   type StoryDeletionImpact
 } from "./story-model.js";
@@ -113,7 +115,11 @@ import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import { renderAiPanel } from "./ai-panel.js";
 import { renderPublishPanel } from "./publish-panel.js";
-import { renderSceneInspector } from "./scene-inspector.js";
+import {
+  renderSceneInspector,
+  type SceneInspectorHost,
+  type SceneMaterialOption
+} from "./scene-inspector.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -311,6 +317,10 @@ export class StudioApp {
   /** Живой инспектор сцены: разделы «Текст», «Выборы», «Оформление», «Условия». */
   private sceneInspectorHandle: { dispose: () => void } | null = null;
   private sceneInspectorHost: HTMLElement | null = null;
+  /** Контекст смонтированного инспектора: смена проекта, миссии или сцены снимает его. */
+  private sceneInspectorContext: { readonly projectId: string; readonly questId: string; readonly nodeId: string } | null = null;
+  /** Счётчик правок, идущих ОТ инспектора: свою же запись он не должен терять. */
+  private sceneInspectorWrites = 0;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -2524,10 +2534,24 @@ export class StudioApp {
     if (!canKeepScreen || (this.screenContext !== null && !sameScreenContext)) {
       this.destroyScreen();
     }
+    // Инспектор сцены живёт в «Свойствах» для выбранной сцены — на «Сюжете» и на «Доске».
+    const canKeepSceneInspector = this.sceneInspectorMountable();
+    const sameSceneInspectorContext = canKeepSceneInspector
+      && this.sceneInspectorContext !== null
+      && this.sceneInspectorContext.projectId === this.state.selectedProjectId
+      && this.sceneInspectorContext.questId === this.state.selectedQuestId
+      && this.sceneInspectorContext.nodeId === this.state.selectedStoryNodeId;
+    // Правку, идущую от самого инспектора, не снимаем: он ждёт ответа host и сам покажет
+    // «Сохранено». Любая другая запись делает его вид устаревшим — тогда он снимается и
+    // монтируется заново уже по свежему документу.
+    if (this.sceneInspectorWrites === 0 && (!canKeepSceneInspector || !sameSceneInspectorContext)) {
+      this.destroySceneInspector();
+    }
 
     const preservedBoardHost = canKeepBoard ? this.boardHost : null;
     const preservedStoryHost = canKeepStory ? this.storyHost : null;
     const preservedScreenHost = canKeepScreen ? this.screenHost : null;
+    const preservedSceneInspectorHost = canKeepSceneInspector ? this.sceneInspectorHost : null;
     const focusKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.focusKey : undefined;
     if (this.state.view === "projects" && this.state.access.mode !== "anonymous") {
       this.root.innerHTML = this.renderProjects();
@@ -2548,6 +2572,13 @@ export class StudioApp {
       const freshHost = this.root.querySelector<HTMLElement>("[data-screen-host]");
       if (freshHost && freshHost !== preservedScreenHost) freshHost.replaceWith(preservedScreenHost);
     }
+    // Живой инспектор сцены переносится в новую разметку целиком: внутри него —
+    // введённый текст, выбранный раздел и фокус, которые иначе потерялись бы на
+    // любой перерисовке редактора (например, при сохранении).
+    if (preservedSceneInspectorHost) {
+      const freshHost = this.root.querySelector<HTMLElement>("[data-scene-inspector-host]");
+      if (freshHost && freshHost !== preservedSceneInspectorHost) freshHost.replaceWith(preservedSceneInspectorHost);
+    }
     if (focusKey) {
       const selector = `[data-focus-key="${cssEscape(focusKey)}"]`;
       const element = this.root.querySelector<HTMLElement>(selector);
@@ -2567,6 +2598,304 @@ export class StudioApp {
     this.mountMaterialsIfNeeded();
     this.mountAiPanelIfNeeded();
     this.mountPublishPanelIfNeeded();
+    this.mountSceneInspectorIfNeeded();
+  }
+
+  /**
+   * Инспектор сцены монтируется в «Свойствах», когда выбрана именно сцена
+   * (не финал) и роль автора позволяет правку. Условия совпадают с разметкой:
+   * хост [data-scene-inspector-host] рисуется там же и только тогда.
+   */
+  private sceneInspectorMountable(): boolean {
+    if (this.state.view !== "editor" || this.state.inspectorTab !== "props") return false;
+    const nodeId = this.state.selectedStoryNodeId;
+    if (nodeId === null || this.state.mission === null) return false;
+    const shown = this.state.boardView === "story"
+      || (this.state.boardView === "board" && this.state.selectedStoryNodeId !== null);
+    if (!shown) return false;
+    const project = this.state.projects.find((item) => item.projectId === this.state.selectedProjectId) ?? null;
+    if (!canEditProject(this.state.access, project)) return false;
+    return this.state.mission.story.scenes.some((scene) => scene.id === nodeId);
+  }
+
+  /**
+   * Монтирование живого инспектора сцены в его хост. Инспектор ничего не пишет сам:
+   * все правки уходят в документ миссии тем же путём, что и остальной редактор
+   * (saveMission/CAS по baseRevision), — второго пути записи не появляется.
+   */
+  private mountSceneInspectorIfNeeded(): void {
+    if (!this.sceneInspectorMountable()) return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-scene-inspector-host]");
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    const nodeId = this.state.selectedStoryNodeId;
+    if (!host || !projectId || !questId || !nodeId) return;
+    if (this.sceneInspectorHost === host) return;
+    this.destroySceneInspector();
+    this.sceneInspectorHost = host;
+    this.sceneInspectorContext = { projectId, questId, nodeId };
+    this.sceneInspectorHandle = renderSceneInspector(this.sceneInspectorHostFor(host, nodeId, projectId));
+  }
+
+  /** Снятие живого инспектора: dispose снимает слушатели и очищает узел. */
+  private destroySceneInspector(): void {
+    if (this.sceneInspectorHandle) {
+      this.sceneInspectorHandle.dispose();
+      this.sceneInspectorHandle = null;
+    }
+    this.sceneInspectorHost = null;
+    this.sceneInspectorContext = null;
+  }
+
+  /** Действие host, инициированное самим инспектором: его вид не снимается на время записи. */
+  private async viaSceneInspector<T>(action: () => Promise<T>): Promise<T> {
+    this.sceneInspectorWrites += 1;
+    try {
+      return await action();
+    } finally {
+      this.sceneInspectorWrites -= 1;
+    }
+  }
+
+  /**
+   * Объект host по контракту scene-inspector.ts. Каждая правка — это запись
+   * документа миссии через saveMission/CAS (тот же путь, что у остального
+   * редактора), а не отдельное состояние панели.
+   */
+  private sceneInspectorHostFor(host: HTMLElement, nodeId: string, projectId: string): SceneInspectorHost {
+    const write = (
+      action: () => Promise<boolean>,
+      label: string
+    ): Promise<{ readonly ok: boolean; readonly message: string }> =>
+      this.viaSceneInspector(async () => {
+        const ok = await action();
+        return { ok, message: ok ? label : this.state.message };
+      });
+
+    return {
+      root: host,
+      scene: async () => this.sceneDraftView(nodeId),
+      availableScenes: async () => this.sceneOptions(),
+      availableMaterials: async () => this.sceneMaterialOptions(projectId),
+      applyText: async (patch) => write(
+        () => this.applySceneTextFromInspector(nodeId, patch),
+        "Текст сцены сохранён."
+      ),
+      applyChoice: async (choiceId, patch) => write(
+        () => this.applySceneChoiceFromInspector(nodeId, choiceId, patch),
+        "Выбор сохранён."
+      ),
+      addChoice: async (init) => write(
+        () => this.addSceneChoiceFromInspector(nodeId, init),
+        "Выбор добавлен."
+      ),
+      removeChoice: async (choiceId) => write(
+        () => this.removeSceneChoiceFromInspector(nodeId, choiceId),
+        "Выбор удалён."
+      ),
+      applyLook: async (patch) => this.applySceneLookFromInspector(nodeId, projectId, patch),
+      onError: (error) => {
+        this.state.message = describeControlError(error);
+        // Инспектор показывает ошибку сам: полная перерисовка заменила бы его хост и
+        // сбросила бы введённый автором текст.
+      }
+    };
+  }
+
+  /** Правка текста сцены из инспектора: название, текст и реплики за одну запись. */
+  private async applySceneTextFromInspector(
+    nodeId: string,
+    patch: {
+      readonly title?: string;
+      readonly text?: string;
+      readonly dialogue?: readonly { readonly id: string; readonly speaker: string; readonly line: string }[];
+    }
+  ): Promise<boolean> {
+    const current = this.state.mission?.story.scenes.find((scene) => scene.id === nodeId) ?? null;
+    if (current === null) {
+      this.state.message = storyErrorMessage("story.node_missing");
+      this.render();
+      return false;
+    }
+    return this.saveMissionStory("Свойства сохранены.", (doc) => updateStoryNodeContent(doc, {
+      nodeId,
+      title: patch.title ?? current.title,
+      text: patch.text ?? current.text,
+      ...(patch.dialogue === undefined ? {} : { dialogue: patch.dialogue })
+    }));
+  }
+
+  /** Подпись или цель выбора. Не переданное поле цели сохраняется, а не обнуляется. */
+  private async applySceneChoiceFromInspector(
+    nodeId: string,
+    choiceId: string,
+    patch: {
+      readonly label?: string;
+      readonly targetSceneId?: string | null;
+      readonly endingId?: string | null;
+    }
+  ): Promise<boolean> {
+    if (patch.label !== undefined) {
+      return this.saveMissionStory("Подпись выбора сохранена.", (doc) => renameStoryChoice(doc, nodeId, choiceId, patch.label ?? ""));
+    }
+    const choice = this.state.mission?.story.scenes
+      .find((scene) => scene.id === nodeId)?.choices.find((entry) => entry.id === choiceId) ?? null;
+    if (choice === null) {
+      this.state.message = storyErrorMessage("story.choice_missing");
+      this.render();
+      return false;
+    }
+    const targetSceneId = patch.targetSceneId === undefined ? (choice.targetSceneId ?? null) : patch.targetSceneId;
+    const endingId = patch.endingId === undefined ? (choice.endingId ?? null) : patch.endingId;
+    return this.saveMissionStory("Цель выбора сохранена.", (doc) => setStoryChoiceTarget(doc, nodeId, choiceId, {
+      targetSceneId,
+      endingId
+    }));
+  }
+
+  private async addSceneChoiceFromInspector(
+    nodeId: string,
+    init: { readonly label: string; readonly targetSceneId: string | null; readonly endingId: string | null }
+  ): Promise<boolean> {
+    return this.saveMissionStory("Выбор добавлен.", (doc) => addStoryChoice(doc, {
+      sceneId: nodeId,
+      choiceId: generateStoryId("choice"),
+      label: init.label,
+      targetSceneId: init.targetSceneId,
+      endingId: init.endingId
+    }));
+  }
+
+  private async removeSceneChoiceFromInspector(nodeId: string, choiceId: string): Promise<boolean> {
+    return this.saveMissionStory("Выбор удалён.", (doc) => removeStoryChoice(doc, nodeId, choiceId));
+  }
+
+  /**
+   * Фон и музыка сцены из инспектора. Ссылка на материал собирается как
+   * {assetId, hash}: хэш берётся из адреса байтов материала — другого источника
+   * у клиента нет, а выдуманный хэш сервер отклонит.
+   */
+  private async applySceneLookFromInspector(
+    nodeId: string,
+    projectId: string,
+    patch: { readonly backgroundAssetId?: string | null; readonly musicAssetId?: string | null }
+  ): Promise<{ readonly ok: boolean; readonly message: string }> {
+    const mission = this.state.mission;
+    if (mission === null) return { ok: false, message: storyErrorMessage("story.node_missing") };
+    let materials: readonly SceneMaterialOption[];
+    try {
+      materials = await this.viaSceneInspector(() => this.sceneMaterialOptions(projectId));
+    } catch (error) {
+      return { ok: false, message: describeControlError(error) };
+    }
+    const missing = "Материал недоступен или повреждён.";
+    const refFor = (assetId: string | null): { readonly assetId: string; readonly hash: string } | null | undefined => {
+      if (assetId === null) return null;
+      const found = materials.find((material) => material.assetId === assetId);
+      if (found === undefined) return undefined;
+      const hash = assetHashFromUrl(found.url);
+      return hash === "" ? undefined : { assetId: found.assetId, hash };
+    };
+    const current = screenForNode(mission, nodeId) ?? defaultScreen();
+    const next: { background: { readonly assetId: string; readonly hash: string } | null; inheritBackground: boolean; music: { readonly assetId: string; readonly hash: string } | null } = {
+      background: current.background,
+      inheritBackground: current.inheritBackground,
+      music: current.music
+    };
+    let label = "Оформление сцены сохранено.";
+    if (patch.backgroundAssetId !== undefined) {
+      const ref = refFor(patch.backgroundAssetId);
+      if (ref === undefined) return { ok: false, message: missing };
+      next.background = ref;
+      // Явно выбранный фон отменяет наследование: «убрать фон» тоже снимает наследование,
+      // иначе сцена молча показывала бы фон миссии.
+      next.inheritBackground = false;
+      label = ref === null ? "Фон сцены убран." : "Фон сцены сохранён.";
+    }
+    if (patch.musicAssetId !== undefined) {
+      const ref = refFor(patch.musicAssetId);
+      if (ref === undefined) return { ok: false, message: missing };
+      next.music = ref;
+      label = ref === null ? "Музыка сцены убрана." : "Музыка сцены сохранена.";
+    }
+    const ok = await this.viaSceneInspector(() => this.saveMissionDocument(label, (doc) => updateScreen(doc, nodeId, {
+      background: next.background,
+      inheritBackground: next.inheritBackground,
+      music: next.music
+    })));
+    return ok ? { ok: true, message: label } : { ok: false, message: this.state.message };
+  }
+
+  /** Сцены и финалы документа миссии: инспектор показывает цели словами, а не id. */
+  private sceneOptions(): { readonly id: string; readonly title: string }[] {
+    const mission = this.state.mission;
+    if (mission === null) return [];
+    return [
+      ...mission.story.scenes.map((scene) => ({ id: scene.id, title: scene.title })),
+      ...mission.story.endings.map((ending) => ({ id: ending.id, title: ending.title }))
+    ];
+  }
+
+  /** Материалы проекта в виде, который понимает инспектор (миниатюра и звук — из тех же байтов). */
+  private async sceneMaterialOptions(projectId: string): Promise<readonly SceneMaterialOption[]> {
+    const assets = await this.api.listProjectAssets(projectId, { includeUnlisted: true });
+    return assets.map((asset) => {
+      const kind = materialKindOf(asset.kind);
+      const url = this.api.projectAssetUrl(projectId, asset.assetId, asset.hash);
+      return {
+        assetId: asset.assetId,
+        filename: asset.filename ?? asset.assetId,
+        kind,
+        url,
+        thumbnailUrl: kind === "image" ? url : null
+      };
+    });
+  }
+
+  /** Вид сцены для инспектора: собирается из документа миссии, а не из отдельного кэша. */
+  private sceneDraftView(nodeId: string): SceneDraftViewLike | null {
+    const mission = this.state.mission;
+    if (mission === null) return null;
+    const scene = mission.story.scenes.find((entry) => entry.id === nodeId);
+    if (scene === undefined) return null;
+    const screen = screenForNode(mission, nodeId) ?? defaultScreen();
+    return {
+      sceneId: scene.id,
+      title: scene.title,
+      text: scene.text,
+      dialogue: scene.dialogue.map((line) => ({
+        id: line.id,
+        speaker: line.speakerId ?? "",
+        line: line.text
+      })),
+      choices: scene.choices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        targetSceneId: choice.targetSceneId ?? null,
+        endingId: choice.endingId ?? null,
+        conditionSummary: conditionsSummary(choice.conditions),
+        effectSummary: effectsSummary(choice.effects)
+      })),
+      screen: {
+        backgroundAssetId: screen.background?.assetId ?? null,
+        musicAssetId: screen.music?.assetId ?? null,
+        layers: orderedScreenLayers(screen).map((layer) => ({
+          assetId: layer.asset?.assetId ?? "",
+          kind: layer.kind,
+          x: layer.x,
+          y: layer.y,
+          scale: layer.scale
+        }))
+      },
+      technical: {
+        draftRevision: this.state.missionRevision,
+        contentHash: mission.contentHash,
+        // У сюжетных сцен документа миссии нет отдельных блоков: список остаётся пустым,
+        // а не заполняется чужими id.
+        blockIds: []
+      }
+    };
   }
 
   /**
@@ -3939,13 +4268,23 @@ export class StudioApp {
     const title = scene ? scene.title : (ending as { readonly title: string }).title;
     const text = scene ? scene.text : (ending as { readonly text: string }).text;
     const choices = scene ? scene.choices : [];
-    return `<div class="story-inspector">
-      <div class="section-heading-row"><h3>${escapeHtml(scene ? "Сцена" : "Финал")}${isEntry ? " · вход" : ""}</h3></div>
-      ${allowEdit ? `<form data-form="story-node-edit" data-node-id="${escapeAttr(nodeId)}" class="inspector-form">
+    const nodeForm = `<form data-form="story-node-edit" data-node-id="${escapeAttr(nodeId)}" class="inspector-form">
         <label>Название <input name="title" maxlength="120" value="${escapeAttr(title)}" required /></label>
         <label>Текст <textarea name="text" rows="4" maxlength="4000">${escapeHtml(text)}</textarea></label>
         <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Сохранить</button>
-      </form>` : `<div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text) || "—"}</p></div>`}
+      </form>`;
+    // Инспектор сцены — основная правка сцены; плоская форма остаётся доступной
+    // (свёрнутой), чтобы прежние сценарии и переносимые документы не ломались.
+    const inspectorHost = scene !== null && allowEdit
+      ? `<div class="scene-inspector-host" data-scene-inspector-host></div>`
+      : "";
+    const legacyEditor = inspectorHost === ""
+      ? nodeForm
+      : `<details class="legacy-node-editor"><summary>Все поля сцены прежним редактором</summary>${nodeForm}</details>`;
+    return `<div class="story-inspector">
+      <div class="section-heading-row"><h3>${escapeHtml(scene ? "Сцена" : "Финал")}${isEntry ? " · вход" : ""}</h3></div>
+      ${inspectorHost}
+      ${allowEdit ? legacyEditor : `<div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text) || "—"}</p></div>`}
       ${scene ? `<div class="section-heading-row"><h3>Выборы (${choices.length})</h3></div>
       ${choices.map((choice) => {
         const targetId = choice.targetSceneId ?? choice.endingId ?? "";
@@ -4084,6 +4423,8 @@ export class StudioApp {
     if (this.state.utilityPanel === null) return "";
     const panelTitle = this.state.utilityPanel === "versions"
       ? "История версий"
+      : this.state.utilityPanel === "publish"
+        ? "Публикация"
       : this.state.utilityPanel === "portability"
         ? "Импорт и экспорт"
         : this.state.utilityPanel === "materials"
@@ -4104,6 +4445,10 @@ export class StudioApp {
         this.state.publishReport,
         this.state.publicationReceipt
       )
+      : this.state.utilityPanel === "publish"
+        // Панель публикации монтируется в этот хост (mountPublishPanelIfNeeded):
+        // без него пункт меню «Публикация» открывал настройки проекта.
+        ? `<div class="publish-host" data-publish-host></div>`
       : this.state.utilityPanel === "portability"
         ? draft
           ? renderPortabilityPanel(draft, this.state.versions, allowEdit)
@@ -4411,6 +4756,44 @@ type SceneDraftViewLike = {
   readonly technical: { readonly draftRevision: number; readonly contentHash: string; readonly blockIds: readonly string[] };
 };
 
+/**
+ * Условие выбора словами. Названий ресурсов и предметов в документе миссии нет,
+ * поэтому показывается id: выдуманная подпись была бы хуже честного id.
+ */
+function conditionSummary(condition: Condition): string {
+  switch (condition.type) {
+    case "resource.atLeast": return `ресурса ${condition.resourceId} не меньше ${condition.value}`;
+    case "entity.at": return `${condition.entityId} находится в ${condition.locationId}`;
+    case "item.heldBy": return `${condition.itemId} у ${condition.holderId}`;
+    case "all": return `всё сразу (${condition.conditions.map(conditionSummary).join(", ")})`;
+    case "any": return `хотя бы одно (${condition.conditions.map(conditionSummary).join(", ")})`;
+    case "not": return `не (${conditionSummary(condition.condition)})`;
+    default: return "условие не описано";
+  }
+}
+
+function conditionsSummary(conditions: readonly Condition[]): string | null {
+  if (conditions.length === 0) return null;
+  return conditions.map(conditionSummary).join(" и ");
+}
+
+/** Последствие выбора словами: то же правило — без выдуманных подписей. */
+function effectSummary(effect: GameplayEffect): string {
+  switch (effect.type) {
+    case "resource.change": return `${effect.resourceId}: ${effect.delta >= 0 ? "+" : ""}${effect.delta}`;
+    case "item.transfer": return effect.destination.kind === "holder"
+      ? `${effect.itemId} переходит к ${effect.destination.holderId}`
+      : `${effect.itemId} перемещается в ${effect.destination.locationId}`;
+    case "entity.move": return `${effect.entityId} → ${effect.locationId}`;
+    default: return "последствие не описано";
+  }
+}
+
+function effectsSummary(effects: readonly GameplayEffect[]): string | null {
+  if (effects.length === 0) return null;
+  return effects.map(effectSummary).join(", ");
+}
+
 function studioSiteBaseUrl(): string | null {
   if (typeof document === "undefined") return null;
   const declared = document.querySelector?.('meta[name="lh-site-base"]') as HTMLMetaElement | null;
@@ -4597,6 +4980,8 @@ function storyErrorMessage(code: string): string {
     case "story.scene_missing": return "Сцена не найдена.";
     case "story.choice_missing": return "Выбор не найден.";
     case "story.node_missing": return "Узел не найден.";
+    case "story.dialogue_id_taken": return "У реплик повторяются или пусты идентификаторы.";
+    case "story.dialogue_scene_only": return "Реплики бывают только у сцены, не у финала.";
     case "story.entry_protected": return "Входную сцену удалить нельзя.";
     case "story.node_referenced": return "Узел используется выборами — сначала удалите связи.";
     default: return "Сюжет не сохранён.";

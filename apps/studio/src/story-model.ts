@@ -195,6 +195,96 @@ export function updateStoryNode(
   return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings } };
 }
 
+/** Реплика в авторском виде: инспектор сцены не знает про speakerId. */
+export interface StoryDialoguePatchLine {
+  readonly id: string;
+  readonly speaker: string;
+  readonly line: string;
+}
+
+export interface StoryNodeContentPatch {
+  readonly nodeId: string;
+  readonly title: string;
+  readonly text: string;
+  readonly dialogue?: readonly StoryDialoguePatchLine[];
+}
+
+/** Авторская реплика → канонический MissionDialogueLine; пустые и повторные id отклоняются. */
+function normalizeDialogueLines(
+  lines: readonly StoryDialoguePatchLine[]
+): { readonly ok: true; readonly lines: Array<{ id: string; speakerId: string | null; text: string }> } | { readonly ok: false; readonly error: string } {
+  const seen = new Set<string>();
+  const prepared: Array<{ id: string; speakerId: string | null; text: string }> = [];
+  for (const line of lines) {
+    const id = line.id.trim();
+    if (id === "" || seen.has(id)) return { ok: false, error: "story.dialogue_id_taken" };
+    seen.add(id);
+    const speaker = line.speaker.trim();
+    prepared.push({ id, speakerId: speaker === "" ? null : speaker, text: line.line });
+  }
+  return { ok: true, lines: prepared };
+}
+
+/**
+ * Правка содержимого узла, как её присылает инспектор сцены: название, текст и
+ * реплики одним сохранением. Реплики есть только у сцен — у финала они отклоняются,
+ * а не молча теряются.
+ */
+export function updateStoryNodeContent(
+  doc: MissionDraft,
+  patch: StoryNodeContentPatch
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  if (!patch.title.trim()) return { ok: false, error: "story.id_or_title_empty" };
+  const prepared = patch.dialogue === undefined ? null : normalizeDialogueLines(patch.dialogue);
+  if (prepared !== null && !prepared.ok) return { ok: false, error: prepared.error };
+  const work = cloneMission(doc);
+  const scenes = work.story.scenes.map((scene) => ({ ...scene, choices: [...scene.choices] }));
+  const endings = work.story.endings.map((ending) => ({ ...ending }));
+  const scene = scenes.find((entry) => entry.id === patch.nodeId);
+  if (scene !== undefined) {
+    scene.title = patch.title.trim();
+    scene.text = patch.text;
+    if (prepared !== null && prepared.ok) scene.dialogue = prepared.lines;
+    return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings } };
+  }
+  const ending = endings.find((entry) => entry.id === patch.nodeId);
+  if (ending === undefined) return { ok: false, error: "story.node_missing" };
+  if (prepared !== null && prepared.ok && prepared.lines.length > 0) {
+    return { ok: false, error: "story.dialogue_scene_only" };
+  }
+  ending.title = patch.title.trim();
+  ending.text = patch.text;
+  return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings } };
+}
+
+/**
+ * Смена цели выбора (сцена xor финал) из инспектора. Неизвестная цель и две цели
+ * сразу отклоняются: выбор не остаётся без указателя и не ведёт в несуществующий узел.
+ */
+export function setStoryChoiceTarget(
+  doc: MissionDraft,
+  sceneId: string,
+  choiceId: string,
+  target: { readonly targetSceneId: string | null; readonly endingId: string | null }
+): { readonly ok: true; readonly story: MissionDraft["story"] } | { readonly ok: false; readonly error: string } {
+  const sceneTarget = target.targetSceneId === null || target.targetSceneId === "" ? null : target.targetSceneId;
+  const endingTarget = target.endingId === null || target.endingId === "" ? null : target.endingId;
+  if ((sceneTarget === null) === (endingTarget === null)) return { ok: false, error: "story.choice_target_missing" };
+  const work = cloneMission(doc);
+  const scenes = work.story.scenes.map((scene) => ({ ...scene, choices: [...scene.choices] }));
+  const scene = scenes.find((entry) => entry.id === sceneId);
+  if (scene === undefined) return { ok: false, error: "story.scene_missing" };
+  const index = scene.choices.findIndex((choice) => choice.id === choiceId);
+  const current = scene.choices[index];
+  if (index < 0 || current === undefined) return { ok: false, error: "story.choice_missing" };
+  const known = sceneTarget !== null
+    ? scenes.some((entry) => entry.id === sceneTarget)
+    : work.story.endings.some((ending) => ending.id === endingTarget);
+  if (!known) return { ok: false, error: "story.choice_target_missing" };
+  scene.choices[index] = { ...current, targetSceneId: sceneTarget, endingId: endingTarget };
+  return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings: [...work.story.endings] } };
+}
+
 /** Удаление узла: вход и связанные цели отклоняются fail-closed. */
 export function removeStoryNode(
   doc: MissionDraft,
