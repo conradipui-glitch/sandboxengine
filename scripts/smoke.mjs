@@ -77,7 +77,11 @@ const startServer = async (databasePath) => {
       CONTROL_PORT: String(CONTROL_PORT),
       HOST: "127.0.0.1",
       CONTROL_HOST: "127.0.0.1",
-      CONTROL_AUTH_MODE: "local"
+      CONTROL_AUTH_MODE: "local",
+      // Локальный смок поднимает сервер на 127.0.0.1; без секрета публичные
+      // маршруты честно отвечают 503 PUBLIC_MISSION_RUNTIME_UNAVAILABLE.
+      // Боевой секрет берётся из окружения, если задан.
+      LH_PUBLIC_MISSION_SESSION_SECRET: process.env.LH_PUBLIC_MISSION_SESSION_SECRET ?? "smoke-local-public-mission-secret"
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
