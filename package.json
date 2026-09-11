@@ -36,6 +36,7 @@
     "drill:startup-shutdown": "npm run typecheck && node scripts/b12-startup-shutdown-drill.mjs",
     "dev:studio": "npm run typecheck && node apps/studio/dist/src/main.js",
     "dev:player": "npm run typecheck && node apps/player/dist/src/main.js",
+    "test:scripts": "node --test scripts/test/*.test.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "docs:generate": "node scripts/docs-generate.mjs",
     "docs:check": "node scripts/docs-check.mjs",
