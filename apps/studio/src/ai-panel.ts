@@ -131,6 +131,8 @@ interface PreviewScene {
 type PanelView =
   | { readonly kind: "checking" }
   | { readonly kind: "unavailable"; readonly reason: string | null }
+  /** Собственный запрос панели сорвался: показываем причину и «Повторить». */
+  | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "form"; readonly error: AiResultErr | null; readonly notice: string | null }
   | { readonly kind: "working"; readonly stage: AiStage; readonly progress: readonly AiProgress[] }
   | {
@@ -153,6 +155,17 @@ const DEFAULT_ACCEPTED = "Миссия принята и открыта в ре�
 const DEFAULT_ACCEPT_FAILED = "Не удалось принять миссию. Попробуйте ещё раз.";
 const EMPTY_IDEA_MESSAGE = "Сначала опишите идею хотя бы одним предложением.";
 const PREVIEW_FAILED = "Не удалось показать сцены. Нажмите «Просмотреть сцены» ещё раз.";
+
+/*
+ * Сбой собственных запросов панели: сообщение исключения наружу не выносится
+ * («Failed to fetch», «TypeError» и прочие внутренние тексты автору не помогают).
+ * Вместо этого — что случилось и что делать; идея сохраняется в поле.
+ */
+const READINESS_FAILED =
+  "Не удалось проверить готовность помощника: сервер не ответил. Проверьте соединение и повторите.";
+const GENERATE_FAILED_UNREACHABLE =
+  "Помощник не ответил: связь с ИИ прервалась. Описание идеи сохранено — повторите попытку "
+  + "или проверьте подключение в «Настройки → ИИ».";
 
 /* ------------------------------------------------------------------ */
 /* Разметка                                                            */
@@ -229,6 +242,15 @@ function renderForm(state: PanelState, view: Extract<PanelView, { kind: "form" }
   </div>`;
 }
 
+/** Сбой собственного запроса панели: причина, что делать и ровно одно действие повтора. */
+function renderFatalError(view: Extract<PanelView, { kind: "error" }>): string {
+  return `<div class="ai-error" data-ai-error role="alert">
+    <p class="ai-error-message">${escapeHtml(view.message)}</p>
+    <p class="ai-hint">Помощник повторит проверку заново. Ничего лишнего запрашиваться не будет.</p>
+    <button class="primary" type="button" data-action="ai-retry">Повторить</button>
+  </div>`;
+}
+
 function renderUnavailable(view: Extract<PanelView, { kind: "unavailable" }>): string {
   return `<div class="ai-unavailable" data-ai-unavailable>
     <p class="ai-note" data-ai-unavailable-reason>${escapeHtml(providerUnavailableMessage(view.reason))}</p>
@@ -277,6 +299,8 @@ function renderBody(state: PanelState): string {
       return `<p class="ai-note" data-ai-checking role="status">Проверяем, готов ли помощник к работе…</p>`;
     case "unavailable":
       return renderUnavailable(view);
+    case "error":
+      return renderFatalError(view);
     case "form":
       return renderForm(state, view);
     case "working":
@@ -331,11 +355,6 @@ function failureMessage(result: AiResultErr): string {
   return typeof result.message === "string" && result.message.length > 0 ? result.message : DEFAULT_FAILURE;
 }
 
-function thrownMessage(error: unknown): string {
-  if (error instanceof Error && error.message.length > 0) return error.message;
-  return DEFAULT_FAILURE;
-}
-
 /* ------------------------------------------------------------------ */
 /* Точка входа                                                         */
 /* ------------------------------------------------------------------ */
@@ -380,7 +399,9 @@ export function renderAiPanel(host: AiPanelHost): () => void {
     } catch (error) {
       if (disposed) return;
       host.onError(error);
-      setView({ kind: "unavailable", reason: null });
+      // Ошибка показывается внутри панели: полной перерисовки оболочки из
+      // onError быть не должно — она заменила бы хост и ушла бы в цикл запросов.
+      setView({ kind: "error", message: READINESS_FAILED });
     }
   };
 
@@ -419,7 +440,8 @@ export function renderAiPanel(host: AiPanelHost): () => void {
     } catch (error) {
       if (disposed) return;
       host.onError(error);
-      setView({ kind: "form", error: { ok: false, message: thrownMessage(error), retryable: true }, notice: null });
+      // Текст исключения автору не показывается: понятная причина и действие.
+      setView({ kind: "form", error: { ok: false, message: GENERATE_FAILED_UNREACHABLE, retryable: true }, notice: null });
     } finally {
       busy = false;
       render();
@@ -489,7 +511,16 @@ export function renderAiPanel(host: AiPanelHost): () => void {
     if (typeof prevent === "function") prevent.call(event);
     switch (action) {
       case "ai-generate":
+        void startGenerate();
+        return;
       case "ai-retry":
+        // Повтор после сбоя собственной проверки панели — это ровно одна новая
+        // проверка готовности, а не генерация миссии.
+        if (state.view.kind === "error") {
+          setView({ kind: "checking" });
+          void checkReadiness();
+          return;
+        }
         void startGenerate();
         return;
       case "ai-preview":

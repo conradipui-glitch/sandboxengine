@@ -1,0 +1,31 @@
+✔ панели/ошибка: недоступный список материалов — ошибка видна внутри панели, запрос ровно один (126.6418ms)
+✔ панели/ошибка: «Повторить» в материалах делает ровно одну попытку и не допускает лавины (217.8166ms)
+✔ панели/ошибка: недоступная проверка ИИ видна внутри панели, ровно одна попытка и один повтор (130.6255ms)
+✔ панели/ошибка: сбой генерации ИИ не показывает технический текст, повторяет ровно одну попытку (145.8187ms)
+✔ панели/ошибка: сбой проверки публикации даёт «Повторить» и ровно одну попытку (136.0691ms)
+✖ панели/ошибка: сбой ПРОВЕРКИ публикации назван именно проверкой и обходится без кода стенда (5.0748ms)
+✔ панели/ошибка: onError панелей материалов, ИИ и публикации не вызывает полную перерисовку оболочки (0.908ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 877.641
+
+✖ failing tests:
+
+test at apps\studio\test\panels-error-retry.test.mjs:318:1
+✖ панели/ошибка: сбой ПРОВЕРКИ публикации назван именно проверкой и обходится без кода стенда (5.0748ms)
+  AssertionError [ERR_ASSERTION]: код стенда автору не показывается
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-panels-retry/apps/studio/test/panels-error-retry.test.mjs:339:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '<section class="publish-panel" data-publish-panel data-publish-stage="failed" data-publish-tone="error" aria-labelledby="publish-heading">\n    <header class="publish-header">\n      <h2 id="publish-heading">Публикация</h2>\n      <p class="publish-lead">Один шаг: проверяем готовность миссии и публикуем версию, которую увидят игроки.</p>\n    </header>\n    <p class="publish-status" role="status" aria-live="polite" data-publish-status>Проверка готовности не завершилась.</p>\n    <div class="publish-error" role="alert" data-publish-error>\n      <p class="publish-error-text"><strong>Проверка готовности не завершилась.</strong> Действие отклонено: CONTROL_UNAVAILABLE.</p>\n      <p class="publish-hint" data-publish-preserved>Нажмите «Повторить» — проверка пойдёт заново, одной попыткой.</p>\n    </div>\n    \n    \n    \n    <div class="publish-actions">\n      <button class="button-primary publish-main" type="button" data-publish-action="retry" aria-describedby="publish-why">Повторить</button>\n      <button class="button-secondary" type="button" data-publish-action="recheck">Проверить снова</button>\n    </div>\n    \n    \n    \n    \n  </section>',
+    expected: /CONTROL_UNAVAILABLE/,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }

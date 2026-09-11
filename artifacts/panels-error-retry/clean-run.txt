@@ -1,0 +1,63 @@
+panels-error-retry.harness: repo=C:\Users\kato55\lhc-panels-retry
+  workdir=C:\Temp\lhc-panels-retry
+  studio=4199->4200 control=8909 cdp=9359
+[PASS] setup.db-copy — C:\Users\kato55\Documents\Codex\2026-09-09-live-author-studio\data\living-history.sqlite -> C:\Temp\lhc-panels-retry\harness.sqlite
+[PASS] setup.seed — реальный контент (материалы + документ миссии)
+[PASS] setup.studio — studio={"ok":true,"status":200} control={"ok":true,"status":200}
+[PASS] setup.proxy — прокси-счётчик на 127.0.0.1:4199 -> Studio 4200
+[PASS] setup.stub-provider — заглушка провайдера на 127.0.0.1:8821
+[PASS] setup.chrome — свой headless Chrome на 9359
+[PASS] setup.cdp — сессия D13C460046828A06433DEE20D46A5880
+[PASS] ui.editor-open — редактор квеста открыт
+  метрика M1.cards = 12
+  метрика M1.assets-list-requests = 1
+[PASS] M1.materials-baseline — карточек=12, ошибок нет, запросов списка=1
+  метрика M2.assets-list-requests-in-4s = 1
+  метрика M2.failed-requests-in-4s = 1
+  метрика M2.browser-requests-to-assets-in-4s = 1
+[PASS] M2.failure-no-flood — за 4 с недоступного списка ушло 1 запрос(ов) (на дефектном коде — сотни)
+[PASS] M2.error-inside-panel — текст="Сервер материалов временно недоступен. Подождите немного и повторите.", кнопка="Повторить"
+[PASS] M2.text-says-what-to-do — панель предлагает повторить: "Сервер материалов временно недоступен. Подождите немного и повторите."
+  снимок: C:\Temp\lhc-panels-retry\shots\M2-materials-error.png
+[PASS] M3.error-block-exists — блок ошибки материалов есть
+  метрика M3.assets-list-requests-in-next-4s = 0
+[PASS] M3.host-not-replaced — метка на блоке ошибки пережила 4 с: хост панели не подменяется
+[PASS] M4.retry-button-visible — кнопка «Повторить» доступна
+  метрика M4.requests-per-retry-press = 1
+[PASS] M4.retry-one-attempt — нажатие «Повторить» -> 1 запрос(ов), из них отклонено прокси: 1
+[PASS] M4.error-still-visible-while-down — после повтора ошибка снова видна: "Сервер материалов временно недоступен. Подождите немного и повторите."
+  снимок: C:\Temp\lhc-panels-retry\shots\M4-materials-retry-pressed.png
+  метрика M5.cards-after-recovery = 12
+[PASS] M5.retry-after-recovery-loads-list — после восстановления списка карточек=12, ошибка убрана
+  снимок: C:\Temp\lhc-panels-retry\shots\M5-materials-recovered.png
+  метрика A1.provider-status-requests-in-4s = 1
+[PASS] A1.no-loop-when-provider-down — 1 запрос(ов) готовности за 4 с (на дефектном коде — сотни)
+[PASS] A1.explains-in-panel — состояние=объяснение, текст="Подключение к ИИ не настроено.", повтор="Проверить снова"
+  снимок: C:\Temp\lhc-panels-retry\shots\A1-ai-provider-down.png
+[PASS] A1.retry-control-visible — действие повтора доступно
+  метрика A1.requests-per-retry-press = 1
+[PASS] A1.retry-one-attempt — повтор -> 1 запрос(ов) готовности
+[PASS] A2.ai-form-available — состояние: {"mounted":true,"error":false,"unavailable":false,"form":true,"text":null,"retryLabel":null,"recheckLabel":null}
+  метрика A2.mission-draft-requests-per-attempt = 1
+[PASS] A2.generate-error-inside-panel — ошибка внутри панели, текст="ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.", кнопка="Повторить"
+  снимок: C:\Temp\lhc-panels-retry\shots\A2-ai-generate-error.png
+  метрика A2.mission-draft-requests-per-retry = 1
+[PASS] A2.retry-one-attempt — «Повторить» -> 1 запрос(ов) миссии
+[PASS] A2.idea-kept — описание идеи осталось в поле после сбоя и повтора
+  снимок: C:\Temp\lhc-panels-retry\shots\A2-ai-retry-pressed.png
+[PASS] P1.check-button-visible — кнопка проверки доступна
+  метрика P1.draft-read-requests-in-4s = 1
+[PASS] P1.no-loop-when-draft-down — 1 запрос(ов) черновика за 4 с после запуска проверки (на дефектном коде — сотни)
+[PASS] P1.error-inside-panel — действие="retry" («Повторить»), текст="Проверка готовности не завершилась. Сервер мастерской не отвечает: проверьте соединение и повторите.
+      Нажмите «Повторить» — проверка по"
+  снимок: C:\Temp\lhc-panels-retry\shots\P1-publish-error.png
+[PASS] P1.text-says-what-to-do — панель объясняет причину: "Проверка готовности не завершилась. Сервер мастерской не отвечает: проверьте соединение и повторите.
+      Нажмите «Повторить» — проверка пойдёт заново, одной п"
+[PASS] P1.retry-button-visible — кнопка «Повторить» доступна
+  метрика P1.draft-read-requests-per-retry = 1
+[PASS] P1.retry-one-attempt — «Повторить» -> 1 запрос(ов) черновика
+  снимок: C:\Temp\lhc-panels-retry\shots\P1-publish-retry-pressed.png
+[PASS] browser.no-console-errors — ошибок в консоли нет
+
+panels-error-retry.harness: 33/33 проверок пройдено
+отчёт: C:\Temp\lhc-panels-retry\report.json

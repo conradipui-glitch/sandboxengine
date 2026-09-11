@@ -1,0 +1,40 @@
+✔ FIN-05B update layer writes the full transform and fails closed on bad input (1.4665ms)
+✔ FIN-05B duplicate layer gets a fresh id above the top and rejects collisions (0.2663ms)
+✔ FIN-05B move/resize/rotate/flip/opacity clamp deterministically (0.5832ms)
+✔ FIN-05B z-order reorders by one step and renumbers z uniquely (0.3439ms)
+✔ FIN-05B layer action dispatcher routes every action (0.887ms)
+✔ FIN-05B hit test picks the topmost visible layer (0.184ms)
+✔ FIN-05B drag keeps the pointer under the layer and resize is proportional (0.1913ms)
+✔ FIN-05B background fit handles contain/cover, focal point and crop (0.1974ms)
+✔ FIN-05B background inheritance resolves own, inherited and none (0.1512ms)
+✔ FIN-05B animation preset respects reduced-motion and pause (0.1704ms)
+✔ FIN-05B music exposes real mute/play/blocked states (0.1879ms)
+✔ FIN-05B keyboard map covers nudge, z-order, visible/lock, delete and deselect (0.1268ms)
+✔ FIN-05B composition is part of the content hash; it stays a valid mission (7.402ms)
+✔ FIN-05B Studio screen editor exposes layer transform actions and the targeted edit form (3.3675ms)
+✔ FIN-05B screen-dom drags, resizes and routes keyboard through the pure model (2.2519ms)
+✖ FIN-05B screen composition persists through canonical /mission without a new write path (230.4888ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 15
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 383.4628
+
+✖ failing tests:
+
+test at apps\studio\test\fin05b-screen-composition.test.mjs:445:1
+✖ FIN-05B screen composition persists through canonical /mission without a new write path (230.4888ms)
+  Error [ControlApiError]: MISSION_ASSET_UNKNOWN
+      at ControlApiClient.request (file:///C:/Users/kato55/lhc-panels-retry/apps/studio/dist/src/api.js:338:19)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async ControlApiClient.saveMission (file:///C:/Users/kato55/lhc-panels-retry/apps/studio/dist/src/api.js:128:22)
+      at async TestContext.<anonymous> (file:///C:/Users/kato55/lhc-panels-retry/apps/studio/test/fin05b-screen-composition.test.mjs:475:21)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    status: 422,
+    code: 'MISSION_ASSET_UNKNOWN',
+    payload: { error: { code: 'MISSION_ASSET_UNKNOWN', details: [Array] } }
+  }
