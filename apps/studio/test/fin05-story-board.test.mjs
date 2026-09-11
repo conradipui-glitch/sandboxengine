@@ -18,6 +18,7 @@ import {
   STORY_FIT_LABEL,
   STORY_MAX_SCALE,
   STORY_MIN_SCALE,
+  STORY_NODE_W,
   clampStoryScale,
   fitStoryViewport,
   storyKeyAction,
@@ -442,6 +443,82 @@ test("FIN-05 story-dom renders decision+transition captions, 'Вписать в�
     assert.deepEqual(calls.deletes, ["depot"]);
     viewport.dispatch("keydown", { key: "Escape", preventDefault() {} });
     assert.equal(calls.selections.at(-1), null);
+    handle.destroy();
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+  }
+});
+
+// --- N10 (волна 3): SVG связей живёт в world-координатах, без второго трансформа ---
+
+test("N10 story edges stay glued to their cards after fit, zoom and pan (no viewBox counter-transform)", async () => {
+  const { mountStoryBoard } = await import("../dist/src/story-dom.js");
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  globalThis.document = makeDom();
+  const listeners = {};
+  globalThis.window = {
+    addEventListener: (type, fn) => { (listeners[type] ??= []).push(fn); },
+    removeEventListener: (type, fn) => { const list = listeners[type]; const i = list?.indexOf(fn) ?? -1; if (i >= 0) list.splice(i, 1); }
+  };
+  try {
+    const container = new FakeElement("div");
+    const model = missionToStoryBoard(mission(), new Map());
+    const handle = mountStoryBoard(container, { model, editable: true });
+    const viewport = container.querySelector(".story-viewport");
+    viewport._rect = { left: 0, top: 0, width: 800, height: 600 };
+    handle.select(null); // repaint against the real viewport box
+    const world = container.querySelector(".story-world");
+    const svgEl = container.querySelector(".story-edges");
+    const cards = () => container.querySelectorAll(".story-node");
+    const cardOf = (id) => cards().find((el) => el.dataset.nodeId === id);
+
+    const viewOf = () => {
+      const m = /translate\(([-\d.eE+]+)px, ([-\d.eE+]+)px\) scale\(([-\d.eE+]+)\)/.exec(world.style.transform);
+      if (!m) throw new Error(`unparsable transform: ${JSON.stringify(world.style.transform)}`);
+      return { panX: Number(m[1]), panY: Number(m[2]), scale: Number(m[3]) };
+    };
+    // Map an SVG user coordinate to screen space using ONLY the element's real
+    // attributes plus the single world transform.
+    const svgProject = (userX) => {
+      const view = viewOf();
+      const vb = svgEl.getAttribute("viewBox").split(/\s+/).map(Number);
+      const ratio = Number(svgEl.getAttribute("width")) / vb[2];
+      return (userX - vb[0]) * ratio * view.scale + view.panX;
+    };
+    const assertGlued = (label) => {
+      const view = viewOf();
+      const vb = svgEl.getAttribute("viewBox").split(/\s+/).map(Number);
+      assert.equal(vb[0], 0, `${label}: viewBox starts at the world origin (no -pan/scale)`);
+      assert.equal(vb[1], 0, `${label}: viewBox starts at the world origin (no -pan/scale)`);
+      assert.equal(vb[2], Number(svgEl.getAttribute("width")), `${label}: viewBox is 1:1 with the svg box`);
+      const edge = container.querySelectorAll(".story-edge")[0];
+      const sourceId = model.edges[0].source;
+      const startX = Number(/^M ([-\d.eE+]+) /.exec(edge.getAttribute("d"))[1]);
+      const cardLeft = parseFloat(cardOf(sourceId).style.left);
+      // edge anchor = right edge of the source card, in the same world units
+      assert.ok(Math.abs(startX - (cardLeft + STORY_NODE_W)) < 1e-9, `${label}: edge anchor matches the card world box`);
+      // and both project to the same screen pixel after the world transform
+      assert.ok(
+        Math.abs(svgProject(startX) - ((cardLeft + STORY_NODE_W) * view.scale + view.panX)) < 1e-6,
+        `${label}: edge start projects onto the card corner (drift was x*s(s-1)+pan*s)`
+      );
+    };
+
+    assertGlued("initial");
+    handle.fit();
+    assertGlued("after fit");
+    viewport.dispatch("wheel", { deltaY: -1, clientX: 400, clientY: 300, preventDefault() {} });
+    assertGlued("after zoom-in");
+    viewport.dispatch("wheel", { deltaY: 1, clientX: 120, clientY: 80, preventDefault() {} });
+    assertGlued("after zoom-out");
+
+    // pan by dragging empty canvas, then re-check the invariant
+    viewport.dispatch("pointerdown", { target: viewport, button: 0, shiftKey: true, clientX: 100, clientY: 100, preventDefault() {} });
+    for (const fn of listeners.pointermove ?? []) fn({ clientX: 220, clientY: 160 });
+    for (const fn of listeners.pointerup ?? []) fn({});
+    assertGlued("after pan");
     handle.destroy();
   } finally {
     globalThis.document = previousDocument;

@@ -497,3 +497,64 @@ test("FIN-05B screen composition persists through canonical /mission without a n
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// --- N10 (волна 3): ручка resize не должна жить без выделения ---
+
+test("N10 screen resize handle is hidden and inert when no layer is selected", async () => {
+  const { mountScreenComposition } = await import("../dist/src/screen-dom.js");
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  globalThis.document = makeDom();
+  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  try {
+    const container = new FakeElement("div");
+    const calls = { selections: [], resizes: [] };
+    const handle = mountScreenComposition(container, {
+      screen: screenForNode(mission(), "s1"),
+      defaults: mission().defaults,
+      editable: true,
+      selectedLayerId: "l1",
+      onSelect: (id) => calls.selections.push(id),
+      onCommit: (id) => calls.resizes.push(id)
+    });
+    const stage = container.querySelector(".screen-stage");
+    stage._rect = { left: 0, top: 0, width: 800, height: 450 };
+    handle.select("l1"); // repaint against the real stage box
+    const resizeHandle = container.querySelector(".screen-resize-handle");
+    assert.ok(resizeHandle, "handle element exists");
+
+    // with a selection the handle is shown at the layer's corner
+    assert.equal(resizeHandle.hidden, false, "handle visible with a selection");
+    assert.equal(resizeHandle.dataset.layerId, "l1");
+    const leftWithSelection = resizeHandle.style.left;
+    assert.ok(leftWithSelection && leftWithSelection.endsWith("px"), "handle carries the layer geometry");
+
+    // clicking empty stage clears the selection through the real handler
+    stage.dispatch("pointerdown", { target: stage, clientX: 10, clientY: 10, button: 0, preventDefault() {} });
+    assert.equal(calls.selections.at(-1), null, "empty click deselects");
+
+    // ... and the handle must disappear instead of lingering at the old spot
+    assert.equal(resizeHandle.hidden, true, "handle hidden without a selection");
+    assert.equal(resizeHandle.style.display, "none", "handle is not rendered");
+    assert.equal(resizeHandle.dataset.layerId, "", "empty data-layer-id marks the idle state");
+    assert.equal(resizeHandle.style.left, "", "stale left cleared");
+    assert.equal(resizeHandle.style.top, "", "stale top cleared");
+    assert.equal(resizeHandle.style.width, "", "stale width cleared");
+    assert.equal(resizeHandle.style.height, "", "stale height cleared");
+
+    // selecting again restores the handle and its geometry
+    handle.select("l1");
+    assert.equal(resizeHandle.hidden, false, "handle returns with the selection");
+    assert.equal(resizeHandle.dataset.layerId, "l1");
+    assert.equal(resizeHandle.style.left, leftWithSelection, "same corner as before");
+
+    // an empty screen (no layers at all) keeps it hidden too
+    handle.update({ ...screenForNode(mission(), "s1"), layers: [] }, true);
+    assert.equal(resizeHandle.hidden, true, "no layers -> no handle");
+    assert.equal(resizeHandle.dataset.layerId, "");
+    handle.destroy();
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+  }
+});
