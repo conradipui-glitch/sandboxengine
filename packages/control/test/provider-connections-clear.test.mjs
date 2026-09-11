@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryControlProviderConnectionStore, SQLiteControlProviderConnectionStore } from "@living-history/control";
 
+// Значение намеренно не похоже на настоящий ключ провайдера: тест проверяет маску
+// и стирание, а не работу с живым секретом (сканирование секретов это подтверждает).
 const API_KEY = "local-test-credential-for-mask-and-clear";
 
 function saveInput(overrides = {}) {
