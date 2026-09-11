@@ -8,10 +8,10 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AssetManifestV2, JsonValue } from "@living-history/contracts";
 import { createPlayerTurnRoute, type PlayerTurnRoute, type PlayerTurnRouteOptions } from "./turn-route.js";
+import { isId } from "./story-guards.js";
 
 const playerRoot = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 
 export interface PlayerSurfaceMetadata {
@@ -168,8 +168,7 @@ async function proxyRuntime(
     try {
       const parsed = JSON.parse(new TextDecoder().decode(payload)) as unknown;
       if (isRecord(parsed)
-        && typeof parsed.sessionId === "string"
-        && ID_PATTERN.test(parsed.sessionId)
+        && isId(parsed.sessionId)
         && isRecord(parsed.playerView)
         && releaseMatches(parsed.playerView.release, presentation.release)) {
         const initial = presentation.initialForSession(parsed.sessionId);
@@ -294,6 +293,11 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
       await sendFile(response, join(playerRoot, "dist/src/story-screens.js"));
       return;
     }
+    // FIN-05: общие стражи недоверенного ввода, импортируемые story-screens.js.
+    if (name === "story-guards.js") {
+      await sendFile(response, join(playerRoot, "dist/src/story-guards.js"));
+      return;
+    }
     sendText(response, 404, "Not found");
     return;
   }
@@ -364,7 +368,7 @@ function validatePresentationProxy(value: PlayerPresentationProxyOptions): Reado
   }
   const ids = new Set<string>();
   for (const asset of value.assets) {
-    if (!ID_PATTERN.test(asset.id) || !HASH_PATTERN.test(asset.hash) || ids.has(asset.id)) {
+    if (!isId(asset.id) || !HASH_PATTERN.test(asset.hash) || ids.has(asset.id)) {
       throw new TypeError("invalid or duplicate presentation asset");
     }
     ids.add(asset.id);
@@ -420,10 +424,6 @@ function mimeType(path: string): string {
 
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "::1" || host === "localhost";
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
 }
 
 function errorCode(error: unknown): string {

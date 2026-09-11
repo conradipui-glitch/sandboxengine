@@ -7,8 +7,8 @@
 // не подменяя отказ успехом.
 
 import type { PlayerTurnService, PlayerTurnState } from "../../server/src/player-turn.js";
+import { isId, isNonNegativeSafeInteger } from "./story-guards.js";
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const MAX_BODY_BYTES = 64 * 1024;
 
 export interface PlayerTurnRouteOptions {
@@ -35,7 +35,7 @@ export function createPlayerTurnRoute(options: PlayerTurnRouteOptions): PlayerTu
     async handle(request: any, response: any, url: URL, method: string): Promise<void> {
       if (method === "GET") {
         const sessionId = url.searchParams.get("sessionId") ?? "";
-        if (!ID_PATTERN.test(sessionId)) {
+        if (!isId(sessionId)) {
           sendJson(response, 400, { error: { code: "INVALID_TURN_REQUEST" } });
           return;
         }
@@ -64,7 +64,7 @@ export function createPlayerTurnRoute(options: PlayerTurnRouteOptions): PlayerTu
       const baseTurn = body.baseTurn;
       if (!isId(sessionId) || !isId(choiceId)
         || typeof idempotencyKey !== "string" || idempotencyKey.length < 1 || idempotencyKey.length > 200
-        || !Number.isSafeInteger(baseTurn) || baseTurn < 0) {
+        || !isNonNegativeSafeInteger(baseTurn)) {
         sendJson(response, 400, { error: { code: "INVALID_TURN_REQUEST" } });
         return;
       }
@@ -145,10 +145,6 @@ async function readJsonBody(request: any): Promise<Record<string, any> | null> {
   } catch {
     return null;
   }
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
 }
 
 function sendJson(response: any, status: number, body: unknown): void {
