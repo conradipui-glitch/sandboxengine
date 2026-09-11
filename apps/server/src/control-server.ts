@@ -264,6 +264,16 @@ async function routeControlRequest(
     return;
   }
 
+  // Assets of the revision a *started* game is pinned to. This is the path the
+  // published-mission BFF uses: it carries the session credential, so a game
+  // that is already running keeps its own artwork after the mission is
+  // republished — or taken down.
+  const publicSessionAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
+  if (method === "GET" && publicSessionAssetMatch && releases?.publicationStore && missionStore) {
+    await routePublicMissionSessionAsset(request, response, publicSessionAssetMatch, releases, missionStore, assetStorage, assetLibrary);
+    return;
+  }
+
   // Public, credentialless bytes of an asset that belongs to the *pinned*
   // published revision. Anything else stays private.
   const publicAssetMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/assets\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(publicPathname);
@@ -1568,6 +1578,83 @@ async function routePublicMissionAsset(
   response.setHeader("content-type", stored.record.manifest.mimeType);
   response.setHeader("content-length", String(stored.bytes.byteLength));
   response.setHeader("cache-control", "public, max-age=31536000, immutable");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.end(stored.bytes);
+}
+
+/**
+ * Serves the bytes of an asset the *started game* is pinned to.
+ *
+ * The published-mission BFF proxies here with the session credential, so the
+ * artwork a player is looking at does not depend on what the catalog says right
+ * now: republishing a newer revision, or taking the mission down entirely,
+ * leaves a running game on its own revision and its own assets.
+ */
+async function routePublicMissionSessionAsset(
+  request: any,
+  response: any,
+  match: RegExpExecArray,
+  releases: ControlReleaseModeOptions,
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  assetStorage: LocalAssetStore | null,
+  assetLibrary: ProjectAssetLibrary | null
+): Promise<void> {
+  const identifier = match[1] ?? "";
+  const sessionId = match[2] ?? "";
+  const assetId = match[3] ?? "";
+  const secret = releases.publicMissionSessionSecret ?? "";
+  if (typeof secret !== "string" || secret.length < 16) {
+    sendJson(response, 503, { error: { code: "PUBLIC_MISSION_RUNTIME_UNAVAILABLE" } });
+    return;
+  }
+  const existing = await missionStore.getMissionSession(sessionId);
+  if (!existing) { sendNotFound(response); return; }
+  const sessionPublicMissionId = `mission:${existing.projectId}:${existing.questId}`;
+  let identifierMatches = identifier === sessionPublicMissionId;
+  if (!identifierMatches) {
+    // The publication record survives unpublish, so the slug still identifies
+    // the mission whose session is asking for bytes.
+    const questPublication = await releases.publicationStore?.getPublicationForQuest(existing.projectId, existing.questId);
+    identifierMatches = !!questPublication && questPublication.slug === identifier;
+  }
+  if (!identifierMatches) { sendNotFound(response); return; }
+  const credential = publicMissionCredential(secret, sessionPublicMissionId, sessionId);
+  if (readHeader(request, "authorization") !== `Bearer ${credential}`) {
+    sendJson(response, 401, { error: { code: "PUBLIC_MISSION_CREDENTIAL_REQUIRED" } });
+    return;
+  }
+  const pinned = await missionStore.getMissionAtRevision(existing.projectId, existing.questId, existing.contentRevision);
+  if (!pinned || pinned.contentHash !== existing.contentHash) {
+    sendJson(response, 409, { error: { code: "PUBLIC_MISSION_RELEASE_STALE" } });
+    return;
+  }
+  if (assetStorage === null || assetLibrary === null) {
+    sendJson(response, 501, { error: { code: "ASSET_STORAGE_UNAVAILABLE" } });
+    return;
+  }
+  // Only assets the *pinned* revision references are served through the session.
+  if (!collectReferencedAssetIds(pinned.mission).includes(assetId)) { sendNotFound(response); return; }
+  const entries = await assetLibrary.listProjectAssets(existing.projectId, false);
+  const entry = entries.find((candidate) => candidate.assetId === assetId) ?? null;
+  if (!entry) { sendNotFound(response); return; }
+  let stored;
+  try {
+    stored = await assetStorage.read(assetId, entry.hash);
+  } catch (error) {
+    if (error instanceof AssetBoundaryError && (error.code === "not_found" || error.code === "corrupt_object")) {
+      sendJson(response, error.code === "not_found" ? 404 : 502, { error: { code: error.code === "not_found" ? "NOT_FOUND" : "ASSET_CORRUPT_OBJECT" } });
+    } else {
+      sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
+    }
+    return;
+  }
+  response.statusCode = 200;
+  response.setHeader("content-type", stored.record.manifest.mimeType);
+  response.setHeader("content-length", String(stored.bytes.byteLength));
+  // The URL names one session and one pinned revision, so these bytes cannot go
+  // stale — but they stay private to the credential that asked for them.
+  response.setHeader("cache-control", "private, max-age=31536000, immutable");
+  response.setHeader("etag", `"${existing.contentHash.slice(0, 32)}-${assetId}"`);
   response.setHeader("x-content-type-options", "nosniff");
   response.end(stored.bytes);
 }
