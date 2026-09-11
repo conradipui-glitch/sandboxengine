@@ -1,0 +1,157 @@
+/*
+ * Стили вкладки «ИИ-помощник».
+ *
+ * Подключается оркестратором рядом с остальными стилями Studio. Никаких
+ * обрезок многоточием: длинные названия сцен и сообщения переносятся на новую
+ * строку, чтобы пользователь всегда видел полный текст.
+ */
+
+.ai-panel {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: inherit;
+}
+
+.ai-panel-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+}
+
+.ai-panel-head p {
+  margin: 0 0 1rem;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.ai-panel-body {
+  display: block;
+}
+
+.ai-note,
+.ai-hint,
+.ai-stage,
+.ai-done,
+.ai-notice,
+.ai-accepted {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 0.5rem 0;
+}
+
+.ai-hint {
+  opacity: 0.75;
+  font-size: 0.9rem;
+}
+
+.ai-notice,
+.ai-accepted {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(120, 170, 120, 0.15);
+}
+
+.ai-accepted-failed {
+  background: rgba(190, 90, 90, 0.15);
+}
+
+.ai-field {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.ai-field textarea,
+.ai-panel textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid rgba(140, 140, 160, 0.5);
+  font: inherit;
+  line-height: 1.4;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Ошибка сохраняет введённый текст и всегда предлагает действие. */
+.ai-error {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border-left: 3px solid rgba(190, 90, 90, 0.8);
+  background: rgba(190, 90, 90, 0.12);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ai-error-message {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+}
+
+/* Честный прогресс: этапы человеческим языком, без процентов. */
+.ai-working {
+  display: block;
+}
+
+.ai-stage {
+  font-weight: 600;
+}
+
+.ai-progress,
+.ai-scenes,
+.ai-summary,
+.ai-repairs ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.ai-progress li,
+.ai-scenes li,
+.ai-repairs li {
+  margin: 0.35rem 0;
+}
+
+.ai-progress li strong {
+  margin-right: 0.4rem;
+}
+
+.ai-summary {
+  list-style: none;
+  padding-left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+}
+
+.ai-summary strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-scenes li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  justify-content: space-between;
+}
+
+.ai-scenes li span,
+.ai-repairs-empty {
+  opacity: 0.75;
+  font-size: 0.9rem;
+}
+
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.ai-actions button {
+  overflow-wrap: anywhere;
+}
