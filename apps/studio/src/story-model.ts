@@ -1,4 +1,4 @@
-import type { MissionDraft } from "@living-history/contracts";
+import type { Condition, GameplayEffect, MissionDraft } from "@living-history/contracts";
 
 export type StoryNodeType = "scene" | "ending";
 
@@ -72,34 +72,33 @@ export interface NewChoiceInput {
   readonly endingId: string | null;
 }
 
-function cloneMission(doc: MissionDraft): {
+/**
+ * Глубокая копия авторского payload выбора (условия/эффекты). Дубль не делит
+ * ссылки с источником; отсутствующий payload у старых документов → пустой массив.
+ */
+function copyChoicePayload<T>(value: readonly T[] | undefined): T[] {
+  return Array.isArray(value) ? (JSON.parse(JSON.stringify(value)) as T[]) : [];
+}
+
+type ClonedStoryChoice = {
+  id: string; label: string; targetSceneId: string | null; endingId: string | null;
+  conditions: Condition[]; effects: GameplayEffect[];
+};
+
+type ClonedStory = {
   readonly story: {
     entrySceneId: string;
     scenes: Array<{
       id: string; title: string; text: string;
       dialogue: Array<{ id: string; speakerId: string | null; text: string }>;
-      choices: Array<{
-        id: string; label: string; targetSceneId: string | null; endingId: string | null;
-        conditions: never[]; effects: never[];
-      }>;
+      choices: Array<ClonedStoryChoice>;
     }>;
     endings: Array<{ id: string; title: string; text: string }>;
   };
-} {
-  return JSON.parse(JSON.stringify({ story: doc.story })) as {
-    readonly story: {
-      entrySceneId: string;
-      scenes: Array<{
-        id: string; title: string; text: string;
-        dialogue: Array<{ id: string; speakerId: string | null; text: string }>;
-        choices: Array<{
-          id: string; label: string; targetSceneId: string | null; endingId: string | null;
-          conditions: never[]; effects: never[];
-        }>;
-      }>;
-      endings: Array<{ id: string; title: string; text: string }>;
-    };
-  };
+};
+
+function cloneMission(doc: MissionDraft): ClonedStory {
+  return JSON.parse(JSON.stringify({ story: doc.story })) as ClonedStory;
 }
 
 /** Новая сцена; первая сцена становится входом. Возвращает обновлённый story или ошибку. */
@@ -352,8 +351,8 @@ export function duplicateStoryScene(
       label: choice.label,
       targetSceneId: choice.targetSceneId === sourceSceneId ? newSceneId : choice.targetSceneId,
       endingId: choice.endingId,
-      conditions: [],
-      effects: []
+      conditions: copyChoicePayload(choice.conditions),
+      effects: copyChoicePayload(choice.effects)
     };
   });
   const usedDialogue = new Set(source.dialogue.map((line) => line.id));
@@ -412,8 +411,8 @@ export function duplicateStoryChoice(
     label: source.label,
     targetSceneId: source.targetSceneId,
     endingId: source.endingId,
-    conditions: [],
-    effects: []
+    conditions: copyChoicePayload(source.conditions),
+    effects: copyChoicePayload(source.effects)
   });
   return { ok: true, story: { entrySceneId: work.story.entrySceneId, scenes, endings: [...work.story.endings] } };
 }
