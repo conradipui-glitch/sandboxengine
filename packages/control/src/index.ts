@@ -25,6 +25,12 @@ export {
   MAX_LHQUEST_FILE_COUNT
 } from "./zip-read.js";
 export {
+  COLLABORATION_REPLY_POLICY,
+  flattenReplyTarget,
+  resolveThreadRoot,
+  withReplyPolicy
+} from "./collaboration-replies.js";
+export {
   importQuestPackageFromStore,
   type ImportCapableControlStore,
   type ImportQuestDispatchResult,
