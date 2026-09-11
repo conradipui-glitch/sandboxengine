@@ -167,13 +167,26 @@ test("V01 project cards open the project and show quest counts with roles", asyn
     projects,
     questsByProject: { "p-one": [{ questId: "q1", title: "Первый квест" }], "p-two": [] }
   });
-  assert.match(root.innerHTML, /data-action="open-project"/);
-  assert.match(root.innerHTML, /Первая история/);
-  assert.match(root.innerHTML, /Миссий: 1/);
-  assert.match(root.innerHTML, /Миссий: 0/);
+  // Карточки проектов теперь рисует модуль library-view (его собственные тесты —
+  // library-view.test.mjs): shell обязан только дать точку монтирования и заголовок.
+  assert.match(root.innerHTML, /data-library-host/);
+  assert.match(root.innerHTML, /Мои проекты/);
   assert.match(root.innerHTML, /Новый проект/);
-  assert.match(root.innerHTML, /Поиск по названию/);
   assert.ok(!root.innerHTML.includes("Technical ID"), "no Technical ID on cards");
+
+  // Данные карточек берутся из состояния: счётчик миссий и роль без выдуманных полей.
+  const cards = app.libraryCards();
+  assert.deepEqual(
+    cards.map((card) => ({ projectId: card.projectId, title: card.title, questCount: card.questCount, role: card.role })),
+    [
+      { projectId: "p-one", title: "Первая история", questCount: 1, role: "owner" },
+      { projectId: "p-two", title: "Вторая история", questCount: 0, role: "editor" }
+    ]
+  );
+  // Описания, обложки и даты правки API не отдаёт — модуль получает честные null.
+  assert.equal(cards[0].description, null);
+  assert.equal(cards[0].coverUrl, null);
+  assert.equal(cards[0].updatedAtMs, null);
 
   await app.openProject("p-one");
   assert.equal(app.state.view, "editor");

@@ -106,6 +106,7 @@ import {
   type StoryDeletionImpact
 } from "./story-model.js";
 import { StoryHistory } from "./story-commands.js";
+import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -282,6 +283,9 @@ export class StudioApp {
 
   private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
   private boardHost: HTMLElement | null = null;
+  /** Текущий живой экран проектов (модуль library-view): dispose снимается при смене хоста. */
+  private libraryDispose: (() => void) | null = null;
+  private libraryHost: HTMLElement | null = null;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -400,6 +404,10 @@ export class StudioApp {
   private async onClick(event: Event): Promise<void> {
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-action]") : null;
     if (!target) return;
+    // Экран проектов обслуживает себя сам (library-view) — не обрабатываем одно нажатие дважды.
+    // Сравнение с target обязательно: тестовые двойники возвращают из closest() сам элемент.
+    const libraryOwner = typeof target.closest === "function" ? target.closest<HTMLElement>("[data-library-host]") : null;
+    if (libraryOwner !== null && libraryOwner !== target) return;
     const action = target.dataset.action;
 
     if (action === "author-start") {
@@ -1472,15 +1480,9 @@ export class StudioApp {
     }
     if (!(target instanceof HTMLInputElement)) return;
     if (target.dataset.input === "project-search") {
+      // Поиск по проектам ведёт модуль library-view; здесь остаётся только состояние
+      // строки поиска для совместимости со старыми сценариями.
       this.state.projectSearch = target.value;
-      const grid = this.root.querySelector("[data-project-grid]");
-      if (grid) {
-        grid.innerHTML = this.filteredProjects()
-          .map((item) => projectCard(item, this.state.questCounts[item.projectId] ?? 0)).join("")
-          || `<div class="empty-rail">Ничего не найдено.</div>`;
-      }
-      const count = this.root.querySelector("[data-project-count]");
-      if (count) count.textContent = String(this.filteredProjects().length);
     }
   }
 
@@ -2534,6 +2536,69 @@ export class StudioApp {
     this.mountBoardIfNeeded();
     this.mountStoryEditableIfNeeded();
     this.mountScreenIfNeeded();
+    this.mountLibraryIfNeeded();
+  }
+
+  /**
+   * Экран «Мои проекты»: карточки, поиск и фильтр приёмочных проектов живут в модуле
+   * library-view. Модуль сам обрабатывает свои кнопки, поэтому общий диспетчер кликов
+   * не трогает область [data-library-host] (иначе одно нажатие сработало бы дважды).
+   */
+  private mountLibraryIfNeeded(): void {
+    if (this.state.view !== "projects") return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-library-host]");
+    if (!host) return;
+    const sameHost = this.libraryHost === host;
+    if (this.libraryDispose) {
+      this.libraryDispose();
+      this.libraryDispose = null;
+    }
+    if (sameHost) {
+      // Хост тот же (обновление состояния): достаточно перерисовать его содержимое заново.
+      host.replaceChildren();
+    }
+    this.libraryHost = host;
+    this.libraryDispose = renderLibrary({
+      root: host,
+      listProjects: async () => this.libraryCards(),
+      openProject: (projectId) => void this.openProject(projectId),
+      createQuest: (projectId) => void this.createQuestFromLibrary(projectId),
+      createWithAi: (projectId) => void this.createQuestFromLibrary(projectId, { withAi: true }),
+      onError: (error) => this.reportLibraryError(error)
+    });
+  }
+
+  /** Данные карточек проекта: только то, что реально отдаёт API, без выдуманных полей. */
+  private libraryCards(): LibraryProjectCard[] {
+    return this.state.projects.map((project) => ({
+      projectId: project.projectId,
+      title: project.title,
+      description: null,
+      coverUrl: null,
+      questCount: this.state.questCounts[project.projectId] ?? 0,
+      role: project.role,
+      updatedAtMs: null,
+      isAcceptance: isAcceptanceProject(project.projectId, project.title)
+    }));
+  }
+
+  /**
+   * «Создать квест» и «Создать с ИИ» из карточки проекта: открываем редактор этого
+   * проекта — форма новой миссии живёт в его левой колонке, а с включённым ИИ
+   * подсказываем, где описать идею.
+   */
+  private async createQuestFromLibrary(projectId: string, options: { readonly withAi?: boolean } = {}): Promise<void> {
+    await this.openProject(projectId);
+    if (options.withAi === true) {
+      this.state.message = "Опишите идею миссии в панели «ИИ-помощник» — она соберёт сцены, связи и финалы.";
+      this.render();
+    }
+  }
+
+  private reportLibraryError(error: unknown): void {
+    this.state.message = describeControlError(error);
+    this.render();
   }
 
   /** Монтирует или обновляет единственный живой canvas после shell render. */
@@ -3232,7 +3297,6 @@ export class StudioApp {
 
   private renderProjects(): string {
     const allowProjectCreate = canCreateProject(this.state.access);
-    const filtered = this.filteredProjects();
     return `
       <div class="projects-screen">
         <header class="projects-topbar">
@@ -3260,13 +3324,8 @@ export class StudioApp {
               <form data-form="empty-draft"><button type="submit">Начать с пустого проекта</button></form>
             </section>
           ` : `
-            <div class="projects-toolbar">
-              <input class="search" data-input="project-search" data-focus-key="project-search" placeholder="Поиск по названию" value="${escapeAttr(this.state.projectSearch)}">
-              <span><span data-project-count>${filtered.length}</span> из ${this.state.projects.length}</span>
-            </div>
-            <div class="project-grid" data-project-grid>
-              ${filtered.map((item) => projectCard(item, this.state.questCounts[item.projectId] ?? 0)).join("") || `<div class="empty-rail">Ничего не найдено.</div>`}
-            </div>
+            <!-- Карточки, поиск и фильтр приёмочных проектов рисует модуль library-view. -->
+            <div class="library-host" data-library-host></div>
           `}
         </div>
         ${this.state.projectModal ? projectModal(this.state.projectModalError) : ``}
@@ -3882,6 +3941,25 @@ function projectModal(error: string | null): string {
       </form>
     </div>
   </div>`;
+}
+
+/**
+ * Приёмочные (технические) проекты не должны выглядеть как рекомендованные примеры
+ * для автора: их отделяет метка и фильтр, данные при этом не удаляются.
+ *
+ * ОГРАНИЧЕНИЕ: у проекта пока нет поля «тип» ни в схеме, ни в API — список ведётся
+ * явно. Когда в Control появится настоящее поле, правило переедет на него.
+ */
+const ACCEPTANCE_PROJECT_IDS: readonly string[] = Object.freeze([
+  "acceptance",
+  "c18-isbavg",
+  "c18-isbavg-2"
+]);
+
+function isAcceptanceProject(projectId: string, title: string): boolean {
+  if (ACCEPTANCE_PROJECT_IDS.includes(projectId)) return true;
+  if (/^m06-/i.test(projectId)) return true;
+  return /приём|прием|acceptance/i.test(title);
 }
 
 function projectCard(item: ProjectView, questCount: number): string {
