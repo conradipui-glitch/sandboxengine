@@ -7,6 +7,7 @@ import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
 import type { AssetManifestV2, JsonValue } from "@living-history/contracts";
+import { createPlayerTurnRoute, type PlayerTurnRoute, type PlayerTurnRouteOptions } from "./turn-route.js";
 
 const playerRoot = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -55,6 +56,8 @@ export interface PlayerDevServerOptions {
   readonly metadata: PlayerSurfaceMetadata;
   readonly presentation?: PlayerPresentationProxyOptions;
   readonly story?: PlayerStoryOptions;
+  /** Серверное применение хода истории; без него маршрут хода не поднимается. */
+  readonly turn?: PlayerTurnRouteOptions;
 }
 
 export interface PlayerDevServer {
@@ -69,6 +72,7 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
   const metadata = validateMetadata(options.metadata);
   const presentation = options.presentation ? validatePresentationProxy(options.presentation) : null;
   const story = options.story ? validateStory(options.story) : null;
+  const turn: PlayerTurnRoute | null = options.turn ? createPlayerTurnRoute(options.turn) : null;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -82,6 +86,11 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
       if (url.pathname === "/player-story.json" && method === "GET") {
         if (story === null) sendJson(response, 404, { error: { code: "STORY_NOT_FOUND" } });
         else sendJson(response, 200, { mission: story.mission });
+        return;
+      }
+
+      if (turn !== null && turn.matches(url.pathname)) {
+        await turn.handle(request, response, url, method);
         return;
       }
 

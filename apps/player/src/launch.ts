@@ -11,6 +11,7 @@ import { createPlayerDevServer, type PlayerSurfaceMetadata } from "./dev-server.
 type RuntimeServerModule = typeof import("../../server/src/server.js");
 type ActionServiceModule = typeof import("../../server/src/action-service.js");
 type PresentationStorageModule = typeof import("../../server/src/presentation-storage.js");
+type PlayerTurnModule = typeof import("../../server/src/player-turn.js");
 
 export interface LaunchFrozenPlayerOptions {
   readonly databasePath: string;
@@ -191,10 +192,24 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
     const story = storyMission === null
       ? undefined
       : { mission: JSON.parse(JSON.stringify(storyMission.mission)) as JsonValue };
+    // Ход истории считается на сервере поверх того же control-стора: сессия
+    // хода прибита к замороженной авторской ревизии, начальный мир — из
+    // frozen playtest, а не из локальной догадки браузера.
+    const playerTurnModule = await import(new URL("../../../server/dist/player-turn.js", import.meta.url).href) as PlayerTurnModule;
+    const turnService = storyMission === null
+      ? null
+      : playerTurnModule.createPlayerTurnService(controlStore, {
+        projectId: playtest.projectId,
+        questId: playtest.questId,
+        contentRevision: storyMission.contentRevision,
+        actorUserId: "player",
+        initialWorld: template.initialState
+      });
     const player = createPlayerDevServer({
       runtimeOrigin: `http://${runtimeAddress.host}:${runtimeAddress.port}`,
       metadata,
       ...(story ? { story } : {}),
+      ...(turnService ? { turn: { service: turnService } } : {}),
       presentation: {
         release: Object.freeze({ questId: template.release.questId, releaseId: template.release.releaseId }),
         assets: presentationTemplate.catalog.assets,
