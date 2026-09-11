@@ -7,6 +7,7 @@ import {
 } from "@living-history/contracts";
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
 import { analyzeDraftBlockReferences } from "./draft-history.js";
+import { cloneJson, isNonNegativeSafeInteger, isTitle } from "./json-primitives.js";
 import type {
   ApplyDraftChangesResult,
   ControlStore,
@@ -482,18 +483,6 @@ function isId(value: unknown): value is string {
     && value.length >= 1
     && value.length <= 200
     && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
-}
-
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function cloneAndFreeze<T>(value: T): T {

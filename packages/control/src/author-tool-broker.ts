@@ -7,6 +7,7 @@ import type {
   AuthorAgentJobStore,
   AuthorAgentOperationKind
 } from "./author-agent-jobs.js";
+import { isHash } from "./json-primitives.js";
 
 export const AUTHOR_TOOL_BROKER_POLICY_VERSION = "1.0";
 export const AUTHOR_TOOL_IDS = Object.freeze([
@@ -259,10 +260,6 @@ function toolIdForOperation(operationKind: AuthorAgentOperationKind): AuthorTool
 
 function isSource(value: unknown): value is AuthorToolSource {
   return value === "builtin" || value === "skill" || value === "mcp";
-}
-
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
 
 function isId(value: unknown): value is string {

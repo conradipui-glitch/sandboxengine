@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
+import { cloneJson, isNonNegativeSafeInteger, isTitle, parseStoredJsonRaw as parseJson } from "./json-primitives.js";
 import {
   CONTRACT_SCHEMA_VERSION,
   hasValidQuestReleaseReferences,
@@ -1963,10 +1964,6 @@ function missionTurnResultFromJson(value: unknown): { readonly session: MissionS
   return parsed as unknown as { readonly session: MissionSessionState; readonly target: { readonly kind: "scene"; readonly sceneId: string } | { readonly kind: "ending"; readonly endingId: string } };
 }
 
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
 async function buildChangedSnapshot(current: DraftSnapshot, changeSet: DraftChangeSet): Promise<
   | { readonly ok: true; readonly snapshot: DraftSnapshot }
   | { readonly ok: false; readonly errors: readonly string[] }
@@ -2171,11 +2168,6 @@ function parseSnapshot(value: unknown): DraftSnapshot {
   return cloneAndFreeze(parseJson(value) as DraftSnapshot);
 }
 
-function parseJson(value: unknown): unknown {
-  if (typeof value !== "string") throw new Error("invalid stored JSON");
-  return JSON.parse(value);
-}
-
 function invalidQuest(errors: readonly string[]): CreateQuestResult {
   return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
 }
@@ -2195,10 +2187,6 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 function isId(value: unknown): value is string {
   return typeof value === "string" && value.length >= 1 && value.length <= 200 && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
 }
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
-}
-function cloneJson<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 function cloneAndFreeze<T>(value: T): T { return deepFreeze(cloneJson(value)); }
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

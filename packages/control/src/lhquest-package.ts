@@ -10,6 +10,7 @@ import {
 import { compileQuest } from "@living-history/core";
 import { LHQUEST_FORMAT_VERSION } from "./quest-export.js";
 import { readBoundedStoredZip, type BoundedZipFailureCode } from "./zip-read.js";
+import { cloneJson, isHash, isRevision, isTitle } from "./json-primitives.js";
 
 export interface ParsedLhquestDraftPackage {
   readonly sourceKind: "draft" | "release";
@@ -54,7 +55,6 @@ type PackageSource =
     };
 
 const REQUIRED_FILES = ["SHA256SUMS", "manifest.json", "quest.json"] as const;
-const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const FORBIDDEN_KEY_PATTERN = /(?:secret|password|credential|csrf|token|api[_-]?key|session|player[_-]?state|world[_-]?save|turn[_-]?history|provider[_-]?prompt)/i;
 /** Upper bound on JSON nesting accepted from an untrusted package (real manifests/quests stay far below). */
 export const MAX_PACKAGE_JSON_DEPTH = 64;
@@ -314,15 +314,8 @@ function containsForbiddenKey(root: unknown): boolean {
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
-function isHash(value: unknown): value is string { return typeof value === "string" && HASH_PATTERN.test(value); }
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
 }
 function isRecord(value: unknown): value is Record<string, any> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
@@ -337,7 +330,6 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 function fail<const C extends LhquestPackageFailureCode>(code: C): Readonly<{ ok: false; code: C }> {
   return Object.freeze({ ok: false, code });
 }
-function cloneJson<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
     if (ArrayBuffer.isView(value)) return value;
