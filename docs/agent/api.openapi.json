@@ -208,6 +208,105 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration": {
+      "get": {
+        "operationId": "control_collaboration_get",
+        "summary": "Server-authoritative заметки и треды комментариев проекта (не часть release/gameplay)",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes": {
+      "post": {
+        "operationId": "control_collaboration_notes_create",
+        "summary": "Editor создаёт стикер-заметку с позицией на доске (idempotency-key обязателен)",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/changes": {
+      "post": {
+        "operationId": "control_collaboration_notes_change",
+        "summary": "Автор заметки (или owner) меняет текст/позицию с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/delete": {
+      "post": {
+        "operationId": "control_collaboration_notes_delete",
+        "summary": "Автор заметки (или owner) удаляет заметку с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments": {
+      "post": {
+        "operationId": "control_collaboration_comments_create",
+        "summary": "Editor открывает тред комментариев, привязанный к сцене/слою/полю или месту на доске",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages": {
+      "post": {
+        "operationId": "control_collaboration_comments_reply",
+        "summary": "Editor добавляет сообщение-ответ в существующий тред",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/changes": {
+      "post": {
+        "operationId": "control_collaboration_comments_message_change",
+        "summary": "Автор сообщения (или owner) правит текст с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/delete": {
+      "post": {
+        "operationId": "control_collaboration_comments_message_delete",
+        "summary": "Автор сообщения (или owner) удаляет сообщение, сохраняя место в треде",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/status": {
+      "post": {
+        "operationId": "control_collaboration_comments_status",
+        "summary": "Editor закрывает (resolve) или переоткрывает (reopen) тред с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/mission": {
       "get": {
         "operationId": "control_mission_get",

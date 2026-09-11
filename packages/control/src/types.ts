@@ -322,3 +322,168 @@ export interface ControlStore {
   }): Promise<CreatePlaytestResult>;
   getPlaytest(playtestId: string): Promise<FrozenPlaytestRecord | null>;
 }
+
+// FIN-12 (V07) collaboration: notes and comment threads.
+//
+// Notes and comments are working material for the authoring team. They live in
+// their own server-authoritative tables and are deliberately NOT part of any
+// release, draft revision or gameplay content hash: writing a note or replying
+// to a thread must never move `draftRevision`/`contentHash` or reach the player.
+// Reads and writes are scoped to one project/quest and gated by the existing
+// live project role; edit/delete additionally require authorship (or owner).
+
+export type CollaborationAnchorKind = "board" | "scene" | "layer" | "field";
+
+export interface CollaborationAnchor {
+  readonly kind: CollaborationAnchorKind;
+  /** The anchored block/scene/layer/field id; `null` only for a board pin. */
+  readonly targetId: string | null;
+  /** Board coordinates; present only for `kind === "board"`. */
+  readonly position: BoardPosition | null;
+}
+
+export interface CollaborationNote {
+  readonly noteId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly text: string;
+  readonly authorUserId: string;
+  readonly position: BoardPosition;
+  /** Per-note CAS revision, incremented by every accepted change. */
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface CollaborationMessage {
+  readonly messageId: string;
+  readonly authorUserId: string;
+  readonly text: string;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  /** Soft-deleted messages keep their slot so the thread order and count stay honest. */
+  readonly deleted: boolean;
+}
+
+export interface CollaborationThread {
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly anchor: CollaborationAnchor;
+  /**
+   * True once the anchored object was deleted from the quest. The discussion is
+   * never dropped: the thread stays with this marker so the UI can render
+   * "Элемент удалён" instead of silently losing the conversation.
+   */
+  readonly anchorDeleted: boolean;
+  readonly status: "open" | "resolved";
+  /** Per-thread CAS revision, incremented by messages and status changes. */
+  readonly revision: number;
+  readonly createdByUserId: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly resolvedAtMs: number | null;
+  readonly messages: readonly CollaborationMessage[];
+}
+
+export interface CollaborationView {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  /** Collection-wide revision, incremented by every accepted mutation. */
+  readonly revision: number;
+  readonly unresolvedThreadCount: number;
+  readonly notes: readonly CollaborationNote[];
+  readonly threads: readonly CollaborationThread[];
+}
+
+export type CollaborationWriteResult =
+  | { readonly kind: "created"; readonly view: CollaborationView }
+  | { readonly kind: "updated"; readonly view: CollaborationView }
+  | { readonly kind: "replay"; readonly view: CollaborationView }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface CreateNoteInput {
+  readonly text: string;
+  readonly position: BoardPosition;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface ChangeNoteInput {
+  readonly noteId: string;
+  readonly expectedRevision: number;
+  readonly text: string;
+  readonly position: BoardPosition;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface DeleteNoteInput {
+  readonly noteId: string;
+  readonly expectedRevision: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface CreateThreadInput {
+  readonly anchor: CollaborationAnchor;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface AddMessageInput {
+  readonly threadId: string;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface ChangeMessageInput {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly expectedRevision: number;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface DeleteMessageInput {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly expectedRevision: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface SetThreadStatusInput {
+  readonly threadId: string;
+  readonly expectedRevision: number;
+  readonly status: "open" | "resolved";
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface CollaborationStore {
+  getCollaboration(projectId: string, questId: string): Promise<CollaborationView | null>;
+  createNote(projectId: string, questId: string, input: CreateNoteInput): Promise<CollaborationWriteResult>;
+  changeNote(projectId: string, questId: string, input: ChangeNoteInput): Promise<CollaborationWriteResult>;
+  deleteNote(projectId: string, questId: string, input: DeleteNoteInput): Promise<CollaborationWriteResult>;
+  createThread(projectId: string, questId: string, input: CreateThreadInput): Promise<CollaborationWriteResult>;
+  addMessage(projectId: string, questId: string, input: AddMessageInput): Promise<CollaborationWriteResult>;
+  changeMessage(projectId: string, questId: string, input: ChangeMessageInput): Promise<CollaborationWriteResult>;
+  deleteMessage(projectId: string, questId: string, input: DeleteMessageInput): Promise<CollaborationWriteResult>;
+  setThreadStatus(projectId: string, questId: string, input: SetThreadStatusInput): Promise<CollaborationWriteResult>;
+}

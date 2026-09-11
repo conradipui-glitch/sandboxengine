@@ -25,6 +25,22 @@ import type {
   BoardDocument,
   BoardDocumentStore,
   BoardPosition,
+  CollaborationAnchor,
+  CollaborationAnchorKind,
+  CollaborationMessage,
+  CollaborationNote,
+  CollaborationStore,
+  CollaborationThread,
+  CollaborationView,
+  CollaborationWriteResult,
+  AddMessageInput,
+  ChangeMessageInput,
+  ChangeNoteInput,
+  CreateNoteInput,
+  CreateThreadInput,
+  DeleteMessageInput,
+  DeleteNoteInput,
+  SetThreadStatusInput,
   ControlStore,
   CreateMissionSessionInput,
   CreateMissionSessionResult,
@@ -500,6 +516,423 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       );
       return frozen({ kind: "updated", board });
     });
+  }
+
+  async getCollaboration(projectId: string, questId: string): Promise<CollaborationView | null> {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId)) return null;
+    if (!this.#projectExists(projectId) || !this.#questExists(projectId, questId)) return null;
+    return this.#collaborationViewAt(projectId, questId, this.#collaborationRevision(projectId, questId));
+  }
+
+  async createNote(projectId: string, questId: string, input: CreateNoteInput): Promise<CollaborationWriteResult> {
+    const text = normalizeCollaborationText(input.text);
+    const errors: string[] = [];
+    if ("error" in text) errors.push(text.error);
+    errors.push(...validateCollaborationPosition(input.position));
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    const normalized = (text as { readonly text: string }).text;
+    const position = Object.freeze({ x: input.position.x, y: input.position.y });
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("notes.create", { text: normalized, position }), input.idempotencyKey, input.actorUserId, (revision) => {
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_notes (
+          project_id, quest_id, note_id, text, author_user_id, position_x, position_y,
+          revision, created_at_ms, updated_at_ms, deleted_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+      `).run(projectId, questId, `note-${revision}`, normalized, input.actorUserId, position.x, position.y, now, now);
+      return { kind: "created" as const };
+    });
+  }
+
+  async changeNote(projectId: string, questId: string, input: ChangeNoteInput): Promise<CollaborationWriteResult> {
+    const text = normalizeCollaborationText(input.text);
+    const errors: string[] = [];
+    if ("error" in text) errors.push(text.error);
+    errors.push(...validateCollaborationPosition(input.position));
+    if (!isId(input.noteId)) errors.push("noteId");
+    if (!isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (typeof input.actorRole !== "string") errors.push("actorRole");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    const normalized = (text as { readonly text: string }).text;
+    const position = Object.freeze({ x: input.position.x, y: input.position.y });
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("notes.change", {
+      noteId: input.noteId, expectedRevision: input.expectedRevision, text: normalized, position
+    }), input.idempotencyKey, input.actorUserId, (_revision) => {
+      const row = this.#db.prepare(`
+        SELECT author_user_id, revision, deleted_at_ms FROM control_collaboration_notes
+        WHERE project_id = ? AND quest_id = ? AND note_id = ?
+      `).get(projectId, questId, input.noteId);
+      if (!row || (row.deleted_at_ms !== null && row.deleted_at_ms !== undefined)) return { kind: "not_found" as const };
+      if (!canModifyCollaboration(String(row.author_user_id), input.actorUserId, input.actorRole)) return { kind: "forbidden" as const };
+      const currentRevision = Number(row.revision);
+      if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      this.#db.prepare(`
+        UPDATE control_collaboration_notes SET text = ?, position_x = ?, position_y = ?, revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND note_id = ?
+      `).run(normalized, position.x, position.y, currentRevision + 1, Date.now(), projectId, questId, input.noteId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  async deleteNote(projectId: string, questId: string, input: DeleteNoteInput): Promise<CollaborationWriteResult> {
+    const errors: string[] = [];
+    if (!isId(input.noteId)) errors.push("noteId");
+    if (!isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (typeof input.actorRole !== "string") errors.push("actorRole");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("notes.delete", {
+      noteId: input.noteId, expectedRevision: input.expectedRevision
+    }), input.idempotencyKey, input.actorUserId, (_revision) => {
+      const row = this.#db.prepare(`
+        SELECT author_user_id, revision, deleted_at_ms FROM control_collaboration_notes
+        WHERE project_id = ? AND quest_id = ? AND note_id = ?
+      `).get(projectId, questId, input.noteId);
+      if (!row || (row.deleted_at_ms !== null && row.deleted_at_ms !== undefined)) return { kind: "not_found" as const };
+      if (!canModifyCollaboration(String(row.author_user_id), input.actorUserId, input.actorRole)) return { kind: "forbidden" as const };
+      const currentRevision = Number(row.revision);
+      if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      this.#db.prepare(`
+        UPDATE control_collaboration_notes SET deleted_at_ms = ?, revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND note_id = ?
+      `).run(Date.now(), currentRevision + 1, Date.now(), projectId, questId, input.noteId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  async createThread(projectId: string, questId: string, input: CreateThreadInput): Promise<CollaborationWriteResult> {
+    const text = normalizeCollaborationText(input.text);
+    const anchor = validateCollaborationAnchor(input.anchor);
+    if (!anchor.ok) return invalidCollaboration(anchor.errors);
+    if ("error" in text) return invalidCollaboration([text.error]);
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) return invalidCollaboration(["idempotencyKey"]);
+    if (!isId(input.actorUserId)) return invalidCollaboration(["actorUserId"]);
+    const normalized = text.text;
+    const resolved = anchor.anchor;
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.create", {
+      anchor: resolved, text: normalized
+    }), input.idempotencyKey, input.actorUserId, (revision) => {
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_threads (
+          project_id, quest_id, thread_id, anchor_kind, target_id, position_x, position_y,
+          status, revision, created_by_user_id, created_at_ms, updated_at_ms, resolved_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, ?, NULL)
+      `).run(
+        projectId, questId, `thread-${revision}`, resolved.kind, resolved.targetId,
+        resolved.position === null ? null : resolved.position.x,
+        resolved.position === null ? null : resolved.position.y,
+        input.actorUserId, now, now
+      );
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_messages (
+          project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
+          created_at_ms, updated_at_ms, deleted_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+      `).run(projectId, questId, `thread-${revision}`, `message-${revision}`, input.actorUserId, normalized, now, now);
+      return { kind: "created" as const };
+    });
+  }
+
+  async addMessage(projectId: string, questId: string, input: AddMessageInput): Promise<CollaborationWriteResult> {
+    const text = normalizeCollaborationText(input.text);
+    const errors: string[] = [];
+    if ("error" in text) errors.push(text.error);
+    if (!isId(input.threadId)) errors.push("threadId");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    const normalized = (text as { readonly text: string }).text;
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.reply", {
+      threadId: input.threadId, text: normalized
+    }), input.idempotencyKey, input.actorUserId, (revision) => {
+      const thread = this.#db.prepare(`
+        SELECT revision FROM control_collaboration_threads
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).get(projectId, questId, input.threadId);
+      if (!thread) return { kind: "not_found" as const };
+      const now = Date.now();
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_messages (
+          project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
+          created_at_ms, updated_at_ms, deleted_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+      `).run(projectId, questId, input.threadId, `message-${revision}`, input.actorUserId, normalized, now, now);
+      this.#db.prepare(`
+        UPDATE control_collaboration_threads SET revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).run(Number(thread.revision) + 1, now, projectId, questId, input.threadId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  async changeMessage(projectId: string, questId: string, input: ChangeMessageInput): Promise<CollaborationWriteResult> {
+    const text = normalizeCollaborationText(input.text);
+    const errors: string[] = [];
+    if ("error" in text) errors.push(text.error);
+    if (!isId(input.threadId)) errors.push("threadId");
+    if (!isId(input.messageId)) errors.push("messageId");
+    if (!isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (typeof input.actorRole !== "string") errors.push("actorRole");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    const normalized = (text as { readonly text: string }).text;
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.message.change", {
+      threadId: input.threadId, messageId: input.messageId, expectedRevision: input.expectedRevision, text: normalized
+    }), input.idempotencyKey, input.actorUserId, (_revision) => {
+      const message = this.#db.prepare(`
+        SELECT author_user_id, revision, deleted_at_ms FROM control_collaboration_messages
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ? AND message_id = ?
+      `).get(projectId, questId, input.threadId, input.messageId);
+      if (!message || (message.deleted_at_ms !== null && message.deleted_at_ms !== undefined)) return { kind: "not_found" as const };
+      if (!canModifyCollaboration(String(message.author_user_id), input.actorUserId, input.actorRole)) return { kind: "forbidden" as const };
+      const currentRevision = Number(message.revision);
+      if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      const now = Date.now();
+      this.#db.prepare(`
+        UPDATE control_collaboration_messages SET text = ?, revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ? AND message_id = ?
+      `).run(normalized, currentRevision + 1, now, projectId, questId, input.threadId, input.messageId);
+      this.#db.prepare(`
+        UPDATE control_collaboration_threads SET revision = revision + 1, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).run(now, projectId, questId, input.threadId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  async deleteMessage(projectId: string, questId: string, input: DeleteMessageInput): Promise<CollaborationWriteResult> {
+    const errors: string[] = [];
+    if (!isId(input.threadId)) errors.push("threadId");
+    if (!isId(input.messageId)) errors.push("messageId");
+    if (!isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (typeof input.actorRole !== "string") errors.push("actorRole");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.message.delete", {
+      threadId: input.threadId, messageId: input.messageId, expectedRevision: input.expectedRevision
+    }), input.idempotencyKey, input.actorUserId, (_revision) => {
+      const message = this.#db.prepare(`
+        SELECT author_user_id, revision, deleted_at_ms FROM control_collaboration_messages
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ? AND message_id = ?
+      `).get(projectId, questId, input.threadId, input.messageId);
+      if (!message || (message.deleted_at_ms !== null && message.deleted_at_ms !== undefined)) return { kind: "not_found" as const };
+      if (!canModifyCollaboration(String(message.author_user_id), input.actorUserId, input.actorRole)) return { kind: "forbidden" as const };
+      const currentRevision = Number(message.revision);
+      if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      const now = Date.now();
+      this.#db.prepare(`
+        UPDATE control_collaboration_messages SET text = '', deleted_at_ms = ?, revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ? AND message_id = ?
+      `).run(now, currentRevision + 1, now, projectId, questId, input.threadId, input.messageId);
+      this.#db.prepare(`
+        UPDATE control_collaboration_threads SET revision = revision + 1, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).run(now, projectId, questId, input.threadId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  async setThreadStatus(projectId: string, questId: string, input: SetThreadStatusInput): Promise<CollaborationWriteResult> {
+    const errors: string[] = [];
+    if (!isId(input.threadId)) errors.push("threadId");
+    if (!isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
+    if (input.status !== "open" && input.status !== "resolved") errors.push("status");
+    if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
+    if (!isId(input.actorUserId)) errors.push("actorUserId");
+    if (errors.length > 0) return invalidCollaboration(errors);
+    return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.status", {
+      threadId: input.threadId, expectedRevision: input.expectedRevision, status: input.status
+    }), input.idempotencyKey, input.actorUserId, (_revision) => {
+      const thread = this.#db.prepare(`
+        SELECT revision FROM control_collaboration_threads
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).get(projectId, questId, input.threadId);
+      if (!thread) return { kind: "not_found" as const };
+      const currentRevision = Number(thread.revision);
+      if (currentRevision !== input.expectedRevision) return { kind: "revision_conflict" as const, currentRevision };
+      const now = Date.now();
+      this.#db.prepare(`
+        UPDATE control_collaboration_threads SET status = ?, resolved_at_ms = ?, revision = ?, updated_at_ms = ?
+        WHERE project_id = ? AND quest_id = ? AND thread_id = ?
+      `).run(input.status, input.status === "resolved" ? now : null, currentRevision + 1, now, projectId, questId, input.threadId);
+      return { kind: "updated" as const };
+    });
+  }
+
+  #collaborationWrite(
+    projectId: string,
+    questId: string,
+    requestHash: string,
+    idempotencyKey: string,
+    actorUserId: string,
+    work: (revision: number) => CollaborationMutationOutcome
+  ): CollaborationWriteResult {
+    this.#assertOpen();
+    if (!isId(projectId) || !isId(questId)) return invalidCollaboration(["project.id"]);
+    if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+    if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+    return this.#transaction((): CollaborationWriteResult => {
+      const replay = this.#db.prepare(`
+        SELECT request_hash, result_json FROM control_collaboration_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, idempotencyKey);
+      if (replay) {
+        if (String(replay.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        return frozen({ kind: "replay", view: collaborationViewFromJson(parseJson(replay.result_json)) });
+      }
+
+      const currentRevision = this.#collaborationRevision(projectId, questId);
+      if (currentRevision === Number.MAX_SAFE_INTEGER) return invalidCollaboration(["collaboration.revision_exhausted"]);
+      const nextRevision = currentRevision + 1;
+      const outcome = work(nextRevision);
+      if (outcome.kind === "not_found") return frozen({ kind: "not_found" });
+      if (outcome.kind === "forbidden") return frozen({ kind: "forbidden" });
+      if (outcome.kind === "revision_conflict") return frozen({ kind: "revision_conflict", currentRevision: outcome.currentRevision });
+
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_state (project_id, quest_id, revision) VALUES (?, ?, ?)
+        ON CONFLICT(project_id, quest_id) DO UPDATE SET revision = excluded.revision
+      `).run(projectId, questId, nextRevision);
+      const view = this.#collaborationViewAt(projectId, questId, nextRevision);
+      this.#db.prepare(`
+        INSERT INTO control_collaboration_idempotency (
+          project_id, quest_id, idempotency_key, request_hash, result_json, actor_user_id, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(projectId, questId, idempotencyKey, requestHash, JSON.stringify(view), actorUserId, Date.now());
+      return outcome.kind === "created"
+        ? frozen({ kind: "created", view })
+        : frozen({ kind: "updated", view });
+    });
+  }
+
+  #collaborationRevision(projectId: string, questId: string): number {
+    const row = this.#db.prepare(`
+      SELECT revision FROM control_collaboration_state WHERE project_id = ? AND quest_id = ?
+    `).get(projectId, questId);
+    return row ? Number(row.revision) : 0;
+  }
+
+  #collaborationViewAt(projectId: string, questId: string, revision: number): CollaborationView {
+    const noteRows = this.#db.prepare(`
+      SELECT note_id, text, author_user_id, position_x, position_y, revision, created_at_ms, updated_at_ms
+      FROM control_collaboration_notes
+      WHERE project_id = ? AND quest_id = ? AND deleted_at_ms IS NULL
+      ORDER BY created_at_ms ASC, note_id ASC
+    `).all(projectId, questId);
+    const notes: CollaborationNote[] = [];
+    for (const row of noteRows as any[]) {
+      notes.push(Object.freeze({
+        noteId: String(row.note_id),
+        projectId,
+        questId,
+        text: String(row.text),
+        authorUserId: String(row.author_user_id),
+        position: Object.freeze({ x: Number(row.position_x), y: Number(row.position_y) }),
+        revision: Number(row.revision),
+        createdAtMs: Number(row.created_at_ms),
+        updatedAtMs: Number(row.updated_at_ms)
+      }));
+    }
+
+    const messageRows = this.#db.prepare(`
+      SELECT thread_id, message_id, author_user_id, text, revision, created_at_ms, updated_at_ms, deleted_at_ms
+      FROM control_collaboration_messages
+      WHERE project_id = ? AND quest_id = ?
+      ORDER BY created_at_ms ASC, message_id ASC
+    `).all(projectId, questId);
+    const messagesByThread = new Map<string, CollaborationMessage[]>();
+    for (const row of messageRows as any[]) {
+      const threadId = String(row.thread_id);
+      const bucket = messagesByThread.get(threadId) ?? [];
+      const deleted = row.deleted_at_ms !== null && row.deleted_at_ms !== undefined;
+      bucket.push(Object.freeze({
+        messageId: String(row.message_id),
+        authorUserId: String(row.author_user_id),
+        text: deleted ? "" : String(row.text),
+        revision: Number(row.revision),
+        createdAtMs: Number(row.created_at_ms),
+        updatedAtMs: Number(row.updated_at_ms),
+        deleted
+      }));
+      messagesByThread.set(threadId, bucket);
+    }
+
+    const threadRows = this.#db.prepare(`
+      SELECT thread_id, anchor_kind, target_id, position_x, position_y, status,
+             revision, created_by_user_id, created_at_ms, updated_at_ms, resolved_at_ms
+      FROM control_collaboration_threads
+      WHERE project_id = ? AND quest_id = ?
+      ORDER BY created_at_ms ASC, thread_id ASC
+    `).all(projectId, questId);
+    const knownTargetIds = this.#collaborationKnownTargetIds(projectId, questId);
+    const threads: CollaborationThread[] = [];
+    for (const row of threadRows as any[]) {
+      const anchor = collaborationAnchorFromColumns(String(row.anchor_kind), row.target_id, row.position_x, row.position_y);
+      threads.push(Object.freeze({
+        threadId: String(row.thread_id),
+        projectId,
+        questId,
+        anchor,
+        anchorDeleted: anchor.targetId !== null && !knownTargetIds.has(anchor.targetId),
+        status: String(row.status) === "resolved" ? "resolved" as const : "open" as const,
+        revision: Number(row.revision),
+        createdByUserId: String(row.created_by_user_id),
+        createdAtMs: Number(row.created_at_ms),
+        updatedAtMs: Number(row.updated_at_ms),
+        resolvedAtMs: row.resolved_at_ms === null || row.resolved_at_ms === undefined ? null : Number(row.resolved_at_ms),
+        messages: Object.freeze(messagesByThread.get(String(row.thread_id)) ?? [])
+      }));
+    }
+
+    return cloneAndFreeze({
+      schemaVersion: "1.0" as const,
+      projectId,
+      questId,
+      revision,
+      unresolvedThreadCount: threads.filter((thread) => thread.status === "open").length,
+      notes: Object.freeze(notes),
+      threads: Object.freeze(threads)
+    });
+  }
+
+  // A thread anchored to an object that is no longer present in the quest keeps
+  // its whole discussion; the view marks it `anchorDeleted` so the UI can render
+  // «Элемент удалён». This is resolved at read time (draft blocks + authored
+  // mission scene ids) so nothing in the existing draft/mission write paths has
+  // to change.
+  #collaborationKnownTargetIds(projectId: string, questId: string): Set<string> {
+    const ids = new Set<string>();
+    const draftRow = this.#db.prepare(`
+      SELECT s.snapshot_json FROM control_quests q
+      JOIN control_draft_snapshots s
+        ON s.project_id = q.project_id AND s.quest_id = q.quest_id AND s.draft_revision = q.current_revision
+      WHERE q.project_id = ? AND q.quest_id = ?
+    `).get(projectId, questId);
+    if (draftRow) {
+      try {
+        for (const block of parseSnapshot(draftRow.snapshot_json).blocks) ids.add(block.id);
+      } catch { /* a broken snapshot leaves the anchor marked deleted, never dropped */ }
+    }
+    const missionRow = this.#db.prepare(`
+      SELECT mission_json FROM control_mission_documents
+      WHERE project_id = ? AND quest_id = ? ORDER BY content_revision DESC LIMIT 1
+    `).get(projectId, questId);
+    if (missionRow) {
+      try {
+        const mission = parseJson(missionRow.mission_json) as { story?: { scenes?: readonly { id?: unknown }[] } };
+        for (const scene of mission?.story?.scenes ?? []) if (typeof scene.id === "string") ids.add(scene.id);
+      } catch { /* ignore a broken mission document for anchor resolution */ }
+    }
+    return ids;
   }
 
   async getMission(projectId: string, questId: string): Promise<MissionDraft | null> {
@@ -1048,6 +1481,74 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         FOREIGN KEY (project_id, quest_id, draft_revision)
           REFERENCES control_draft_snapshots(project_id, quest_id, draft_revision)
       ) STRICT;
+      -- FIN-12 collaboration (notes/comments). Created via IF NOT EXISTS so both
+      -- fresh and existing databases gain the tables without a schema bump; the
+      -- stores are additive and never touch draft/mission/release state.
+      CREATE TABLE IF NOT EXISTS control_collaboration_state (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision >= 0),
+        PRIMARY KEY (project_id, quest_id),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_collaboration_notes (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        note_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        author_user_id TEXT NOT NULL,
+        position_x REAL NOT NULL,
+        position_y REAL NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        deleted_at_ms INTEGER NULL,
+        PRIMARY KEY (project_id, quest_id, note_id),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_collaboration_threads (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        anchor_kind TEXT NOT NULL CHECK (anchor_kind IN ('board','scene','layer','field')),
+        target_id TEXT NULL,
+        position_x REAL NULL,
+        position_y REAL NULL,
+        status TEXT NOT NULL CHECK (status IN ('open','resolved')),
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        created_by_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        resolved_at_ms INTEGER NULL,
+        PRIMARY KEY (project_id, quest_id, thread_id),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_collaboration_messages (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        author_user_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision >= 1),
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL,
+        deleted_at_ms INTEGER NULL,
+        PRIMARY KEY (project_id, quest_id, thread_id, message_id),
+        FOREIGN KEY (project_id, quest_id, thread_id)
+          REFERENCES control_collaboration_threads(project_id, quest_id, thread_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_collaboration_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, idempotency_key),
+        FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
     `);
     this.#transaction(() => {
       const schema = this.#db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
@@ -1591,3 +2092,88 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 function frozen<T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
+
+// ---- FIN-12 collaboration helpers ----
+
+type CollaborationMutationOutcome =
+  | { readonly kind: "created" }
+  | { readonly kind: "updated" }
+  | { readonly kind: "not_found" }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number };
+
+type CollaborationAnchorValidation =
+  | { readonly ok: true; readonly anchor: CollaborationAnchor }
+  | { readonly ok: false; readonly errors: readonly string[] };
+
+function invalidCollaboration(errors: readonly string[]): CollaborationWriteResult {
+  return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
+}
+
+function isCollaborationIdempotencyKey(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
+}
+
+function isCollaborationRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+function canModifyCollaboration(authorUserId: string, actorUserId: string, actorRole: string): boolean {
+  return authorUserId === actorUserId || actorRole === "owner";
+}
+
+// Notes and comments carry plain text only (no raw HTML/Markdown rendering is
+// promised server-side). Normalize line endings, trim, bound the length and
+// reject control characters that could smuggle terminal/HTML escapes.
+function normalizeCollaborationText(value: unknown): { readonly text: string } | { readonly error: string } {
+  if (typeof value !== "string") return { error: "text.type" };
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (normalized.length < 1 || normalized.length > 2000) return { error: "text.bounds" };
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(normalized)) return { error: "text.control" };
+  return { text: normalized };
+}
+
+function validateCollaborationPosition(value: unknown): string[] {
+  if (!isRecord(value) || !hasExactKeys(value, ["x", "y"])) return ["position.shape"];
+  const errors: string[] = [];
+  if (!isFiniteBoardCoordinate(value.x)) errors.push("position.x");
+  if (!isFiniteBoardCoordinate(value.y)) errors.push("position.y");
+  return errors;
+}
+
+function validateCollaborationAnchor(value: unknown): CollaborationAnchorValidation {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "targetId", "position"])) return { ok: false, errors: ["anchor.shape"] };
+  const kind = value.kind;
+  if (kind !== "board" && kind !== "scene" && kind !== "layer" && kind !== "field") return { ok: false, errors: ["anchor.kind"] };
+  if (kind === "board") {
+    const errors = validateCollaborationPosition(value.position);
+    if (errors.length > 0) return { ok: false, errors: ["anchor.position"] };
+    const position = value.position as { readonly x: number; readonly y: number };
+    return { ok: true, anchor: Object.freeze({ kind: "board" as const, targetId: null, position: Object.freeze({ x: position.x, y: position.y }) }) };
+  }
+  if (!isId(value.targetId)) return { ok: false, errors: ["anchor.target"] };
+  return { ok: true, anchor: Object.freeze({ kind, targetId: value.targetId, position: null }) };
+}
+
+function collaborationAnchorFromColumns(kind: string, targetId: unknown, x: unknown, y: unknown): CollaborationAnchor {
+  if (kind === "board") {
+    return Object.freeze({ kind: "board" as const, targetId: null, position: Object.freeze({ x: Number(x), y: Number(y) }) });
+  }
+  return Object.freeze({
+    kind: kind as CollaborationAnchorKind,
+    targetId: targetId === null || targetId === undefined ? null : String(targetId),
+    position: null
+  });
+}
+
+function collaborationViewFromJson(value: unknown): CollaborationView {
+  const parsed = typeof value === "string" ? parseJson(value) : value;
+  if (!isRecord(parsed) || parsed.schemaVersion !== "1.0" || !Array.isArray(parsed.notes) || !Array.isArray(parsed.threads)) {
+    throw new Error("invalid stored CollaborationView");
+  }
+  return cloneAndFreeze(parsed as unknown) as CollaborationView;
+}
+
+function hashCollaborationRequest(op: string, payload: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify({ op, payload }), "utf8").digest("hex");
+}
