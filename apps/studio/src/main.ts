@@ -1,7 +1,7 @@
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { mkdir } from "node:fs/promises";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
-import { dirname, resolve } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { LocalAuthorProvider } from "./local-author-provider.js";
 import {
   SQLiteAuthorAgentJobStore,
@@ -13,6 +13,7 @@ import {
   SQLiteControlStore
 } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
+import { LocalAssetStore } from "@living-history/assets";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import { SQLitePlaytestTraceReader } from "@living-history/runtime";
 import { createStudioDevServer } from "./dev-server.js";
@@ -45,6 +46,13 @@ if (!builtPluginRegistry.ok) throw new Error(`Studio plugin registry failed: ${b
 const controlServerModule = await import(new URL("../../../server/dist/control-server.js", import.meta.url).href) as ControlServerModule;
 const control = controlServerModule.createControlHttpServer({
   store,
+  // Studio — единственный авторитетный писатель своей базы: доска, документы миссий
+  // и материалы живут в ней же. Без assetStorage маршрут материалов отвечает 501,
+  // поэтому хранилище байт подключается здесь, рядом с базой (как в server main.ts).
+  boardStore: store,
+  missionStore: store,
+  assetLibrary: store,
+  assetStorage: new LocalAssetStore(join(dirname(databasePath), "assets")),
   releases: {
     store: releaseStore,
     publicationStore,

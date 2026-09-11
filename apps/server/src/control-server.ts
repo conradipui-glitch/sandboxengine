@@ -2800,8 +2800,19 @@ function isProjectAssetLibrary(value: ControlStore): value is ControlStore & Pro
 const MAX_ASSET_TEXT_HEADER_CHARS = 2_000;
 
 function readAssetTextHeader(request: any, name: string, maxChars: number): string | null | undefined {
-  const value = readHeader(request, name);
-  if (value === undefined) return undefined;
+  const raw = readHeader(request, name);
+  if (raw === undefined) return undefined;
+  // HTTP-заголовки допускают только ASCII, а имена файлов, alt-текст, источник и
+  // права у русского автора почти всегда не-ASCII. Клиент присылает такие
+  // значения percent-encoded, сервер раскодирует; чистый ASCII остаётся как есть.
+  let value = raw;
+  if (/%[0-9A-Fa-f]{2}/.test(raw)) {
+    try {
+      value = decodeURIComponent(raw);
+    } catch {
+      value = raw;
+    }
+  }
   if (value.length > maxChars) return null;
   return value;
 }

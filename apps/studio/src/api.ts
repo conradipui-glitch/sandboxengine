@@ -335,6 +335,43 @@ export interface CollaborationView {
   readonly threads: readonly CollaborationThreadView[];
 }
 
+/** Материал проекта так, как его отдаёт список материалов. */
+export interface ProjectAssetView {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly listed: boolean;
+}
+
+/** Манифест загруженного материала (ответ ingest). */
+export interface ProjectAssetManifestView {
+  readonly id: string;
+  readonly hash: string;
+  readonly kind: string;
+  readonly mimeType: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly altText: string | null;
+}
+
+export interface ProjectAssetUpload {
+  readonly assetId: string;
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly altText?: string;
+  readonly source?: string;
+  readonly rights?: string;
+  readonly bytes: Blob | ArrayBuffer | Uint8Array;
+  readonly idempotencyKey?: string;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -941,6 +978,76 @@ export class ControlApiClient {
       { idempotencyKey }
     );
     return response.collaboration;
+  }
+
+  /** Список материалов проекта. `includeUnlisted` — режим редактора (включая скрытые). */
+  async listProjectAssets(
+    projectId: string,
+    options: { readonly includeUnlisted?: boolean } = {}
+  ): Promise<readonly ProjectAssetView[]> {
+    const suffix = options.includeUnlisted === true ? "?all=1" : "";
+    const body = await this.request<{ readonly assets: readonly ProjectAssetView[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/assets${suffix}`
+    );
+    return body.assets;
+  }
+
+  /**
+   * Прямая ссылка на байты материала. Адрес неизменяем: он строится по паре
+   * (assetId, hash), поэтому перезагрузка файла под тем же id не подменяет
+   * уже отданные байты.
+   */
+  projectAssetUrl(projectId: string, assetId: string, hash: string): string {
+    return `${this.basePath}/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}?hash=${encodeURIComponent(hash)}`;
+  }
+
+  /**
+   * Загрузка материала. Байты идут octet-stream, текстовые поля — заголовками;
+   * HTTP-заголовки допускают только ASCII, поэтому русские имена и описания
+   * percent-encoded (сервер раскодирует их обратно).
+   */
+  async uploadProjectAsset(
+    projectId: string,
+    input: ProjectAssetUpload
+  ): Promise<ProjectAssetManifestView> {
+    const headers: Record<string, string> = {
+      "content-type": "application/octet-stream",
+      "idempotency-key": input.idempotencyKey ?? createClientIdempotencyKey(),
+      "x-asset-id": input.assetId,
+      "x-claimed-mime": input.mimeType
+    };
+    const textHeaders: readonly (readonly [string, string | undefined])[] = [
+      ["x-filename", input.filename],
+      ["x-alt-text", input.altText],
+      ["x-source", input.source],
+      ["x-rights", input.rights]
+    ];
+    for (const [name, value] of textHeaders) {
+      if (typeof value === "string" && value.length > 0) headers[name] = encodeURIComponent(value);
+    }
+    if (this.csrfToken !== null) headers["x-csrf-token"] = this.csrfToken;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.basePath}/projects/${encodeURIComponent(projectId)}/assets`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: input.bytes as unknown as BodyInit
+      });
+    } catch (error) {
+      throw new ControlApiError(0, "CONTROL_UNAVAILABLE", error);
+    }
+    const payload = await parseJson(response);
+    if (!response.ok) {
+      const code = readErrorCode(payload) ?? `HTTP_${response.status}`;
+      if (response.status === 401 && code === "CONTROL_AUTH_REQUIRED") this.csrfToken = null;
+      throw new ControlApiError(response.status, code, payload);
+    }
+    const manifest = (payload as { readonly manifest?: ProjectAssetManifestView }).manifest;
+    if (manifest === undefined) throw new ControlApiError(response.status, "INVALID_CONTROL_RESPONSE", payload);
+    return manifest;
   }
 
   private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
