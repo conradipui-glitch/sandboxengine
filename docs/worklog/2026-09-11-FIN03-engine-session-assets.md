@@ -45,6 +45,13 @@ Defect reproduction first: with the branch disabled the new test fails
 `apps/server/test/fin03-session-assets.test.mjs`, 1 test / 1 pass after the fix
 (0 pass / 1 fail with the route disabled).
 
+The repro agent's independent suite `fin03-open-session-assets.test.mjs` (3 cases:
+re-uploaded bytes under an immutable URL, an open session after republish, an open
+session after unpublish) was RED before the fix — `tests 3 / fail 3` — and is
+**3/3 green** on the merged branch. Its RED evidence is what exposed the
+fallback-to-library bug in the public route, which the first cut of this fix had
+not covered.
+
 It builds two releases and plays a real Control + publication-store loop:
 upload `cellar-bg` (revision 0) → start a session → the session route serves the
 exact bytes, `image/png`, `private`; a credential-less request and a forged
