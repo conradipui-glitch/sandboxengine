@@ -1269,6 +1269,11 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
           SELECT * FROM control_mission_sessions WHERE session_id = ?
         `).get(String(replayRow.session_id)));
         if (!existing) return frozen({ kind: "invalid_request", errors: Object.freeze(["mission.session_lost"]) });
+        // Second line of defence: the stored owner must be the caller, so even a
+        // row hashed before `actorUserId` was canonicalised fails closed instead
+        // of handing a foreign session to the caller. The legitimate repeat by
+        // the same participant stays an idempotent `replay`.
+        if (existing.actorUserId !== input.actorUserId) return frozen({ kind: "idempotency_key_reused" });
         return frozen({ kind: "replay", session: existing });
       }
 
@@ -1884,10 +1889,16 @@ function validateMissionTurnInput(input: ApplyMissionTurnInput): string[] {
 }
 
 function hashMissionSessionRequest(projectId: string, questId: string, input: CreateMissionSessionInput): string {
+  // `actorUserId` is part of the canonical request: a session is owned by the
+  // participant who opened it, so the same (sessionId, idempotencyKey) pair sent
+  // by a *different* participant is a different request and must not resolve to
+  // the first participant's session. Omitting the actor made the idempotency key
+  // global instead of per-actor.
   const canonical = JSON.stringify({
     projectId,
     questId,
     sessionId: input.sessionId,
+    actorUserId: input.actorUserId,
     contentRevision: input.contentRevision ?? null,
     initialWorld: input.initialWorld
   });
@@ -2347,12 +2358,22 @@ function collaborationAnchorScopeId(targetId: string): string | null {
 }
 
 /**
- * Honest `anchorDeleted` resolution per anchor kind:
- *  - `board` pins are never deleted;
- *  - `scene` targets live in the flat id set (draft blocks + mission scenes/endings);
- *  - `layer`/`field` targets live *inside* a block or scene, so they are only
- *    «deleted» when the enclosing scope is provably gone. A well-formed target
- *    that cannot be placed (bare id, unknown namespace) stays `false`.
+ * Honest `anchorDeleted` resolution, dispatched by `anchor.kind`:
+ *  - `board` — a pin carries no target at all, so it is never «deleted» (null);
+ *  - `scene` — the target is a top-level scene id. A readable authored mission
+ *    document is authoritative for that id space, so the target must be one of
+ *    its scenes/endings; a draft block id that merely collides with the anchor
+ *    id describes a *different* entity and must not revive the anchor. Only when
+ *    no mission document is readable does the resolver fall back to draft block
+ *    ids (the pre-mission state of the quest);
+ *  - `layer`/`field` — the target is a free-form sub-object id ("bg",
+ *    "scenes.workshop.title", "depot.title"). It lives *inside* a block or
+ *    scene, not beside it, so it is deliberately not matched against the flat
+ *    block/scene/layer id sets: a missing flat id says nothing about the anchor.
+ *    Such a thread is only reported deleted when the enclosing block/scene its
+ *    target names is provably gone; anything unresolvable (bare id, document
+ *    namespace, unknown scope) stays `false` — an honest «unknown» beats a false
+ *    «удалён».
  */
 function collaborationAnchorDeleted(anchor: CollaborationAnchor, scope: CollaborationAnchorScope): boolean {
   if (anchor.kind === "board") return false;
@@ -2361,9 +2382,9 @@ function collaborationAnchorDeleted(anchor: CollaborationAnchor, scope: Collabor
   // With no readable source there is nothing to compare against: report «не знаю».
   if (!scope.draftAvailable && !scope.missionAvailable) return false;
   if (anchor.kind === "scene") {
-    return !(scope.blockIds.has(targetId) || scope.sceneIds.has(targetId));
+    if (scope.missionAvailable) return !scope.sceneIds.has(targetId);
+    return !scope.blockIds.has(targetId);
   }
-  if (scope.blockIds.has(targetId) || scope.sceneIds.has(targetId) || scope.layerIds.has(targetId)) return false;
   const scopeId = collaborationAnchorScopeId(targetId);
   if (scopeId === null) return false;
   if (scope.blockIds.has(scopeId) || scope.sceneIds.has(scopeId) || scope.layerIds.has(scopeId)) return false;
