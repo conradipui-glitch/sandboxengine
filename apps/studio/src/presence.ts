@@ -60,7 +60,12 @@ export interface PresenceRoomState {
   readonly selfConnectionId: string | null;
   readonly revokedReason: string | null;
   readonly lastPingAtMs: number | null;
-  readonly streamState: "idle" | "open" | "closed";
+  /**
+   * Реальное состояние потока. «connecting» — поток создаётся, но сервер ещё
+   * не подтвердил открытие; «open» ставит ТОЛЬКО callback streamFactory об
+   * открытии, поэтому UI не обещает подключение раньше факта.
+   */
+  readonly streamState: "idle" | "connecting" | "open" | "closed";
 }
 
 export type PresenceFrame =
@@ -476,14 +481,20 @@ export function createPresenceClient(deps: PresenceClientDeps): PresenceClient {
         },
         (status) => {
           if (status === "open") {
+            // Только реальный callback потока подтверждает открытие.
             if (state.streamState !== "open") notify(Object.freeze({ ...state, streamState: "open" }));
             return;
           }
           if (state.revokedReason !== null) return;
-          if (state.streamState !== "closed") notify(Object.freeze({ ...state, streamState: "closed" }));
+          // Закрытие не помечает соединение мёртвым навсегда: EventSource
+          // переподключается, поэтому честное состояние — «снова подключаемся».
+          if (state.streamState !== "connecting") notify(Object.freeze({ ...state, streamState: "connecting" }));
         }
       );
-      notify(Object.freeze({ ...state, streamState: "open" }));
+      // Поток создан, но открытие ещё не подтверждено: обещать «open» рано.
+      // Меняем только idle → connecting: если factory уже успела подтвердить
+      // «open» синхронно, подтверждение не понижается обратно.
+      if (state.streamState === "idle") notify(Object.freeze({ ...state, streamState: "connecting" }));
     },
     detach(): void {
       closeStream?.();
@@ -534,6 +545,7 @@ export interface PresenceRenderOptions {
 export function renderPresenceBar(state: PresenceRoomState, options: PresenceRenderOptions): string {
   const others = state.participants.filter((entry) => entry.connectionId !== options.selfConnectionId);
   const revoked = options.revokedReason ?? state.revokedReason;
+  const stream = state.streamState;
   const items = others.map((participant) => {
     const focused = participant.userId === options.focusedUserId;
     return `<li class="presence-person${focused ? " focused" : ""}" data-user-id="${escapeAttr(participant.userId)}" data-connection-id="${escapeAttr(participant.connectionId)}">
@@ -544,11 +556,35 @@ export function renderPresenceBar(state: PresenceRoomState, options: PresenceRen
       <span class="presence-activity">${escapeHtml(presenceActivity(participant))}</span>
     </li>`;
   });
+  // Честный статус: пока поток не подтверждён сервером — никаких заявлений о
+  // том, кто «на доске» и видны ли курсоры. Уверенный счётчик и список только
+  // при streamState === "open".
+  let statusLine: string;
+  if (revoked !== null && revoked !== undefined) {
+    statusLine = `<span class="presence-revoked" data-presence-revoked role="alert">Поток присутствия остановлен сервером (${escapeHtml(revoked)}).</span>`;
+  } else if (stream !== "open") {
+    statusLine = stream === "closed"
+      ? `<span class="presence-state">Нет связи с присутствием. Переподключаемся…</span>`
+      : `<span class="presence-state">Подключение к присутствию…</span>`;
+  } else {
+    statusLine = `<span class="presence-title">На доске: ${others.length}</span>`;
+  }
+  // Список участников — только при подтверждённом потоке и только реальные
+  // участники из снимка сервера. Пустое «никого нет» — тоже только при open.
+  const people = stream !== "open"
+    ? ""
+    : items.join("") !== ""
+      ? `<ul class="presence-people">${items.join("")}</ul>`
+      : `<ul class="presence-people"><li class="presence-empty">Кроме вас никого нет.</li></ul>`;
+  // Пояснение — раскрываемая справка, а не постоянный абзац. Справка обещает
+  // ровно то, что делает код: подсветку выбранного участника, не слежение.
   return `<div class="presence-bar" data-presence-bar role="status" aria-label="Участники на доске">
-    <span class="presence-title">На доске: ${others.length}</span>
-    <ul class="presence-people">${items.join("") || `<li class="presence-empty">Кроме вас никого нет.</li>`}</ul>
-    <span class="presence-note">Курсоры видны с реальных сессий. Клик по аватару показывает, где работает участник.</span>
-    ${revoked === null || revoked === undefined ? "" : `<span class="presence-revoked" data-presence-revoked role="alert">Поток присутствия остановлен сервером (${escapeHtml(revoked)}).</span>`}
+    ${statusLine}
+    ${people}
+    <details class="presence-help" data-presence-help>
+      <summary class="presence-help-summary">Справка</summary>
+      <p class="presence-help-body">Курсоры видны только с реальных сессий участников проекта. Кнопка аватара выделяет участника в списке, но не перемещает вашу доску за его курсором.</p>
+    </details>
   </div>`;
 }
 
@@ -631,18 +667,56 @@ export function mountPresence(root: unknown, deps: PresenceMountDeps): PresenceH
   const container = root as HTMLElement;
   const doc = document_;
 
-  const bar = doc.createElement("div");
-  bar.className = "presence-bar-host";
   const layer = doc.createElement("div");
   layer.className = "presence-layer";
   container.appendChild(layer);
-  container.appendChild(bar);
+
+  // Строка статуса — НЕ овал поверх карточек, а отдельная строка потока хоста
+  // перед полотном. Полотно при этом сжимается, и полученную высоту строки
+  // mountPresence вычитает из viewport доски: курсоры продолжают указывать в
+  // те же точки доски. Если структура хоста незнакомая — строка встаёт в конец,
+  // как раньше, и сдвиг не применяется.
+  const bar = doc.createElement("div");
+  bar.className = "presence-status-host";
+  let canvasOffset = 0;
+  let viewportElement: { previousSibling: unknown } | null = null;
+  let inserted = false;
+  for (const child of Array.from(container.children) as Array<{ className?: string }>) {
+    if (typeof child.className === "string" && child.className.includes("board-viewport")) {
+      viewportElement = child as unknown as { previousSibling: unknown };
+      break;
+    }
+  }
+  if (viewportElement !== null && typeof (container as { insertBefore?: unknown }).insertBefore === "function") {
+    container.insertBefore(bar, viewportElement as unknown as HTMLElement);
+    inserted = true;
+    // insertBefore обновляет соседние ссылки сам; для пересчёта сдвига canvas
+    // достаточно факта вставки перед полотном.
+  }
+  if (!inserted) container.appendChild(bar);
+
+  /** Высота элементов хоста ПЕРЕД полотном — её canvas не учитывает сам. */
+  const measureCanvasOffset = (): number => {
+    const host = bar.parentElement as { children?: unknown[] } | null | undefined;
+    if (!host || !Array.isArray(host.children) || viewportElement === null) return 0;
+    let offset = 0;
+    for (const child of host.children) {
+      if (child === viewportElement) break;
+      const element = child as { offsetHeight?: number };
+      offset += Number(element.offsetHeight) || 0;
+    }
+    return offset;
+  };
 
   const render = (): void => {
     const state = deps.client.state();
     const viewport = deps.getViewport();
     bar.innerHTML = renderPresenceBar(state, { viewport, selfConnectionId: state.selfConnectionId, focusedUserId: null });
     layer.innerHTML = renderPresenceCursors(state, { viewport, selfConnectionId: state.selfConnectionId, focusedUserId: null });
+    // offsetHeight читается после innerHTML: чтение форсирует layout, поэтому
+    // высота справки/списка участников учитывается сразу, а не на следующий кадр.
+    canvasOffset = measureCanvasOffset();
+    layer.setAttribute("data-canvas-offset", String(canvasOffset));
   };
 
   const onPointerMove = (event: PointerEvent): void => {
@@ -651,8 +725,10 @@ export function mountPresence(root: unknown, deps: PresenceMountDeps): PresenceH
       : { x: event.clientX, y: event.clientY };
     const viewport = deps.getViewport();
     if (!isPresenceViewport(viewport)) return;
-    // Наружу уходит точка в системе доски — одинаковая для всех zoom/pan.
-    deps.client.publish({ cursor: presenceScreenToBoard(point, viewport) });
+    // Наружу уходит точка в системе доски: пан/зум viewport'а складывается со
+    // сдвигом строки статуса, поэтому экранный → досочный пересчёт остаётся
+    // верным при любой высоте строки.
+    deps.client.publish({ cursor: presenceScreenToBoard({ x: point.x, y: point.y - canvasOffset }, viewport) });
   };
   const onPointerLeave = (): void => {
     deps.client.publish({ cursor: null });
