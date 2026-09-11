@@ -1104,8 +1104,14 @@ async function routeControlRequest(
       return;
     }
     const result = await store.validateDraft(projectId, questId, body.draftRevision);
-    if (result.kind === "validated") sendJson(response, 201, { validation: validationView(result.validation) });
-    else sendNotFound(response);
+    if (result.kind !== "validated") { sendNotFound(response); return; }
+    // «Проверить» also answers whether a release could be frozen from this
+    // draft. Without it the author saw "valid" and then hit a build that
+    // refused to start, with no way to tell why.
+    const readiness = missionStore
+      ? await resolveReleaseReadiness(missionStore, projectId, questId)
+      : null;
+    sendJson(response, 201, { validation: validationView(result.validation, readiness) });
     return;
   }
 
@@ -1715,7 +1721,7 @@ function projectDraftView(draft: DraftSnapshot): object {
   });
 }
 
-function validationView(validation: DraftValidationRecord): object {
+function validationView(validation: DraftValidationRecord, releaseReadiness: object | null = null): object {
   return Object.freeze({
     validationId: validation.validationId,
     projectId: validation.projectId,
@@ -1724,7 +1730,8 @@ function validationView(validation: DraftValidationRecord): object {
     contentHash: validation.contentHash,
     status: validation.status,
     errors: validation.errors,
-    compiledContentHash: validation.compiledContentHash
+    compiledContentHash: validation.compiledContentHash,
+    releaseReadiness
   });
 }
 
@@ -2253,6 +2260,69 @@ async function settleInterruptedPublications(
 }
 
 /**
+ * The authored revision a release may be frozen from: the newest authored
+ * history entry, or — when the author has not saved any revision yet — the
+ * current mission document, with every referenced asset resolved. Returns the
+ * same codes the freeze reports, so «Проверить» and «собрать выпуск» cannot
+ * disagree about whether a release can be built.
+ */
+async function resolveAuthoredMissionRevision(
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  projectId: string,
+  questId: string
+): Promise<
+  | {
+      readonly ok: true;
+      readonly revisionNumber: number;
+      readonly contentHash: string;
+      readonly mission: any;
+      readonly assets: readonly { readonly assetId: string; readonly hash: string }[];
+    }
+  | { readonly ok: false; readonly code: string }
+> {
+  const history = await missionStore.getMissionHistory(projectId, questId);
+  const latest = history[history.length - 1];
+  let revisionNumber: number;
+  let contentHash: string;
+  if (latest) {
+    revisionNumber = latest.contentRevision;
+    contentHash = latest.contentHash;
+  } else {
+    // A release may be built before any authored revision exists (the very
+    // first draft); then that draft is the only content there is.
+    const current = await missionStore.getMission(projectId, questId);
+    if (!current) return { ok: false, code: "MISSION_REVISION_UNAVAILABLE" };
+    revisionNumber = current.contentRevision;
+    contentHash = current.contentHash;
+  }
+  const authored = await missionStore.getMissionAtRevision(projectId, questId, revisionNumber);
+  if (!authored || authored.contentHash !== contentHash) {
+    return { ok: false, code: "MISSION_REVISION_UNAVAILABLE" };
+  }
+  const assets = await resolveReferencedAssets(missionStore, projectId, authored.mission);
+  const missing = collectReferencedAssetIds(authored.mission)
+    .filter((assetId) => !assets.some((asset) => asset.assetId === assetId));
+  if (missing.length > 0) return { ok: false, code: "ASSET_MISSING" };
+  return { ok: true, revisionNumber, contentHash, mission: authored.mission, assets };
+}
+
+/**
+ * Whether a release could actually be frozen right now. «Проверить» runs the
+ * same resolution the freeze runs, so the author is told on validation instead
+ * of discovering on «Опубликовать» that the build refuses to start.
+ */
+async function resolveReleaseReadiness(
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  projectId: string,
+  questId: string
+): Promise<object> {
+  const authored = await resolveAuthoredMissionRevision(missionStore, projectId, questId);
+  return Object.freeze(authored.ok
+    ? { status: "ready" as const, missionRevision: authored.revisionNumber }
+    : { status: "blocked" as const, code: authored.code });
+}
+
+/**
  * Resolves, and when necessary establishes, the immutable bundle of a release.
  *
  *  - An existing pin is authoritative: the mission is read at the pinned
@@ -2313,37 +2383,16 @@ async function resolveReleaseBundle(
       // revision it never contained. Builds freeze the pin (asset-checked); the
       // fallback below only covers releases built outside this server, where the
       // newest authored revision is the best — and only — available evidence.
-      const history = await missionStore.getMissionHistory(projectId, questId);
-      const latest = history[history.length - 1];
-      let authoredRevisionNumber: number;
-      let authoredContentHash: string;
-      if (latest) {
-        authoredRevisionNumber = latest.contentRevision;
-        authoredContentHash = latest.contentHash;
-      } else {
-        // A release may be built before any authored revision exists (the very
-        // first draft); then that draft is the only content there is.
-        const current = await missionStore.getMission(projectId, questId);
-        if (!current) return { kind: "bundle_unavailable", code: "MISSION_REVISION_UNAVAILABLE" };
-        authoredRevisionNumber = current.contentRevision;
-        authoredContentHash = current.contentHash;
-      }
-      const authoredRevision = await missionStore.getMissionAtRevision(projectId, questId, authoredRevisionNumber);
-      if (!authoredRevision || authoredRevision.contentHash !== authoredContentHash) {
-        return { kind: "bundle_unavailable", code: "MISSION_REVISION_UNAVAILABLE" };
-      }
-      const manifest = await resolveReferencedAssets(missionStore, projectId, authoredRevision.mission);
-      const missing = collectReferencedAssetIds(authoredRevision.mission)
-        .filter((assetId) => !manifest.some((asset) => asset.assetId === assetId));
-      if (missing.length > 0) return { kind: "bundle_unavailable", code: "ASSET_MISSING" };
+      const authored = await resolveAuthoredMissionRevision(missionStore, projectId, questId);
+      if (!authored.ok) return { kind: "bundle_unavailable", code: authored.code };
       pin = {
         schemaVersion: "1.0",
         releaseId,
         projectId,
         questId,
-        missionRevision: authoredRevisionNumber,
-        missionContentHash: authoredContentHash,
-        assets: manifest,
+        missionRevision: authored.revisionNumber,
+        missionContentHash: authored.contentHash,
+        assets: authored.assets,
         assetsVerified: true,
         pinnedAtMs: Date.now()
       };

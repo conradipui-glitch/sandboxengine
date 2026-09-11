@@ -146,6 +146,12 @@ export type RollbackResultView =
 
 export type PublicationResultView = PublishResultView | RollbackResultView;
 
+export interface ValidationReleaseReadinessView {
+  readonly status: "ready" | "blocked";
+  readonly missionRevision?: number;
+  readonly code?: string;
+}
+
 export interface ValidationView {
   readonly validationId: string;
   readonly projectId: string;
@@ -155,6 +161,11 @@ export interface ValidationView {
   readonly status: "valid" | "invalid";
   readonly errors: readonly string[];
   readonly compiledContentHash: string | null;
+  /**
+   * Готовность к сборке выпуска на момент проверки: `blocked` значит, что
+   * проверка пройдена, но «Опубликовать» из неё не соберётся — причина в `code`.
+   */
+  readonly releaseReadiness?: ValidationReleaseReadinessView | null;
 }
 
 export interface PlaytestView {

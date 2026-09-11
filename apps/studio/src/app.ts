@@ -17,6 +17,7 @@ import {
   type QuestSummaryView,
   type ValidationView
 } from "./api.js";
+import { describeControlError, describeReleaseReadiness } from "./control-errors.js";
 import {
   createInitialLocationBlock,
   createPaintActionBlock,
@@ -2341,9 +2342,7 @@ export class StudioApp {
   private setError(error: unknown): void {
     this.state.phase = "error";
     if (error instanceof ControlApiError) {
-      this.state.message = error.status === 0
-        ? "Control API недоступен. Проверьте локальный сервер."
-        : `Control API: ${error.code}.`;
+      this.state.message = describeControlError(error);
       return;
     }
     this.state.message = error instanceof Error ? error.message : "Неизвестная ошибка Studio.";
@@ -3804,9 +3803,13 @@ function paintActionRow(action: ActionBlock, editable: boolean): string {
 function validationPanel(validation: ValidationView | null, draft: DraftView): string {
   if (!validation) return `<div class="validation-empty">Проверок для текущей работы ещё нет.</div>`;
   const stale = validation.draftRevision !== draft.draftRevision || validation.contentHash !== draft.contentHash;
+  // Проверка и сборка выпуска отвечают на один вопрос, поэтому автор узнаёт о
+  // блокере здесь, а не на «Опубликовать» (R-01 полного ревью кода).
+  const blockedReason = stale ? null : describeReleaseReadiness(validation.releaseReadiness);
   return `<div class="validation-result ${validation.status}">
     <strong>${validation.status === "valid" ? "Квест готов" : "Найдены ошибки"}</strong>
     ${stale ? `<p class="stale-note">Этот отчёт относится к предыдущей версии. Проверьте квест снова после изменений.</p>` : ""}
+    ${blockedReason ? `<p class="stale-note" data-release-blocked>Выпуск пока не собрать: ${escapeHtml(blockedReason)}</p>` : ""}
     ${validation.errors.length ? `<ul>${validation.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
     <details class="diagnostics"><summary>Дополнительно: данные проверки</summary>
       <div>Версия: <code>${validation.draftRevision}</code>, сумма: <code>${escapeHtml(shortHash(validation.contentHash))}</code></div>
