@@ -33,6 +33,14 @@ export async function probeStudioAccess(api: ControlApiClient): Promise<StudioAc
     return authenticatedAccessState(api, auth);
   } catch (error) {
     if (error instanceof ControlApiError && error.status === 401 && error.code === "CONTROL_AUTH_REQUIRED") {
+      // Режим единого входа: сессия уже подтверждена на краю (gate), поэтому
+      // вторая форма с логином и паролем не показывается — берём сессию Control
+      // по подписанному ассерту. Если режим не включён, поведение прежнее.
+      try {
+        return authenticatedAccessState(api, await api.openGateSession());
+      } catch {
+        // gate-режим не включён — обычная форма входа.
+      }
       return freeze({
         mode: "anonymous" as const,
         auth: null,

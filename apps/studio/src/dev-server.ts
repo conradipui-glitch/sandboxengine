@@ -13,6 +13,7 @@ const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
   "content-type",
   "cookie",
   "origin",
+  "x-lhc-gate-identity",
   "x-csrf-token",
   "idempotency-key",
   "x-asset-id",

@@ -422,6 +422,24 @@ export class ControlApiClient {
     return Object.freeze({ user: body.user, session: body.session });
   }
 
+  /**
+   * Единый вход: подтверждённая сессия gate обменивается на сессию Control без
+   * логина и пароля. Подпись и секрет живут на сервере — браузер их не знает.
+   */
+  async openGateSession(): Promise<ControlAuthView> {
+    const body = await this.request<ControlLoginResponse>(
+      "POST",
+      "/auth/gate/session",
+      {},
+      { csrf: "omit" }
+    );
+    if (typeof body.csrfToken !== "string" || body.csrfToken.length < 20 || body.csrfToken.length > 256) {
+      throw new ControlApiError(200, "INVALID_CONTROL_RESPONSE", body);
+    }
+    this.csrfToken = body.csrfToken;
+    return Object.freeze({ user: body.user, session: body.session });
+  }
+
   async getSession(): Promise<ControlAuthView> {
     return this.request<ControlAuthView>("GET", "/auth/session");
   }

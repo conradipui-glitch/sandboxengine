@@ -62,6 +62,13 @@ services:
       - LH_DATABASE_PATH=/data/living-history.sqlite
       - LH_STUDIO_PORT=8740
       - LH_PLAYER_FIXED_PORT=8745
+      # Единый вход: Studio доверяет только подписанному ассерту gate, парольного
+      # входа в этом режиме нет, права берутся из членства проекта. Без этих строк
+      # прод-Studio остаётся в local-режиме и раздаёт всем роль владельца.
+      - CONTROL_AUTH_MODE=authenticated
+      - CONTROL_SECURE_COOKIES=true
+      - CONTROL_ALLOWED_ORIGINS=https://85.137.95.104.sslip.io:8741
+      - LH_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET}
     volumes:
       - engine-data:/data
     depends_on:
@@ -80,6 +87,7 @@ services:
       - LHC_STUDIO_ORIGIN=https://85.137.95.104.sslip.io:8741
       - LHC_STORE=/data/lhc-gate-state.json
       - LHC_GATE_SECRET=${LHC_GATE_SECRET}
+      - LHC_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET}
       - LHC_TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
       - LHC_OWNER_TELEGRAM_ID=${LHC_OWNER_TELEGRAM_ID:-332664273}
     volumes:

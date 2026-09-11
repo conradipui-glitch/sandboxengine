@@ -127,18 +127,21 @@ test("Studio main.ts: единый вход через gate не требует 
     assert.equal(login.status, 404, "bootstrap-учётка не является путём входа в Studio");
   });
 
-  await t.test("GATE-14: вход в browser-путь Studio проксируется без ассерта — нужна правка вне зоны", async () => {
-    // Studio раздаёт и /control/*, а его прокси Control фильтрует ЗАГОЛОВКИ по
-    // allow-list (`apps/studio/src/dev-server.ts`), где `x-lhc-gate-identity`
-    // пока нет. Значит, браузерный путь через Studio:8740 до Control ассерт не
-    // доводит. Это ровно та правка, которая вынесена в отчёт, а не спрятана:
-    // пока она не сделана, браузерный вход через Studio в gate-режиме получает
-    // 401, а не «гостевого владельца».
+  await t.test("GATE-14: browser-путь Studio доводит подписанный ассерт до Control", async () => {
+    // Правка вне зоны сделана: `apps/studio/src/dev-server.ts` пропускает
+    // `x-lhc-gate-identity` в прокси Control. До неё ассерт через Studio:8740 не
+    // доходил и браузерный вход в gate-режиме получал 401 (это было измерено
+    // здесь же); теперь браузерный путь работает так же, как прямой к Control.
     const viaStudio = await fetch(`${studioBase}/control/v1/auth/session`, {
       headers: { "x-lhc-gate-identity": assertion(SECRET) }
     });
-    assert.equal(viaStudio.status, 401);
-    assert.equal((await viaStudio.json()).error.code, "CONTROL_AUTH_REQUIRED");
+    assert.equal(viaStudio.status, 200, "прокси Studio передал ассерт в Control");
+    assert.equal((await viaStudio.json()).user.userId, `telegram:${TELEGRAM_ID}`);
+    // Подделка по-прежнему не проходит: присланный браузером Telegram-ID доступа не даёт.
+    const spoof = await fetch(`${studioBase}/control/v1/auth/session`, {
+      headers: { "x-lhc-telegram-id": TELEGRAM_ID }
+    });
+    assert.equal(spoof.status, 401);
   });
 });
 
