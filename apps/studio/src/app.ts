@@ -18,7 +18,8 @@ import {
   type QuestSummaryView,
   type ValidationView
 } from "./api.js";
-import { describeControlError, describeReleaseReadiness } from "./control-errors.js";
+import {
+  explainControlCode, describeControlError, describeReleaseReadiness } from "./control-errors.js";
 import {
   NOT_STARTED_TOUR,
   completeOnboardingTour,
@@ -110,6 +111,7 @@ import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import { renderAiPanel } from "./ai-panel.js";
+import { renderPublishPanel } from "./publish-panel.js";
 import {
   addScreenLayer,
   defaultScreen,
@@ -216,7 +218,10 @@ interface StudioState {
     | { readonly kind: "choice"; readonly sourceId: string; readonly targetId: string; readonly targetKind: "scene" | "ending" }
     | null;
   editorMenuOpen: boolean;
-  utilityPanel: "versions" | "portability" | "settings" | "materials" | null;
+  utilityPanel: "versions" | "portability" | "settings" | "materials" | "publish" | null;
+  /** Адрес сайта и слаг опубликованной миссии: заданы — панель показывает ссылку, нет — честно молчит. */
+  siteBaseUrl: string | null;
+  publishedSlug: string | null;
   blockModalKind: InspectorBlockKind | null;
   inspectorDraft: { readonly blockId: string; readonly fields: Readonly<Record<string, string | boolean>>; readonly dirty: boolean } | null;
   focusAfterRender: string | null;
@@ -247,6 +252,8 @@ export class StudioApp {
     releaseBuildIntent: null,
     publishReport: null,
     publicationReceipt: null,
+    siteBaseUrl: studioSiteBaseUrl(),
+    publishedSlug: null,
     deletionIntent: null,
     playerUrl: null,
     playerPlaytestId: null,
@@ -296,6 +303,9 @@ export class StudioApp {
   private aiPanelDispose: (() => void) | null = null;
   private aiPanelHost: HTMLElement | null = null;
   private pendingAiDocument: MissionDraft | null = null;
+  /** Живая панель публикации: одна кнопка «Проверить и опубликовать» с рабочей ссылкой. */
+  private publishHandle: { dispose: () => void; refresh: () => Promise<void> } | null = null;
+  private publishHost: HTMLElement | null = null;
   private presenceClient: PresenceClient | null = null;
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
@@ -609,7 +619,7 @@ export class StudioApp {
     }
     if (action === "open-utility-panel") {
       const panel = target.dataset.panel;
-      if (panel === "versions" || panel === "portability" || panel === "settings" || panel === "materials") {
+      if (panel === "versions" || panel === "portability" || panel === "settings" || panel === "materials" || panel === "publish") {
         this.state.utilityPanel = panel;
         this.state.editorMenuOpen = false;
         this.render();
@@ -2549,6 +2559,97 @@ export class StudioApp {
     this.mountLibraryIfNeeded();
     this.mountMaterialsIfNeeded();
     this.mountAiPanelIfNeeded();
+    this.mountPublishPanelIfNeeded();
+  }
+
+  /**
+   * Панель публикации: проверка готовности → выпуск → публикация exact release.
+   * Ссылка для игроков берётся только из фактического результата публикации; если адрес
+   * сайта в сборке не задан, панель честно показывает его отсутствие, а не выдумывает URL.
+   */
+  private mountPublishPanelIfNeeded(): void {
+    if (this.state.view !== "editor" || this.state.utilityPanel !== "publish") return;
+    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    const host = this.root.querySelector<HTMLElement>("[data-publish-host]");
+    const projectId = this.state.selectedProjectId;
+    const questId = this.state.selectedQuestId;
+    if (!host || !projectId || !questId) return;
+    if (this.publishHost === host) return;
+    if (this.publishHandle) {
+      this.publishHandle.dispose();
+      this.publishHandle = null;
+    }
+    this.publishHost = host;
+    this.publishHandle = renderPublishPanel({
+      root: host,
+      check: async () => {
+        const draft = await this.api.getDraft(projectId, questId);
+        const validation = await this.api.validateDraft(projectId, questId, draft.draftRevision);
+        const blocking: { code: string; message: string }[] = [];
+        if (validation.status !== "valid") {
+          for (const error of validation.errors ?? []) {
+            blocking.push({ code: error, message: explainControlCode(error) ?? `Проверка миссии: ${error}` });
+          }
+          if (blocking.length === 0) {
+            blocking.push({ code: "PUBLICATION_NOT_VALIDATED", message: "Миссия ещё не прошла проверку. Нажмите «Проверить миссию»." });
+          }
+        }
+        return {
+          ok: blocking.length === 0,
+          blocking,
+          warning: (this.state.versions?.currentReleaseId ?? null) !== null
+            ? [{ code: "REPUBLICATION_REPLACES_VERSION", message: "Сайт начнёт отдавать новую версию. Уже начатые игры продолжат свою." }]
+            : []
+        };
+      },
+      publish: async () => {
+        try {
+          const draft = await this.api.getDraft(projectId, questId);
+          const validation = await this.api.validateDraft(projectId, questId, draft.draftRevision);
+          if (validation.status !== "valid") {
+            return { ok: false, message: "Публиковать нечего: сначала пройдите проверку миссии.", publicUrl: null, publicMissionId: null };
+          }
+          const releaseId = `release-${Date.now().toString(36)}`;
+          const release = await this.api.buildRelease(projectId, questId, {
+            releaseId,
+            draftRevision: draft.draftRevision,
+            validationId: validation.validationId
+          }, `publish-panel-${releaseId}`);
+          const expected = this.state.versions?.currentReleaseId ?? null;
+          await this.api.publishRelease(projectId, questId, release.releaseId, expected, `publish-panel-confirm-${releaseId}`);
+          await this.refreshVersions(projectId, questId);
+          const slug = this.state.versions?.releases.find((item) => item.releaseId === release.releaseId)?.releaseId ?? release.releaseId;
+          this.state.publishedSlug = slug;
+          this.state.message = `Опубликовано: ${slug}. Сайт отдаёт новую версию.`;
+          this.render();
+          return { ok: true, message: "Опубликовано.", publicUrl: this.publicMissionUrl(), publicMissionId: slug };
+        } catch (error) {
+          return { ok: false, message: describeControlError(error), publicUrl: null, publicMissionId: null };
+        }
+      },
+      currentPublicUrl: async () => this.publicMissionUrl(),
+      revoke: async () => ({
+        ok: false,
+        message: "Снятие с публикации выполняет владелец в «Истории версий»: кнопка отзыва там же, где публикация выпуска.",
+        publicUrl: null,
+        publicMissionId: null
+      }),
+      onError: (error) => {
+        this.state.message = describeControlError(error);
+        this.render();
+      }
+    });
+  }
+
+  /**
+   * Адрес страницы миссии на сайте. База сайта в сборку не передаётся (сайт живёт отдельно
+   * в Cloudflare), поэтому без явной настройки адрес не выдумывается.
+   */
+  private publicMissionUrl(): string | null {
+    const base = this.state.siteBaseUrl;
+    const slug = this.state.publishedSlug;
+    if (base === null || slug === null) return null;
+    return `${base.replace(/\/+$/, "")}/p/${encodeURIComponent(slug)}/`;
   }
 
   /**
@@ -3609,6 +3710,7 @@ export class StudioApp {
                 <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" title="Дополнительные панели">…</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
                 <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
+                <button data-action="open-utility-panel" data-panel="publish" role="menuitem">Публикация</button>
                 <button data-action="open-utility-panel" data-panel="materials" role="menuitem">Материалы</button>
                 <button data-action="open-utility-panel" data-panel="portability" role="menuitem">Импорт и экспорт</button>
                 <button data-action="open-utility-panel" data-panel="settings" role="menuitem">Настройки проекта и доступа</button>
@@ -4249,6 +4351,17 @@ const TRANSLITERATION: Readonly<Record<string, string>> = Object.freeze({
   у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "",
   э: "e", ю: "yu", я: "ya"
 });
+
+/**
+ * Адрес сайта для ссылки игрокам. В сборку он не зашит: если страница его не объявила
+ * (meta name="lh-site-base"), панель публикации честно не показывает ссылку.
+ */
+function studioSiteBaseUrl(): string | null {
+  if (typeof document === "undefined") return null;
+  const declared = document.querySelector?.('meta[name="lh-site-base"]') as HTMLMetaElement | null;
+  const value = (declared?.content ?? "").trim();
+  return value.length > 0 ? value.replace(/\/+$/, "") : null;
+}
 
 function projectCard(item: ProjectView, questCount: number): string {
   return `<button class="project-card" data-action="open-project" data-project-id="${escapeAttr(item.projectId)}">

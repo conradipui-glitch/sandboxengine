@@ -22,9 +22,9 @@ export function renderPublishEntry(versions: VersionsReadModel | null): string {
   }
   if (versions !== null && versions.currentReleaseId !== null
       && versions.releases.every((release) => release.wasPublished || release.isCurrent)) {
-    return `<button class="button-secondary" data-action="open-utility-panel" data-panel="versions" title="Все выпуски уже опубликованы — открыть историю версий">Опубликовать…</button>`;
+    return `<button class="button-secondary" data-action="open-utility-panel" data-panel="publish" title="Все выпуски уже опубликованы — открыть историю версий">Опубликовать…</button>`;
   }
-  return `<button class="button-secondary" data-action="open-utility-panel" data-panel="versions" title="Публиковать пока нечего: проверьте миссию и создайте выпуск в истории версий">Опубликовать…</button>`;
+  return `<button class="button-secondary" data-action="open-utility-panel" data-panel="publish" title="Публиковать пока нечего: проверьте миссию и создайте выпуск в истории версий">Опубликовать…</button>`;
 }
 
 export interface RestoreIntent {

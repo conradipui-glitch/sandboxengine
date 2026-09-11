@@ -47,13 +47,14 @@ test("FIN: когда публиковать нечего, кнопка ведё
     currentReleaseId: null,
     releases: []
   });
-  assert.match(noReleases, /data-action="open-utility-panel" data-panel="versions"/);
+  // Кнопка ведёт в панель публикации: она сама проверяет готовность и объясняет причину отказа.
+  assert.match(noReleases, /data-action="open-utility-panel" data-panel="publish"/);
   assert.match(noReleases, /Публиковать пока нечего/);
   assert.doesNotMatch(noReleases, /data-action="prepare-publish"/);
 
   // Выпусков нет вовсе (versions ещё не загружены) — тоже честный вход, не «успех».
   const unknown = renderPublishEntry(null);
-  assert.match(unknown, /data-action="open-utility-panel" data-panel="versions"/);
+  assert.match(unknown, /data-action="open-utility-panel" data-panel="publish"/);
   assert.doesNotMatch(unknown, /data-action="prepare-publish"/);
 });
 
