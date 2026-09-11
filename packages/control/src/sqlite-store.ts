@@ -71,7 +71,7 @@ import type {
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 5;
+const CONTROL_SCHEMA_VERSION = 6;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -611,13 +611,21 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     const anchor = validateCollaborationAnchor(input.anchor);
     if (!anchor.ok) return invalidCollaboration(anchor.errors);
     if ("error" in text) return invalidCollaboration([text.error]);
+    if (input.replyToMessageId !== undefined && !isId(input.replyToMessageId)) return invalidCollaboration(["replyToMessageId"]);
     if (!isCollaborationIdempotencyKey(input.idempotencyKey)) return invalidCollaboration(["idempotencyKey"]);
     if (!isId(input.actorUserId)) return invalidCollaboration(["actorUserId"]);
     const normalized = text.text;
     const resolved = anchor.anchor;
+    const parent = input.replyToMessageId === undefined ? {} : { replyToMessageId: input.replyToMessageId };
     return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.create", {
-      anchor: resolved, text: normalized
+      anchor: resolved, text: normalized, ...parent
     }), input.idempotencyKey, input.actorUserId, (revision) => {
+      // The opening message of a brand-new thread has no sibling to answer, so
+      // the same parent predicate that guards addMessage runs here: any supplied
+      // parent necessarily falls outside this thread and is invalid. The check
+      // runs before the first write, so a rejected create leaves nothing behind.
+      const parentCheck = this.#validateCollaborationParent(projectId, questId, `thread-${revision}`, input.replyToMessageId);
+      if (!parentCheck.ok) return { kind: "invalid_request" as const, errors: parentCheck.errors };
       const now = Date.now();
       this.#db.prepare(`
         INSERT INTO control_collaboration_threads (
@@ -633,8 +641,8 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       this.#db.prepare(`
         INSERT INTO control_collaboration_messages (
           project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
-          created_at_ms, updated_at_ms, deleted_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+          created_at_ms, updated_at_ms, deleted_at_ms, parent_message_id
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL)
       `).run(projectId, questId, `thread-${revision}`, `message-${revision}`, input.actorUserId, normalized, now, now);
       return { kind: "created" as const };
     });
@@ -645,6 +653,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     const errors: string[] = [];
     if ("error" in text) errors.push(text.error);
     if (!isId(input.threadId)) errors.push("threadId");
+    if (input.replyToMessageId !== undefined && !isId(input.replyToMessageId)) errors.push("replyToMessageId");
     if (input.expectedRevision !== undefined && !isCollaborationRevision(input.expectedRevision)) errors.push("expectedRevision");
     if (!isCollaborationIdempotencyKey(input.idempotencyKey)) errors.push("idempotencyKey");
     if (!isId(input.actorUserId)) errors.push("actorUserId");
@@ -653,14 +662,17 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     // The optional CAS guard is part of the request identity only when it was
     // supplied, so keys written before it existed still replay byte-for-byte.
     const guard = input.expectedRevision === undefined ? {} : { expectedRevision: input.expectedRevision };
+    const parent = input.replyToMessageId === undefined ? {} : { replyToMessageId: input.replyToMessageId };
     return this.#collaborationWrite(projectId, questId, hashCollaborationRequest("comments.reply", {
-      threadId: input.threadId, text: normalized, ...guard
+      threadId: input.threadId, text: normalized, ...guard, ...parent
     }), input.idempotencyKey, input.actorUserId, (revision) => {
       const thread = this.#db.prepare(`
         SELECT revision FROM control_collaboration_threads
         WHERE project_id = ? AND quest_id = ? AND thread_id = ?
       `).get(projectId, questId, input.threadId);
       if (!thread) return { kind: "not_found" as const };
+      const parentCheck = this.#validateCollaborationParent(projectId, questId, input.threadId, input.replyToMessageId);
+      if (!parentCheck.ok) return { kind: "invalid_request" as const, errors: parentCheck.errors };
       const currentRevision = Number(thread.revision);
       if (input.expectedRevision !== undefined && currentRevision !== input.expectedRevision) {
         return { kind: "revision_conflict" as const, currentRevision };
@@ -669,9 +681,9 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       this.#db.prepare(`
         INSERT INTO control_collaboration_messages (
           project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
-          created_at_ms, updated_at_ms, deleted_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
-      `).run(projectId, questId, input.threadId, `message-${revision}`, input.actorUserId, normalized, now, now);
+          created_at_ms, updated_at_ms, deleted_at_ms, parent_message_id
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, ?)
+      `).run(projectId, questId, input.threadId, `message-${revision}`, input.actorUserId, normalized, now, now, input.replyToMessageId ?? null);
       this.#db.prepare(`
         UPDATE control_collaboration_threads SET revision = ?, updated_at_ms = ?
         WHERE project_id = ? AND quest_id = ? AND thread_id = ?
@@ -808,6 +820,12 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       if (outcome.kind === "not_found") return frozen({ kind: "not_found" });
       if (outcome.kind === "forbidden") return frozen({ kind: "forbidden" });
       if (outcome.kind === "revision_conflict") return frozen({ kind: "revision_conflict", currentRevision: outcome.currentRevision });
+      if (outcome.kind === "invalid_request") {
+        // A structurally invalid request (e.g. a parent outside this thread)
+        // writes nothing and does not consume the idempotency key: the same key
+        // stays usable for a corrected retry.
+        return invalidCollaboration(outcome.errors);
+      }
       if (outcome.kind === "noop") {
         // Nothing changed, so neither the collection nor the thread revision
         // moves; the key is still consumed so a replay stays honest.
@@ -843,6 +861,31 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     return row ? Number(row.revision) : 0;
   }
 
+  /**
+   * FIN-12 message-level parent predicate. A reply may only answer a message
+   * that exists in the very same thread and is not a soft-deleted tombstone;
+   * anything else is an `invalid_request`. The lookup is scoped by thread, so
+   * "does not exist" and "lives in another thread" collapse into the same
+   * honest rejection.
+   */
+  #validateCollaborationParent(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    replyToMessageId: string | undefined
+  ): { readonly ok: true } | { readonly ok: false; readonly errors: readonly string[] } {
+    if (replyToMessageId === undefined) return { ok: true };
+    const parent = this.#db.prepare(`
+      SELECT deleted_at_ms FROM control_collaboration_messages
+      WHERE project_id = ? AND quest_id = ? AND thread_id = ? AND message_id = ?
+    `).get(projectId, questId, threadId, replyToMessageId);
+    if (!parent) return { ok: false, errors: ["replyToMessageId"] };
+    if (parent.deleted_at_ms !== null && parent.deleted_at_ms !== undefined) {
+      return { ok: false, errors: ["replyToMessageId"] };
+    }
+    return { ok: true };
+  }
+
   #collaborationViewAt(projectId: string, questId: string, revision: number): CollaborationView {
     const noteRows = this.#db.prepare(`
       SELECT note_id, text, author_user_id, position_x, position_y, revision, created_at_ms, updated_at_ms
@@ -866,7 +909,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     }
 
     const messageRows = this.#db.prepare(`
-      SELECT thread_id, message_id, author_user_id, text, revision, created_at_ms, updated_at_ms, deleted_at_ms
+      SELECT thread_id, message_id, author_user_id, text, revision, created_at_ms, updated_at_ms, deleted_at_ms, parent_message_id
       FROM control_collaboration_messages
       WHERE project_id = ? AND quest_id = ?
       ORDER BY created_at_ms ASC, message_id ASC
@@ -880,6 +923,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         messageId: String(row.message_id),
         authorUserId: String(row.author_user_id),
         text: deleted ? "" : String(row.text),
+        replyToMessageId: row.parent_message_id === null || row.parent_message_id === undefined ? null : String(row.parent_message_id),
         revision: Number(row.revision),
         createdAtMs: Number(row.created_at_ms),
         updatedAtMs: Number(row.updated_at_ms),
@@ -1545,21 +1589,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         PRIMARY KEY (project_id, quest_id, thread_id),
         FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
       ) STRICT;
-      CREATE TABLE IF NOT EXISTS control_collaboration_messages (
-        project_id TEXT NOT NULL,
-        quest_id TEXT NOT NULL,
-        thread_id TEXT NOT NULL,
-        message_id TEXT NOT NULL,
-        author_user_id TEXT NOT NULL,
-        text TEXT NOT NULL,
-        revision INTEGER NOT NULL CHECK (revision >= 1),
-        created_at_ms INTEGER NOT NULL,
-        updated_at_ms INTEGER NOT NULL,
-        deleted_at_ms INTEGER NULL,
-        PRIMARY KEY (project_id, quest_id, thread_id, message_id),
-        FOREIGN KEY (project_id, quest_id, thread_id)
-          REFERENCES control_collaboration_threads(project_id, quest_id, thread_id)
-      ) STRICT;
+      ${collaborationMessagesDdl("control_collaboration_messages", { ifNotExists: true })}
       CREATE TABLE IF NOT EXISTS control_collaboration_idempotency (
         project_id TEXT NOT NULL,
         quest_id TEXT NOT NULL,
@@ -1574,6 +1604,11 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
     `);
     this.#transaction(() => {
       const schema = this.#db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
+      // FIN-12: the collaboration tables were introduced via CREATE IF NOT
+      // EXISTS without a version bump, so any pre-existing database may hold a
+      // messages table without the parent link. Adding it is idempotent, so it
+      // runs on every open, whatever the recorded version is.
+      this.#ensureCollaborationParentColumn();
       if (!schema) {
         this.#db.prepare("INSERT INTO control_meta (key, value) VALUES ('schema_version', ?)").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) === 1) {
@@ -1588,12 +1623,40 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       } else if (Number(schema.value) === 4) {
         // v5 adds the project asset library tables; CREATE IF NOT EXISTS above is the migration.
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 5) {
+        // v6 adds the message-level parent link to collaboration messages; the
+        // rebuild in #ensureCollaborationParentColumn above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
         throw new Error(`unsupported control schema version ${String(schema.value)}`);
       }
       this.#db.prepare("INSERT OR IGNORE INTO control_meta (key, value) VALUES ('validation_counter', 0)").run();
       this.#db.prepare("INSERT OR IGNORE INTO control_meta (key, value) VALUES ('playtest_counter', 0)").run();
     });
+  }
+
+  #ensureCollaborationParentColumn(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(control_collaboration_messages)").all() as any[];
+    if (columns.length === 0) return; // fresh database: CREATE above already includes the column
+    if (columns.some((column) => String(column.name) === "parent_message_id")) return;
+    // SQLite cannot add a table-level foreign key with ALTER TABLE, and a
+    // one-column REFERENCES to the composite primary key is rejected outright
+    // ("foreign key on parent_message_id should reference only one column").
+    // The parent link is therefore installed by rebuilding this small table in
+    // place: identical columns, every existing row carried over byte for byte,
+    // the new parent left NULL on all of them.
+    this.#db.exec(`
+      ALTER TABLE control_collaboration_messages RENAME TO control_collaboration_messages_pre_parent;
+      ${collaborationMessagesDdl("control_collaboration_messages", { ifNotExists: false })}
+      INSERT INTO control_collaboration_messages (
+        project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
+        created_at_ms, updated_at_ms, deleted_at_ms, parent_message_id
+      ) SELECT
+        project_id, quest_id, thread_id, message_id, author_user_id, text, revision,
+        created_at_ms, updated_at_ms, deleted_at_ms, NULL
+      FROM control_collaboration_messages_pre_parent;
+      DROP TABLE control_collaboration_messages_pre_parent;
+    `);
   }
 
   #insertSnapshot(snapshot: DraftSnapshot): void {
@@ -2117,13 +2180,46 @@ function frozen<T extends object>(value: T): Readonly<T> { return Object.freeze(
 
 // ---- FIN-12 collaboration helpers ----
 
+/**
+ * Single source of truth for the collaboration message table. Used by
+ * `#initialize` for fresh databases and by the FIN-12 parent migration, which
+ * rebuilds the table because SQLite cannot add the composite parent foreign key
+ * with ALTER TABLE.
+ */
+function collaborationMessagesDdl(tableName: string, options: { readonly ifNotExists: boolean }): string {
+  return `
+    CREATE TABLE ${options.ifNotExists ? "IF NOT EXISTS " : ""}${tableName} (
+      project_id TEXT NOT NULL,
+      quest_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      author_user_id TEXT NOT NULL,
+      text TEXT NOT NULL,
+      revision INTEGER NOT NULL CHECK (revision >= 1),
+      created_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      deleted_at_ms INTEGER NULL,
+      -- FIN-12 message-level parent: NULL for a top-level message, otherwise
+      -- the message this one answers. The composite foreign key pins it to the
+      -- very same thread, so a cross-thread or unknown parent is impossible.
+      parent_message_id TEXT NULL,
+      PRIMARY KEY (project_id, quest_id, thread_id, message_id),
+      FOREIGN KEY (project_id, quest_id, thread_id)
+        REFERENCES control_collaboration_threads(project_id, quest_id, thread_id),
+      FOREIGN KEY (project_id, quest_id, thread_id, parent_message_id)
+        REFERENCES control_collaboration_messages(project_id, quest_id, thread_id, message_id)
+    ) STRICT;
+  `;
+}
+
 type CollaborationMutationOutcome =
   | { readonly kind: "created" }
   | { readonly kind: "updated" }
   | { readonly kind: "noop" }
   | { readonly kind: "not_found" }
   | { readonly kind: "forbidden" }
-  | { readonly kind: "revision_conflict"; readonly currentRevision: number };
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
 
 type CollaborationAnchorValidation =
   | { readonly ok: true; readonly anchor: CollaborationAnchor }

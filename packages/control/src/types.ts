@@ -359,6 +359,14 @@ export interface CollaborationMessage {
   readonly messageId: string;
   readonly authorUserId: string;
   readonly text: string;
+  /**
+   * Id of the message this one answers, or `null` for a top-level message.
+   * The link is structural: the parent must live in the same thread and must
+   * not be a soft-deleted tombstone, otherwise the reply is an
+   * `invalid_request`. The link survives the parent's deletion (the child is
+   * never orphaned silently, it just points at a tombstone).
+   */
+  readonly replyToMessageId: string | null;
   readonly revision: number;
   readonly createdAtMs: number;
   readonly updatedAtMs: number;
@@ -438,6 +446,13 @@ export interface DeleteNoteInput {
 export interface CreateThreadInput {
   readonly anchor: CollaborationAnchor;
   readonly text: string;
+  /**
+   * Optional parent for the thread's opening message. A brand-new thread holds
+   * no messages, so a supplied value can never resolve to a parent inside that
+   * same thread and is always an `invalid_request`; the field exists so the
+   * store validates the link on every message-writing entry point.
+   */
+  readonly replyToMessageId?: string;
   readonly idempotencyKey: string;
   readonly actorUserId: string;
 }
@@ -445,6 +460,13 @@ export interface CreateThreadInput {
 export interface AddMessageInput {
   readonly threadId: string;
   readonly text: string;
+  /**
+   * Optional parent message this reply answers. When present the parent must
+   * already exist in the same thread and must not be a soft-deleted tombstone;
+   * anything else is an `invalid_request` and nothing is written. Omitted by
+   * the pre-FIN-12 reply route, which keeps the flat reply semantics.
+   */
+  readonly replyToMessageId?: string;
   /**
    * Optional thread-level CAS guard. When present the reply is accepted only
    * while the thread is still at this revision; a stale base is a
