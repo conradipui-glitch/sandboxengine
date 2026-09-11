@@ -356,7 +356,11 @@ async function evaluateBackendOutput(
   if (!normalized.ok) return invalidPlan(normalized.problems, attempts);
 
   const seed = stableHash(`${canonicalIntent(intent)}\u0000${outputText}`);
-  const assembled = await assembleMission(normalized.plan, intent, seed, context);
+  // Детерминированная починка висячих целей выборов: модель часто ссылается на
+  // сцену или финал, которых в плане нет, и тогда весь документ отвергается.
+  // Такая цель ведёт в финал своей ветви — содержание не придумывается.
+  const repaired = repairDanglingChoiceTargets(normalized.plan);
+  const assembled = await assembleMission(repaired.plan, intent, seed, context);
   const documentErrors = validateMissionDraft(assembled.document);
   if (documentErrors.length > 0) return invalidPlan([...documentErrors], attempts);
 
@@ -365,7 +369,7 @@ async function evaluateBackendOutput(
     document: assembled.document,
     listing: assembled.listing,
     start: assembled.start,
-    repairs: assembled.repairs,
+    repairs: Object.freeze([...repaired.repairs, ...assembled.repairs]),
     evidence: freezeEvidence(attempts)
   });
 }
@@ -664,6 +668,34 @@ function normalizeEffects(value: unknown, at: string, problems: string[]): Gamep
 }
 
 /**
+ * Починка целей выборов, ведущих в несуществующие сцены/финалы. Заменяем такую
+ * цель на финал ветви: выбор остаётся исполняемым, а новых сцен и финалов не
+ * появляется. Возвращает новый план — вход не мутируется.
+ */
+function repairDanglingChoiceTargets(plan: MissionPlan): { readonly plan: MissionPlan; readonly repairs: readonly string[] } {
+  const sceneIds = new Set<string>();
+  const endingIds = new Set<string>();
+  for (const branch of plan.branches) {
+    for (const scene of branch.scenes) sceneIds.add(scene.id);
+    endingIds.add(branch.ending.id);
+  }
+  const repairs: string[] = [];
+  const branches = plan.branches.map((branch) => {
+    const scenes = branch.scenes.map((scene) => {
+      const choices = scene.choices.map((choice) => {
+        const target = choice.target;
+        const known = target.kind === "scene" ? sceneIds.has(target.id) : endingIds.has(target.id);
+        if (known) return choice;
+        repairs.push(`dangling_choice_target:${target.kind}:${target.id}->ending:${branch.ending.id}`);
+        return Object.freeze({ ...choice, target: Object.freeze({ kind: "ending" as const, id: branch.ending.id }) });
+      });
+      return Object.freeze({ ...scene, choices: Object.freeze(choices) });
+    });
+    return Object.freeze({ ...branch, scenes: Object.freeze(scenes) });
+  });
+  return { plan: Object.freeze({ ...plan, branches: Object.freeze(branches) }), repairs: Object.freeze(repairs) };
+}
+/**
  * Детерминированная сборка документа. id выводятся из стабильного сида,
  * поэтому одинаковый вход и одинаковый ответ backend дают побитово
  * одинаковый документ и одинаковый прядок элементов.
@@ -757,7 +789,24 @@ async function assembleMission(
     repairs.push(`reachability:${endingId}`);
   });
 
-  const entrySceneId = scenes[0]?.id;
+  // Детерминированная починка дублей идентификаторов сцен: модель регулярно
+  // повторяет один и тот же id в разных ветвях, и тогда весь документ не проходит
+  // проверку — миссия терялась целиком. Повторы переименовываются, ссылки
+  // выборов продолжают указывать на первое вхождение (оно сохраняет id).
+  const finalScenes = [...scenes];
+  const seenSceneIds = new Set<string>();
+  for (let index = 0; index < finalScenes.length; index += 1) {
+    const scene = finalScenes[index]!;
+    if (!seenSceneIds.has(scene.id)) { seenSceneIds.add(scene.id); continue; }
+    let suffix = 2;
+    let candidate = `${scene.id}-${suffix}`;
+    while (seenSceneIds.has(candidate)) { suffix += 1; candidate = `${scene.id}-${suffix}`; }
+    seenSceneIds.add(candidate);
+    finalScenes[index] = Object.freeze({ ...scene, id: candidate });
+    repairs.push(`duplicate_scene_id:${scene.id}->${candidate}`);
+  }
+
+  const entrySceneId = finalScenes[0]?.id;
   if (entrySceneId === undefined) {
     // Достаточность это уже отсекла; ветка недостижима, но не даём тихого undefined.
     throw new TypeError("mission plan produced no scenes");
@@ -765,7 +814,7 @@ async function assembleMission(
 
   const story: MissionStory = Object.freeze({
     entrySceneId,
-    scenes: Object.freeze(scenes),
+    scenes: Object.freeze(finalScenes),
     endings: Object.freeze(endings)
   });
 

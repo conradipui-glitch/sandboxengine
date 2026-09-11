@@ -275,7 +275,10 @@ test("FIN-09 невалидное условие выбора → invalid_plan, 
   assert.ok(result.problems.some((problem) => problem.startsWith("plan.choice_condition_invalid")));
 });
 
-test("FIN-09 выбор с неизвестной целью → invalid_plan по штатному валидатору", async () => {
+// Модель регулярно ссылается на сцену, которой в плане нет. Такую цель починяем
+// детерминированно: выбор ведёт в финал своей ветви, документ остаётся валидным,
+// а факт починки попадает в repairs — тихой подмены содержания нет.
+test("FIN-09 выбор с неизвестной целью → детерминированная починка до финала ветви", async () => {
   const plan = fullPlan();
   plan.branches[0].scenes[0].choices[0].target = { kind: "scene", id: "nope" };
   const backend = backendWithPlan(plan, {
@@ -285,8 +288,13 @@ test("FIN-09 выбор с неизвестной целью → invalid_plan п
     ]
   });
   const result = await writerFor(backend).write({ intent: intent(), deadlineAtMs: DEADLINE() });
-  assert.equal(result.kind, "invalid_plan");
-  assert.ok(result.problems.includes("mission.choice_target_missing"));
+  assert.equal(result.kind, "ok");
+  assert.ok(result.repairs.some((note) => note.startsWith("dangling_choice_target:")), `ожидалась запись о починке, получено: ${JSON.stringify(result.repairs)}`);
+  const firstScene = result.document.story.scenes[0];
+  const repairedChoice = firstScene.choices[0];
+  assert.equal(repairedChoice.targetSceneId, null, "висячая цель больше не указывает в несуществующую сцену");
+  assert.ok(repairedChoice.endingId !== null, "выбор ведёт в финал своей ветви");
+  assert.ok(result.document.story.endings.some((ending) => ending.id === repairedChoice.endingId));
 });
 
 // 9. Backend: таймаут/ошибка/отказ открытия сессии.

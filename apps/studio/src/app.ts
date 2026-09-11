@@ -2997,9 +2997,9 @@ export class StudioApp {
     } catch {
       return "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ», затем повторите попытку. Черновик проекта уже создан и не потерян.";
     }
-    if (payload?.kind === "ok" && payload.mission) {
+    if (payload?.kind === "ok" && payload.document) {
       try {
-        await this.api.saveMission(projectId, questId, 0, payload.mission);
+        await this.api.saveMission(projectId, questId, 0, payload.document);
       } catch {
         return "ИИ собрал миссию, но её не удалось сохранить. Проверьте статус сохранения и повторите публикацию позже.";
       }

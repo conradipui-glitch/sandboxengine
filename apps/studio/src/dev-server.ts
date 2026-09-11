@@ -48,6 +48,7 @@ export interface LocalMissionDraftRequest {
   readonly questId: string;
   readonly genre?: string;
   readonly language?: string;
+  readonly targetDurationMinutes?: number;
   readonly branchCount?: number;
   readonly endingCount?: number;
 }

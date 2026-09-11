@@ -7,6 +7,8 @@ import {
   type GenerateResult,
   type ModelProvider
 } from "@living-history/ai";
+// @ts-ignore — репозиторий закреплён на Node 24.19.0; @types/node не установлен.
+import { createHash } from "node:crypto";
 import {
   isAllowedLocalHttpRequest,
   maskProviderApiKey,
@@ -43,6 +45,10 @@ export class LocalAuthorProvider {
   #activeRequests = 0;
   /** Безопасное представление ключа: наружу отдаётся только признак и маска. */
   #credentialMask: string | null = null;
+  /** Ключ в памяти процесса: провайдер и так держит его; наружу не отдаётся. */
+  #credential: string | null = null;
+  /** Сохранение подключения не удалось — тогда нельзя обещать локальный файл. */
+  #persistFailed = false;
   #revision: number | null = null;
   constructor(
     private readonly providerFetch?: FetchLike,
@@ -54,7 +60,7 @@ export class LocalAuthorProvider {
       configured: this.#settings !== null,
       settings: this.#settings,
       state: this.#state,
-      credentialStorage: this.persistence ? "local_file_masked" : "process_memory",
+      credentialStorage: this.persistence && !this.#persistFailed ? "local_file_masked" : "process_memory",
       credentialMask: this.#credentialMask,
       hasCredential: this.#credentialMask !== null,
       connectionCheck: this.#state === "connected" ? "connected" : this.#state === "error" ? "error" : "not_performed",
@@ -90,6 +96,7 @@ export class LocalAuthorProvider {
     this.#state = "settings_saved";
     this.#lastErrorCode = null;
     this.#activeRequests = 0;
+    this.#credential = String(config.credential);
     this.#credentialMask = maskProviderApiKey(String(config.credential));
     if (this.persistence && options.persist !== false) this.#persistConnection(String(config.credential));
   }
@@ -106,12 +113,18 @@ export class LocalAuthorProvider {
       baseUrl: settings.baseUrl,
       model: settings.model,
       apiKey,
-      idempotencyKey: `save-${settings.preset}-${settings.model}-${this.#generation}`,
-      requestHash: `save-${settings.preset}-${settings.baseUrl}-${settings.model}`,
+      idempotencyKey: `provider-save-${this.#generation}`,
+      requestHash: sha256Text(`save\u0000${settings.preset}\u0000${settings.baseUrl}\u0000${settings.model}\u0000${apiKey}`),
       updatedAtMs: Date.now()
     }).then((result) => {
-      if (result.kind === "saved" || result.kind === "replay") this.#revision = result.connection.revision;
-    }).catch(() => undefined);
+      if (result.kind === "saved" || result.kind === "replay") {
+        this.#revision = result.connection.revision;
+        this.#persistFailed = false;
+        return;
+      }
+      // Отказ стора — не молчание: статус перестаёт обещать локальный файл.
+      this.#persistFailed = true;
+    }).catch(() => { this.#persistFailed = true; });
   }
 
   /**
@@ -132,6 +145,7 @@ export class LocalAuthorProvider {
       model: summary.model,
       credential: apiKey
     }, { persist: false });
+    this.#credential = apiKey;
     this.#revision = summary.revision;
     this.#state = summary.status === "connected" ? "settings_saved" : mapStoredStatus(summary.status);
     this.#lastErrorCode = summary.lastErrorCode;
@@ -147,7 +161,7 @@ export class LocalAuthorProvider {
       return this.#state;
     }
     const { connections, scope } = this.persistence;
-    const apiKey = await connections.revealApiKey(scope);
+    const apiKey = this.#credential ?? await connections.revealApiKey(scope);
     if (apiKey === null) { this.#state = "not_configured"; return this.#state; }
     this.#state = "requesting";
     const doFetch = this.providerFetch ?? ((url: string, init: RequestInit) => fetch(url, init));
@@ -170,6 +184,7 @@ export class LocalAuthorProvider {
     this.#lastErrorCode = null;
     this.#activeRequests = 0;
     this.#credentialMask = null;
+    this.#credential = null;
     this.#revision = null;
     // Явное отключение стирает секрет из локального файла, а не только из памяти.
     if (this.persistence && options.erase !== false) {
@@ -186,11 +201,12 @@ export class LocalAuthorProvider {
       expectedRevision: this.#revision,
       status: status === "connected" ? "connected" : status === "error" ? "error" : "settings_saved",
       lastErrorCode: lastErrorCode as never,
-      idempotencyKey: `probe-${this.#revision}-${status}`,
-      requestHash: `probe-${this.#revision}-${status}`,
+      idempotencyKey: `provider-probe-${this.#revision}-${status}`,
+      requestHash: sha256Text(`probe\u0000${this.#revision}\u0000${status}\u0000${lastErrorCode ?? ""}`),
       updatedAtMs: Date.now()
     });
     if (updated.kind === "updated" || updated.kind === "replay") this.#revision = updated.connection.revision;
+    else this.#persistFailed = true;
   }
 
   private observe(provider: ModelProvider, generation: number): ModelProvider {
@@ -221,6 +237,11 @@ export class LocalAuthorProvider {
       }
     });
   }
+}
+
+/** Хэш текста для requestHash: стор принимает только sha256-хэши. */
+function sha256Text(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 function mapStoredStatus(status: string): LocalAuthorProviderState {

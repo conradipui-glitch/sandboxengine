@@ -91,7 +91,7 @@ const playerLauncher = async (playtestId: string) => {
   return { ok: false as const, code: launched.code, message: launched.message };
 };
 // FIN-09: полная миссия из идеи — тем же провайдером, что настроен в Studio.
-const missionDrafter = async (request: { readonly idea: string; readonly projectId: string; readonly questId: string; readonly genre?: string; readonly language?: string; readonly branchCount?: number; readonly endingCount?: number }) => {
+const missionDrafter = async (request: { readonly idea: string; readonly projectId: string; readonly questId: string; readonly genre?: string; readonly language?: string; readonly targetDurationMinutes?: number; readonly branchCount?: number; readonly endingCount?: number }) => {
   const { ModelMissionWriter } = await import("@living-history/ai");
   const writer = new ModelMissionWriter({
     backend: authorProvider.backend,
@@ -102,8 +102,11 @@ const missionDrafter = async (request: { readonly idea: string; readonly project
   return writer.write({
     intent: {
       idea: request.idea,
-      ...(request.genre === undefined ? {} : { genre: request.genre }),
-      ...(request.language === undefined ? {} : { language: request.language }),
+      // Жанр, длительность и язык обязательны в контракте писателя: подставляем
+      // понятные значения по умолчанию, чтобы автор вводил только идею.
+      genre: request.genre ?? "драма",
+      targetDurationMinutes: request.targetDurationMinutes ?? 15,
+      language: request.language ?? "ru",
       ...(request.branchCount === undefined ? {} : { branchCount: request.branchCount }),
       ...(request.endingCount === undefined ? {} : { endingCount: request.endingCount })
     },
