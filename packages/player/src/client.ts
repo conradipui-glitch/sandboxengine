@@ -82,7 +82,10 @@ export class RuntimePlayerClient {
   readonly #baseUrl: URL;
   readonly #fetch: FetchLike;
 
-  constructor(baseUrl: string | URL, fetcher: FetchLike = fetch) {
+  // В браузере `fetch` — метод окна: сохранённая ссылка, вызванная как метод
+  // другого объекта (`this.#fetch(...)`), падает с «Illegal invocation».
+  // Поэтому по умолчанию берём обёртку, а не саму функцию.
+  constructor(baseUrl: string | URL, fetcher: FetchLike = (input, init) => fetch(input, init)) {
     this.#baseUrl = new URL(String(baseUrl));
     this.#fetch = fetcher;
   }

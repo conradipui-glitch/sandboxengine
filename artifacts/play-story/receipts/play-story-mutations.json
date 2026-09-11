@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-09-11T23:30:42.642Z",
+  "backupDir": "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\mutation-backups",
+  "results": [
+    {
+      "name": "M1: сюжетная ветка запуска отключена (снимок без действия снова не играется)",
+      "ok": true,
+      "detail": {
+        "buildAfterMutation": 0,
+        "redStatus": 1,
+        "buildAfterRestore": 0,
+        "greenStatus": 0,
+        "restoredByteForByte": true
+      }
+    },
+    {
+      "name": "M2: сюжетный Player без маршрута хода (история есть, ход не применяется)",
+      "ok": true,
+      "detail": {
+        "buildAfterMutation": 0,
+        "redStatus": 1,
+        "buildAfterRestore": 0,
+        "greenStatus": 0,
+        "restoredByteForByte": true
+      }
+    }
+  ]
+}

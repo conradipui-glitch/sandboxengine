@@ -7,6 +7,7 @@ import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
 import type { AssetManifestV2, JsonValue } from "@living-history/contracts";
+import { isPlayableStoryMission } from "@living-history/player";
 import { createPlayerTurnRoute, type PlayerTurnRoute, type PlayerTurnRouteOptions } from "./turn-route.js";
 import { isId } from "./story-guards.js";
 
@@ -14,6 +15,12 @@ const playerRoot = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 
+/**
+ * Метаданные шелла Player. Ключи всегда одни и те же (их читает браузерный
+ * app.js), но `resource*`/`action*` принадлежат блочному (paint) шеллу: у
+ * сюжетной миссии их нет вовсе, поэтому пустая строка здесь честнее
+ * выдуманного ресурса. Сюжетный шелл этих полей не читает.
+ */
 export interface PlayerSurfaceMetadata {
   readonly templateId: string;
   readonly playtestId: string;
@@ -26,6 +33,10 @@ export interface PlayerSurfaceMetadata {
   readonly actionId: string;
   readonly actionTitle: string;
 }
+
+const ALWAYS_PRESENT_METADATA_FIELDS = Object.freeze([
+  "templateId", "playtestId", "questTitle", "locationTitle", "sceneText"
+] as const);
 
 export interface PlayerAssetReader {
   read(assetId: string, hash: string): Promise<{
@@ -351,8 +362,17 @@ function proxyHeaders(request: any): Record<string, string> {
 }
 
 function validateMetadata(value: PlayerSurfaceMetadata): PlayerSurfaceMetadata {
-  for (const [key, entry] of Object.entries(value)) {
+  for (const key of ALWAYS_PRESENT_METADATA_FIELDS) {
+    const entry = value[key];
     if (typeof entry !== "string" || entry.length < 1 || entry.length > 2_000) {
+      throw new TypeError(`invalid Player metadata field: ${key}`);
+    }
+  }
+  // Поля блочного шелла обязаны быть строками, но могут быть пустыми: сюжетная
+  // миссия не имеет ни ресурса, ни действия, и выдумывать их нельзя.
+  for (const [key, entry] of Object.entries(value)) {
+    if ((ALWAYS_PRESENT_METADATA_FIELDS as readonly string[]).includes(key)) continue;
+    if (typeof entry !== "string" || entry.length > 2_000) {
       throw new TypeError(`invalid Player metadata field: ${key}`);
     }
   }
@@ -388,19 +408,12 @@ function releaseMatches(value: unknown, expected: PlayerPresentationReleaseIdent
 /**
  * Fail-closed валидация экранного контента: без `story.entrySceneId`, сцен,
  * финалов и списка вступлений Player не отдаёт историю, а не изобретает экран.
+ * Предикат общий с веткой запуска сюжетной миссии (`@living-history/player`),
+ * чтобы «запустилось» и «отдаётся» не могли разойтись.
  */
 function validateStory(value: PlayerStoryOptions): Readonly<PlayerStoryOptions> {
   const mission = value.mission;
-  if (!isRecord(mission)) throw new TypeError("invalid Player story mission");
-  const record = mission as Record<string, any>;
-  const story = record.story;
-  const screens = record.screens;
-  if (!isRecord(story) || !isRecord(screens)) {
-    throw new TypeError("invalid Player story mission");
-  }
-  if (typeof story.entrySceneId !== "string" || story.entrySceneId.length === 0
-    || !Array.isArray(story.scenes) || !Array.isArray(story.endings)
-    || !Array.isArray(screens.intros) || !isRecord(screens.scenes) || !isRecord(screens.endings)) {
+  if (!isRecord(mission) || !isPlayableStoryMission(mission)) {
     throw new TypeError("invalid Player story mission");
   }
   return Object.freeze({ mission: deepFreeze(mission as JsonValue) });

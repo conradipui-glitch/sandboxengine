@@ -1,0 +1,142 @@
+{
+  "generatedAt": "2026-09-11T23:26:52.386Z",
+  "studioUrl": "http://127.0.0.1:4215/",
+  "controlPort": 8925,
+  "cdpPort": 9391,
+  "databasePath": "C:\\Users\\kato55\\lhc-play-acceptance\\living-history.sqlite",
+  "steps": [
+    {
+      "name": "Studio открывается и показывает список проектов",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "Кнопка «Проверить и сыграть» доступна для миссии Florence",
+      "ok": true,
+      "detail": "Проверить и сыграть"
+    },
+    {
+      "name": "«Проверить и сыграть» запускает игру, а не отказывает",
+      "ok": true,
+      "detail": {
+        "playerUrl": "http://127.0.0.1:8956/",
+        "launchError": null
+      }
+    },
+    {
+      "name": "Player отдаёт страницу",
+      "ok": true,
+      "detail": "{\"title\":\"Living History Player\",\"ready\":\"complete\",\"text\":\"Living History Player\\nFrozen playtest · экраны истории\\nХоды: 0\\nЭкраны истории загружены из frozen playtest.\\nФлоренция: Мастерская под давлением\\n\\nВступление, сцена, диалог, выбор и финал рисуются общим renderer'ом Player. Перелистывание вступлений не тратит игровой ход.\\n\\nplaytest: playtest-12\\nФон недоступен\\nСрок и условие заказчика\\n\\nЛука Орсини ждёт у незакрытой двери. Кардинал обещал показать росп\"}"
+    },
+    {
+      "name": "Player показывает первую сцену сюжетной миссии",
+      "ok": true,
+      "detail": {
+        "phase": "scene",
+        "title": "Срок и условие заказчика",
+        "body": "Лука Орсини ждёт у незакрытой двери. Кардинал обещал показать роспись гостям на закате, не спросив вас о сроке. Джулиано прячет дрожащую руку в фартук. В ящике осталось немного синей краски; на крышке — чужая сургучная печать. Что вы сделаете до того, как Лука раскроет договор?",
+        "choices": [
+          "draft",
+          "healer",
+          "close"
+        ],
+        "turns": "Ходы: 0"
+      }
+    },
+    {
+      "name": "Player показывает авторские варианты первой сцены",
+      "ok": true,
+      "detail": [
+        "draft",
+        "healer",
+        "close"
+      ]
+    },
+    {
+      "name": "Ход draft меняет сцену",
+      "ok": true,
+      "detail": {
+        "choiceId": "draft",
+        "phase": "scene",
+        "title": "Люди и доказательства",
+        "turns": "Ходы: 1"
+      }
+    },
+    {
+      "name": "Ход ledger меняет сцену",
+      "ok": true,
+      "detail": {
+        "choiceId": "ledger",
+        "phase": "scene",
+        "title": "Цена договорённости",
+        "turns": "Ходы: 2"
+      }
+    },
+    {
+      "name": "Ход counter меняет сцену",
+      "ok": true,
+      "detail": {
+        "choiceId": "counter",
+        "phase": "scene",
+        "title": "Материал и свидетельство",
+        "turns": "Ходы: 3"
+      }
+    },
+    {
+      "name": "Ход pigment меняет сцену",
+      "ok": true,
+      "detail": {
+        "choiceId": "pigment",
+        "phase": "scene",
+        "title": "Перед финальным показом",
+        "turns": "Ходы: 4"
+      }
+    },
+    {
+      "name": "Ход public меняет сцену",
+      "ok": true,
+      "detail": {
+        "choiceId": "public",
+        "phase": "scene",
+        "title": "Что именно предъявить утром",
+        "turns": "Ходы: 5"
+      }
+    },
+    {
+      "name": "Ход deliver приводит к финалу",
+      "ok": true,
+      "detail": {
+        "choiceId": "deliver",
+        "phase": "ending",
+        "title": "Фрагмент без печати",
+        "turns": "Ходы: 6"
+      }
+    },
+    {
+      "name": "Финал сюжетной миссии отрисован",
+      "ok": true,
+      "detail": {
+        "phase": "ending",
+        "title": "Фрагмент без печати",
+        "body": "Вы снимаете покрывало с готового фрагмента и оставляете рядом перечень недоделанного. Лука осматривает стену, но без согласованного договора не ставит печать. Сегодня работу увидели. Принять и оплатить её ещё предстоит."
+      }
+    },
+    {
+      "name": "Ошибок в консоли браузера нет",
+      "ok": true,
+      "detail": []
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\01-studio-light-before-play.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\02-studio-dark-before-play.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\03-studio-launched-player-link.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\04-player-first-scene.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\05-player-after-choice.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\06-player-ending.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\07-studio-dark-after-play.png",
+    "C:\\Users\\kato55\\lhc-play-story\\artifacts\\play-story\\08-studio-light-after-play.png"
+  ],
+  "warnings": [],
+  "consoleErrors": []
+}

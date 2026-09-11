@@ -7,6 +7,11 @@ export {
   type PlayerRuntimeTemplate
 } from "./bootstrap.js";
 export {
+  buildFrozenWorldState,
+  isPlayableStoryMission,
+  type FrozenWorldStateResult
+} from "./frozen-playtest.js";
+export {
   PlayerClientError,
   RuntimePlayerClient,
   type PlayerActionResult,
