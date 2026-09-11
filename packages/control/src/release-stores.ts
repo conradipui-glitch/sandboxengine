@@ -81,7 +81,7 @@ export class MemoryControlReleaseStore implements ControlReleaseStore {
     if (!validPublishInput(input)) return frozen({ kind: "invalid_request" });
     const key = idemKey("publish", input.projectId, input.questId, input.idempotencyKey);
     const replay = this.#idempotency.get(key);
-    if (replay) return this.#publishReplay(input.requestHash, replay);
+    if (replay) return this.#publishReplay(input.projectId, input.questId, input.requestHash, replay);
     if (!this.#release(input.projectId, input.questId, input.releaseId)) return frozen({ kind: "release_not_found" });
     const scope = scopeKey(input.projectId, input.questId);
     const current = this.#current.get(scope) ?? null;
@@ -104,7 +104,7 @@ export class MemoryControlReleaseStore implements ControlReleaseStore {
     if (!validRollbackInput(input)) return frozen({ kind: "invalid_request" });
     const key = idemKey("rollback", input.projectId, input.questId, input.idempotencyKey);
     const replay = this.#idempotency.get(key);
-    if (replay) return this.#rollbackReplay(input.requestHash, replay);
+    if (replay) return this.#rollbackReplay(input.projectId, input.questId, input.requestHash, replay);
     if (!this.#release(input.projectId, input.questId, input.targetReleaseId)) return frozen({ kind: "release_not_found" });
     const scope = scopeKey(input.projectId, input.questId);
     const current = this.#current.get(scope) ?? null;
@@ -148,16 +148,24 @@ export class MemoryControlReleaseStore implements ControlReleaseStore {
     }
     throw new Error("corrupt MemoryControlReleaseStore event reference");
   }
-  #publishReplay(requestHash: string, replay: StoredIdempotency): PublishStoredReleaseResult {
+  #publishReplay(projectId: string, questId: string, requestHash: string, replay: StoredIdempotency): PublishStoredReleaseResult {
     if (replay.requestHash !== requestHash) return frozen({ kind: "idempotency_key_reused" });
     const outcome = replay.resultKind === "published" ? "published" : replay.resultKind === "unchanged" ? "unchanged" : null;
     if (!outcome) throw new Error("corrupt publish idempotency result");
+    // The recorded result describes the state at first execution. The live
+    // pointer may have moved since (a later rollback). Replaying on top of a
+    // different pointer would report a promotion that never happened, so the
+    // stored release is checked against the actual pointer before answering.
+    const current = this.#current.get(scopeKey(projectId, questId)) ?? null;
+    if (current !== replay.releaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
     return frozen({ kind: "replay", outcome, currentReleaseId: replay.releaseId, event: cloneAndFreezeRelease(this.#event(replay.eventSequence)) });
   }
-  #rollbackReplay(requestHash: string, replay: StoredIdempotency): RollbackStoredReleaseResult {
+  #rollbackReplay(projectId: string, questId: string, requestHash: string, replay: StoredIdempotency): RollbackStoredReleaseResult {
     if (replay.requestHash !== requestHash) return frozen({ kind: "idempotency_key_reused" });
     const outcome = replay.resultKind === "rolled_back" ? "rolled_back" : replay.resultKind === "unchanged" ? "unchanged" : null;
     if (!outcome) throw new Error("corrupt rollback idempotency result");
+    const current = this.#current.get(scopeKey(projectId, questId)) ?? null;
+    if (current !== replay.releaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
     return frozen({ kind: "replay", outcome, currentReleaseId: replay.releaseId, event: cloneAndFreezeRelease(this.#event(replay.eventSequence)) });
   }
 }
@@ -238,7 +246,7 @@ export class SQLiteControlReleaseStore implements ControlReleaseStore {
     if (!validPublishInput(input)) return frozen({ kind: "invalid_request" });
     return this.#transaction(() => {
       const replay = this.#readIdempotency("publish", input.projectId, input.questId, input.idempotencyKey);
-      if (replay) return this.#publishReplay(input.requestHash, replay);
+      if (replay) return this.#publishReplay(input.projectId, input.questId, input.requestHash, replay);
       if (!this.#getRelease(input.projectId, input.questId, input.releaseId)) return frozen({ kind: "release_not_found" });
       const current = this.#current(input.projectId, input.questId);
       if (current !== input.expectedCurrentReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
@@ -262,7 +270,7 @@ export class SQLiteControlReleaseStore implements ControlReleaseStore {
     if (!validRollbackInput(input)) return frozen({ kind: "invalid_request" });
     return this.#transaction(() => {
       const replay = this.#readIdempotency("rollback", input.projectId, input.questId, input.idempotencyKey);
-      if (replay) return this.#rollbackReplay(input.requestHash, replay);
+      if (replay) return this.#rollbackReplay(input.projectId, input.questId, input.requestHash, replay);
       if (!this.#getRelease(input.projectId, input.questId, input.targetReleaseId)) return frozen({ kind: "release_not_found" });
       const current = this.#current(input.projectId, input.questId);
       if (current !== input.expectedCurrentReleaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
@@ -354,16 +362,22 @@ export class SQLiteControlReleaseStore implements ControlReleaseStore {
       (operation_kind, project_id, quest_id, idempotency_key, request_hash, result_kind, release_id, event_sequence)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(operation, projectId, questId, key, requestHash, resultKind, releaseId, eventSequence);
   }
-  #publishReplay(requestHash: string, replay: StoredIdempotency): PublishStoredReleaseResult {
+  #publishReplay(projectId: string, questId: string, requestHash: string, replay: StoredIdempotency): PublishStoredReleaseResult {
     if (replay.requestHash !== requestHash) return frozen({ kind: "idempotency_key_reused" });
     const outcome = replay.resultKind === "published" ? "published" : replay.resultKind === "unchanged" ? "unchanged" : null;
     if (!outcome) throw new Error("corrupt publish idempotency result");
+    // Same CAS check as the Memory store: a replayed publish is only honest
+    // while the live pointer still names the release the first request promoted.
+    const current = this.#current(projectId, questId);
+    if (current !== replay.releaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
     return frozen({ kind: "replay", outcome, currentReleaseId: replay.releaseId, event: replay.eventSequence === null ? null : this.#event(replay.eventSequence) });
   }
-  #rollbackReplay(requestHash: string, replay: StoredIdempotency): RollbackStoredReleaseResult {
+  #rollbackReplay(projectId: string, questId: string, requestHash: string, replay: StoredIdempotency): RollbackStoredReleaseResult {
     if (replay.requestHash !== requestHash) return frozen({ kind: "idempotency_key_reused" });
     const outcome = replay.resultKind === "rolled_back" ? "rolled_back" : replay.resultKind === "unchanged" ? "unchanged" : null;
     if (!outcome) throw new Error("corrupt rollback idempotency result");
+    const current = this.#current(projectId, questId);
+    if (current !== replay.releaseId) return frozen({ kind: "current_release_conflict", currentReleaseId: current });
     return frozen({ kind: "replay", outcome, currentReleaseId: replay.releaseId, event: replay.eventSequence === null ? null : this.#event(replay.eventSequence) });
   }
   #transaction<T>(work: () => T): T {
