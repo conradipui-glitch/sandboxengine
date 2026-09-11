@@ -5,6 +5,7 @@ import {
   type WorldState
 } from "@living-history/contracts";
 import { tryApplyEffectBatch, type EffectBatchFailure } from "./effects.js";
+import { missionTerminalStatus } from "./mission-execution.js";
 
 export const DEFAULT_MAX_EVENTS_PER_INTERVAL = 100;
 export const HARD_MAX_EVENTS_PER_INTERVAL = 1000;
@@ -15,6 +16,17 @@ export const CORE_TASK_STEP_PRIORITY = 20;
 export const CORE_DEADLINE_PRIORITY = 100;
 /** Synthetic task-start event must precede a zero-duration completion at priority 20. */
 export const CORE_TASK_START_INTERNAL_ORDER = CORE_TASK_STEP_PRIORITY - 1;
+
+/**
+ * Single source of terminal semantics (shared with mission-execution): only an
+ * explicit WorldTerminal object ends a mission; a missing `terminal` key or an
+ * explicit null is an active world. Invalid terminal data keeps the historical
+ * `already_terminal` failure here instead of raising, because the scheduler
+ * returns pure result objects and never throws.
+ */
+function isTerminalState(state: WorldState): boolean {
+  return missionTerminalStatus(state).kind !== "active";
+}
 
 export interface TimeAdvanceOptions {
   readonly maxEvents?: number;
@@ -94,7 +106,7 @@ export function planTimeAdvance(
     || !isSafeNonNegativeInteger(startElapsedSeconds)) {
     return planFailure("invalid_state");
   }
-  if (state.terminal !== null) return planFailure("already_terminal");
+  if (isTerminalState(state)) return planFailure("already_terminal");
   if (!isSafeNonNegativeInteger(durationSeconds)) return planFailure("invalid_duration");
 
   const maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS_PER_INTERVAL;
@@ -148,7 +160,7 @@ export function applyTimeAdvancePlan(
     || !isSafeNonNegativeInteger(startElapsedSeconds)) {
     return applyFailure("invalid_state");
   }
-  if (state.terminal !== null) return applyFailure("already_terminal");
+  if (isTerminalState(state)) return applyFailure("already_terminal");
   if (!isValidPlanShape(plan)) return applyFailure("invalid_plan");
   if (plan.startElapsedSeconds !== startElapsedSeconds) {
     return applyFailure("plan_state_mismatch");
