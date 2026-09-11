@@ -7,6 +7,7 @@ import {
 } from "@living-history/contracts";
 import { canonicalStringify } from "./compile.js";
 import { tryApplyEffectBatch, type EffectBatchFailure } from "./effects.js";
+import { missionTerminalStatus } from "./mission-execution.js";
 import {
   HARD_MAX_EVENTS_PER_INTERVAL,
   compareSchedulerEvents,
@@ -109,7 +110,10 @@ export function processTimeAdvancePlan(
     || !isSafeNonNegativeInteger(state.clock?.elapsedSeconds)) {
     return failure("invalid_state");
   }
-  if (state.terminal !== null) return failure("already_terminal");
+  // Shared terminal semantics (see missionTerminalStatus): a missing `terminal`
+  // key or explicit null is an active world. An explicit WorldTerminal object —
+  // and, as before, invalid terminal data — blocks further processing.
+  if (missionTerminalStatus(state).kind !== "active") return failure("already_terminal");
   if (!isSafeNonNegativeInteger(plan?.startElapsedSeconds)
     || !isSafeNonNegativeInteger(plan?.endElapsedSeconds)
     || plan.endElapsedSeconds < plan.startElapsedSeconds) {
