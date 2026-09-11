@@ -49,6 +49,30 @@
     # 4. nginx
     cp deploy/vps/nginx-lhc.conf /etc/nginx/conf.d/lhc.conf && nginx -t && systemctl reload nginx
 
+## Согласованная доставка (FIN-04)
+
+Доставка выполняется **на стенде** из корня репозитория и работает fail-closed:
+до первой записи проверяется, что полный 40-символьный SHA — потомок текущего
+удалённого head, дерево чистое, а прочитанный обратно HEAD равен pin.
+
+    # доставить Engine + authored + Studio (Site не трогается)
+    deploy/vps/deliver-all.sh <full-40-hex-sha>
+
+    # то же, плюс сайт из отдельного репозитория
+    deploy/vps/deliver-all.sh <full-40-hex-sha> --site --site-root /opt/lhc/site
+
+    # напечатать всю последовательность и ничего не выполнить
+    deploy/vps/deliver-all.sh <full-40-hex-sha> --dry-run
+
+Откат на прежний SHA с пересборкой только названных образов:
+
+    deploy/vps/deliver-rollback.sh <full-40-hex-sha> --images engine,authored,studio
+
+Секреты берутся только из `deploy/vps/.env` на стенде (`--env-file`); скрипты
+знают имена переменных, но не значения. gate, блог и Ива этими скриптами не
+перезапускаются. Без `--site` Site честно печатается как «пропущено». Тесты:
+`node --test apps/server/test/fin04-delivery-script.test.mjs`.
+
 ## Приёмка
 
 Автоматика: `node --test deploy/vps/lhc-gate.test.mjs` (гейт и бот: права, тикеты,
