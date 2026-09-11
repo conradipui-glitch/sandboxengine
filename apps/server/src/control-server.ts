@@ -52,6 +52,7 @@ import { routeDraftVersionHttp } from "./draft-version-http.js";
 import { createPresenceHttpService, type PresenceHttpService } from "./presence.js";
 import { createEditingLockHttpService, type EditingLockHttpService } from "./editing-lock.js";
 import { resolvePublicAssetCache } from "./public-asset-cache.js";
+import { materializePublishedRuntimeTemplate } from "./published-release-resolver.js";
 import { projectPlayerTurnState } from "./player-turn.js";
 import {
   GATE_IDENTITY_HEADER,
@@ -1980,13 +1981,39 @@ async function routePublicMissionSession(
       sendJson(response, 400, { error: { code: "INVALID_PUBLIC_MISSION_SESSION_REQUEST" } });
       return;
     }
+    // Правило данных №9: начальное состояние новой публичной игры берётся из
+    // релиза, а не из присланного клиентом initialWorld. Мир материализуется из
+    // compiled-блоков закреплённого релиза на сервере. Поле initialWorld
+    // остаётся в контракте запроса (сайт его присылает), но источником истины
+    // не является и полностью игнорируется.
+    const releaseRecord = await releases.store.getRelease(
+      publication.projectId,
+      publication.questId,
+      publication.releaseId
+    );
+    const materialized = releaseRecord === null
+      ? null
+      : materializePublishedRuntimeTemplate(
+        { releaseStore: releases.store, pluginRegistry: releases.pluginRegistry },
+        releaseRecord
+      );
+    if (materialized === null || !materialized.ok) {
+      sendJson(response, 409, {
+        error: {
+          code: "PUBLIC_MISSION_RELEASE_UNAVAILABLE",
+          ...(materialized !== null && !materialized.ok ? { detailCode: materialized.code } : {})
+        }
+      });
+      return;
+    }
+    const authoritativeWorld = materialized.template.initialState;
     const credential = publicMissionCredential(secret, publication.publicMissionId, body.sessionId);
     const result = await missionStore.createMissionSession(publication.projectId, publication.questId, {
       sessionId: body.sessionId,
       idempotencyKey,
       actorUserId: `public:${publication.publicMissionId}`,
       contentRevision: publication.draftRevision,
-      initialWorld: body.initialWorld as never
+      initialWorld: authoritativeWorld as never
     });
     if (result.kind === "created" || result.kind === "replay") {
       sendJson(response, result.kind === "created" ? 201 : 200, { mission, session: result.session, credential, ...(result.kind === "replay" ? { replay: true } : {}) });

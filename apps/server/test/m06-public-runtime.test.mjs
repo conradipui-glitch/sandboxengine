@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SQLiteControlStore, MemoryControlPublicationStore } from "@living-history/control";
+import { SQLiteControlStore, MemoryControlPublicationStore, MemoryControlReleaseStore } from "@living-history/control";
 import { buildPluginRegistry } from "@living-history/plugins";
-import { createControlHttpServer } from "../dist/control-server.js";
+import { createControlHttpServer, freezeReleaseBundle } from "../dist/control-server.js";
+import { buildControlRelease } from "../dist/release-authority.js";
 
 function world() {
   return { schemaVersion: "1.0", revision: 0, clock: { elapsedSeconds: 0 }, locations: [], entities: [], resources: [], items: [], terminal: null };
@@ -28,20 +29,34 @@ test("M06 public mission runtime pins the published release and keeps credential
   const dir = await mkdtemp(join(tmpdir(), "living-history-public-mission-"));
   const store = new SQLiteControlStore({ path: join(dir, "control.sqlite") });
   const publications = new MemoryControlPublicationStore();
+  const releaseStore = new MemoryControlReleaseStore();
   const built = buildPluginRegistry([]);
   assert.equal(built.ok, true);
   const control = createControlHttpServer({
     store, missionStore: store,
-    releases: { store: { getRelease: async () => release }, publicationStore: publications, publicMissionSessionSecret: "test-public-session-secret-123", pluginRegistry: built.registry }
+    releases: { store: releaseStore, publicationStore: publications, publicMissionSessionSecret: "test-public-session-secret-123", pluginRegistry: built.registry }
   });
-  let release;
   try {
     await store.createProject({ projectId: "project", title: "Проект" });
     await store.createQuest({ projectId: "project", questId: "quest", title: "Квест", entryLocationId: "start", initialBlocks: [{ schemaVersion: "1.0", id: "start", kind: "core.location", title: "Старт", description: "", data: {} }] });
     const saved = await store.saveMission("project", "quest", { baseRevision: 0, mission: mission(), idempotencyKey: "save-public-mission", actorUserId: "owner" });
     assert.equal(saved.kind, "saved");
-    release = { projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: saved.mission.contentRevision, draftContentHash: saved.mission.contentHash, compiledContentHash: "c".repeat(64) };
-    await publications.publish({ record: { schemaVersion: "1.0", publicMissionId: "mission:project:quest", slug: "cargo", projectId: "project", questId: "quest", draftRevision: saved.mission.contentRevision, draftContentHash: saved.mission.contentHash, releaseId: "release-1", contentHash: "c".repeat(64), channel: "production", status: "published", listing: saved.mission.listing, publishedAtMs: 10 }, idempotencyKey: "catalog-1", requestHash: "c".repeat(64) });
+    // A real built-and-frozen release: the public session's start world is
+    // materialized from this release's compiled blocks (data rule #9), so a
+    // hand-written record without the compiled artifact is no longer a valid
+    // stand-in for one.
+    const validation = await store.validateDraft("project", "quest", 0);
+    assert.equal(validation.kind, "validated");
+    const builtRelease = await buildControlRelease(
+      { controlStore: store, releaseStore, pluginRegistry: built.registry },
+      { projectId: "project", questId: "quest", releaseId: "release-1", draftRevision: 0, validationId: validation.validation.validationId, idempotencyKey: "build-public-mission" }
+    );
+    assert.equal(builtRelease.kind, "created", JSON.stringify(builtRelease));
+    assert.equal((await freezeReleaseBundle(
+      { releases: { store: releaseStore, publicationStore: publications, pluginRegistry: built.registry }, missionStore: store },
+      { projectId: "project", questId: "quest", releaseId: "release-1" }
+    )).kind, "frozen");
+    await publications.publish({ record: { schemaVersion: "1.0", publicMissionId: "mission:project:quest", slug: "cargo", projectId: "project", questId: "quest", draftRevision: saved.mission.contentRevision, draftContentHash: saved.mission.contentHash, releaseId: "release-1", contentHash: builtRelease.release.compiledContentHash, channel: "production", status: "published", listing: saved.mission.listing, publishedAtMs: 10 }, idempotencyKey: "catalog-1", requestHash: "c".repeat(64) });
     const address = await control.listen();
     const base = `http://${address.host}:${address.port}`;
     const created = await req(base, "/public/v1/missions/cargo/sessions", { method: "POST", headers: { "idempotency-key": "public-session-1" }, json: { sessionId: "browser-session-1", initialWorld: world() } });
