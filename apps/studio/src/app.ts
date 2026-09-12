@@ -143,6 +143,15 @@ import {
   updateScreen,
   type ScreenMutationResult
 } from "./screen-model.js";
+// Зона GUIDE: пошаговый помощник «Создание миссии за 5 шагов». Панель живёт
+// вне root приложения (переживает перерисовки), факты о миссии передаёт update().
+import {
+  mountMissionGuide,
+  guideStepDone,
+  guideReadyToPublish,
+  type MissionGuideHandle,
+  type MissionGuideFacts
+} from "./mission-guide.js";
 import {
   applyScreenLayerAction,
   duplicateScreenLayer,
@@ -348,6 +357,8 @@ export class StudioApp {
   private presenceHandle: PresenceHandle | null = null;
   private presenceContext: { projectId: string; questId: string } | null = null;
   private loadErrorBanner: StudioErrorBannerHandle | null = null;
+  /** Зона GUIDE: панель «Создание миссии за 5 шагов» — монтируется лениво, живёт в document.body. */
+  private missionGuide: MissionGuideHandle | null = null;
 
   /**
    * Русский баннер ошибки на месте сломанного блока с рабочим «Повторить»:
@@ -434,6 +445,9 @@ export class StudioApp {
     this.destroyStory();
     this.tooltips.destroy();
     for (const dispose of this.rootDisposers.splice(0)) dispose();
+    // Зона GUIDE: снять панель помощника вместе с приложением.
+    this.missionGuide?.dispose();
+    this.missionGuide = null;
   }
 
   async start(): Promise<void> {
@@ -2908,7 +2922,33 @@ export class StudioApp {
     // Разметка пересоздана — подсказки проводятся заново: каждый элемент с
     // data-tooltip получает aria-describedby на скрытый узел с тем же текстом.
     this.tooltips.sync(this.root);
+    this.updateMissionGuide();
   }
+
+  /**
+   * Зона GUIDE: помощник «Создание миссии за 5 шагов» получает только ФАКТЫ
+   * о текущем состоянии (миссия, черновик, проверка) — панель сама решает,
+   * какие шаги отмечены и что подсказать дальше. Лениво монтируется в body
+   * документа и переживает перерисовки root.
+   */
+  private updateMissionGuide(): void {
+    if (typeof document === "undefined" || !document.body) return; // тесты без DOM-документа
+    if (this.missionGuide === null) {
+      this.missionGuide = mountMissionGuide(document, { store: tourPreferenceStore });
+    }
+    const facts: MissionGuideFacts = {
+      view: this.state.view,
+      mission: this.state.mission,
+      draft: this.state.draft,
+      validation: this.state.validation,
+      draftRevision: this.state.draft?.draftRevision,
+      draftContentHash: this.state.draft?.contentHash
+    };
+    this.missionGuide.update(facts);
+    void guideStepDone(facts);
+    void guideReadyToPublish(facts);
+  }
+
 
   /**
    * Инспектор сцены монтируется в «Свойствах», когда выбрана именно сцена

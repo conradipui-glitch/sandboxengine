@@ -421,7 +421,7 @@ export interface OnboardingOptions {
  */
 let activeStudioHelp: { open: () => void; close: () => void } | null = null;
 
-/** Открыть существующую справку Studio из любого места приложения. false — справки нет. */
+/** Открыть справку Studio из любого места приложения. false — справки нет. */
 export function openStudioHelp(
   doc: Document | null = typeof document === "undefined" ? null : document
 ): boolean {
@@ -441,6 +441,24 @@ export function openStudioHelp(
 export function closeStudioHelp(): boolean {
   if (!activeStudioHelp) return false;
   activeStudioHelp.close();
+  return true;
+}
+
+/**
+ * Повторный вызов помощника «Создание миссии за 5 шагов» из справки:
+ * модуль mission-guide регистрирует свой open, справка вызывает его кнопкой.
+ * Обратный вызов один — последний смонтированный помощник.
+ */
+let missionGuideOpener: (() => void) | null = null;
+
+export function registerMissionGuideOpener(open: () => void): void {
+  missionGuideOpener = open;
+}
+
+/** Открыть помощника из справки. false — помощник не смонтирован. */
+export function openMissionGuide(): boolean {
+  if (!missionGuideOpener) return false;
+  missionGuideOpener();
   return true;
 }
 
@@ -565,6 +583,10 @@ export function installStudioOnboarding(doc: Document, options: OnboardingOption
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-onboarding-action]") : null;
     if (!target) return;
     const action = target.dataset.onboardingAction;
+    void handleOnboardingAction(action);
+  };
+
+  const handleOnboardingAction = async (action: string | undefined): Promise<void> => {
 
     if (action === "close-help") {
       closeHelp();
@@ -572,6 +594,14 @@ export function installStudioOnboarding(doc: Document, options: OnboardingOption
     }
     if (action === "repeat-tour") {
       openTour();
+      return;
+    }
+    if (action === "open-mission-guide") {
+      // Зона GUIDE: справка приглашает пошагового помощника «Создание миссии
+      // за 5 шагов». Помощник регистрирует свой open при монтаже; пока он не
+      // смонтирован — просто закрываем справку, ничего не ломая.
+      closeHelp();
+      openMissionGuide();
       return;
     }
     if (action === "tour-back") {
@@ -666,6 +696,7 @@ function helpMarkup(role: string): string {
       <p class="lh-help-intro">Статическая справка по пути Studio → доска и экраны → проверка → frozen playtest → Player → публикация выпуска. Текущая роль: <strong>${escapeHtml(roleLabel(role))}</strong>. Справка не запускает AI и не меняет authoring/game state.</p>
       <div class="lh-help-topics">${topics.map((topic) => `<article data-audience="${escapeHtml(topic.audience)}"><h3>${escapeHtml(topic.title)}</h3><p>${escapeHtml(topic.body)}</p></article>`).join("")}</div>
       <div class="lh-dialog-actions">
+        <button type="button" data-onboarding-action="open-mission-guide">Как создать миссию</button>
         <button type="button" data-onboarding-action="repeat-tour">Повторить обучение</button>
         <button type="button" class="lh-primary" data-dialog-primary data-onboarding-action="close-help">Закрыть</button>
       </div>
