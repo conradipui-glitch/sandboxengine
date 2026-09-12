@@ -526,6 +526,31 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .playtest-result span { color: var(--muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .playtest-result p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .playtest-result .stale-note { margin-bottom: 2px; }
+/* PLAYER: проверка миссии играется внутри Studio на том же origin — iframe
+   занимает всю ширину панели, внешний адрес и порт плеера в интерфейсе не видны. */
+.player-embed { display: grid; gap: 8px; }
+.player-embed-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.player-embed-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+}
+.player-embed-open:hover { border-color: var(--border-strong); }
+.player-embed-frame {
+  width: 100%;
+  min-height: 520px;
+  height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
 .launch-commands { display: grid; gap: 6px; }
 .launch-commands code {
   display: block;

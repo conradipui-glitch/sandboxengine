@@ -143,6 +143,7 @@ import {
 import { mountScreenComposition, type ScreenCompositionHandle } from "./screen-dom.js";
 import { mountStoryBoard, type StoryDomHandle } from "./story-dom.js";
 import { renderPlaytestEvidence } from "./playtest-evidence.js";
+import { isSameOriginEmbedPath, resolvePlayerTarget } from "./player-embed.js";
 import { renderDeletionPreflight, type DeletionIntent } from "./deletion.js";
 import {
   downloadQuestExport,
@@ -196,6 +197,7 @@ interface StudioState {
   publishReport: PublishReportIntent | null;
   publicationReceipt: PublicationReceipt | null;
   deletionIntent: DeletionIntent | null;
+  /** Адрес проверки для автора: same-origin маршрут Studio либо публичный адрес. Внутренний loopback-адрес плеера сюда не попадает. */
   playerUrl: string | null;
   playerPlaytestId: string | null;
   playerError: string | null;
@@ -2345,9 +2347,20 @@ export class StudioApp {
             ? `Этот frozen playtest нельзя сыграть: в нём нет ни сюжетной миссии (сцен и выборов), ни ровно одного действия core.paint${detail.length > 0 ? ` (${detail})` : ""}.`
             : `Не удалось запустить Player: ${code}`;
       } else {
-        this.state.playerUrl = String(value.url);
-        this.state.playerError = null;
-        this.state.message = `Player запущен: ${String(value.url)}`;
+        // Адрес для автора выбирает общий контракт player-embed: сначала
+        // same-origin маршрут Studio, иначе публичный адрес. Служебный
+        // loopback-адрес плеера в интерфейсе не появляется.
+        const target = resolvePlayerTarget({ embedPath: value.embedPath, url: value.url });
+        if (target === null) {
+          this.state.playerUrl = null;
+          this.state.playerError = "Player запущен, но Studio не получила адрес для проверки. Обновите страницу Studio и попробуйте снова.";
+        } else {
+          this.state.playerUrl = target;
+          this.state.playerError = null;
+          this.state.message = isSameOriginEmbedPath(target)
+            ? "Player запущен внутри Studio: проверка идёт на этом же адресе."
+            : "Player запущен на внешнем адресе: откройте его кнопкой в панели frozen playtest.";
+        }
       }
     } catch (error) {
       this.state.playerUrl = null;
@@ -5047,9 +5060,7 @@ function playtestPanel(
       <span>revision ${playtest.draftRevision} · ${id}</span>
       <p>validation <code>${escapeHtml(playtest.validationId)}</code> · compiled <code>${escapeHtml(shortHash(playtest.compiledContentHash))}</code></p>
       <p>Player запустится именно из этой замороженной версии, даже если draft позже изменится. Это frozen playtest, а не published release.</p>
-      ${options.playerUrl
-        ? `<p>Player запущен: <a href="${escapeAttr(options.playerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(options.playerUrl)}</a></p>`
-        : `<button class="primary" data-action="launch-player" ${options.playerLaunching ? "disabled" : ""}>${options.playerLaunching ? "Запускаем Player…" : "Открыть в Player"}</button>`}
+      ${renderPlayerCheckTarget(options)}
       ${options.playerError ? `<p class="stale-note" data-error-slot data-error-code="player-launch">${escapeHtml(options.playerError)}</p>` : ""}
       <details class="launch-commands"><summary>Запуск вручную из терминала</summary>
         <code>PowerShell: $env:LH_PLAYTEST_ID=&quot;${attrId}&quot;; npm run dev:player</code>
@@ -5068,6 +5079,33 @@ function playtestPanel(
     <strong>Revision можно заморозить для Player</strong>
     <p>Создание playtest фиксирует текущий content hash и не читает будущий draft.</p>
     <button class="primary" data-action="create-playtest" ${phase === "freezing" ? "disabled" : ""}>${phase === "freezing" ? "Создаём…" : "Создать frozen playtest"}</button>
+  </div>`;
+}
+
+/**
+ * Проверка миссии для автора. Запущенный Player показывается внутри Studio на
+ * том же origin (`/player`), поэтому служебный адрес и порт плеера в интерфейсе
+ * не появляются. Если Player отдаёт только публичный адрес, показываем ссылку
+ * без внутренних деталей.
+ */
+function renderPlayerCheckTarget(options: {
+  readonly playerUrl: string | null;
+  readonly playerError: string | null;
+  readonly playerLaunching: boolean;
+}): string {
+  if (options.playerUrl === null) {
+    return `<button class="primary" data-action="launch-player" ${options.playerLaunching ? "disabled" : ""}>${options.playerLaunching ? "Запускаем Player…" : "Открыть в Player"}</button>`;
+  }
+  const href = escapeAttr(options.playerUrl);
+  if (!isSameOriginEmbedPath(options.playerUrl)) {
+    return `<p>Player запущен на внешнем адресе. <a class="player-embed-open" href="${href}" target="_blank" rel="noopener noreferrer">Открыть Player в новой вкладке</a></p>`;
+  }
+  return `<div class="player-embed" data-player-embed>
+    <div class="player-embed-bar">
+      <strong>Проверка идёт внутри Studio</strong>
+      <a class="player-embed-open" href="${href}" target="_blank" rel="noopener noreferrer">Открыть в новой вкладке</a>
+    </div>
+    <iframe class="player-embed-frame" src="${href}" title="Плеер frozen playtest" referrerpolicy="same-origin"></iframe>
   </div>`;
 }
 
