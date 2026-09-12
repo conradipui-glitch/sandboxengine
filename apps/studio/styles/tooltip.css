@@ -1,0 +1,59 @@
+/* ==== Подсказки-облачка Studio (механизм — src/tooltip.ts) ==== */
+
+/*
+ * Единый лист подсказок. Правила владельца интерфейса, которые держит этот файл:
+ *
+ *   1) Появление по наведению И по фокусу с клавиатуры: показом управляет
+ *      data-visible="true", которую ставит src/tooltip.ts.
+ *   2) Закрытие по Escape — этим занимается модуль (слушатель keydown на корне).
+ *   3) Без перекрытия содержимого: облачко живёт в отдельном fixed-слое,
+ *      координаты считает positionTooltip(), а не догадка в CSS; слой не ловит
+ *      указатель (pointer-events: none), поэтому под ним всё остаётся доступным.
+ *   4) Текст не обрезается: перенос строк (white-space: normal) и перенос
+ *      длинных слов (overflow-wrap: anywhere). Многоточия и line-clamp нет.
+ *   5) Темы: только токены var(--…), поэтому подсказка одинакова в тёмной
+ *      («Петроград»), светлой («Флоренция») и графитовой темах.
+ */
+
+.lh-tooltip {
+  position: fixed;
+  z-index: 60;
+  top: 0;
+  left: 0;
+  display: none;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface-soft);
+  color: var(--text);
+  box-shadow: 0 10px 24px var(--shadow-md);
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+/* Пунктирная граница — нецветовой признак «это подсказка поверх интерфейса»:
+   смысл не теряется, даже если цвета недоступны. */
+.lh-tooltip[data-visible="true"] {
+  display: block;
+  border-style: dashed;
+}
+
+/* Визуально скрытый узел описания: скринридер читает его по aria-describedby,
+   на экране он не занимает места и ничего собой не закрывает. */
+.lh-tooltip-desc {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: normal;
+}

@@ -42,6 +42,7 @@ import type { PreferenceStore } from "./onboarding.js";
 // а не показывать общую фразу про «не настроено» после успешного сохранения.
 import { providerCauseFromCodes, providerCauseText } from "./ai-provider-form.js";
 import { missionRailItemHtml } from "./mission-card.js";
+import { installTooltips, type TooltipLayer } from "./tooltip.js";
 
 // FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, а само
 // браузерное хранилище отдаёт onboarding.ts — Studio не трогает его напрямую.
@@ -364,6 +365,10 @@ export class StudioApp {
   private screenHost: HTMLElement | null = null;
   private screenContext: { readonly projectId: string; readonly questId: string; readonly nodeId: string } | null = null;
   private readonly rootDisposers: Array<() => void> = [];
+  // Единый слой подсказок-облачков (src/tooltip.ts): один слушатель на корень,
+  // а разметка ссылается на тексты ключом data-tooltip (атрибут title не
+  // используется как замена подсказки).
+  private readonly tooltips: TooltipLayer;
   private inspectorSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private boardSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private boardSaveInFlight = false;
@@ -396,6 +401,10 @@ export class StudioApp {
       () => root.removeEventListener("focusout", onFocusOut),
       () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure)
     );
+    // Единственная проводка подсказок: слушатели на корне приложения
+    // (наведение, фокус с клавиатуры, Escape). Тексты — в словаре tooltip.ts,
+    // разметка ссылается на них атрибутом data-tooltip.
+    this.tooltips = installTooltips(this.root);
   }
 
   /** Останавливает board gestures/listeners и корневые Studio listeners. */
@@ -409,6 +418,7 @@ export class StudioApp {
     this.boardSaveAgain = false;
     this.destroyBoard();
     this.destroyStory();
+    this.tooltips.destroy();
     for (const dispose of this.rootDisposers.splice(0)) dispose();
   }
 
@@ -2672,6 +2682,9 @@ export class StudioApp {
     this.mountAiPanelIfNeeded();
     this.mountPublishPanelIfNeeded();
     this.mountSceneInspectorIfNeeded();
+    // Разметка пересоздана — подсказки проводятся заново: каждый элемент с
+    // data-tooltip получает aria-describedby на скрытый узел с тем же текстом.
+    this.tooltips.sync(this.root);
   }
 
   /**
@@ -4159,7 +4172,7 @@ export class StudioApp {
         <header class="projects-topbar">
           <div class="brand"><span class="brand-mark">М</span><span><span class="brand-name">Мастерская</span><br><span class="brand-sub">Living History Studio</span></span></div>
           <nav>
-            <button data-action="help-projects" title="Помощь">Помощь</button>
+            <button data-action="help-projects" data-tooltip="help">Помощь</button>
             ${this.renderThemeToggle()}
             <span class="projects-profile" title="Профиль: роль и короткий ID">${escapeHtml(this.profileLabel())}</span>
           </nav>
@@ -4240,14 +4253,14 @@ export class StudioApp {
           <div class="actions">
             ${this.renderThemeToggle()}
             ${draft ? `
-            <button class="primary" data-action="play-quest" title="Проверить текущую revision и сразу запустить плеер на замороженной версии" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
+            <button class="primary" data-action="play-quest" data-tooltip="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
             ${draft && allowEdit ? renderPublishEntry(this.state.versions) : ``}
             <div class="ed-menu-wrap">
-              <button class="button-secondary" data-action="start-tour" title="Показать тур по главному сценарию">Тур по Studio</button>
+              <button class="button-secondary" data-action="start-tour" data-tooltip="tour">Тур по Studio</button>
                 <button class="button-secondary" data-action="toggle-editor-menu" aria-expanded="${this.state.editorMenuOpen ? "true" : "false"}" aria-haspopup="menu" aria-label="Дополнительные панели" title="Дополнительные панели">${icon("menu", 20)}</button>
               ${this.state.editorMenuOpen ? `<div class="ed-menu" role="menu">
                 <button data-action="open-utility-panel" data-panel="versions" role="menuitem">История версий</button>
-                <button data-action="open-utility-panel" data-panel="publish" role="menuitem">Публикация</button>
+                <button data-action="open-utility-panel" data-panel="publish" role="menuitem" data-tooltip="publish">Публикация</button>
                 <button data-action="open-utility-panel" data-panel="materials" role="menuitem">Материалы</button>
                 <button data-action="open-utility-panel" data-panel="portability" role="menuitem">Импорт и экспорт</button>
                 <button data-action="open-utility-panel" data-panel="settings" role="menuitem">Настройки проекта и доступа</button>
@@ -4268,10 +4281,10 @@ export class StudioApp {
               ${draft && allowEdit ? `<section class="sidebar-section block-library" aria-label="Добавить блок">
                 <div class="section-heading-row"><h2>Добавить карточку</h2></div>
                 <div class="library-add-grid">
-                  <button class="button-secondary" data-action="add-block" data-block-kind="location">Место</button>
-                  <button class="button-secondary" data-action="add-block" data-block-kind="character">Персонаж</button>
-                  <button class="button-secondary" data-action="add-block" data-block-kind="resource">Ресурс</button>
-                  <button class="button-secondary" data-action="add-block" data-block-kind="action">Действие</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="location" data-tooltip="add-location">Место</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="character" data-tooltip="add-character">Персонаж</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="resource" data-tooltip="add-resource">Ресурс</button>
+                  <button class="button-secondary" data-action="add-block" data-block-kind="action" data-tooltip="add-action">Действие</button>
                 </div>
                 <p class="form-hint">Действию нужен существующий ресурс; dangling reference не сохраняется.</p>
               </section>` : ``}
@@ -4287,7 +4300,7 @@ export class StudioApp {
                 <p>Черновик хранится на сервере. Здесь всегда показана текущая версия.</p>
               </div>
             </section>
-            <details class="diagnostics draft-meta"><summary>Дополнительно: технические данные</summary>
+            <details class="diagnostics draft-meta"><summary data-tooltip="technical-data">Дополнительно: технические данные</summary>
               <div>ID миссии: <code>${escapeHtml(draft.questId)}</code></div>
               <div>Версия черновика: <code>${draft.draftRevision}</code>, контрольная сумма: <code>${escapeHtml(shortHash(draft.contentHash))}</code></div>
             </details>
@@ -4296,9 +4309,9 @@ export class StudioApp {
             ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
 
             <div class="board-toggle" role="group" aria-label="Вид редактора миссии">
-              <button class="button-secondary ${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board">Доска</button>
-              <button class="button-secondary ${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list">Список</button>
-              <button class="button-secondary ${this.state.boardView === "story" ? "active" : ""}" data-action="board-view" data-view="story">Сюжет</button>
+              <button class="button-secondary ${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board" data-tooltip="view-board">Доска</button>
+              <button class="button-secondary ${this.state.boardView === "list" ? "active" : ""}" data-action="board-view" data-view="list" data-tooltip="view-list">Список</button>
+              <button class="button-secondary ${this.state.boardView === "story" ? "active" : ""}" data-action="board-view" data-view="story" data-tooltip="view-story">Сюжет</button>
             </div>
 
             ${this.state.boardView === "story"
@@ -4336,7 +4349,7 @@ export class StudioApp {
                 <p>Проверка относится к текущей версии черновика. После изменений запустите её снова.</p>
               </div>
               ${allowTest
-                ? `<button class="primary" data-action="validate" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить миссию</button>`
+                ? `<button class="primary" data-action="validate" data-tooltip="validate-mission" ${this.state.phase === "validating" ? "disabled" : ""}>Проверить миссию</button>`
                 : `<span class="access-note">Проверка и запуск доступны вашей роли после входа.</span>`}
               ${validationPanel(this.state.validation, draft)}
               ${playtestPanel(this.state.playtest, this.state.validation, draft, this.state.phase, allowTest, {
@@ -4405,7 +4418,7 @@ export class StudioApp {
         <p>В этой миссии пока нет ни одной сцены. Создайте первую — дальше сцены, развилки и экраны собираются здесь, без JSON.</p>
         ${allowEdit ? `<form data-form="story-mission-create" class="compact-form">
           <label>Название миссии <input name="title" maxlength="120" required placeholder="Например: Ночная смена" /></label>
-          <button class="primary" type="submit" ${this.state.missionSaving ? "disabled" : ""}>Создать миссию</button>
+          <button class="primary" type="submit" data-tooltip="create-mission" ${this.state.missionSaving ? "disabled" : ""}>Создать миссию</button>
         </form>` : `<p class="form-hint">Только чтение: создание миссии недоступно для вашей роли.</p>`}
       </div>`;
     }
@@ -4633,7 +4646,7 @@ export class StudioApp {
             <p>Права редактирования определяет сервер. Владелец проекта не получает глобальные права Studio автоматически.</p>
             ${renderAccessPanel(this.state.access, project)}
             <details class="diagnostics" open>
-              <summary>Технические данные</summary>
+              <summary data-tooltip="technical-data">Технические данные</summary>
               <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
               ${draft ? `<div>ID миссии: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
             </details>
@@ -4993,7 +5006,7 @@ function questForm(): string {
   return `<form class="compact-form" data-form="quest">
     <h3>Новая миссия</h3>
     <label>Название<input data-focus-key="quest-title" name="title" required maxlength="200" placeholder="Название миссии"></label>
-    <button type="submit">Создать миссию</button>
+    <button type="submit" data-tooltip="create-quest">Создать миссию</button>
   </form>`;
 }
 
