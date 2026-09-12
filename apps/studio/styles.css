@@ -864,6 +864,17 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .provider-settings form { display: grid; gap: 12px; max-width: 680px; margin-top: 12px; }
 .provider-settings label { display: grid; gap: 4px; }
 .provider-settings input, .provider-settings select { min-width: 0; width: 100%; box-sizing: border-box; }
+/* Подключение ИИ-помощника: кнопки, список сохранённых подключений и моделей.
+   Длинные адреса и идентификаторы моделей переносятся, а не обрезаются. */
+.provider-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.provider-saved-list, .provider-models, .provider-models-wait { display: grid; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius-m); padding: 10px 12px; }
+.provider-saved-items, .provider-models-items { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
+.provider-saved-items li, .provider-models-items li { display: grid; gap: 6px; overflow-wrap: anywhere; }
+.provider-saved-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.provider-saved-value, .provider-model-name { font-weight: 600; overflow-wrap: anywhere; }
+.provider-model-id { color: var(--muted-strong); font-size: 12px; overflow-wrap: anywhere; }
+.provider-models-problem { font-weight: 600; border-left: 3px solid var(--border-strong); padding-left: 8px; overflow-wrap: anywhere; }
+.provider-saved-title, .provider-models-title { margin: 0; font-size: 12px; color: var(--muted-strong); }
 
 /* V01 «Мои проекты» и каркас редактора — только размещение поверх движка панелей */
 .projects-topbar { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: var(--gap-4); padding: 12px var(--gap-6); background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }

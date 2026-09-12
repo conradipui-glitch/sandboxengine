@@ -1,40 +1,44 @@
+/*
+ * Скрипт блока «Подключение ИИ-помощника» (apps/studio/index.html).
+ *
+ * Вся логика формы живёт в ai-provider-form.ts и проверяется тестами; здесь
+ * только поиск элементов страницы, роль автора и один вызов контроллера.
+ *
+ * Роль: владелец стенда видит форму; остальные роли — только статус (V01).
+ * Не-владельцу форму не показываем и ничего не сохраняем.
+ */
+
+import { createProviderFormController, type ProviderFormFetchResponse } from "./ai-provider-form.js";
+
+const dock = document.querySelector<HTMLDetailsElement>(".provider-settings");
 const form = document.querySelector<HTMLFormElement>("#provider-form");
 const status = document.querySelector<HTMLElement>("#provider-status");
-const field = (name: string) => form!.elements.namedItem(name) as HTMLInputElement;
-const NOT_CONFIGURED_MESSAGE = "ИИ не подключён. Укажите провайдера, модель и ключ — соединение проверится первым запросом помощника.";
-const SETTINGS_SAVED_MESSAGE = "Настройки сохранены. Отдельная проверка соединения не запускалась; первый запрос отправится из помощника. Ключ хранится до отключения или перезапуска сервера и затем потребуется снова.";
+const credentialState = document.querySelector<HTMLElement>("#provider-credential-state");
+const saved = document.querySelector<HTMLElement>("#provider-saved");
+const models = document.querySelector<HTMLElement>("#provider-models");
 
-const STATE_MESSAGES: Record<string, string> = {
-  "not_configured": NOT_CONFIGURED_MESSAGE,
-  "settings_saved": SETTINGS_SAVED_MESSAGE,
-  "requesting": "Запрос к модели выполняется…",
-  "connected": "Подключение работает: последний запрос к модели завершился успешно.",
-  "error": "Последний запрос к модели завершился ошибкой. Проверьте ключ, модель и адрес API, затем сохраните настройки снова."
-};
-
-const ERROR_HINTS: Record<string, string> = {
-  "auth_required": "Провайдер отклонил ключ (401/403). Проверьте ключ и сохраните настройки снова.",
-  "rate_limited": "Провайдер отвечает 429 (лимит запросов). Повторите позже.",
-  "timeout": "Провайдер не ответил за отведённое время. Повторите запрос позже.",
-  "invalid_response": "Провайдер вернул нечитаемый ответ. Проверьте модель и её поддержку JSON-ответов.",
-  "aborted": "Запрос был прерван. Повторите его из помощника.",
-  "network": "Не удалось связаться с провайдером. Проверьте адрес API и подключение.",
-  "backend_error": "Провайдер вернул ошибку. Проверьте адрес API и модель."
-};
-
-function renderProviderStatus(value: any): void {
-  if (!status) return;
-  const state = typeof value?.state === "string" ? value.state : "not_configured";
-  const base = STATE_MESSAGES[state] ?? NOT_CONFIGURED_MESSAGE;
-  const hint = state === "error" && typeof value?.lastErrorCode === "string" ? ERROR_HINTS[value.lastErrorCode] ?? `Код ошибки: ${value.lastErrorCode}.` : null;
-  status.textContent = hint ? `${base} ${hint}` : base;
-  if (value?.settings) for (const name of ["preset", "baseUrl", "model"]) field(name).value = value.settings[name];
-  field("baseUrl").readOnly = field("preset").value === "openrouter";
+function field<T extends HTMLElement>(name: string): T | null {
+  if (form === null) return null;
+  return form.elements.namedItem(name) as unknown as T | null;
 }
 
+const preset = field<HTMLSelectElement>("preset");
+const baseUrl = field<HTMLInputElement>("baseUrl");
+const model = field<HTMLInputElement>("model");
+const credential = field<HTMLInputElement>("credential");
+
+/** Пресет, который сам задаёт адрес API, не даёт править поле адреса. */
+function syncBaseUrlReadOnly(): void {
+  if (preset === null || baseUrl === null) return;
+  const fixed = preset.value === "openrouter";
+  baseUrl.readOnly = fixed;
+  if (fixed) baseUrl.value = "https://openrouter.ai/api/v1";
+}
+preset?.addEventListener("change", syncBaseUrlReadOnly);
+
+/** Не-владелец видит только статус: форма и кнопки скрыты. */
 function showStatusOnly(connected: boolean): void {
-  // V01: не-владелец видит только статус, форма скрыта по умолчанию.
-  if (!form || !status) return;
+  if (form === null || status === null) return;
   for (const element of Array.from(form.elements)) {
     const html = element as HTMLElement;
     if (html.id === "provider-status") continue;
@@ -42,8 +46,10 @@ function showStatusOnly(connected: boolean): void {
     if (label) label.style.display = "none";
     else html.style.display = "none";
   }
-  document.querySelector("#provider-disconnect")?.remove();
-  form.querySelector("button[type=submit]")?.remove();
+  for (const selector of ["#provider-actions", "#provider-saved", "#provider-models", "#provider-credential-state"]) {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element !== null) element.style.display = "none";
+  }
   status.textContent = connected ? "Соавтор подключён" : "Соавтор недоступен";
 }
 
@@ -58,14 +64,12 @@ async function isOwner(): Promise<boolean> {
   if (!projects.ok) return false;
   const body = await projects.json().catch(() => null);
   const list = Array.isArray(body?.projects) ? body.projects : [];
-  return list.some((item: any) => item?.role === "owner");
+  return list.some((item: { role?: string }) => item?.role === "owner");
 }
 
 async function providerConnected(): Promise<boolean> {
   try {
-    const response = await fetch("/local/author-provider", {
-      headers: { "x-lh-local-settings": "1" }
-    });
+    const response = await fetch("/local/author-provider", { headers: { "x-lh-local-settings": "1" } });
     if (!response.ok) return false;
     const body = await response.json().catch(() => null);
     return body?.state === "connected";
@@ -74,31 +78,22 @@ async function providerConnected(): Promise<boolean> {
   }
 }
 
-if (form && status) {
-  const refresh = async (method = "GET", body?: string) => {
-    const response = await fetch("/local/author-provider", { method,
-      headers: { "content-type": "application/json", "x-lh-local-settings": "1" }, ...(body ? { body } : {}) });
-    if (!response.ok) throw new Error("Не удалось сохранить настройки. Проверьте адрес API, модель и ключ.");
-    renderProviderStatus(await response.json());
-  };
-  field("preset").addEventListener("change", () => {
-    field("baseUrl").readOnly = field("preset").value === "openrouter";
-    field("baseUrl").value = field("preset").value === "openrouter" ? "https://openrouter.ai/api/v1" : "";
+if (dock !== null && form !== null && status !== null) {
+  const fetchImpl = (url: string, init?: RequestInit) =>
+    fetch(url, init) as unknown as Promise<ProviderFormFetchResponse>;
+  const controller = createProviderFormController({
+    dom: { dock, form, status, credentialState, saved, models, preset, baseUrl, model, credential },
+    fetchImpl,
+    // Escape закрывает окно подключения всегда, а не только по кнопке.
+    keyboardTarget: document as unknown as { addEventListener: (type: string, handler: (event: any) => void) => void },
+    onError: () => {
+      // Причина уже показана внутри формы; дополнительных сообщений не плодим.
+    }
   });
-  const report = (error: unknown) => { status.textContent = error instanceof Error ? error.message : "Ошибка подключения"; };
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const body = JSON.stringify(Object.fromEntries(new FormData(form)));
-    field("credential").value = "";
-    try { await refresh("POST", body); } catch (error) { report(error); }
-  });
-  document.querySelector("#provider-disconnect")?.addEventListener("click", () => {
-    field("credential").value = "";
-    void refresh("DELETE").catch(report);
-  });
+  syncBaseUrlReadOnly();
   void (async () => {
     try {
-      if (await isOwner()) await refresh().catch(report);
+      if (await isOwner()) await controller.load();
       else showStatusOnly(await providerConnected());
     } catch {
       showStatusOnly(false);

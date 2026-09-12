@@ -29,14 +29,22 @@
   <details class="provider-settings">
     <summary>Подключение ИИ-помощника</summary>
     <form id="provider-form">
-      <p>Настройка для локальной Studio. Ключ хранится в памяти сервера до отключения или перезапуска. Запросы оплачиваются по тарифу провайдера.</p>
+      <p>Настройка для локальной Studio. Ключ хранится на сервере стенда и наружу отдаётся только маской; подстановка ключа в запросы скрыта. Запросы оплачиваются по тарифу провайдера.</p>
       <label>Провайдер <select name="preset"><option value="openrouter">OpenRouter</option><option value="compatible">Совместимый API</option></select></label>
-      <label>Базовый адрес API <input name="baseUrl" type="url" value="https://openrouter.ai/api/v1" required></label>
-      <label>Модель <input name="model" placeholder="Идентификатор модели у провайдера" required maxlength="200"></label>
-      <label>API-ключ <input name="credential" type="password" autocomplete="off" required maxlength="4096"></label>
-      <button type="submit">Сохранить подключение</button>
-      <button type="button" id="provider-disconnect">Отключить</button>
+      <label>Базовый адрес API <input name="baseUrl" type="url" value="https://openrouter.ai/api/v1"></label>
+      <label>Модель <input name="model" placeholder="Идентификатор модели у провайдера" maxlength="200"></label>
+      <label>API-ключ <input name="credential" type="password" autocomplete="off" maxlength="4096"></label>
+      <p id="provider-credential-state" data-provider-credential-state>Ключ не сохранён: введите его и нажмите «Сохранить подключение».</p>
+      <div id="provider-actions" class="provider-actions">
+        <button type="submit">Сохранить подключение</button>
+        <button type="button" data-action="provider-probe">Проверить подключение</button>
+        <button type="button" data-action="provider-models">Получить список моделей</button>
+        <button type="button" data-action="provider-close">Закрыть</button>
+        <button type="button" id="provider-disconnect" data-action="provider-disconnect">Отключить</button>
+      </div>
       <p id="provider-status" role="status">Проверяем настройки…</p>
+      <div id="provider-saved" data-provider-saved></div>
+      <div id="provider-models" data-provider-models></div>
       <p>Выберите модель с поддержкой JSON-ответов. Остаток лимита: неизвестен; баланс смотрите у провайдера.</p>
     </form>
   </details>

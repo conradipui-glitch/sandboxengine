@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
-import { isLocalOperatorRequest, isLocalProxyRequest, LocalAuthorProviderRequestError, readLocalJson, type LocalAuthorProvider } from "./local-author-provider.js";
+import { isLocalOperatorRequest, isLocalProxyRequest, LocalAuthorProviderCredentialRequiredError, LocalAuthorProviderInvalidBaseUrlError, LocalAuthorProviderRequestError, readLocalJson, type LocalAuthorProvider } from "./local-author-provider.js";
 
 const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
 const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
@@ -124,6 +124,12 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         } catch (error) {
           if (error instanceof LocalAuthorProviderRequestError) {
             sendJson(response, error.status, { error: { code: error.code } });
+          } else if (error instanceof LocalAuthorProviderCredentialRequiredError) {
+            // Первое сохранение без ключа — понятный код, а не общая ошибка настроек.
+            sendJson(response, 400, { error: { code: "CREDENTIAL_REQUIRED" } });
+          } else if (error instanceof LocalAuthorProviderInvalidBaseUrlError) {
+            // Неверный базовый адрес — своя причина, отдельно от ключа и модели.
+            sendJson(response, 400, { error: { code: "INVALID_BASE_URL" } });
           } else {
             sendJson(response, 400, { error: { code: "INVALID_SETTINGS" } });
           }
@@ -135,6 +141,13 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
         await options.authorProvider.probe();
         sendJson(response, 200, options.authorProvider.status());
+        return;
+      }
+      // Список моделей провайдера: автору не нужно искать их на сайте провайдера.
+      if (url.pathname === "/local/author-provider/models" && options.authorProvider) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        sendJson(response, 200, await options.authorProvider.listModels());
         return;
       }
       if (url.pathname === "/local/mission-draft" && options.missionDrafter) {

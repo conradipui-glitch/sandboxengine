@@ -18,6 +18,62 @@ import {
 
 export type LocalAuthorProviderState = "not_configured" | "settings_saved" | "requesting" | "connected" | "error";
 
+/**
+ * Причина результата проверки подключения — человеческая, а не только код:
+ * тайм-аут разбирается на «медленный ответ» (`slow_timeout`) и «нет сети»
+ * (`network`), а неверный адрес API отличается от ошибки провайдера.
+ */
+export type LocalAuthorProviderCause =
+  | "connected"
+  | "not_configured"
+  | "key_missing"
+  | "invalid_base_url"
+  | "auth_required"
+  | "rate_limited"
+  | "slow_timeout"
+  | "network"
+  | "invalid_response"
+  | "backend_error";
+
+export interface LocalAuthorProviderProbe {
+  readonly cause: LocalAuthorProviderCause;
+  readonly latencyMs: number | null;
+  readonly httpStatus: number | null;
+  readonly atMs: number;
+}
+
+/** Модель провайдера, полученная из его собственного списка моделей. */
+export interface LocalAuthorProviderModel {
+  readonly id: string;
+  readonly name: string;
+}
+
+export type LocalAuthorProviderModelList =
+  | { readonly kind: "ok"; readonly cause: "connected"; readonly models: readonly LocalAuthorProviderModel[];
+      readonly latencyMs: number | null; readonly httpStatus: number | null; readonly truncated: boolean }
+  | { readonly kind: "error"; readonly cause: LocalAuthorProviderCause; readonly models: readonly LocalAuthorProviderModel[];
+      readonly latencyMs: number | null; readonly httpStatus: number | null; readonly truncated: boolean };
+
+/** Первое сохранение без ключа: сохранять нечего, и это говорится прямо. */
+export class LocalAuthorProviderCredentialRequiredError extends Error {
+  constructor() {
+    super("CREDENTIAL_REQUIRED");
+  }
+}
+
+/**
+ * Неверный базовый адрес: сохранять такое подключение нельзя, и автору это
+ * говорится отдельно от «ключа» и «модели», а не общей ошибкой настроек.
+ */
+export class LocalAuthorProviderInvalidBaseUrlError extends Error {
+  constructor() {
+    super("INVALID_BASE_URL");
+  }
+}
+
+const MODEL_LIST_TIMEOUT_MS = 10_000;
+const MODEL_LIST_LIMIT = 500;
+
 interface LocalAuthorProviderSettings {
   readonly preset: string;
   readonly baseUrl: string;
@@ -50,6 +106,8 @@ export class LocalAuthorProvider {
   /** Сохранение подключения не удалось — тогда нельзя обещать локальный файл. */
   #persistFailed = false;
   #revision: number | null = null;
+  /** Последняя проверка подключения: причина, задержка и код ответа. */
+  #probe: LocalAuthorProviderProbe | null = null;
   constructor(
     private readonly providerFetch?: FetchLike,
     private readonly persistence?: LocalAuthorProviderPersistence
@@ -68,6 +126,11 @@ export class LocalAuthorProvider {
         ? "Отдельная проверка не запускалась; первый запрос будет отправлен из помощника."
         : null,
       lastErrorCode: this.#lastErrorCode,
+      /** Причина последней проверки — человеческая, а не только код стора. */
+      probe: this.#probe === null ? null : Object.freeze({ ...this.#probe }),
+      probeCause: this.#probe === null ? null : this.#probe.cause,
+      probeLatencyMs: this.#probe === null ? null : this.#probe.latencyMs,
+      probeHttpStatus: this.#probe === null ? null : this.#probe.httpStatus,
       remainingTokens: null
     });
   }
@@ -82,7 +145,16 @@ export class LocalAuthorProvider {
       || typeof config.baseUrl !== "string" || config.baseUrl.length > 2048) throw new Error("invalid_settings");
     const baseUrl = config.preset === "openrouter" ? OPENROUTER_PRESET.defaultBaseUrl! : config.baseUrl.trim();
     const model = config.model.trim();
-    const provider = new OpenAiCompatibleModelProvider({ baseUrl, credential: config.credential, allowLocal: true,
+    // Адрес проверяется до создания провайдера: «неверный базовый адрес» —
+    // отдельная понятная причина, а не общая ошибка настроек.
+    if (!isUsableBaseUrl(baseUrl)) throw new LocalAuthorProviderInvalidBaseUrlError();
+    // Пустой ключ при повторном сохранении = «оставить прежний ключ»: автор уже
+    // сохранил подключение, и требовать секрет заново нельзя. Совсем без ключа
+    // (первое сохранение) — честная ошибка, а не молчаливая поломка запросов.
+    const submitted = String(config.credential);
+    const credential = submitted.length > 0 ? submitted : this.#credential;
+    if (credential === null || credential.length === 0) throw new LocalAuthorProviderCredentialRequiredError();
+    const provider = new OpenAiCompatibleModelProvider({ baseUrl, credential, allowLocal: true,
       capabilities: { text: true, jsonObject: true }, ...(this.providerFetch ? { fetch: this.providerFetch } : {}) });
     const nextGeneration = this.#generation + 1;
     this.#generation = nextGeneration;
@@ -96,9 +168,10 @@ export class LocalAuthorProvider {
     this.#state = "settings_saved";
     this.#lastErrorCode = null;
     this.#activeRequests = 0;
-    this.#credential = String(config.credential);
-    this.#credentialMask = maskProviderApiKey(String(config.credential));
-    if (this.persistence && options.persist !== false) this.#persistConnection(String(config.credential));
+    this.#probe = null;
+    this.#credential = credential;
+    this.#credentialMask = maskProviderApiKey(credential);
+    if (this.persistence && options.persist !== false) this.#persistConnection(credential);
   }
 
   /** Запись подключения в локальное хранилище: наружу ключ не возвращается. */
@@ -154,25 +227,112 @@ export class LocalAuthorProvider {
   /**
    * Проверка соединения отдельным запросом: результат виден до первого запроса
    * помощника. Состояние подключения сохраняется, ключ — не покидает процесс.
+   *
+   * Тайм-аут не прячется: причина разбирается отдельно — неверный базовый адрес,
+   * отсутствующий или отклонённый ключ, лимит, медленный ответ (провайдер не
+   * успел за отведённое время), отсутствие сети, нечитаемый ответ, ошибка
+   * провайдера. Причина отдаётся наружу полем `probeCause`.
    */
-  async probe(): Promise<LocalAuthorProviderState> {
-    if (!this.#settings || !this.persistence) {
-      this.#state = this.#settings ? this.#state : "not_configured";
+  async probe(options: { readonly timeoutMs?: number } = {}): Promise<LocalAuthorProviderState> {
+    if (!this.#settings) {
+      this.#state = "not_configured";
+      this.#probe = null;
       return this.#state;
     }
-    const { connections, scope } = this.persistence;
-    const apiKey = this.#credential ?? await connections.revealApiKey(scope);
-    if (apiKey === null) { this.#state = "not_configured"; return this.#state; }
+    const apiKey = await this.#resolveCredential();
+    if (apiKey === null) {
+      this.#state = "error";
+      this.#lastErrorCode = "auth_required";
+      this.#probe = probeRecord("key_missing", null, null);
+      await this.#persistState("error", this.#lastErrorCode);
+      return this.#state;
+    }
+    if (!isUsableBaseUrl(this.#settings.baseUrl)) {
+      this.#state = "error";
+      this.#lastErrorCode = "backend_error";
+      this.#probe = probeRecord("invalid_base_url", null, null);
+      await this.#persistState("error", this.#lastErrorCode);
+      return this.#state;
+    }
     this.#state = "requesting";
     const doFetch = this.providerFetch ?? ((url: string, init: RequestInit) => fetch(url, init));
     const result = await probeProviderConnection(
       { baseUrl: this.#settings.baseUrl, model: this.#settings.model, apiKey },
-      doFetch as never
+      doFetch as never,
+      options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }
     );
+    const cause: LocalAuthorProviderCause = result.kind === "connected" ? "connected" : probeCause(result.kind);
     this.#lastErrorCode = result.kind === "connected" ? null : result.kind;
     this.#state = result.kind === "connected" ? "connected" : "error";
+    this.#probe = probeRecord(cause, result.latencyMs, result.httpStatus);
     await this.#persistState(result.kind === "connected" ? "connected" : "error", this.#lastErrorCode);
     return this.#state;
+  }
+
+  /**
+   * Список моделей провайдера его же запросом (`GET <базовый адрес>/models`):
+   * автору не нужно искать модели на сайте провайдера вручную. Ключ уходит
+   * только в заголовке Authorization и наружу не возвращается; понятная причина
+   * отказа — та же, что у проверки соединения.
+   */
+  async listModels(options: { readonly timeoutMs?: number } = {}): Promise<LocalAuthorProviderModelList> {
+    if (!this.#settings) return modelListError("not_configured");
+    const apiKey = await this.#resolveCredential();
+    if (apiKey === null) return modelListError("key_missing");
+    const url = modelListUrl(this.#settings.baseUrl);
+    if (url === null) return modelListError("invalid_base_url");
+    const timeoutMs = options.timeoutMs ?? MODEL_LIST_TIMEOUT_MS;
+    const doFetch = this.providerFetch ?? ((input: string, init: RequestInit) => fetch(input, init));
+    const startedAtMs = Date.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    try {
+      const response = await doFetch(url, {
+        method: "GET",
+        headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+        signal: controller.signal
+      });
+      const latencyMs = Math.max(0, Date.now() - startedAtMs);
+      const httpStatus = Number(response.status);
+      if (httpStatus === 401 || httpStatus === 403) return modelListError("auth_required", latencyMs, httpStatus);
+      if (httpStatus === 429) return modelListError("rate_limited", latencyMs, httpStatus);
+      if (!(httpStatus >= 200 && httpStatus < 300)) return modelListError("backend_error", latencyMs, httpStatus);
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        return modelListError("invalid_response", latencyMs, httpStatus);
+      }
+      const models = readModelList(payload);
+      if (models === null) return modelListError("invalid_response", latencyMs, httpStatus);
+      return Object.freeze({
+        kind: "ok" as const,
+        cause: "connected" as const,
+        models: Object.freeze(models),
+        latencyMs,
+        httpStatus,
+        truncated: models.length >= MODEL_LIST_LIMIT
+      });
+    } catch (error) {
+      const latencyMs = Math.max(0, Date.now() - startedAtMs);
+      const aborted = typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
+      if (timedOut || aborted) return modelListError("slow_timeout", latencyMs, null);
+      return modelListError("network", latencyMs, null);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Ключ для запроса: из памяти, иначе — из локального хранилища. Наружу не отдаётся. */
+  async #resolveCredential(): Promise<string | null> {
+    if (this.#credential !== null && this.#credential.length > 0) return this.#credential;
+    if (!this.persistence) return null;
+    const revealed = await this.persistence.connections.revealApiKey(this.persistence.scope);
+    return revealed === null || revealed.length === 0 ? null : revealed;
   }
 
   /** `erase: false` — остановка процесса: ключ остаётся в локальном файле. */
@@ -249,6 +409,89 @@ function mapStoredStatus(status: string): LocalAuthorProviderState {
   if (status === "error") return "error";
   if (status === "settings_saved" || status === "requesting") return "settings_saved";
   return "not_configured";
+}
+
+/** Причина проверки: «медленный ответ» отделяем от «нет сети», а не прячем в тайм-аут. */
+function probeCause(kind: string): LocalAuthorProviderCause {
+  if (kind === "timeout") return "slow_timeout";
+  if (kind === "network") return "network";
+  if (kind === "invalid_response") return "invalid_response";
+  if (kind === "auth_required") return "auth_required";
+  if (kind === "rate_limited") return "rate_limited";
+  return "backend_error";
+}
+
+function probeRecord(
+  cause: LocalAuthorProviderCause,
+  latencyMs: number | null,
+  httpStatus: number | null
+): LocalAuthorProviderProbe {
+  return Object.freeze({ cause, latencyMs, httpStatus, atMs: Date.now() });
+}
+
+function modelListError(
+  cause: LocalAuthorProviderCause,
+  latencyMs: number | null = null,
+  httpStatus: number | null = null
+): LocalAuthorProviderModelList {
+  return Object.freeze({
+    kind: "error" as const,
+    cause,
+    models: Object.freeze([]) as readonly LocalAuthorProviderModel[],
+    latencyMs,
+    httpStatus,
+    truncated: false
+  });
+}
+
+/** Адрес пригоден для запроса, только если это http(s)-URL. */
+function isUsableBaseUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim().length === 0) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function modelListUrl(baseUrl: string): string | null {
+  if (!isUsableBaseUrl(baseUrl)) return null;
+  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  try {
+    return new URL("models", base).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Разбор ответа провайдера на список моделей: понимаем форму `{ data: [...] }`
+ * (OpenAI-совместимый ответ) и `{ models: [...] }`. Строковый мусор и дубли
+ * отбрасываются, порядок стабильный, длина ограничена — наружу не уходит
+ * неограниченный payload.
+ */
+function readModelList(payload: unknown): LocalAuthorProviderModel[] | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as { readonly data?: unknown; readonly models?: unknown };
+  const raw = Array.isArray(record.data) ? record.data : Array.isArray(record.models) ? record.models : null;
+  if (raw === null) return null;
+  const models: LocalAuthorProviderModel[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (models.length >= MODEL_LIST_LIMIT) break;
+    if (entry === null || typeof entry !== "object") continue;
+    const id = (entry as { readonly id?: unknown }).id;
+    if (typeof id !== "string") continue;
+    const trimmed = id.trim();
+    if (trimmed.length === 0 || trimmed.length > 200 || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    const name = (entry as { readonly name?: unknown }).name;
+    const label = typeof name === "string" && name.trim().length > 0 ? name.trim().slice(0, 200) : trimmed;
+    models.push(Object.freeze({ id: trimmed, name: label }));
+  }
+  models.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  return models;
 }
 
 export function isLocalOperatorRequest(request: any): boolean {

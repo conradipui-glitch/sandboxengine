@@ -38,6 +38,9 @@ import {
   type OnboardingTourState
 } from "./onboarding-tour.js";
 import type { PreferenceStore } from "./onboarding.js";
+// Причины отказа подключения к ИИ: панель помощника должна объяснять их по-русски,
+// а не показывать общую фразу про «не настроено» после успешного сохранения.
+import { providerCauseFromCodes, providerCauseText } from "./ai-provider-form.js";
 
 // FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, а само
 // браузерное хранилище отдаёт onboarding.ts — Studio не трогает его напрямую.
@@ -464,6 +467,12 @@ export class StudioApp {
     if (action === "author-apply") {
       const proposalId = target.dataset.proposalId;
       if (proposalId) await this.applyAuthorProposal(proposalId);
+      return;
+    }
+    if (action === "author-configure-ai") {
+      // «Начать диалог» бесполезен без подключённого ИИ: кнопка рядом ведёт
+      // прямо к форме подключения, а не оставляет автора без пути.
+      this.openProviderSettingsDock();
       return;
     }
     if (action === "add-block") {
@@ -3095,10 +3104,21 @@ export class StudioApp {
           if (!response.ok) return { available: false, reason: "Подключение к ИИ не настроено.", model: null };
           const body: any = await response.json().catch(() => null);
           const state = typeof body?.state === "string" ? body.state : "not_configured";
+          const configured = body?.configured === true;
+          const hasCredential = body?.hasCredential === true;
+          // «Сохранено» и «подключено» — это уже настроенное подключение.
+          // Говорить «не настроено» после успешного сохранения нельзя: панель
+          // либо даёт работать, либо называет настоящую причину отказа и путь
+          // к настройке.
+          const available = configured && hasCredential && state !== "not_configured" && state !== "error";
           return {
-            available: state === "connected",
-            reason: state === "connected" ? null : "Подключение к ИИ не настроено или ключ отклонён.",
-            model: typeof body?.model === "string" ? body.model : null
+            available,
+            reason: available
+              ? null
+              : state === "error"
+                ? `${providerCauseText(providerCauseFromCodes(body?.probeCause, body?.lastErrorCode))}`
+                : "Подключение к ИИ не настроено или ключ отклонён.",
+            model: typeof body?.settings?.model === "string" ? body.settings.model : null
           };
         } catch {
           return { available: false, reason: "Не удалось проверить подключение к ИИ.", model: null };

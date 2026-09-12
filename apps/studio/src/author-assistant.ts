@@ -88,9 +88,12 @@ export function renderAuthorAssistantPanel(
     return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Server contract недоступен.</p></div></div><div class="assistant-empty">${escapeHtml(state.reason)}</div></section>`;
   }
   if (state.kind === "empty") {
-    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Соавтор</h2><p>Переписка хранится на сервере</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
-      ? `<button class="primary" data-action="author-start">Начать диалог</button>`
-      : `<div class="assistant-empty">Для нового диалога нужна editor/owner роль и свежий CSRF proof.</div>`}</section>`;
+    const start = options.canMutate && options.hasMutationProof && options.busy !== true
+      ? `<button class="primary" type="button" data-action="author-start">Начать диалог</button>`
+      : `<div class="assistant-empty">Для нового диалога нужна editor/owner роль и свежий CSRF proof.</div>`;
+    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Соавтор</h2><p>Переписка хранится на сервере</p></div></div>${start}
+      <div class="assistant-actions"><button class="secondary" type="button" data-action="author-configure-ai">Настроить подключение ИИ</button></div>
+      <p class="assistant-hint">Диалог с помощником возможен только при настроенном подключении к ИИ: провайдер, модель и ключ задаются в блоке «Подключение ИИ-помощника».</p></section>`;
   }
 
   const { model } = state;
