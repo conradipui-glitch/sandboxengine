@@ -121,6 +121,8 @@ const REGIONS_JS = `(() => {
     aiAriaLabel: (q(".ai-panel-flat") || {}).getAttribute?.("aria-label") ?? null,
     aiRegionAria: (q("[data-ai-panel]") || {}).getAttribute?.("aria-label") ?? null,
     utility: rect(".ed-utility-panel"),
+    topbarScrollW: (() => { const b = document.querySelector(".ed-topbar"); return b ? b.scrollWidth : null; })(),
+    topbarClientW: (() => { const b = document.querySelector(".ed-topbar"); return b ? b.clientWidth : null; })(),
     utilityName: (q(".ed-utility-panel") || {}).getAttribute?.("data-utility-panel") ?? null,
     filterRow: rect(".filter-row"),
     actionBar: rect(".action-bar"),

@@ -1,6 +1,10 @@
 # OFFICE-UI: приведение Studio к стандартам office-web-ui-system
 
-Ветка: `feat/studio-office-ui` (в worktree `C:/Users/kato55/lhc-design-sync`, база `feat/design-sync-site` @ b96738f).
+Коммиты в worktree `C:/Users/kato55/lhc-design-sync`, ветка `feat/design-sync-site` (база b96738f):
+
+- `fdace17` — семантические локаторы, плоская панель ИИ, Escape-закрытие, тест-страж;
+- `78f4e33` — скрипт офисной приёмки + отчёт;
+- `4cc9592` — фикс топбара редактора на 1280px (крошки со скроллом вместо вылезания).
 
 ## Что сделано
 

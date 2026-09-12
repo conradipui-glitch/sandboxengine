@@ -904,7 +904,11 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .form-error { color: var(--danger); font-size: 13px; }
 
 /* Каркас редактора V01 */
-.ed-shell { height: 100vh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.ed-shell { height: 100vh; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+/* Верхняя панель не расширяет сетку: крошки получают горизонтальную прокрутку
+   (текст не обрезается — правило владельца), действия остаются доступны. */
+.ed-shell > .ed-topbar { min-width: 0; overflow: hidden; }
+.ed-shell > .ed-topbar .crumbs { overflow-x: auto; scrollbar-width: thin; min-width: 0; }
 .ed-topbar { min-height: 68px; display: flex; align-items: center; gap: var(--gap-4); padding: 10px var(--gap-4); background: var(--surface); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
 .ed-topbar .crumbs { display: flex; align-items: center; gap: var(--gap-2); color: var(--muted); font-size: 13px; white-space: nowrap; }
 .ed-topbar .crumbs button { min-height: 40px; padding: 0 10px; }
