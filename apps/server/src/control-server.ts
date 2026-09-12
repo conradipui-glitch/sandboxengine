@@ -26,6 +26,7 @@ import {
   type ControlUserRecord,
   type DraftSnapshot,
   type DraftValidationRecord,
+  type ExpectedQuestRevision,
   type FrozenPlaytestRecord,
   type MissionDocumentStore,
   type MissionSessionStore,
@@ -54,6 +55,7 @@ import { createEditingLockHttpService, type EditingLockHttpService } from "./edi
 import { resolvePublicAssetCache } from "./public-asset-cache.js";
 import { materializePublishedRuntimeTemplate } from "./published-release-resolver.js";
 import { projectPlayerTurnState } from "./player-turn.js";
+import { projectDeletePublicationGuard, questDeletePublicationGuard } from "./mission-delete.js";
 import {
   GATE_IDENTITY_HEADER,
   createGateIdentityVerifier,
@@ -493,6 +495,66 @@ async function routeControlRequest(
     return;
   }
 
+  const projectDeleteMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(url.pathname);
+  if (projectDeleteMatch && method === "DELETE") {
+    const projectId = projectDeleteMatch[1]!;
+    // Проект — owner-only: каскадное удаление необратимо и сносит чужой труд.
+    if (!(await requireProjectRole(response, auth, identity, projectId, "owner"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null) return;
+    if (!hasExactKeys(body, ["baseRevision", "expectedQuests"])
+      || !isRevision(body.baseRevision)
+      || !Array.isArray(body.expectedQuests)) {
+      sendJson(response, 400, { error: { code: "INVALID_PROJECT_DELETE_REQUEST" } });
+      return;
+    }
+    const expectedQuests = body.expectedQuests;
+    // Fail-closed: проект с живой публикацией не удаляется молча. Каскад оставил
+    // бы каталог ссылающимся на релиз, которого больше нет. Проверка идёт по
+    // составу, который заявлен в запросе: стор на своей стороне сверит его с
+    // живым составом проекта, поэтому обойти проверку, занизив список, нельзя —
+    // расхождение даёт PROJECT_QUESTS_CHANGED без удаления.
+    const guard = await projectDeletePublicationGuard(
+      releases?.publicationStore ?? null,
+      projectId,
+      (Array.isArray(expectedQuests) ? expectedQuests : [])
+        .filter((entry: any) => entry && typeof entry === "object" && typeof entry.questId === "string")
+        .map((entry: any) => entry.questId as string)
+    );
+    if (guard.kind === "published") {
+      sendJson(response, 409, {
+        error: {
+          code: "PROJECT_HAS_PUBLISHED_QUESTS",
+          message: "Проект содержит опубликованные миссии. Сначала снимите их с публикации.",
+          questIds: guard.questIds
+        }
+      });
+      return;
+    }
+    const result = await store.deleteProject(projectId, {
+      baseRevision: body.baseRevision,
+      expectedQuests: body.expectedQuests as readonly ExpectedQuestRevision[],
+      idempotencyKey,
+      actorUserId: identity?.user.userId ?? "local-owner"
+    });
+    if (result.kind === "deleted") sendJson(response, 200, { deleted: { projectId } });
+    else if (result.kind === "replay") sendJson(response, 200, { deleted: { projectId }, replay: true });
+    else if (result.kind === "project_not_found") sendNotFound(response);
+    else if (result.kind === "revision_conflict") {
+      sendJson(response, 409, { error: { code: "PROJECT_REVISION_CONFLICT", currentRevision: result.currentCoverRevision } });
+    } else if (result.kind === "quest_set_conflict") {
+      sendJson(response, 409, { error: { code: "PROJECT_QUESTS_CHANGED", currentQuests: result.currentQuests } });
+    } else if (result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    } else {
+      sendJson(response, 422, { error: { code: "INVALID_PROJECT_DELETE_REQUEST", details: result.errors } });
+    }
+    return;
+  }
+
   const memberCollectionMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/members$/.exec(url.pathname);
   if (memberCollectionMatch) {
     if (!auth) { sendNotFound(response); return; }
@@ -585,6 +647,60 @@ async function routeControlRequest(
       else sendJson(response, 422, { error: { code: "INVALID_QUEST", details: result.errors } });
       return;
     }
+  }
+
+  const questDeleteMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(url.pathname);
+  if (questDeleteMatch && method === "DELETE") {
+    const projectId = questDeleteMatch[1]!;
+    const questId = questDeleteMatch[2]!;
+    // Квест удаляет owner или editor: это авторская работа, а не администрирование.
+    if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null) return;
+    if (!hasExactKeys(body, ["expectedDraftRevision", "expectedMissionRevision"])
+      || !isRevision(body.expectedDraftRevision)
+      || !(body.expectedMissionRevision === null || isRevision(body.expectedMissionRevision))) {
+      sendJson(response, 400, { error: { code: "INVALID_QUEST_DELETE_REQUEST" } });
+      return;
+    }
+    // Fail-closed: опубликованный квест не удаляется молча — только после снятия
+    // с публикации. Каталог не должен указывать на удалённый квест.
+    const guard = await questDeletePublicationGuard(releases?.publicationStore ?? null, projectId, questId);
+    if (guard.kind === "published") {
+      sendJson(response, 409, {
+        error: {
+          code: "QUEST_PUBLISHED",
+          message: "Миссия опубликована. Сначала снимите её с публикации, затем удаляйте."
+        }
+      });
+      return;
+    }
+    const result = await store.deleteQuest(projectId, questId, {
+      expectedDraftRevision: body.expectedDraftRevision,
+      expectedMissionRevision: body.expectedMissionRevision,
+      idempotencyKey,
+      actorUserId: identity?.user.userId ?? "local-owner"
+    });
+    if (result.kind === "deleted") sendJson(response, 200, { deleted: { projectId, questId } });
+    else if (result.kind === "replay") sendJson(response, 200, { deleted: { projectId, questId }, replay: true });
+    else if (result.kind === "project_not_found" || result.kind === "quest_not_found") sendNotFound(response);
+    else if (result.kind === "revision_conflict") {
+      sendJson(response, 409, {
+        error: {
+          code: "QUEST_REVISION_CONFLICT",
+          currentDraftRevision: result.currentDraftRevision,
+          currentMissionRevision: result.currentMissionRevision
+        }
+      });
+    } else if (result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "IDEMPOTENCY_KEY_REUSED" } });
+    } else {
+      sendJson(response, 422, { error: { code: "INVALID_QUEST_DELETE_REQUEST", details: result.errors } });
+    }
+    return;
   }
 
   const draftMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/quests\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/draft$/.exec(url.pathname);

@@ -17,6 +17,16 @@ import {
 } from "@living-history/contracts";
 import { applyMissionChoice, compileQuest, type CompiledQuestArtifact } from "@living-history/core";
 import { analyzeDraftBlockReferences } from "./draft-history.js";
+import {
+  deleteProjectRequestHash,
+  deleteQuestRequestHash,
+  normalizeExpectedQuests,
+  sameQuestRevisions,
+  validateDeleteProjectShape,
+  validateDeleteQuestShape,
+  type DeleteProjectShapeInput,
+  type DeleteQuestShapeInput
+} from "./delete-primitives.js";
 import type {
   ApplyBoardChangesInput,
   ApplyBoardChangesResult,
@@ -50,6 +60,11 @@ import type {
   CreateProjectResult,
   CreateQuestInput,
   CreateQuestResult,
+  DeleteProjectInput,
+  DeleteProjectResult,
+  DeleteQuestInput,
+  DeleteQuestResult,
+  ExpectedQuestRevision,
   DraftChange,
   DraftChangeSet,
   DraftSnapshot,
@@ -181,6 +196,162 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       `).run(projectId, input.idempotencyKey, requestHash, JSON.stringify(next));
       return frozen({ kind: "updated", project: cloneAndFreeze(next) });
     });
+  }
+
+  async deleteProject(projectId: string, input: DeleteProjectInput): Promise<DeleteProjectResult> {
+    this.#assertOpen();
+    if (!isId(projectId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["projectId"]) });
+    const errors = validateDeleteProjectShape(input as DeleteProjectShapeInput);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
+
+    const expectedQuests = normalizeExpectedQuests(input.expectedQuests);
+    const requestHash = deleteProjectRequestHash(input.baseRevision, expectedQuests);
+
+    return this.#transaction((): DeleteProjectResult => {
+      // Идемпотентный повтор читается ДО живого состояния: собственное удаление
+      // уже могло состояться, и «проект не найден» было бы ложью о нём.
+      const replay = this.#db.prepare(`
+        SELECT request_hash FROM control_project_delete_idempotency
+        WHERE project_id = ? AND idempotency_key = ?
+      `).get(projectId, input.idempotencyKey);
+      if (replay) {
+        return String(replay.request_hash) === requestHash
+          ? frozen({ kind: "replay" })
+          : frozen({ kind: "idempotency_key_reused" });
+      }
+      const currentRow = this.#db.prepare(`
+        SELECT project_id, title, cover_asset_id, cover_hash, cover_revision
+        FROM control_projects WHERE project_id = ?
+      `).get(projectId);
+      if (!currentRow) return frozen({ kind: "project_not_found" });
+      const project = projectRecordFromRow(currentRow);
+      if (project.coverRevision !== input.baseRevision) {
+        return frozen({ kind: "revision_conflict", currentCoverRevision: project.coverRevision });
+      }
+      const currentQuests = this.#currentQuestRevisions(projectId);
+      if (!sameQuestRevisions(currentQuests, expectedQuests)) {
+        return frozen({ kind: "quest_set_conflict", currentQuests: Object.freeze(currentQuests) });
+      }
+
+      for (const quest of currentQuests) this.#deleteQuestRows(projectId, quest.questId);
+      // Материалы и обложка — проектные, а не квестовые, поэтому снимаются здесь.
+      this.#db.prepare("DELETE FROM control_project_asset_idempotency WHERE project_id = ?").run(projectId);
+      this.#db.prepare("DELETE FROM control_project_assets WHERE project_id = ?").run(projectId);
+      this.#db.prepare("DELETE FROM control_project_cover_idempotency WHERE project_id = ?").run(projectId);
+      // control_project_members объявлена членством пользователя в проекте с
+      // ON DELETE CASCADE, поэтому членство снимается самой базой.
+      this.#db.prepare("DELETE FROM control_projects WHERE project_id = ?").run(projectId);
+      this.#db.prepare(`
+        INSERT INTO control_project_delete_idempotency (project_id, idempotency_key, request_hash, actor_user_id, created_at_ms)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(projectId, input.idempotencyKey, requestHash, input.actorUserId, Date.now());
+      return frozen({ kind: "deleted" });
+    });
+  }
+
+  async deleteQuest(projectId: string, questId: string, input: DeleteQuestInput): Promise<DeleteQuestResult> {
+    this.#assertOpen();
+    if (!isId(projectId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["projectId"]) });
+    if (!isId(questId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["questId"]) });
+    const errors = validateDeleteQuestShape(input as DeleteQuestShapeInput);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
+
+    const requestHash = deleteQuestRequestHash(input.expectedDraftRevision, input.expectedMissionRevision);
+
+    return this.#transaction((): DeleteQuestResult => {
+      const replay = this.#db.prepare(`
+        SELECT request_hash FROM control_quest_delete_idempotency
+        WHERE project_id = ? AND quest_id = ? AND idempotency_key = ?
+      `).get(projectId, questId, input.idempotencyKey);
+      if (replay) {
+        return String(replay.request_hash) === requestHash
+          ? frozen({ kind: "replay" })
+          : frozen({ kind: "idempotency_key_reused" });
+      }
+      if (!this.#projectExists(projectId)) return frozen({ kind: "project_not_found" });
+      if (!this.#questExists(projectId, questId)) return frozen({ kind: "quest_not_found" });
+
+      const draftRow = this.#db.prepare(`
+        SELECT current_revision FROM control_quests WHERE project_id = ? AND quest_id = ?
+      `).get(projectId, questId);
+      const currentDraftRevision = Number(draftRow.current_revision);
+      const missionRow = this.#db.prepare(`
+        SELECT content_revision FROM control_mission_documents
+        WHERE project_id = ? AND quest_id = ?
+        ORDER BY content_revision DESC LIMIT 1
+      `).get(projectId, questId);
+      const currentMissionRevision = missionRow ? Number(missionRow.content_revision) : null;
+      if (currentDraftRevision !== input.expectedDraftRevision || currentMissionRevision !== input.expectedMissionRevision) {
+        return frozen({ kind: "revision_conflict", currentDraftRevision, currentMissionRevision });
+      }
+
+      this.#deleteQuestRows(projectId, questId);
+      this.#db.prepare(`
+        INSERT INTO control_quest_delete_idempotency (project_id, quest_id, idempotency_key, request_hash, actor_user_id, created_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(projectId, questId, input.idempotencyKey, requestHash, input.actorUserId, Date.now());
+      return frozen({ kind: "deleted" });
+    });
+  }
+
+  /** Живой состав проекта: квесты и их текущие draft revisions в порядке quest_id. */
+  #currentQuestRevisions(projectId: string): readonly ExpectedQuestRevision[] {
+    const rows = this.#db.prepare(`
+      SELECT quest_id, current_revision FROM control_quests WHERE project_id = ? ORDER BY quest_id
+    `).all(projectId);
+    return Object.freeze(rows.map((row: any) => Object.freeze({
+      questId: String(row.quest_id),
+      draftRevision: Number(row.current_revision)
+    })));
+  }
+
+  /**
+   * Снимает все строки, которые ссылаются на квест. Порядок обратный порядку
+   * объявления внешних ключей: без него SQLite (с включённым FK-контролем)
+   * отвергает удаление родителя. Выпуски и их указатель принадлежат квесту, а
+   * публичность релиза проверяется на HTTP-границе до вызова стора: молча
+   * оставить выпуски без квеста нельзя, поэтому они удаляются вместе с ним.
+   */
+  #deleteQuestRows(projectId: string, questId: string): void {
+    for (const table of [
+      "control_mission_turn_idempotency",
+      "control_mission_session_idempotency",
+      "control_mission_sessions",
+      "control_mission_idempotency",
+      "control_mission_documents",
+      "control_playtests",
+      "control_validations",
+      "control_draft_restore_idempotency",
+      "control_board_idempotency",
+      "control_board_documents",
+      "control_collaboration_idempotency",
+      "control_collaboration_messages",
+      "control_collaboration_threads",
+      "control_collaboration_notes",
+      "control_collaboration_state",
+      "control_release_idempotency",
+      "control_release_events",
+      "control_release_pointers",
+      "control_releases",
+      "control_draft_snapshots"
+    ]) {
+      if (!this.#tableExists(table)) continue;
+      if (table === "control_mission_turn_idempotency") {
+        // Таблица сессий квеста: ключ идёт через session_id, а не через quest_id.
+        this.#db.prepare(`
+          DELETE FROM ${table} WHERE session_id IN (
+            SELECT session_id FROM control_mission_sessions WHERE project_id = ? AND quest_id = ?
+          )
+        `).run(projectId, questId);
+        continue;
+      }
+      this.#db.prepare(`DELETE FROM ${table} WHERE project_id = ? AND quest_id = ?`).run(projectId, questId);
+    }
+    this.#db.prepare("DELETE FROM control_quests WHERE project_id = ? AND quest_id = ?").run(projectId, questId);
+  }
+
+  #tableExists(name: string): boolean {
+    return Boolean(this.#db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1").get(name));
   }
 
   async createQuest(input: CreateQuestInput): Promise<CreateQuestResult> {
@@ -1702,6 +1873,27 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         created_at_ms INTEGER NOT NULL,
         PRIMARY KEY (project_id, quest_id, idempotency_key),
         FOREIGN KEY (project_id, quest_id) REFERENCES control_quests(project_id, quest_id)
+      ) STRICT;
+      -- DELETE-01: журнал удалений. Таблицы добавлены через CREATE IF NOT
+      -- EXISTS, без смены schema_version — тот же приём, что у FIN-12: удаление
+      -- не меняет ни одну существующую таблицу, поэтому старые базы получают
+      -- журнал без миграции данных.
+      CREATE TABLE IF NOT EXISTS control_quest_delete_idempotency (
+        project_id TEXT NOT NULL,
+        quest_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, quest_id, idempotency_key)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_project_delete_idempotency (
+        project_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (project_id, idempotency_key)
       ) STRICT;
     `);
     this.#transaction(() => {

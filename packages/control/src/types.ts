@@ -210,6 +210,67 @@ export type SetProjectCoverResult =
   | { readonly kind: "idempotency_key_reused" }
   | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
 
+// DELETE-01 (delete zone): удаление квеста и проекта.
+//
+// Удаление — необратимая операция, поэтому она защищена ровно так же, как
+// остальные мутации: CAS по revision (устаревшая форма не имеет права удалять
+// то, чего автор не видел), обязательный idempotency-key (повтор доставки не
+// удаляет дважды и не отвечает «успех» на чужой запрос) и честные исходы.
+//
+// Публикация (Fail-closed) проверяется на HTTP-границе: ControlStore не знает
+// ни о каталоге опубликованных миссий, ни о релизах. Стор удаляет только то,
+// что ему подчинено: квест (вместе с его документами, сессиями, раскладкой,
+// обсуждениями и выпусками) либо проект (вместе со всеми его квестами).
+export interface DeleteQuestInput {
+  /** CAS: draft revision, которую автор видел перед подтверждением. */
+  readonly expectedDraftRevision: number;
+  /**
+   * CAS: content revision документа миссии, которую автор видел. `null`
+   * означает «документа миссии у квеста не было» — это такое же проверяемое
+   * утверждение, как и число; несовпадение даёт `revision_conflict`.
+   */
+  readonly expectedMissionRevision: number | null;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type DeleteQuestResult =
+  | { readonly kind: "deleted" }
+  | { readonly kind: "replay" }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentDraftRevision: number; readonly currentMissionRevision: number | null }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+/** Точная ревизия квеста, которую автор видел в списке перед удалением проекта. */
+export interface ExpectedQuestRevision {
+  readonly questId: string;
+  readonly draftRevision: number;
+}
+
+export interface DeleteProjectInput {
+  /** CAS: cover revision проекта (единственная revision самого проекта). */
+  readonly baseRevision: number;
+  /**
+   * CAS по составу проекта: точный набор квестов и их draft revisions, который
+   * автор видел. Каскадное удаление не имеет права снести квест, созданный или
+   * изменённый после подтверждения, поэтому расхождение — отказ, а не удаление.
+   */
+  readonly expectedQuests: readonly ExpectedQuestRevision[];
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type DeleteProjectResult =
+  | { readonly kind: "deleted" }
+  | { readonly kind: "replay" }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentCoverRevision: number }
+  | { readonly kind: "quest_set_conflict"; readonly currentQuests: readonly ExpectedQuestRevision[] }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
 export interface DraftSnapshot {
   readonly projectId: string;
   readonly questId: string;
@@ -334,8 +395,12 @@ export interface ControlStore {
   createProject(input: CreateProjectInput): Promise<CreateProjectResult>;
   listProjects(): Promise<readonly ProjectRecord[]>;
   setProjectCover(projectId: string, input: SetProjectCoverInput): Promise<SetProjectCoverResult>;
+  /** Удаляет проект вместе со всеми его квестами. CAS: cover revision + состав квестов. */
+  deleteProject(projectId: string, input: DeleteProjectInput): Promise<DeleteProjectResult>;
   createQuest(input: CreateQuestInput): Promise<CreateQuestResult>;
   listQuests(projectId: string): Promise<readonly DraftSnapshot[] | null>;
+  /** Удаляет один квест вместе со всем, что на него ссылается. CAS: draft + mission revision. */
+  deleteQuest(projectId: string, questId: string, input: DeleteQuestInput): Promise<DeleteQuestResult>;
   getDraft(projectId: string, questId: string): Promise<DraftSnapshot | null>;
   getDraftSnapshot(projectId: string, questId: string, draftRevision: number): Promise<DraftSnapshot | null>;
   applyDraftChanges(projectId: string, questId: string, changeSet: DraftChangeSet): Promise<ApplyDraftChangesResult>;
