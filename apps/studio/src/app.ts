@@ -116,7 +116,6 @@ import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import { AI_PANEL_CONFIGURE_EVENT, renderAiPanel } from "./ai-panel.js";
-import { renderMissionChainPanel, type MissionChainPanelHost } from "./mission-chain-panel.js";
 import { renderPublishPanel } from "./publish-panel.js";
 import {
   renderSceneInspector,
@@ -322,11 +321,6 @@ export class StudioApp {
   /** Живая панель ИИ-помощника и документ, который она собрала (до «Принять»). */
   private aiPanelDispose: (() => void) | null = null;
   private aiPanelHost: HTMLElement | null = null;
-  /** AI-CHAIN: живой чат создания миссии — свой хост и dispose. */
-  private missionChainDispose: (() => void) | null = null;
-  private missionChainHost: HTMLElement | null = null;
-  /** Документ, собранный по цепочке, ждёт применения штатным CAS-сохранением. */
-  private pendingChainDocument: MissionDraft | null = null;
   private pendingAiDocument: MissionDraft | null = null;
   /** Живая панель публикации: одна кнопка «Проверить и опубликовать» с рабочей ссылкой. */
   private publishHandle: { dispose: () => void; refresh: () => Promise<void> } | null = null;
@@ -2667,7 +2661,6 @@ export class StudioApp {
     this.mountLibraryIfNeeded();
     this.mountMaterialsIfNeeded();
     this.mountAiPanelIfNeeded();
-    this.mountMissionChainIfNeeded();
     this.mountPublishPanelIfNeeded();
     this.mountSceneInspectorIfNeeded();
     this.updateMissionGuide();
@@ -2696,6 +2689,7 @@ export class StudioApp {
     void guideStepDone(facts);
     void guideReadyToPublish(facts);
   }
+
 
   /**
    * Инспектор сцены монтируется в «Свойствах», когда выбрана именно сцена
@@ -3217,148 +3211,6 @@ export class StudioApp {
    * рядом с историей версий. Назначение материала пишется в документ миссии — в экран
    * выбранной сцены (фон/звук) или слоем (портрет), тем же путём, что и остальное оформление.
    */
-
-  /**
-   * AI-CHAIN: чат создания миссии внутри панели соавтора. Хост ставится рядом
-   * с существующей панелью ИИ-помощника; операции идут через
-   * /local/mission-chain (stateful диалог с бэкендом), а применение
-   * собранного документа — штатным CAS-сохранением миссии (saveMission с
-   * ожидаемой ревизией), как у ручной генерации.
-   */
-  private mountMissionChainIfNeeded(): void {
-    if (this.state.view !== "editor" || this.state.inspectorTab !== "coauthor") return;
-    if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
-    const host = this.root.querySelector<HTMLElement>("[data-chain-panel-host]");
-    const projectId = this.state.selectedProjectId;
-    const questId = this.state.selectedQuestId;
-    if (!host || !projectId || !questId) return;
-    if (this.missionChainHost === host) return;
-    if (this.missionChainDispose) {
-      this.missionChainDispose();
-      this.missionChainDispose = null;
-    }
-    this.missionChainHost = host;
-    const dialogs = this.missionChainDialogs();
-    const hostBridge: MissionChainPanelHost = {
-      root: host,
-      readiness: async () => {
-        try {
-          const response = await fetch("/local/author-provider", { headers: { "x-lh-local-settings": "1" } });
-          if (!response.ok) return { available: false, reason: "Подключение к ИИ не настроено." };
-          const body: any = await response.json().catch(() => null);
-          const state = typeof body?.state === "string" ? body.state : "not_configured";
-          return { available: state === "connected", reason: null };
-        } catch {
-          return { available: false, reason: "Не удалось проверить подключение к ИИ." };
-        }
-      },
-      startChain: async (idea) => {
-        const response = await fetch("/local/mission-chain", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ idea, projectId, questId })
-        });
-        const payload: any = await response.json().catch(() => null);
-        if (!response.ok || payload === null || typeof payload !== "object") {
-          return this.chainFailedView("Не удалось начать диалог: помощник не ответил. Идея сохранена — попробуйте ещё раз.");
-        }
-        return payload;
-      },
-      reply: async (sessionId, text) => {
-        const response = await fetch("/local/mission-chain", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId, text })
-        });
-        const payload: any = await response.json().catch(() => null);
-        if (!response.ok || payload === null || typeof payload !== "object") {
-          return this.chainFailedView("Не удалось отправить ответ: сервер не ответил. Текст сохранён — отправьте его ещё раз.");
-        }
-        return payload;
-      },
-      confirmChain: async (sessionId) => {
-        const response = await fetch("/local/mission-chain", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId })
-        });
-        const payload: any = await response.json().catch(() => null);
-        if (!response.ok || payload === null || typeof payload !== "object") {
-          return this.chainFailedView("Не удалось собрать миссию по цепочке: сервер не ответил. Попробуйте подтвердить ещё раз.");
-        }
-        return payload;
-      },
-      applyDocument: async (sessionId) => {
-        const document = dialogs.takeDocument(sessionId) ?? this.pendingChainDocument;
-        if (!document) return { ok: false, message: "Сначала соберите миссию по цепочке." };
-        try {
-          await this.api.saveMission(projectId, questId, this.state.missionRevision, document);
-        } catch (error) {
-          return { ok: false, message: describeControlError(error) };
-        }
-        this.pendingChainDocument = null;
-        try {
-          const mission = await this.api.getMission(projectId, questId);
-          this.state.mission = mission;
-          this.state.missionRevision = mission === null ? 0 : mission.contentRevision;
-        } catch {
-          // Сохранение уже прошло: не теряем сообщение об успехе из-за перечитки.
-        }
-        this.state.message = "Миссия по цепочке сохранена: правьте сцены и экраны как обычно.";
-        this.render();
-        return { ok: true, message: "Миссия сохранена." };
-      },
-      cancelChain: (sessionId) => {
-        this.pendingChainDocument = null;
-        void fetch("/local/mission-chain/cancel", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId })
-        }).catch(() => undefined);
-      },
-      onError: (error) => {
-        this.state.message = describeControlError(error);
-        // Панель показывает ошибку сама: полная перерисовка заменила бы её хост,
-        // панель смонтировалась бы заново и грузила список по кругу вместо «Повторить».
-      }
-    };
-    this.missionChainDispose = renderMissionChainPanel(hostBridge);
-  }
-
-  /** Берёт документ, собранный по цепочке, из диалогового хранилища стенда. */
-
-  /**
-   * Хранилище диалогов создания миссии живёт на стенде и приходит с сервера
-   * (main.ts передаёт его в createStudioDevServer). Клиенту оно нужно только
-   * чтобы забрать собранный документ перед CAS-сохранением.
-   */
-  private missionChainDialogs(): { readonly takeDocument: (sessionId: string) => MissionDraft | null } {
-    // Документ приходит отдельным ответом /local/mission-chain?take=<id>:
-    // клиентский слой не держит состояния диалога, только последний ответ.
-    return {
-      takeDocument: (sessionId: string) => this.pendingChainDocumentFor(sessionId)
-    };
-  }
-
-  private pendingChainDocumentFor(sessionId: string): MissionDraft | null {
-    void sessionId;
-    return this.pendingChainDocument;
-  }
-
-  /** Честный «сорвавшийся» вид диалога для панели, когда сервер не ответил. */
-  private chainFailedView(message: string): ChainFailedSessionView {
-    return {
-      sessionId: "",
-      stage: "failed",
-      messages: [],
-      questionsAnswered: 0,
-      questionsMin: 2,
-      questionsMax: 3,
-      summary: null,
-      stats: null,
-      error: { code: "backend_failure", message }
-    };
-  }
   private mountMaterialsIfNeeded(): void {
     if (this.state.view !== "editor" || this.state.utilityPanel !== "materials") return;
     if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
@@ -4531,7 +4383,6 @@ export class StudioApp {
                 <div class="section-heading-row"><h2>ИИ-помощник</h2></div>
                 <p class="paint-note">Опишите идею — помощник соберёт сцены, развилки и финалы. Текст и структуру потом правите теми же инструментами, что и ручной квест.</p>
                 <div class="ai-panel-host" data-ai-panel-host></div>
-                <div class="chain-panel-host" data-chain-panel-host></div>
                 <details class="diagnostics">
                   <summary>Дополнительно: служебный журнал помощника</summary>
                   <p class="paint-note">Технические сведения для разработчика: профиль, состояние задачи и счётчики сегментов.</p>
