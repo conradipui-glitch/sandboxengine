@@ -3254,7 +3254,7 @@ export class StudioApp {
       startChain: async (idea) => {
         const response = await fetch("/local/mission-chain", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
           body: JSON.stringify({ idea, projectId, questId })
         });
         const payload: any = await response.json().catch(() => null);
@@ -3266,7 +3266,7 @@ export class StudioApp {
       reply: async (sessionId, text) => {
         const response = await fetch("/local/mission-chain", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
           body: JSON.stringify({ sessionId, text })
         });
         const payload: any = await response.json().catch(() => null);
@@ -3278,7 +3278,7 @@ export class StudioApp {
       confirmChain: async (sessionId) => {
         const response = await fetch("/local/mission-chain", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
           body: JSON.stringify({ sessionId })
         });
         const payload: any = await response.json().catch(() => null);
@@ -3312,7 +3312,7 @@ export class StudioApp {
         this.pendingChainDocument = null;
         void fetch("/local/mission-chain/cancel", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
           body: JSON.stringify({ sessionId })
         }).catch(() => undefined);
       },
@@ -3335,7 +3335,7 @@ export class StudioApp {
     try {
       const response = await fetch("/local/mission-chain/document", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-lh-local-settings": "1" },
         body: JSON.stringify({ sessionId })
       });
       const payload: any = await response.json().catch(() => null);

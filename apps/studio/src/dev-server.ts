@@ -183,7 +183,9 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
           const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
           // Один маршрут, три глагола: старт (есть idea), ход (есть sessionId+text),
           // подтверждение цепочки (есть sessionId и нет text).
-          if (idea.length > 0 && sessionId === "") {
+          // Пустая идея — не 400, а честный failed-вид от start(): панель
+          // показывает причину русским текстом, введённое не теряется.
+          if (typeof body?.idea === "string" && sessionId === "") {
             sendJson(response, 200, await options.missionChainDialogs.start({ idea, projectId: body.projectId, questId: body.questId }));
             return;
           }
