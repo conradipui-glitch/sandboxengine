@@ -3363,6 +3363,11 @@ export class StudioApp {
    */
   private mountPresenceIfNeeded(host: HTMLElement, projectId: string, questId: string): void {
     if (typeof this.root.querySelector !== "function") return; // фейковый root в тестах
+    // Присутствие — командная функция, и серверные маршруты присутствия существуют
+    // только при настоящей личности. В локальном режиме их нет: клиент получал 404
+    // на поток и «уход», показывал автору вечное «переподключаемся» и впустую долбил
+    // сервер. Без подтверждённого входа ряд присутствия не монтируется вовсе.
+    if (this.state.access.mode !== "authenticated") return;
     if (this.presenceContext?.projectId === projectId && this.presenceContext.questId === questId) return;
     this.destroyPresence();
     const client = createPresenceClient({
