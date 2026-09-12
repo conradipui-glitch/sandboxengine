@@ -399,6 +399,7 @@ export class StudioApp {
   private boardSaveInFlight = false;
   private boardSaveAgain = false;
   private destroyed = false;
+  private onGlobalKeyDown: (event: Event) => void = () => {};
 
   constructor(
     private readonly root: HTMLElement,
@@ -414,13 +415,13 @@ export class StudioApp {
     const onAiConfigure = (event: Event): void => this.onAiConfigureRequest(event);
     /*
      * Единый механизм закрытия окон и оверлеев: Escape закрывает верхний
-     * открытый слой — модальное окно проекта, модальную форму карточки или
-     * утилитарную панель, по одному слою за нажатие. Панели и формы без
-     * оверлея (панель ИИ, фильтры, поля редактора) Escape не закрывает:
-     * введённый там текст не теряется.
+     * открытый слой — модальное окно проекта, модальную форму карточки,
+     * утилитарную панель или меню «…», по одному слою за нажатие. Панели
+     * и формы без оверлея (панель ИИ, фильтры, поля редактора) Escape не
+     * закрывает: введённый там текст не теряется.
      */
     const onKeyDown = (event: Event): void => {
-      const keyEvent = event as { key?: unknown };
+      const keyEvent = event as { key?: unknown; preventDefault?: () => void };
       if (keyEvent?.key !== "Escape") return;
       if (this.state.projectModal) {
         this.state.projectModal = false;
@@ -433,7 +434,8 @@ export class StudioApp {
         this.render();
         return;
       }
-      if (this.state.utilityPanel !== null) {
+      if (this.state.utilityPanel !== null || this.state.editorMenuOpen) {
+        if (typeof keyEvent.preventDefault === "function") keyEvent.preventDefault();
         this.state.utilityPanel = null;
         this.state.editorMenuOpen = false;
         this.render();

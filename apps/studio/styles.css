@@ -985,8 +985,11 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .ed-shell > .ed-topbar { min-width: 0; overflow: hidden; }
 .ed-shell > .ed-topbar .crumbs { overflow-x: auto; scrollbar-width: thin; min-width: 0; }
 .ed-topbar { min-height: 68px; display: flex; align-items: center; gap: var(--gap-4); padding: 10px var(--gap-4); background: var(--surface); border-bottom: 1px solid var(--border); position: relative; z-index: 20; }
-.ed-topbar .crumbs { display: flex; align-items: center; gap: var(--gap-2); color: var(--muted); font-size: 13px; white-space: nowrap; }
-.ed-topbar .crumbs button { min-height: 40px; padding: 0 10px; }
+/* Крошки сжимаются с прокруткой, а не выталкивают правые контролы («Дополнительные
+   панели») за правый край окна при 1280: nowrap без min-width:0 держал min-content
+   ширины, и меню оказывалось за вьюпортом (right=1344 > vw=1280). */
+.ed-topbar .crumbs { display: flex; align-items: center; gap: var(--gap-2); color: var(--muted); font-size: 13px; white-space: nowrap; min-width: 0; overflow-x: auto; flex: 0 1 auto; }
+.ed-topbar .crumbs button { min-height: 40px; padding: 0 10px; flex: 0 0 auto; }
 .ed-rename { display: flex; gap: var(--gap-2); align-items: center; min-width: 0; flex: 1 1 auto; max-width: 480px; }
 .ed-rename input {
   min-height: 36px;
@@ -1013,7 +1016,10 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .ed-main { min-width: 0; min-height: 0; height: 100%; padding: var(--gap-4) clamp(16px, 3vw, 32px) 40px; overflow-y: auto; }
 .ed-inspector { border-left: 1px solid var(--border); background: var(--surface); padding: var(--gap-4); min-height: 0; height: 100%; position: relative; top: auto; max-height: none; overflow-y: auto; }
 .ed-tabs { display: flex; gap: var(--gap-2); margin-bottom: var(--gap-3); }
-.ed-tabs button { flex: 1 1 0; min-height: 40px; }
+/* Вкладки не должны выталкиваться за контейнер/экран: без min-width:0 flex-элементы
+   не сжимаются ниже min-content («ИИ-помощник» + «Заметки» переполняли 336px инспектора,
+   кнопка «Заметки» уходила за правый край при 1280 и даже 1600). */
+.ed-tabs button { flex: 1 1 auto; min-width: 0; min-height: 40px; padding-inline: 8px; }
 .ed-tabs button.active, .board-toggle button.active { background: var(--selected); border-color: var(--primary); color: var(--primary); font-weight: 700; }
 .ed-bottom { border-top: 1px solid var(--border); background: var(--surface); padding: var(--gap-4) var(--gap-6) 32px; }
 .diagnostics { margin-top: var(--gap-3); border: 1px dashed var(--border); border-radius: var(--radius-s); padding: var(--gap-2) var(--gap-3); color: var(--muted); font-size: 12px; }
