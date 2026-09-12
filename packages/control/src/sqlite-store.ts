@@ -64,6 +64,8 @@ import type {
   ProjectAssetLibrary,
   ProjectCoverReference,
   ProjectRecord,
+  QuestMetadata,
+  QuestMetadataStore,
   RegisterProjectAssetInput,
   RegisterProjectAssetResult,
   SetProjectCoverInput,
@@ -90,7 +92,7 @@ interface DraftChangeContext {
   readonly entryLocationId: string;
 }
 
-export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore, MissionSessionStore, ProjectAssetLibrary {
+export class SQLiteControlStore implements ControlStore, BoardDocumentStore, MissionDocumentStore, MissionSessionStore, ProjectAssetLibrary, QuestMetadataStore {
   readonly #db: any;
   #closed = false;
 
@@ -224,6 +226,46 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       ORDER BY q.quest_id
     `).all(projectId);
     return Object.freeze(rows.map((row: any) => parseSnapshot(row.snapshot_json)));
+  }
+
+  /**
+   * Реальные метаданные миссий проекта: время создания и последнего изменения,
+   * автор и ревизия mission-документа плюс текущая ревизия черновика.
+   *
+   * Источник только существующие колонки: `control_mission_documents`
+   * (`created_at_ms`, `actor_user_id`, `content_revision`) — единственное место,
+   * где сохранены автор и время правки миссии. Если mission-документа нет,
+   * соответствующие поля честно `null`, а не выдуманная дата.
+   */
+  async listQuestMetadata(projectId: string): Promise<readonly QuestMetadata[] | null> {
+    this.#assertOpen();
+    if (!this.#projectExists(projectId)) return null;
+    const rows = this.#db.prepare(`
+      SELECT
+        q.quest_id AS quest_id,
+        q.current_revision AS draft_revision,
+        (SELECT MAX(d.content_revision) FROM control_mission_documents d
+           WHERE d.project_id = q.project_id AND d.quest_id = q.quest_id) AS content_revision,
+        (SELECT MIN(d.created_at_ms) FROM control_mission_documents d
+           WHERE d.project_id = q.project_id AND d.quest_id = q.quest_id) AS created_at_ms,
+        (SELECT MAX(d.created_at_ms) FROM control_mission_documents d
+           WHERE d.project_id = q.project_id AND d.quest_id = q.quest_id) AS updated_at_ms,
+        (SELECT d.actor_user_id FROM control_mission_documents d
+           WHERE d.project_id = q.project_id AND d.quest_id = q.quest_id
+           ORDER BY d.content_revision ASC, d.created_at_ms ASC LIMIT 1) AS author_user_id
+      FROM control_quests q
+      WHERE q.project_id = ?
+      ORDER BY q.quest_id
+    `).all(projectId);
+    return Object.freeze(rows.map((row: any) => Object.freeze({
+      projectId,
+      questId: String(row.quest_id),
+      draftRevision: Number(row.draft_revision),
+      contentRevision: row.content_revision === null ? null : Number(row.content_revision),
+      createdAtMs: row.created_at_ms === null ? null : Number(row.created_at_ms),
+      updatedAtMs: row.updated_at_ms === null ? null : Number(row.updated_at_ms),
+      authorUserId: row.author_user_id === null ? null : String(row.author_user_id)
+    })));
   }
 
   async getDraft(projectId: string, questId: string): Promise<DraftSnapshot | null> {

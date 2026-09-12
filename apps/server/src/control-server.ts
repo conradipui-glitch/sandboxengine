@@ -30,6 +30,8 @@ import {
   type MissionDocumentStore,
   type MissionSessionStore,
   type ProjectAssetLibrary,
+  type QuestMetadata,
+  type QuestMetadataStore,
   type SaveMissionResult,
   collectMissionAssetReferences,
   evaluateMissionAssetReferences,
@@ -559,8 +561,28 @@ async function routeControlRequest(
     if (!(await requireProjectRole(response, auth, identity, projectId, method === "POST" ? "editor" : "tester"))) return;
     if (method === "GET") {
       const quests = await store.listQuests(projectId);
-      if (quests === null) sendNotFound(response);
-      else sendJson(response, 200, { quests: quests.map(projectDraftView) });
+      if (quests === null) {
+        sendNotFound(response);
+        return;
+      }
+      const metadata = await listQuestMetadataFor(store, projectId);
+      const authorNames = await resolveAuthorNames(auth, metadata);
+      const publications = await listQuestPublicationFor(releases, projectId, quests.map((draft) => draft.questId));
+      sendJson(response, 200, {
+        quests: quests.map((draft) => {
+          const entry = metadata.get(draft.questId) ?? null;
+          return projectDraftView(
+            draft,
+            entry,
+            publications === null
+              ? null
+              : publications.get(draft.questId) ?? { published: false, publishedAtMs: null },
+            entry === null || entry.authorUserId === null
+              ? null
+              : authorNames.get(entry.authorUserId) ?? null
+          );
+        })
+      });
       return;
     }
     if (method === "POST") {
@@ -1929,14 +1951,39 @@ function safeSessionView(session: ControlSessionRecord): object {
   });
 }
 
-function projectDraftView(draft: DraftSnapshot): object {
+/** Публикационный статус миссии на карточке; `null` — проверить не удалось. */
+type QuestPublicationMeta = {
+  readonly published: boolean | null;
+  readonly publishedAtMs: number | null;
+};
+
+function projectDraftView(
+  draft: DraftSnapshot,
+  metadata: QuestMetadata | null = null,
+  publication: QuestPublicationMeta | null = null,
+  authorName: string | null = null
+): object {
   return Object.freeze({
     projectId: draft.projectId,
     questId: draft.questId,
     draftRevision: draft.draftRevision,
     title: draft.title,
     entryLocationId: draft.entryLocationId,
-    contentHash: draft.contentHash
+    contentHash: draft.contentHash,
+    // Реальные метаданные миссии. Если стор их не отдаёт или mission-документа
+    // нет — поля честно `null`, а не выдуманная дата или автор. `published`
+    // остаётся `null`, когда проверить публикацию нечем: это не «черновик».
+    metadata: metadata === null
+      ? null
+      : Object.freeze({
+          contentRevision: metadata.contentRevision,
+          createdAtMs: metadata.createdAtMs,
+          updatedAtMs: metadata.updatedAtMs,
+          authorUserId: metadata.authorUserId,
+          authorName,
+          published: publication === null ? null : publication.published,
+          publishedAtMs: publication === null ? null : publication.publishedAtMs
+        })
   });
 }
 
@@ -3013,6 +3060,81 @@ function isProjectAssetLibrary(value: ControlStore): value is ControlStore & Pro
   return typeof candidate.registerProjectAsset === "function"
     && typeof candidate.listProjectAssets === "function"
     && typeof candidate.setProjectAssetListed === "function";
+}
+
+function isQuestMetadataStore(value: ControlStore): value is ControlStore & QuestMetadataStore {
+  return typeof (value as Partial<QuestMetadataStore>).listQuestMetadata === "function";
+}
+
+/**
+ * Метаданные миссий проекта по `questId`. Стор без этой возможности не ломает
+ * список: карточки получат `null` и честно покажут «нет данных».
+ */
+async function listQuestMetadataFor(
+  store: ControlStore,
+  projectId: string
+): Promise<Map<string, QuestMetadata>> {
+  const result = new Map<string, QuestMetadata>();
+  if (!isQuestMetadataStore(store)) return result;
+  const rows = await store.listQuestMetadata(projectId);
+  for (const row of rows ?? []) result.set(row.questId, row);
+  return result;
+}
+
+/**
+ * Имена авторов миссий по `userId`. Имя берётся из реального пользователя
+ * Control; если авторитета нет или пользователь удалён — имени нет, и карточка
+ * честно покажет только идентификатор (или «нет данных»).
+ */
+async function resolveAuthorNames(
+  auth: AuthRuntime | null,
+  metadata: Map<string, QuestMetadata>
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (auth === null) return names;
+  const ids = new Set<string>();
+  for (const entry of metadata.values()) {
+    if (entry.authorUserId !== null) ids.add(entry.authorUserId);
+  }
+  for (const userId of ids) {
+    try {
+      const user = await auth.security.getUser(userId);
+      if (user !== null && typeof user.username === "string" && user.username.length > 0) {
+        names.set(userId, user.username);
+      }
+    } catch {
+      // Недоступный справочник пользователей не должен ломать список миссий.
+    }
+  }
+  return names;
+}
+
+/**
+ * Публикационный статус каждой миссии из каталога публикаций. `null` — стора
+ * публикаций нет, и тогда статус неизвестен, а не «черновик».
+ */
+async function listQuestPublicationFor(
+  releases: ControlReleaseModeOptions | null,
+  projectId: string,
+  questIds: readonly string[]
+): Promise<Map<string, QuestPublicationMeta> | null> {
+  const publications = releases?.publicationStore ?? null;
+  if (publications === null) return null;
+  const result = new Map<string, QuestPublicationMeta>();
+  for (const questId of questIds) {
+    let record: ControlPublicationRecord | null = null;
+    try {
+      record = await publications.getPublicationForQuest(projectId, questId);
+    } catch {
+      // Сломанный каталог — это «статус неизвестен», а не выдуманный «черновик».
+      record = null;
+    }
+    result.set(questId, Object.freeze({
+      published: record !== null && record.status === "published",
+      publishedAtMs: record === null ? null : record.publishedAtMs
+    }));
+  }
+  return result;
 }
 
 const MAX_ASSET_TEXT_HEADER_CHARS = 2_000;

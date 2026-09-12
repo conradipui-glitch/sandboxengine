@@ -351,6 +351,40 @@ export interface ControlStore {
   getPlaytest(playtestId: string): Promise<FrozenPlaytestRecord | null>;
 }
 
+/**
+ * Реальные метаданные миссии, которые уже хранит Control. Они собраны из
+ * `control_mission_documents` (первая и последняя сохранённая ревизия: время
+ * сохранения и автор) и `control_quests.current_revision`. Поля, для которых в
+ * базе данных нет значения, честно равны `null`: дата и автор не выдумываются.
+ *
+ * Отдельного признака «копия»/«версия» в хранилище нет — клон это обычная
+ * миссия с новым `questId`, и отличить её можно только по времени, автору и
+ * ревизии. Поэтому такое поле здесь не заводится.
+ */
+export interface QuestMetadata {
+  readonly projectId: string;
+  readonly questId: string;
+  /** Текущая ревизия черновика (`control_quests.current_revision`). */
+  readonly draftRevision: number;
+  /** Последняя сохранённая ревизия mission-документа; `null` — документ не сохранялся. */
+  readonly contentRevision: number | null;
+  /** Время первой сохранённой ревизии mission-документа; `null` — данных нет. */
+  readonly createdAtMs: number | null;
+  /** Время последней сохранённой ревизии mission-документа; `null` — данных нет. */
+  readonly updatedAtMs: number | null;
+  /** Автор первой сохранённой ревизии mission-документа; `null` — данных нет. */
+  readonly authorUserId: string | null;
+}
+
+/**
+ * Необязательная возможность стора: метаданные миссий проекта одним запросом.
+ * Стор, который её не реализует, не ломается — карточка миссии честно скажет
+ * «нет данных» вместо выдуманной даты.
+ */
+export interface QuestMetadataStore {
+  listQuestMetadata(projectId: string): Promise<readonly QuestMetadata[] | null>;
+}
+
 // FIN-12 (V07) collaboration: notes and comment threads.
 //
 // Notes and comments are working material for the authoring team. They live in

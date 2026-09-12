@@ -54,6 +54,22 @@ interface ControlLoginResponse extends ControlAuthView {
   readonly csrfToken: string;
 }
 
+/**
+ * Реальные метаданные миссии, которые отдаёт Control. Поля, которых в хранилище
+ * нет, приходят как `null`: Studio показывает честную подпись «нет данных», а не
+ * выдуманную дату или автора. `published` — `null`, когда проверить публикацию
+ * было нечем (это не «черновик»).
+ */
+export interface QuestMetadataView {
+  readonly contentRevision: number | null;
+  readonly createdAtMs: number | null;
+  readonly updatedAtMs: number | null;
+  readonly authorUserId: string | null;
+  readonly authorName: string | null;
+  readonly published: boolean | null;
+  readonly publishedAtMs: number | null;
+}
+
 export interface QuestSummaryView {
   readonly projectId: string;
   readonly questId: string;
@@ -61,6 +77,8 @@ export interface QuestSummaryView {
   readonly title: string;
   readonly entryLocationId: string;
   readonly contentHash: string;
+  /** Старые серверы поля не отдают: тогда `undefined`, и карточка честно молчит. */
+  readonly metadata?: QuestMetadataView | null;
 }
 
 export interface DraftView extends QuestSummaryView {
