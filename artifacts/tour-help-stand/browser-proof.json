@@ -1,0 +1,124 @@
+{
+  "ok": true,
+  "studio": "http://127.0.0.1:4217/",
+  "cdp": "http://127.0.0.1:9393",
+  "steps": [
+    {
+      "name": "экран проектов открыт",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "на экране проектов есть кнопка «Помощь»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "до нажатия справка закрыта",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "нажатие «Помощь» открыло существующий диалог справки",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "диалог справки — «Справка Studio»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "справка закрылась",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "карточка проекта Florence есть",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "миссия Florence выбрана",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "редактор показывает кнопку «Тур по Studio»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "шаг тура виден в DOM ([data-tour-step])",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "первый применимый шаг — «mission»",
+      "ok": true,
+      "detail": "data-tour-step=mission"
+    },
+    {
+      "name": "есть кнопка «Далее»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "есть кнопка «Назад»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "есть кнопка «Пропустить»",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "статус без экранированного HTML",
+      "ok": true,
+      "detail": "Шаг 3 из 10. Миссия — отдельная история. Пропущено неприменимых шагов: 2."
+    },
+    {
+      "name": "текст шага читается автором",
+      "ok": true,
+      "detail": "Шаг 3 из 10 Миссия — отдельная история В левой колонке список миссий выбранного проекта. Миссия — это одна история со своими местами, персонажами и ресурсами. С"
+    },
+    {
+      "name": "«Далее» переключил шаг на «board»",
+      "ok": true,
+      "detail": "data-tour-step=board"
+    },
+    {
+      "name": "«Назад» вернул шаг «mission»",
+      "ok": true,
+      "detail": "data-tour-step=mission"
+    },
+    {
+      "name": "тема переключилась на light",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "«Пропустить» убрал шаг тура из интерфейса",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "справка открылась и в светлой теме",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "консоль без ошибок",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\kato55\\lhc-tour-help\\artifacts\\tour-help-stand\\shots\\help-dark-1600x1000.png",
+    "C:\\Users\\kato55\\lhc-tour-help\\artifacts\\tour-help-stand\\shots\\tour-dark-1600x1000.png",
+    "C:\\Users\\kato55\\lhc-tour-help\\artifacts\\tour-help-stand\\shots\\tour-light-1600x1000.png",
+    "C:\\Users\\kato55\\lhc-tour-help\\artifacts\\tour-help-stand\\shots\\help-light-1600x1000.png"
+  ],
+  "consoleErrors": []
+}

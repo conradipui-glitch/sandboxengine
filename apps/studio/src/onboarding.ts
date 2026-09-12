@@ -414,6 +414,36 @@ export interface OnboardingOptions {
   readonly store?: PreferenceStore | null;
 }
 
+/**
+ * Диалог справки, уже смонтированный в документе. Studio (app.ts) открывает
+ * ИМЕННО его — второй диалог справки не создаётся. Пока модуль смонтирован,
+ * здесь лежит его open/close; после dispose запись снимается.
+ */
+let activeStudioHelp: { open: () => void; close: () => void } | null = null;
+
+/** Открыть существующую справку Studio из любого места приложения. false — справки нет. */
+export function openStudioHelp(
+  doc: Document | null = typeof document === "undefined" ? null : document
+): boolean {
+  if (activeStudioHelp) {
+    activeStudioHelp.open();
+    return true;
+  }
+  const trigger = doc?.querySelector<HTMLElement>("#studio-help-trigger") ?? null;
+  if (trigger) {
+    trigger.click();
+    return true;
+  }
+  return false;
+}
+
+/** Закрыть справку Studio, если она открыта. false — справки нет. */
+export function closeStudioHelp(): boolean {
+  if (!activeStudioHelp) return false;
+  activeStudioHelp.close();
+  return true;
+}
+
 export function installStudioOnboarding(doc: Document, options: OnboardingOptions = {}): () => void {
   const body = doc.body;
   if (!body || doc.querySelector("#studio-help-trigger")) return () => {};
@@ -512,6 +542,10 @@ export function installStudioOnboarding(doc: Document, options: OnboardingOption
     render();
     restoreFocus();
   };
+
+  // Пока модуль смонтирован, справка Studio открывается программно — из app.ts
+  // (кнопка «Помощь») и из любого другого места приложения. Второй диалог не создаётся.
+  activeStudioHelp = { open: openHelp, close: closeHelp };
 
   const openTour = () => {
     captureFocus();
@@ -613,6 +647,7 @@ export function installStudioOnboarding(doc: Document, options: OnboardingOption
     doc.removeEventListener("keydown", onKeyDown);
     host.removeEventListener("click", onHostClick);
     trigger.removeEventListener("click", openHelp);
+    if (activeStudioHelp?.open === openHelp) activeStudioHelp = null;
     clearHighlight();
     host.remove();
     trigger.remove();

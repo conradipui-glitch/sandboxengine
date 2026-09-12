@@ -23,11 +23,13 @@ import {
   explainControlCode, describeControlError, describeReleaseReadiness } from "./control-errors.js";
 import {
   NOT_STARTED_TOUR,
+  ONBOARDING_TOUR_STEPS,
   completeOnboardingTour,
   currentOnboardingStep,
   documentAnchorProbe,
   explainStudioError,
   loadOnboardingTourProgress,
+  onboardingTourBack,
   onboardingTourNext,
   renderOnboardingTourStep,
   repeatOnboardingTour,
@@ -154,7 +156,7 @@ import {
   type AuthorAssistantPanelState
 } from "./author-assistant.js";
 import { renderStudioError, type StudioErrorBannerHandle } from "./onboarding.js";
-import { studioPreferenceStore } from "./onboarding.js";
+import { openStudioHelp, studioPreferenceStore } from "./onboarding.js";
 import {
   collabField,
   collaborationAnchorFromForm,
@@ -619,6 +621,14 @@ export class StudioApp {
       this.render();
       return;
     }
+    if (action === "tour-back") {
+      // Возврат на шаг назад: тур уже идёт, состояние пересчитывает модуль.
+      onboardingTourState = onboardingTourBack(onboardingTourState);
+      saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
+      this.state.message = this.tourMessage();
+      this.render();
+      return;
+    }
     if (action === "tour-skip") {
       onboardingTourState = skipOnboardingTour(onboardingTourState);
       saveOnboardingTourProgress(onboardingTourState, tourPreferenceStore);
@@ -827,7 +837,11 @@ export class StudioApp {
       return;
     }
     if (action === "help-projects") {
-      this.state.message = "Нажмите «Новый проект» или выберите карточку, чтобы открыть редактор. ID создаются автоматически.";
+      // Открывается существующая справка Studio (диалог модуля onboarding),
+      // а не строка-подсказка в состоянии. Второго диалога не создаётся.
+      if (!openStudioHelp()) {
+        this.state.message = "Справка недоступна: модуль обучения не загружен. Обновите страницу (Ctrl+F5).";
+      }
       this.render();
       return;
     }
@@ -2484,14 +2498,35 @@ export class StudioApp {
     if (renderAfter) this.render();
   }
 
-  /** Текст текущего шага тура: заголовок, объяснение и что делать дальше. */
+  /**
+   * Текст текущего шага тура для статусной строки: только люди читают это —
+   * никакой разметки. Разметка шага рендерится отдельно (renderOnboardingTourCard),
+   * иначе escapeHtml превращал шаг тура в HTML-мусор прямо в статусе.
+   */
   private tourMessage(): string {
     const step = currentOnboardingStep(onboardingTourState);
     if (!step) return "Тур пройден. Запустить снова можно кнопкой «Тур по Studio».";
     const skipped = onboardingTourState.skipped.length > 0
       ? ` Пропущено неприменимых шагов: ${onboardingTourState.skipped.length}.`
       : "";
-    return `${renderOnboardingTourStep(step)}${skipped}`;
+    const position = `Шаг ${onboardingTourState.index + 1} из ${ONBOARDING_TOUR_STEPS.length}.`;
+    return `${position} ${step.title}.${skipped}`;
+  }
+
+  /**
+   * Разметка текущего шага тура в интерфейсе: шаг действительно в DOM, с
+   * кнопками перехода. Шаг привязан к якорю, который есть на экране (probe
+   * пропускает неприменимые), поэтому «на пустом месте» он не показывается.
+   */
+  private renderOnboardingTourCard(): string {
+    const step = currentOnboardingStep(onboardingTourState);
+    if (!step) return "";
+    return renderOnboardingTourStep(step, {
+      index: onboardingTourState.index,
+      total: ONBOARDING_TOUR_STEPS.length,
+      canBack: onboardingTourState.index > 0,
+      isLast: onboardingTourState.index >= ONBOARDING_TOUR_STEPS.length - 1
+    });
   }
 
   private setError(error: unknown): void {
@@ -2569,9 +2604,9 @@ export class StudioApp {
     const preservedSceneInspectorHost = canKeepSceneInspector ? this.sceneInspectorHost : null;
     const focusKey = document.activeElement instanceof HTMLElement ? document.activeElement.dataset.focusKey : undefined;
     if (this.state.view === "projects" && this.state.access.mode !== "anonymous") {
-      this.root.innerHTML = this.renderProjects();
+      this.root.innerHTML = `${this.renderProjects()}${this.renderOnboardingTourCard()}`;
     } else {
-      this.root.innerHTML = this.renderEditor();
+      this.root.innerHTML = `${this.renderEditor()}${this.renderOnboardingTourCard()}`;
       this.syncLoadErrorBanner();
     }
 
