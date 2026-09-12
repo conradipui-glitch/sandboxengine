@@ -170,6 +170,13 @@
       "successStatus": 200
     },
     {
+      "id": "control.project.delete",
+      "method": "DELETE",
+      "path": "/control/v1/projects/{projectId}",
+      "summary": "Owner удаляет проект со всеми квестами, материалами и доступами; CAS по cover revision и составу квестов, idempotency-key обязателен, при живых публикациях отклоняется (fail-closed)",
+      "successStatus": 200
+    },
+    {
       "id": "control.members.list",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/members",
@@ -203,6 +210,13 @@
       "path": "/control/v1/projects/{projectId}/quests",
       "summary": "Owner/editor создание квеста с начальным draft snapshot",
       "successStatus": 201
+    },
+    {
+      "id": "control.quest.delete",
+      "method": "DELETE",
+      "path": "/control/v1/projects/{projectId}/quests/{questId}",
+      "summary": "Owner/editor удаляет квест со всем содержимым; CAS по draft и mission revision, idempotency-key обязателен, опубликованный квест отклоняется (fail-closed)",
+      "successStatus": 200
     },
     {
       "id": "control.draft.get",

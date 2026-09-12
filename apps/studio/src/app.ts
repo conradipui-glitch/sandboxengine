@@ -119,6 +119,14 @@ import {
 } from "./story-model.js";
 import { StoryHistory } from "./story-commands.js";
 import { renderLibrary, type LibraryProjectCard } from "./library-view.js";
+import {
+  isDeleteConfirmed,
+  renderDeleteZone,
+  renderProjectDeleteConfirm,
+  renderQuestDeleteConfirm,
+  type ProjectDeleteIntent,
+  type QuestDeleteIntent
+} from "./mission-delete.js";
 import { renderMaterialsPanel, type MaterialItem, type MaterialTarget } from "./materials-panel.js";
 import { AI_PANEL_CONFIGURE_EVENT, renderAiPanel } from "./ai-panel.js";
 import { renderPublishPanel } from "./publish-panel.js";
@@ -242,6 +250,10 @@ interface StudioState {
   blockModalKind: InspectorBlockKind | null;
   inspectorDraft: { readonly blockId: string; readonly fields: Readonly<Record<string, string | boolean>>; readonly dirty: boolean } | null;
   focusAfterRender: string | null;
+  /** DELETE-01: подтверждение удаления миссии — отдельный экран, не один клик. */
+  deleteQuestIntent: QuestDeleteIntent | null;
+  /** DELETE-01: подтверждение удаления проекта вместе со всеми его миссиями. */
+  deleteProjectIntent: ProjectDeleteIntent | null;
 }
 
 export class StudioApp {
@@ -305,7 +317,9 @@ export class StudioApp {
     utilityPanel: null,
     blockModalKind: null,
     inspectorDraft: null,
-    focusAfterRender: null
+    focusAfterRender: null,
+    deleteQuestIntent: null,
+    deleteProjectIntent: null
   };
 
   private readonly boardLifecycle = new BoardLifecycle({ mount: mountBoard });
@@ -678,6 +692,26 @@ export class StudioApp {
       this.render();
       return;
     }
+    if (action === "prepare-delete-quest") {
+      this.prepareDeleteQuest();
+      return;
+    }
+    if (action === "cancel-quest-delete") {
+      this.state.deleteQuestIntent = null;
+      this.state.message = "Удаление миссии отменено. Ничего не удалено.";
+      this.render();
+      return;
+    }
+    if (action === "prepare-delete-project") {
+      this.prepareDeleteProject();
+      return;
+    }
+    if (action === "cancel-project-delete") {
+      this.state.deleteProjectIntent = null;
+      this.state.message = "Удаление проекта отменено. Ничего не удалено.";
+      this.render();
+      return;
+    }
     if (action === "open-utility-panel") {
       const panel = target.dataset.panel;
       if (panel === "versions" || panel === "portability" || panel === "settings" || panel === "materials" || panel === "publish") {
@@ -958,6 +992,16 @@ export class StudioApp {
 
       if (kind === "clone-quest") {
         await this.cloneSelectedQuest(text(data, "newQuestId"), text(data, "title"));
+        return;
+      }
+
+      if (kind === "quest-delete") {
+        await this.confirmDeleteQuest(data);
+        return;
+      }
+
+      if (kind === "project-delete") {
+        await this.confirmDeleteProject(data);
         return;
       }
 
@@ -2424,6 +2468,185 @@ export class StudioApp {
     const targetBlockId = intent.targetBlockId;
     this.state.deletionIntent = null;
     await this.saveChanges([{ kind: "block.remove", blockId: targetBlockId }]);
+  }
+
+  /**
+   * DELETE-01: открывает подтверждение удаления миссии. Ключ идемпотентности и
+   * точные revisions фиксируются здесь, до показа текста последствий: повторная
+   * отправка формы переиспользует их, поэтому сетевой повтор не удаляет дважды
+   * и не превращается в «миссия не найдена».
+   */
+  private prepareDeleteQuest(): void {
+    const projectId = this.state.selectedProjectId;
+    const draft = this.state.draft;
+    if (!projectId || !draft) {
+      this.state.message = "Сначала выберите миссию: удалять нечего.";
+      this.render();
+      return;
+    }
+    this.state.deleteQuestIntent = Object.freeze({
+      projectId,
+      questId: draft.questId,
+      title: draft.title,
+      draftRevision: draft.draftRevision,
+      missionRevision: this.state.mission === null ? null : this.state.missionRevision,
+      idempotencyKey: mutationKey("quest-delete"),
+      historyRevisions: this.state.versions === null ? 1 : this.state.versions.history.length,
+      historyHasMore: this.state.versions?.historyHasMore === true,
+      hasMission: this.state.mission !== null
+    });
+    this.state.deleteProjectIntent = null;
+    this.state.message = `Подтверждение удаления миссии «${draft.title}»: действие необратимо.`;
+    this.render();
+  }
+
+  private async confirmDeleteQuest(data: FormData): Promise<void> {
+    const intent = this.state.deleteQuestIntent;
+    if (!intent) return;
+    // Явное подтверждение обязательно: без отмеченного чекбокса форма не
+    // отправляется браузером, а здесь это проверяется ещё раз на всякий случай.
+    if (!isDeleteConfirmed(data.get("confirm"))) {
+      this.state.message = "Отметьте, что понимаете последствия: без этого миссия не удаляется.";
+      this.render();
+      return;
+    }
+    const draft = this.state.draft;
+    const liveMissionRevision = this.state.mission === null ? null : this.state.missionRevision;
+    if (!draft || draft.questId !== intent.questId || draft.draftRevision !== intent.draftRevision || liveMissionRevision !== intent.missionRevision) {
+      this.state.deleteQuestIntent = null;
+      this.state.phase = "conflict";
+      this.state.message = "Миссия изменилась после открытия подтверждения: ничего не удалено. Откройте подтверждение заново.";
+      this.render();
+      return;
+    }
+    this.state.phase = "saving";
+    this.state.message = `Удаляем миссию ${intent.questId}…`;
+    this.render();
+    try {
+      const receipt = await this.api.deleteQuest(
+        intent.projectId,
+        intent.questId,
+        { draftRevision: intent.draftRevision, missionRevision: intent.missionRevision },
+        intent.idempotencyKey
+      );
+      this.state.deleteQuestIntent = null;
+      await this.afterQuestDeleted(intent.projectId, receipt);
+    } catch (error) {
+      this.state.deleteQuestIntent = null;
+      this.state.phase = "error";
+      this.state.message = describeControlError(error);
+    }
+    this.render();
+  }
+
+  /** Убирает удалённую миссию из состояния и выбирает следующую живую. */
+  private async afterQuestDeleted(projectId: string, receipt: { readonly questId: string; readonly replay: boolean }): Promise<void> {
+    this.state.quests = (await this.api.listQuests(projectId)).filter((quest) => quest.questId !== receipt.questId);
+    if (this.state.selectedQuestId === receipt.questId) {
+      this.destroyBoard();
+      this.state.selectedQuestId = null;
+      this.state.draft = null;
+      this.state.versions = null;
+      this.state.mission = null;
+      this.state.missionRevision = 0;
+      this.state.validation = null;
+      this.state.playtest = null;
+      const next = this.state.quests[0];
+      if (next) await this.selectQuest(next.questId);
+    }
+    this.state.phase = "idle";
+    this.state.message = receipt.replay
+      ? `Миссия ${receipt.questId} уже была удалена этим запросом: повтор принят идемпотентно.`
+      : `Миссия ${receipt.questId} удалена. Вернуть её нельзя.`;
+  }
+
+  /**
+   * DELETE-01: открывает подтверждение удаления проекта. Состав миссий с их
+   * draft revisions берётся из свежего ответа сервера — именно его сервер потом
+   * сверит, поэтому «подтверждаю то, что вижу» остаётся правдой.
+   */
+  private prepareDeleteProject(): void {
+    const projectId = this.state.selectedProjectId;
+    const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+    if (!projectId || !project) {
+      this.state.message = "Сначала выберите проект: удалять нечего.";
+      this.render();
+      return;
+    }
+    void this.openProjectDeleteIntent(project).catch((error: unknown) => {
+      this.state.phase = "error";
+      this.state.message = describeControlError(error);
+      this.render();
+    });
+  }
+
+  private async openProjectDeleteIntent(project: ProjectView): Promise<void> {
+    const quests = await this.api.listQuests(project.projectId);
+    this.state.quests = quests;
+    this.state.deleteQuestIntent = null;
+    this.state.deleteProjectIntent = Object.freeze({
+      projectId: project.projectId,
+      title: project.title,
+      baseRevision: project.coverRevision,
+      quests: Object.freeze(quests.map((quest) => Object.freeze({
+        questId: quest.questId,
+        draftRevision: quest.draftRevision,
+        title: quest.title
+      }))),
+      idempotencyKey: mutationKey("project-delete")
+    });
+    this.state.message = `Подтверждение удаления проекта «${project.title}»: действие необратимо.`;
+    this.render();
+  }
+
+  private async confirmDeleteProject(data: FormData): Promise<void> {
+    const intent = this.state.deleteProjectIntent;
+    if (!intent) return;
+    if (!isDeleteConfirmed(data.get("confirm"))) {
+      this.state.message = "Отметьте, что понимаете последствия: без этого проект не удаляется.";
+      this.render();
+      return;
+    }
+    this.state.deleteProjectIntent = null;
+    this.state.phase = "saving";
+    this.state.message = `Удаляем проект ${intent.projectId}…`;
+    this.render();
+    try {
+      const receipt = await this.api.deleteProject(
+        intent.projectId,
+        intent.baseRevision,
+        intent.quests.map((quest) => ({ questId: quest.questId, draftRevision: quest.draftRevision })),
+        intent.idempotencyKey
+      );
+      await this.afterProjectDeleted(intent.projectId, receipt.replay);
+    } catch (error) {
+      this.state.phase = "error";
+      this.state.message = describeControlError(error);
+    }
+    this.render();
+  }
+
+  /** Проекта больше нет: снимаем его из списка и возвращаемся к библиотеке. */
+  private async afterProjectDeleted(projectId: string, replay: boolean): Promise<void> {
+    this.state.projects = (await this.api.listProjects()).filter((project) => project.projectId !== projectId);
+    if (this.state.selectedProjectId === projectId) {
+      this.destroyBoard();
+      this.state.selectedProjectId = null;
+      this.state.selectedQuestId = null;
+      this.state.draft = null;
+      this.state.quests = [];
+      this.state.versions = null;
+      this.state.mission = null;
+      this.state.missionRevision = 0;
+      this.state.validation = null;
+      this.state.playtest = null;
+      this.state.utilityPanel = null;
+      this.state.view = "projects";
+    }
+    this.state.phase = "idle";
+    this.state.message = replay
+      ? `Проект ${projectId} уже был удалён этим запросом: повтор принят идемпотентно.`
+      : `Проект ${projectId} удалён вместе со всеми миссиями. Вернуть его нельзя.`;
   }
 
   private async cloneSelectedQuest(newQuestId: string, title: string): Promise<void> {
@@ -4307,6 +4530,7 @@ export class StudioApp {
 
             ${this.state.conflict ? renderConflictPanel(this.state.conflict) : ""}
             ${renderDeletionPreflight(this.state.deletionIntent, draft.draftRevision)}
+            ${renderQuestDeleteConfirm(this.state.deleteQuestIntent, draft.draftRevision)}
 
             <div class="board-toggle" role="group" aria-label="Вид редактора миссии">
               <button class="button-secondary ${this.state.boardView === "board" ? "active" : ""}" data-action="board-view" data-view="board" data-tooltip="view-board">Доска</button>
@@ -4405,7 +4629,24 @@ export class StudioApp {
 
         ${this.state.blockModalKind && draft ? renderBlockCreationModal(this.state.blockModalKind, draft.blocks, this.state.message) : ""}
         ${this.renderUtilityPanel(draft, project, allowEdit)}
+        ${renderProjectDeleteConfirm(this.state.deleteProjectIntent, this.projectDeleteCurrent())}
       </div>`;
+  }
+
+  /**
+   * Живое состояние проекта для подтверждения: cover revision из списка проектов
+   * и текущий состав миссий. Сравнение делает модуль mission-delete, поэтому
+   * app.ts отдаёт данные, а не решает, «устарело» ли подтверждение.
+   */
+  private projectDeleteCurrent(): { readonly baseRevision: number; readonly questIds: readonly string[] } | null {
+    const projectId = this.state.deleteProjectIntent?.projectId ?? null;
+    if (!projectId) return null;
+    const project = this.state.projects.find((item) => item.projectId === projectId) ?? null;
+    if (!project) return null;
+    return Object.freeze({
+      baseRevision: project.coverRevision,
+      questIds: Object.freeze(this.state.quests.map((quest) => quest.questId))
+    });
   }
 
   private renderStoryView(allowEdit: boolean): string {
@@ -4650,6 +4891,11 @@ export class StudioApp {
               <div>ID проекта: <code>${escapeHtml(project.projectId)}</code></div>
               ${draft ? `<div>ID миссии: <code>${escapeHtml(draft.questId)}</code></div>` : ``}
             </details>
+            ${allowEdit ? renderDeleteZone({
+              canDeleteQuest: draft !== null && project.role !== "tester",
+              canDeleteProject: project.role === "owner",
+              questTitle: draft?.title ?? null
+            }) : ``}
           </section>`;
     return `<section class="ed-utility-panel" role="dialog" aria-label="${escapeAttr(panelTitle)}">
       <header><h2>${escapeHtml(panelTitle)}</h2><button class="button-secondary" data-action="close-utility-panel" aria-label="Закрыть">Закрыть</button></header>

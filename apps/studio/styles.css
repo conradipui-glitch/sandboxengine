@@ -839,6 +839,24 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .deletion-actions, .action-edit-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .deletion-actions { margin-top: 12px; }
 
+/* DELETE-01: опасная зона и подтверждения удаления. Последствия читаются
+   целиком (без ellipsis/line-clamp), крупная SVG-иконка опасности — 40/48px. */
+.danger-zone { margin-top: 18px; padding: 14px; border: 1px dashed var(--border-danger); border-radius: 10px; background: var(--danger-bg); }
+.danger-zone h3 { margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.danger-zone > p { color: var(--muted-strong); margin: 0 0 10px; }
+.delete-zone-action { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.delete-zone-action + .delete-zone-action { margin-left: 8px; }
+.danger-zone .delete-zone-action:first-of-type { margin-top: 0; }
+.delete-modal .delete-modal-header { display: flex; gap: 14px; align-items: center; }
+.delete-modal .delete-modal-header h2 { margin: 0; }
+.delete-consequences { display: grid; gap: 6px; padding-left: 20px; margin: 10px 0; }
+.delete-consequences li { overflow-wrap: anywhere; }
+.delete-confirm-check { display: flex; gap: 8px; align-items: baseline; margin: 12px 0; }
+.delete-confirm-check input { width: auto; }
+/* Иконка опасности: цвет дублируется рамкой и штрихом — состояние читается
+   и без цвета. */
+.lh-icon-danger { color: var(--danger); border: 2px solid var(--danger); border-radius: 8px; padding: 2px; }
+
 @media (max-width: 900px) {
   .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
   .editor-grid, .versions-grid { grid-template-columns: 1fr; }

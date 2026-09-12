@@ -88,11 +88,13 @@ Generated file. Do not edit by hand.
 - `GET /control/v1/projects` — Список доступных текущему автору проектов
 - `POST /control/v1/projects` — Создание авторского проекта; в authenticated mode создатель атомарно становится owner
 - `PUT /control/v1/projects/{projectId}/cover` — Owner/editor назначает или снимает project-owned image cover с CAS baseRevision и обязательным idempotency-key
+- `DELETE /control/v1/projects/{projectId}` — Owner удаляет проект со всеми квестами, материалами и доступами; CAS по cover revision и составу квестов, idempotency-key обязателен, при живых публикациях отклоняется (fail-closed)
 - `GET /control/v1/projects/{projectId}/members` — Owner-only список участников проекта и ролей
 - `PUT /control/v1/projects/{projectId}/members/{userId}` — Owner-only назначение роли owner/editor/tester существующему закрытому пользователю
 - `DELETE /control/v1/projects/{projectId}/members/{userId}` — Owner-only удаление участника с защитой последнего owner
 - `GET /control/v1/projects/{projectId}/quests` — Список квестов доступного проекта и текущих draft revisions
 - `POST /control/v1/projects/{projectId}/quests` — Owner/editor создание квеста с начальным draft snapshot
+- `DELETE /control/v1/projects/{projectId}/quests/{questId}` — Owner/editor удаляет квест со всем содержимым; CAS по draft и mission revision, idempotency-key обязателен, опубликованный квест отклоняется (fail-closed)
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot доступного проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
 - `GET /control/v1/projects/{projectId}/quests/{questId}/board` — Получение server-authoritative layout BoardDocument отдельно от canonical draft

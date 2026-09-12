@@ -7,6 +7,17 @@ import {
 } from "@living-history/contracts";
 import { compileQuest, type CompiledQuestArtifact } from "@living-history/core";
 import { analyzeDraftBlockReferences } from "./draft-history.js";
+import {
+  currentQuestRevisions,
+  deleteProjectRequestHash,
+  deleteQuestRequestHash,
+  normalizeExpectedQuests,
+  projectDeleteKey,
+  questDeleteKey,
+  sameQuestRevisions,
+  validateDeleteProjectShape,
+  validateDeleteQuestShape
+} from "./delete-primitives.js";
 import { cloneJson, isNonNegativeSafeInteger, isTitle } from "./json-primitives.js";
 import type {
   ApplyDraftChangesResult,
@@ -16,10 +27,15 @@ import type {
   CreateProjectResult,
   CreateQuestInput,
   CreateQuestResult,
+  DeleteProjectInput,
+  DeleteProjectResult,
+  DeleteQuestInput,
+  DeleteQuestResult,
   DraftChange,
   DraftChangeSet,
   DraftSnapshot,
   DraftValidationRecord,
+  ExpectedQuestRevision,
   FrozenPlaytestRecord,
   ProjectCoverReference,
   ProjectRecord,
@@ -45,6 +61,10 @@ interface ProjectCoverReplayRecord {
   readonly project: ProjectRecord;
 }
 
+interface DeleteReplayRecord {
+  readonly requestHash: string;
+}
+
 interface DraftChangeContext {
   readonly projectId: string;
   readonly questId: string;
@@ -59,6 +79,8 @@ export class MemoryControlStore implements ControlStore {
   readonly #playtests = new Map<string, FrozenPlaytestRecord>();
   readonly #restoreIdempotency = new Map<string, RestoreReplayRecord>();
   readonly #projectCoverIdempotency = new Map<string, ProjectCoverReplayRecord>();
+  readonly #questDeleteIdempotency = new Map<string, DeleteReplayRecord>();
+  readonly #projectDeleteIdempotency = new Map<string, DeleteReplayRecord>();
   #validationCounter = 0;
   #playtestCounter = 0;
 
@@ -105,6 +127,98 @@ export class MemoryControlStore implements ControlStore {
     this.#projects.set(projectId, next);
     this.#projectCoverIdempotency.set(replayKey, frozen({ requestHash, project: next }));
     return frozen({ kind: "updated", project: cloneAndFreeze(next) });
+  }
+
+  async deleteProject(projectId: string, input: DeleteProjectInput): Promise<DeleteProjectResult> {
+    if (!isId(projectId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["projectId"]) });
+    const errors = validateDeleteProjectShape(input);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
+
+    const expectedQuests = normalizeExpectedQuests(input.expectedQuests);
+    const requestHash = deleteProjectRequestHash(input.baseRevision, expectedQuests);
+    const replayKey = projectDeleteKey(projectId, input.idempotencyKey);
+    // Идемпотентный повтор проверяется ДО живого состояния: удаление уже могло
+    // состояться, и тогда «проект не найден» было бы ложью о нашей же работе.
+    const replay = this.#projectDeleteIdempotency.get(replayKey);
+    if (replay) {
+      return replay.requestHash === requestHash
+        ? frozen({ kind: "replay" })
+        : frozen({ kind: "idempotency_key_reused" });
+    }
+
+    const project = this.#projects.get(projectId);
+    if (!project) return frozen({ kind: "project_not_found" });
+    const quests = this.#quests.get(projectId);
+    const currentQuests = currentQuestRevisions(quests);
+    if (project.coverRevision !== input.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentCoverRevision: project.coverRevision });
+    }
+    if (!sameQuestRevisions(currentQuests, expectedQuests)) {
+      return frozen({ kind: "quest_set_conflict", currentQuests: Object.freeze(currentQuests) });
+    }
+
+    for (const snapshot of quests?.values() ?? []) this.#dropQuestSideTables(projectId, snapshot.current.questId);
+    this.#quests.delete(projectId);
+    this.#projects.delete(projectId);
+    for (const key of [...this.#projectCoverIdempotency.keys()]) {
+      if (key.startsWith(`${projectId}\u0000`)) this.#projectCoverIdempotency.delete(key);
+    }
+    this.#projectDeleteIdempotency.set(replayKey, frozen({ requestHash }));
+    return frozen({ kind: "deleted" });
+  }
+
+  async deleteQuest(projectId: string, questId: string, input: DeleteQuestInput): Promise<DeleteQuestResult> {
+    if (!isId(projectId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["projectId"]) });
+    if (!isId(questId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["questId"]) });
+    const errors = validateDeleteQuestShape(input);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze([...errors]) });
+
+    const expectedMissionRevision = input.expectedMissionRevision;
+    const requestHash = deleteQuestRequestHash(input.expectedDraftRevision, expectedMissionRevision);
+    const replayKey = questDeleteKey(projectId, questId, input.idempotencyKey);
+    const replay = this.#questDeleteIdempotency.get(replayKey);
+    if (replay) {
+      return replay.requestHash === requestHash
+        ? frozen({ kind: "replay" })
+        : frozen({ kind: "idempotency_key_reused" });
+    }
+
+    if (!this.#projects.has(projectId)) return frozen({ kind: "project_not_found" });
+    const quests = this.#quests.get(projectId);
+    const state = quests?.get(questId);
+    if (!quests || !state) return frozen({ kind: "quest_not_found" });
+
+    // MemoryControlStore не хранит документов миссии вовсе: единственное честное
+    // текущее значение — «документа нет». Число здесь было бы выдумкой.
+    const currentMissionRevision = null;
+    if (state.current.draftRevision !== input.expectedDraftRevision || currentMissionRevision !== expectedMissionRevision) {
+      return frozen({
+        kind: "revision_conflict",
+        currentDraftRevision: state.current.draftRevision,
+        currentMissionRevision
+      });
+    }
+
+    quests.delete(questId);
+    this.#dropQuestSideTables(projectId, questId);
+    this.#questDeleteIdempotency.set(replayKey, frozen({ requestHash }));
+    return frozen({ kind: "deleted" });
+  }
+
+  /**
+   * Снимает всё, что принадлежало конкретному квесту и могло бы быть ошибочно
+   * переиспользовано квестом с тем же id, созданным позже.
+   */
+  #dropQuestSideTables(projectId: string, questId: string): void {
+    for (const key of [...this.#restoreIdempotency.keys()]) {
+      if (key.startsWith(`${projectId}\u0000${questId}\u0000`)) this.#restoreIdempotency.delete(key);
+    }
+    for (const [validationId, validation] of [...this.#validations.entries()]) {
+      if (validation.projectId === projectId && validation.questId === questId) this.#validations.delete(validationId);
+    }
+    for (const [playtestId, playtest] of [...this.#playtests.entries()]) {
+      if (playtest.projectId === projectId && playtest.questId === questId) this.#playtests.delete(playtestId);
+    }
   }
 
   async createQuest(input: CreateQuestInput): Promise<CreateQuestResult> {

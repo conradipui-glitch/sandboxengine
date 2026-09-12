@@ -81,6 +81,19 @@ export interface QuestSummaryView {
   readonly metadata?: QuestMetadataView | null;
 }
 
+/** Квитанция удаления миссии: сервер подтверждает, что именно снято. */
+export interface QuestDeleteReceiptView {
+  readonly projectId: string;
+  readonly questId: string;
+  readonly replay: boolean;
+}
+
+/** Квитанция удаления проекта вместе со всеми его миссиями. */
+export interface ProjectDeleteReceiptView {
+  readonly projectId: string;
+  readonly replay: boolean;
+}
+
 export interface DraftView extends QuestSummaryView {
   readonly blocks: readonly Block[];
 }
@@ -534,6 +547,56 @@ export class ControlApiClient {
   async createProject(input: { readonly projectId: string; readonly title: string }): Promise<ProjectView> {
     const body = await this.request<{ readonly project: ProjectView }>("POST", "/projects", input);
     return body.project;
+  }
+
+  /**
+   * Удаляет проект вместе со всеми его миссиями. `baseRevision` и точный состав
+   * миссий — CAS-основание: сервер откажет, если проект изменился после того,
+   * как автор увидел подтверждение. Публикацию сервер проверяет сам и отвечает
+   * отказом, пока хоть одна миссия проекта опубликована.
+   */
+  async deleteProject(
+    projectId: string,
+    baseRevision: number,
+    expectedQuests: readonly { readonly questId: string; readonly draftRevision: number }[],
+    idempotencyKey: string
+  ): Promise<ProjectDeleteReceiptView> {
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0) {
+      throw new ControlApiError(0, "CLIENT_IDEMPOTENCY_KEY_REQUIRED", null);
+    }
+    const body = await this.request<{ readonly deleted: { readonly projectId: string }; readonly replay?: boolean }>(
+      "DELETE",
+      `/projects/${encodeURIComponent(projectId)}`,
+      { baseRevision, expectedQuests },
+      { idempotencyKey }
+    );
+    return Object.freeze({ projectId: body.deleted.projectId, replay: body.replay === true });
+  }
+
+  /**
+   * Удаляет одну миссию. CAS — draft revision плюс content revision документа
+   * миссии (`null`, если документа ещё нет). Идемпотентный повтор с тем же
+   * ключом отвечает той же квитанцией, а не «миссия не найдена».
+   */
+  async deleteQuest(
+    projectId: string,
+    questId: string,
+    expected: { readonly draftRevision: number; readonly missionRevision: number | null },
+    idempotencyKey: string
+  ): Promise<QuestDeleteReceiptView> {
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0) {
+      throw new ControlApiError(0, "CLIENT_IDEMPOTENCY_KEY_REQUIRED", null);
+    }
+    const body = await this.request<{
+      readonly deleted: { readonly projectId: string; readonly questId: string };
+      readonly replay?: boolean;
+    }>(
+      "DELETE",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}`,
+      { expectedDraftRevision: expected.draftRevision, expectedMissionRevision: expected.missionRevision },
+      { idempotencyKey }
+    );
+    return Object.freeze({ projectId: body.deleted.projectId, questId: body.deleted.questId, replay: body.replay === true });
   }
 
   async listQuests(projectId: string): Promise<readonly QuestSummaryView[]> {

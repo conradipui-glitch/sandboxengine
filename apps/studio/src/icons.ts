@@ -15,6 +15,15 @@
 export const ICON_SIZES = [16, 20, 24] as const;
 export type IconSize = (typeof ICON_SIZES)[number];
 
+/**
+ * Крупные коробки для разрушительных подтверждений. Правило владельца: иконка
+ * опасного действия рисуется как SVG в 40/48px, а не как «обычная» управляющая
+ * 16/20/24 — она объясняет последствие, а не украшает строку. Набор путей тот
+ * же, меняется только коробка; `ICON_SIZES` остаётся набором управляющих иконок.
+ */
+export const DESTRUCTIVE_ICON_SIZES = [40, 48] as const;
+export type DestructiveIconSize = (typeof DESTRUCTIVE_ICON_SIZES)[number];
+
 /** Толщина штриха, общая для всего набора. */
 export const ICON_STROKE_WIDTH = 1.75;
 
@@ -32,7 +41,9 @@ export const ICON_PATHS: Readonly<Record<string, string>> = {
   check: '<path d="M5 12.8l4.6 4.6L19 7"/>',
   'chevron-left': '<path d="M14.5 6.5L9 12l5.5 5.5"/>',
   'chevron-right': '<path d="M9.5 6.5L15 12l-5.5 5.5"/>',
-  close: '<path d="M6.4 6.4l11.2 11.2"/><path d="M17.6 6.4L6.4 17.6"/>'
+  close: '<path d="M6.4 6.4l11.2 11.2"/><path d="M17.6 6.4L6.4 17.6"/>',
+  // Удаление: корзина с крышкой и двумя рёбрами. Без заливки, как весь набор.
+  trash: '<path d="M4 7h16"/><path d="M9.5 7V5.2h5V7"/><path d="M6.4 7l.9 12.1h9.4L17.6 7"/><path d="M10.4 10.6v5.6"/><path d="M13.6 10.6v5.6"/>'
 };
 
 /** Имена, для которых есть иконка (используется стражами). */
@@ -49,6 +60,23 @@ export function icon(name: string, size: IconSize = 20, label?: string): string 
     ? ' aria-hidden="true" focusable="false"'
     : ` role="img" aria-label="${label}"`;
   return `<span class="lh-icon" style="--lh-icon-size:${size}px"${a11y}>`
+    + `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none"`
+    + ` stroke="currentColor" stroke-width="${ICON_STROKE_WIDTH}"`
+    + ` stroke-linecap="round" stroke-linejoin="round">${body}</svg></span>`;
+}
+
+/**
+ * Разметка крупной иконки разрушительного подтверждения (40/48px). Тот же
+ * viewBox 24×24 и та же толщина штриха, что у управляющих иконок: отличается
+ * только коробка, поэтому «опасное» читается как масштаб, а не как другой набор.
+ */
+export function destructiveIcon(name: string, size: DestructiveIconSize = 40, label?: string): string {
+  const body = ICON_PATHS[name];
+  if (body === undefined) throw new Error(`неизвестная иконка: ${name}`);
+  const a11y = label === undefined
+    ? ' aria-hidden="true" focusable="false"'
+    : ` role="img" aria-label="${label}"`;
+  return `<span class="lh-icon lh-icon-danger" style="--lh-icon-size:${size}px"${a11y}>`
     + `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none"`
     + ` stroke="currentColor" stroke-width="${ICON_STROKE_WIDTH}"`
     + ` stroke-linecap="round" stroke-linejoin="round">${body}</svg></span>`;
