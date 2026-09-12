@@ -41,6 +41,7 @@ import type { PreferenceStore } from "./onboarding.js";
 // Причины отказа подключения к ИИ: панель помощника должна объяснять их по-русски,
 // а не показывать общую фразу про «не настроено» после успешного сохранения.
 import { providerCauseFromCodes, providerCauseText } from "./ai-provider-form.js";
+import { missionRailItemHtml } from "./mission-card.js";
 
 // FIN-10: тур по реальным элементам Studio. Прогресс хранит модуль, а само
 // браузерное хранилище отдаёт onboarding.ts — Studio не трогает его напрямую.
@@ -4261,10 +4262,7 @@ export class StudioApp {
             <div class="library-content">
               <section class="sidebar-section">
                 <div class="section-heading-row"><h2>Миссии</h2><span>${this.state.quests.length}</span></div>
-                <div class="rail-list">${this.state.quests.map((item) => `
-                  <button class="rail-item ${item.questId === this.state.selectedQuestId ? "active" : ""}" data-action="select-quest" data-quest-id="${escapeAttr(item.questId)}">
-                    <strong>${escapeHtml(item.title)}</strong>
-                  </button>`).join("") || `<div class="empty-rail">Создайте первую миссию</div>`}</div>
+                <div class="rail-list">${this.state.quests.map((item) => missionRailItemHtml(item, item.questId === this.state.selectedQuestId)).join("") || `<div class="empty-rail">Создайте первую миссию</div>`}</div>
                 ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание миссии недоступно.</p>`}
               </section>
               ${draft && allowEdit ? `<section class="sidebar-section block-library" aria-label="Добавить блок">

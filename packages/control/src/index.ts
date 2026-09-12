@@ -353,6 +353,8 @@ export type {
   ProjectRecord,
   RegisterProjectAssetInput,
   RegisterProjectAssetResult,
+  QuestMetadata,
+  QuestMetadataStore,
   SetProjectCoverInput,
   SetProjectCoverResult,
   RestoreDraftInput,

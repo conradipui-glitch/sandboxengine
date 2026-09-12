@@ -34,10 +34,13 @@ const repoRoot = path.resolve(studioRoot, "..", "..");
 
 // FIN-10: тур обязан вести по РЕАЛЬНОЙ разметке Studio, а не по выдуманным id.
 // Здесь читаем фактический исходник app.ts и index.html, чтобы доказать якоря.
+// CARD-META: список миссий рисует модуль mission-card.ts, поэтому его разметка —
+// такой же реальный источник якорей, как app.ts.
 const appSource = await readFile(path.join(studioRoot, "src", "app.ts"), "utf8");
 const indexSource = await readFile(path.join(studioRoot, "index.html"), "utf8");
 const moduleSource = await readFile(path.join(studioRoot, "src", "onboarding-tour.ts"), "utf8");
-const markupSources = [appSource, indexSource];
+const missionCardSource = await readFile(path.join(studioRoot, "src", "mission-card.ts"), "utf8");
+const markupSources = [appSource, indexSource, missionCardSource];
 
 /** Переводит CSS-селектор шага в литерал, который встречается в разметке. */
 function anchorsPresentInRealMarkup(anchor) {

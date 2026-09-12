@@ -421,8 +421,29 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .rail-item:hover { background: var(--surface-sunken); }
 .rail-item.active { background: var(--info-bg); border-color: var(--border-accent); color: var(--info-strong); }
-.rail-item strong { font-size: 13px; font-weight: 680; }
-.rail-item small { color: var(--muted-soft); font-size: 11px; }
+.rail-item strong, .rail-item .rail-title { font-size: 13px; font-weight: 680; overflow-wrap: anywhere; }
+.rail-item small, .rail-item .rail-meta {
+  display: grid;
+  gap: 2px;
+  color: var(--muted-soft);
+  font-size: 11px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.rail-meta-item { overflow-wrap: anywhere; }
+.rail-meta-term { color: var(--muted); }
+.rail-meta-value { color: var(--muted-soft); }
+.rail-meta-id { opacity: .82; }
+.rail-badge {
+  justify-self: start;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 620;
+}
+.rail-badge-published { background: var(--info-bg); border-color: var(--border-accent); color: var(--info-strong); }
+.rail-badge-draft { background: var(--surface-sunken); color: var(--muted); }
 .empty-rail { padding: 10px 11px; color: var(--muted-soft); font-size: 12px; }
 .compact-form {
   display: grid;
