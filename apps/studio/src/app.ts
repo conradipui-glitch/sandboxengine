@@ -363,6 +363,7 @@ export class StudioApp {
   private boardSaveInFlight = false;
   private boardSaveAgain = false;
   private destroyed = false;
+  private onGlobalKeyDown: (event: Event) => void = () => {};
 
   constructor(
     private readonly root: HTMLElement,
@@ -376,19 +377,36 @@ export class StudioApp {
     // Просьба панели ИИ-помощника «откройте форму подключения» приходит событием
     // и всплывает до корня приложения — слушатель ровно один, перерисовки нет.
     const onAiConfigure = (event: Event): void => this.onAiConfigureRequest(event);
+    // Escape закрывает верхний служебный слой: панель «Дополнительно» → меню «…».
+    // Слушатель на document: панель — модальный слой, и клавиатурный выход из него
+    // обязателен (нечитаемые/незакрываемые окна — дефект). В тестах document
+    // заглушён минимально, поэтому подключение защищено проверкой возможности.
+    this.onGlobalKeyDown = (event: Event): void => {
+      const keyboard = event as KeyboardEvent;
+      if (keyboard.key !== "Escape") return;
+      if (this.state.utilityPanel !== null || this.state.editorMenuOpen) {
+        keyboard.preventDefault();
+        this.state.utilityPanel = null;
+        this.state.editorMenuOpen = false;
+        this.render();
+      }
+    };
     root.addEventListener("click", onClick);
     root.addEventListener("submit", onSubmit);
     root.addEventListener("input", onInput);
     root.addEventListener("change", onChange);
     root.addEventListener("focusout", onFocusOut);
     root.addEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure);
+    const hasDocumentKeys = typeof document !== "undefined" && typeof document.addEventListener === "function";
+    if (hasDocumentKeys) document.addEventListener("keydown", this.onGlobalKeyDown);
     this.rootDisposers.push(
       () => root.removeEventListener("click", onClick),
       () => root.removeEventListener("submit", onSubmit),
       () => root.removeEventListener("input", onInput),
       () => root.removeEventListener("change", onChange),
       () => root.removeEventListener("focusout", onFocusOut),
-      () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure)
+      () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure),
+      ...(hasDocumentKeys ? [() => document.removeEventListener("keydown", this.onGlobalKeyDown)] : [])
     );
   }
 
