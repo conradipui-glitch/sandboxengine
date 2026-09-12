@@ -490,16 +490,48 @@ export const STUDIO_ERROR_CODES: readonly string[] = Object.freeze(
 );
 
 /**
+ * Навигация шага тура в интерфейсе редактора: номер шага и кнопки перехода.
+ * Без неё разметка шага — только текст (как в модульных тестах).
+ */
+export interface OnboardingTourNavigation {
+  /** Абсолютный индекс шага среди всех шагов тура. */
+  readonly index: number;
+  readonly total: number;
+  readonly canBack: boolean;
+  readonly isLast: boolean;
+}
+
+/**
  * Безопасная разметка шага тура: экранирование и никакой обрезки текста
  * многоточием — тур объясняет полностью, а не «…».
+ *
+ * Кнопки перехода носят data-action (tour-next / tour-back / tour-skip) — их
+ * обрабатывает app.ts. data-tour-step на шаге позволяет проверить, что шаг
+ * действительно попал в DOM, а не остался экранированной строкой в статусе.
  */
-export function renderOnboardingTourStep(step: OnboardingTourStep): string {
+export function renderOnboardingTourStep(
+  step: OnboardingTourStep,
+  navigation?: OnboardingTourNavigation
+): string {
   const note = step.prerequisite
     ? `<p class="lh-tour-prerequisite"><strong>Когда этот шаг доступен.</strong> ${escapeHtml(step.prerequisite)}</p>`
     : "";
-  return `<section class="lh-tour-step" data-tour-step="${escapeHtml(step.id)}">
-    <h2>${escapeHtml(step.title)}</h2>
+  const progress = navigation
+    ? `<div class="lh-tour-progress">Шаг ${navigation.index + 1} из ${navigation.total}</div>`
+    : "";
+  const actions = navigation
+    ? `<div class="lh-dialog-actions lh-tour-actions">
+      <button type="button" data-action="tour-skip">Пропустить</button>
+      <span class="lh-spacer"></span>
+      <button type="button" data-action="tour-back"${navigation.canBack ? "" : " disabled"}>Назад</button>
+      <button type="button" class="lh-primary" data-action="tour-next">${navigation.isLast ? "Завершить" : "Далее"}</button>
+    </div>`
+    : "";
+  return `<section class="lh-tour-step lh-tour-card" data-tour-step="${escapeHtml(step.id)}" role="dialog" aria-modal="false" aria-labelledby="lh-tour-step-title">
+    ${progress}
+    <h2 id="lh-tour-step-title">${escapeHtml(step.title)}</h2>
     <p>${escapeHtml(step.body)}</p>
     ${note}
+    ${actions}
   </section>`;
 }
