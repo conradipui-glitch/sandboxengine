@@ -83,11 +83,36 @@ export interface LocalMissionDraftRequest {
   readonly endingCount?: number;
 }
 
+/** AI-CHAIN: старт диалога создания миссии по идее автора. */
+export interface MissionChainStartRequest {
+  readonly idea: string;
+  readonly projectId?: string;
+  readonly questId?: string;
+}
+
+/** AI-CHAIN: ход автора (ответ на вопрос) или подтверждение цепочки. */
+export interface MissionChainTurnRequest {
+  readonly sessionId: string;
+  readonly text?: string;
+}
+
+/** AI-CHAIN: диалоговый агент создания миссии (stateful, по сессии). */
+export interface MissionChainDialogs {
+  start(request: MissionChainStartRequest): Promise<unknown>;
+  reply(sessionId: string, text: string): Promise<unknown>;
+  confirm(sessionId: string): Promise<unknown>;
+  cancel(sessionId: string): void;
+  /** Документ миссии, собранный по подтверждённой цепочке (для CAS-сохранения клиентом). */
+  takeDocument(sessionId: string): unknown;
+}
+
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
   /** Генерация полной миссии тем же провайдером, что настроен в «Настройки → ИИ». */
   readonly missionDrafter?: (request: LocalMissionDraftRequest) => Promise<unknown>;
+  /** AI-CHAIN: чат создания миссии с уточняющими вопросами и цепочкой. */
+  readonly missionChainDialogs?: MissionChainDialogs;
   readonly playerLauncher?: PlayerLauncher;
   /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
   readonly importBodyLimitBytes?: number;
@@ -225,7 +250,73 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         await proxyPlayer(request, response, playerOrigin, url);
         return;
       }
+
+      if (url.pathname === "/local/mission-chain" && options.missionChainDialogs) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          const body = await readLocalJson(request) as MissionChainStartRequest & MissionChainTurnRequest;
+          const idea = typeof body?.idea === "string" ? body.idea : "";
+          const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
+          // Один маршрут, три глагола: старт (есть idea), ход (есть sessionId+text),
+          // подтверждение цепочки (есть sessionId и нет text).
+          // Пустая идея — не 400, а честный failed-вид от start(): панель
+          // показывает причину русским текстом, введённое не теряется.
+          if (typeof body?.idea === "string" && sessionId === "") {
+            sendJson(response, 200, await options.missionChainDialogs.start({ idea, projectId: body.projectId, questId: body.questId }));
+            return;
+          }
+          if (sessionId !== "" && typeof body?.text === "string") {
+            sendJson(response, 200, await options.missionChainDialogs.reply(sessionId, body.text));
+            return;
+          }
+          if (sessionId !== "" && body?.text === undefined) {
+            sendJson(response, 200, await options.missionChainDialogs.confirm(sessionId));
+            return;
+          }
+          sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
+          else sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+        }
+        return;
+      }
+      if (url.pathname === "/local/mission-chain/document" && options.missionChainDialogs) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          const body = await readLocalJson(request) as { sessionId?: unknown };
+          if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.sessionId !== "string" || body.sessionId.length === 0) {
+            sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+            return;
+          }
+          const document = options.missionChainDialogs.takeDocument(body.sessionId);
+          sendJson(response, 200, { ok: document !== null && document !== undefined, document: document ?? null });
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
+          else sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+        }
+        return;
+      }
+      if (url.pathname === "/local/mission-chain/cancel" && options.missionChainDialogs) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          const body = await readLocalJson(request) as { sessionId?: unknown };
+          if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.sessionId !== "string" || body.sessionId.length === 0) {
+            sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+            return;
+          }
+          options.missionChainDialogs.cancel(body.sessionId);
+          sendJson(response, 200, { ok: true });
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
+          else sendJson(response, 400, { error: { code: "INVALID_MISSION_CHAIN_REQUEST" } });
+        }
+        return;
+      }
       if (url.pathname.startsWith("/control/")) {
+
         if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
         await proxyControl(request, response, control, url, importLimitBytes);
         return;

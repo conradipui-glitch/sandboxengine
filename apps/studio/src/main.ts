@@ -18,6 +18,7 @@ import { LocalAssetStore } from "@living-history/assets";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import { SQLitePlaytestTraceReader } from "@living-history/runtime";
 import { createStudioDevServer } from "./dev-server.js";
+import { MissionChainDialogStore } from "./mission-chain-dialogs.js";
 
 type ControlServerModule = typeof import("../../server/src/control-server.js");
 
@@ -96,6 +97,12 @@ const authorProvider = new LocalAuthorProvider(undefined, {
   scope: { projectId: "local-operator", userId: "local-owner" }
 });
 await authorProvider.restore();
+// AI-CHAIN: диалоговый агент создания миссии — чат с уточняющими вопросами,
+// сборка и показ цепочки взаимодействий, генерация миссии по подтверждению.
+const missionChainDialogs = new MissionChainDialogStore({
+  backend: authorProvider.backend,
+  profileId: "studio-dev-author-profile"
+});
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
 if (!builtPluginRegistry.ok) throw new Error(`Studio plugin registry failed: ${builtPluginRegistry.code}`);
 
@@ -185,7 +192,7 @@ const missionDrafter = async (request: { readonly idea: string; readonly project
     deadlineAtMs: Date.now() + 120_000
   } as Parameters<InstanceType<typeof ModelMissionWriter>["write"]>[0]);
 };
-const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter });
+const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter, missionChainDialogs });
 const studioAddress = await studio.listen(Number(process.env.LH_STUDIO_PORT ?? 4173), "127.0.0.1");
 
 console.log(`Living History Studio: http://${studioAddress.host}:${studioAddress.port}`);

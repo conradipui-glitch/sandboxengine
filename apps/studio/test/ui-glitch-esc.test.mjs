@@ -62,13 +62,13 @@ function bootApp({ panel = null, menuOpen = false } = {}) {
 test("GLITCH Escape closes every utility panel (versions/publish/portability/materials/settings)", () => {
   for (const panel of ["versions", "publish", "portability", "materials", "settings"]) {
     const { app, root, press } = bootApp({ panel, menuOpen: true });
-    assert.match(root.innerHTML, /class="ed-utility-panel"/, `панель ${panel} открыта до Escape`);
+    assert.match(root.innerHTML, /class="ed-utility-panel[\s"]/, `панель ${panel} открыта до Escape`);
     assert.match(root.innerHTML, /data-action="close-utility-panel"/);
     const handlers = press();
     assert.ok(handlers >= 1, "StudioApp подключает keydown-слушатель к document");
     assert.equal(app.state.utilityPanel, null, `Escape закрыл панель ${panel}`);
     assert.equal(app.state.editorMenuOpen, false, "Escape закрыл меню «…»");
-    assert.doesNotMatch(root.innerHTML, /class="ed-utility-panel"/, `панель ${panel} исчезла из DOM`);
+    assert.doesNotMatch(root.innerHTML, /class="ed-utility-panel[\s"]/, `панель ${panel} исчезла из DOM`);
   }
 });
 

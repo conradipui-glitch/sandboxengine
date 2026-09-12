@@ -157,6 +157,26 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
   </section>`;
 }
 
+/**
+ * Секция «Доступ» внутри панели настроек проекта: только проектное —
+ * роль и участники. Личность/сессия/вход живут в сайдбаре (renderAccessPanel),
+ * поэтому здесь их нет: два одинаковых блока подряд — дефект.
+ */
+export function renderProjectAccessSection(access: StudioAccessState, project: ProjectView): string {
+  const role = roleSummary(project.role);
+  if (access.mode === "local-owner") {
+    return `${role}<p class="access-note">Локальный режим: проект виден только вам. Участники появятся после входа через Telegram.</p>`;
+  }
+  if (access.mode !== "authenticated") return role;
+  if (project.role !== "owner") {
+    return `${role}<p class="access-note">Список участников доступен только owner. Текущая роль: <strong>${escapeHtml(projectRoleLabel(project.role))}</strong>.</p>`;
+  }
+  const hint = access.mutationProof
+    ? ""
+    : `<p class="access-note">Чтобы менять роли, подтвердите вход — кнопка «Подтвердить вход» в панели слева.</p>`;
+  return `${role}${renderMembers(access.members, access.membersError, access.auth!.user.userId, access.mutationProof)}${hint}`;
+}
+
 function roleSummary(role: ProjectView["role"]): string {
   const permissions = role === "owner"
     ? "редактирование · проверка и запуск · выпуски · публикация и откат · участники"
@@ -207,7 +227,7 @@ function renderMembers(
 }
 
 function roleOption(role: ProjectView["role"], current: ProjectView["role"]): string {
-  return `<option value="${role}"${role === current ? " selected" : ""}>${role}</option>`;
+  return `<option value="${role}"${role === current ? " selected" : ""}>${escapeHtml(projectRoleLabel(role))}</option>`;
 }
 
 function loginForm(label: string): string {
