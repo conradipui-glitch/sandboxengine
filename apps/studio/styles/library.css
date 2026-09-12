@@ -37,6 +37,15 @@
   background: var(--surface, #1b1e24);
 }
 
+/* Семантический локатор строки фильтров (office-web-ui locator contract):
+ * поиск и фильтры — отдельная рабочая полоса, не смешанная с действиями. */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
 .lhp-search {
   display: flex;
   flex-direction: column;

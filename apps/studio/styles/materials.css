@@ -194,9 +194,13 @@
 }
 
 .mat-target-label {
-  display: flex;
+  display: inline-flex;
   gap: 6px;
   align-items: center;
+  /* Слово «Назначение» не рвётся посреди строки (правило карточки anywhere
+     здесь отключено); перенос — только по границам элементов строки. */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .mat-target {

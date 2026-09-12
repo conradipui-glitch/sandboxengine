@@ -552,7 +552,6 @@ function renderList(state: MaterialsPanelState): string {
 export function renderMaterialsPanelHtml(state: MaterialsPanelState): string {
   return [
     `<section class="materials-panel" data-materials-panel role="region" aria-label="Библиотека материалов">`,
-    `<h3>Библиотека материалов</h3>`,
     renderStatus(state),
     renderUploadForm(state),
     renderNotice(state.notice),

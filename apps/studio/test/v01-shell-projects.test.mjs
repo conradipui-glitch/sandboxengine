@@ -198,7 +198,7 @@ test("V01 new-project modal is 480px dialog without Technical ID", async () => {
   app.state.projectModal = true;
   app.render();
   assert.match(root.innerHTML, /data-form="project-new"/);
-  assert.match(root.innerHTML, /class="modal"/);
+  assert.match(root.innerHTML, /class="modal( layout-panel)?"/);
   assert.ok(!root.innerHTML.includes("Technical ID"), "modal has no Technical ID field");
 });
 

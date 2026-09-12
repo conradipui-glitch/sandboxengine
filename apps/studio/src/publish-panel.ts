@@ -206,7 +206,7 @@ export function renderPublishPanel(host: PublishPanelHost): { dispose: () => voi
     const reason = disabledReason();
     const disabled = reason !== null;
     const recheckLabel = state.stage === "idle" ? "Проверить готовность" : "Проверить снова";
-    return `<div class="publish-actions">
+    return `<div class="publish-actions action-bar">
       <button class="button-primary publish-main" type="button" data-publish-action="${mainAction()}"${disabled ? " disabled aria-disabled=\"true\"" : ""} aria-describedby="publish-why">${mainLabel()}</button>
       <button class="button-secondary" type="button" data-publish-action="recheck">${recheckLabel}</button>
     </div>
@@ -250,7 +250,7 @@ export function renderPublishPanel(host: PublishPanelHost): { dispose: () => voi
     const liveLink = state.liveUrl !== null && state.stage !== "published"
       ? urlBlock("Текущая версия на сайте:")
       : "";
-    return `<section class="publish-panel" data-publish-panel data-publish-stage="${state.stage}" data-publish-tone="${TONE[state.stage]}" aria-labelledby="publish-heading">
+    return `<section class="publish-panel layout-panel" data-publish-panel data-publish-stage="${state.stage}" data-publish-tone="${TONE[state.stage]}" aria-labelledby="publish-heading">
     <header class="publish-header">
       <h2 id="publish-heading">Публикация</h2>
       <p class="publish-lead">${LEAD}</p>
