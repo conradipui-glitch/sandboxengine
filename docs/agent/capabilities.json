@@ -163,6 +163,13 @@
       "successStatus": 201
     },
     {
+      "id": "control.projects.cover.update",
+      "method": "PUT",
+      "path": "/control/v1/projects/{projectId}/cover",
+      "summary": "Owner/editor назначает или снимает project-owned image cover с CAS baseRevision и обязательным idempotency-key",
+      "successStatus": 200
+    },
+    {
       "id": "control.members.list",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/members",

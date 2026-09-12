@@ -504,16 +504,22 @@ test("Материалы: onUseMaterial получает правильное н
   const useButton = (assetId) => cardOf(host.root, assetId).querySelector('[data-material-action="use"]');
   const select = (assetId) => cardOf(host.root, assetId).querySelector("[data-material-target]");
 
-  // Значение select по умолчанию — первое допустимое назначение для изображения.
-  assert.deepEqual(targetsForKind("image"), ["scene-background", "character-portrait"]);
-  assert.equal(select("a1").querySelectorAll("option").length, 2, "изображению доступны фон и портрет");
-  assert.equal(select("a1").querySelectorAll("option")[0].getAttribute("value"), "scene-background");
+  // Первое допустимое назначение изображения — явная обложка проекта.
+  assert.deepEqual(targetsForKind("image"), ["project-cover", "scene-background", "character-portrait"]);
+  assert.equal(select("a1").querySelectorAll("option").length, 3, "изображению доступны обложка, фон и портрет");
+  assert.equal(select("a1").querySelectorAll("option")[0].getAttribute("value"), "project-cover");
   assert.equal(select("a1").querySelectorAll("option")[0].hasAttribute("selected"), false, "до назначения ничего не помечено выбранным");
   assert.equal(select("a2").querySelectorAll("option").length, 1, "звуку доступно только назначение звука сцены");
 
   useButton("a1").dispatch("click");
-  assert.deepEqual(calls.used, [["a1", "scene-background"]]);
-  assert.equal(select("a1").querySelectorAll("option")[0].hasAttribute("selected"), true, "назначенный фон отмечен в выборе");
+  assert.deepEqual(calls.used, [["a1", "project-cover"]]);
+  assert.equal(select("a1").querySelectorAll("option")[0].hasAttribute("selected"), true, "назначенная обложка отмечена в выборе");
+  assert.equal(host.root.querySelector('[data-assigned-target="project-cover"]').getAttribute("data-assigned-state"), "set");
+  assert.match(assignedValue(host.root, "project-cover"), /hero\.png/);
+
+  select("a1").value = "scene-background";
+  useButton("a1").dispatch("click");
+  assert.deepEqual(calls.used.at(-1), ["a1", "scene-background"]);
   assert.equal(host.root.querySelector('[data-assigned-target="scene-background"]').getAttribute("data-assigned-state"), "set");
   assert.match(assignedValue(host.root, "scene-background"), /hero\.png/);
 
@@ -532,11 +538,13 @@ test("Материалы: onUseMaterial получает правильное н
   assert.deepEqual(calls.used.at(-1), ["a1", "character-portrait"]);
   assert.match(assignedValue(host.root, "character-portrait"), /hero\.png/);
 
-  // Замена фона другим материалом сохраняет звук и портрет.
+  // Замена фона другим материалом сохраняет обложку, звук и портрет.
+  select("a4").value = "scene-background";
   useButton("a4").dispatch("click");
   assert.deepEqual(calls.used.at(-1), ["a4", "scene-background"]);
   assert.match(assignedValue(host.root, "scene-background"), /hall\.png/);
   assert.doesNotMatch(assignedValue(host.root, "scene-background"), /hero\.png/);
+  assert.match(assignedValue(host.root, "project-cover"), /hero\.png/);
   assert.match(assignedValue(host.root, "scene-audio"), /theme\.mp3/);
   assert.match(assignedValue(host.root, "character-portrait"), /hero\.png/);
   assert.equal(host.root.querySelectorAll('[data-assigned-state="empty"]').length, 0);
@@ -624,9 +632,10 @@ test("Материалы: модуль не ходит в сеть и не чи�
 
 test("Материалы: помощники дают русские подписи, честные размеры и длительности", () => {
   assert.deepEqual([...MATERIAL_KINDS], ["image", "audio", "other"]);
-  assert.deepEqual([...MATERIAL_TARGETS], ["scene-background", "scene-audio", "character-portrait"]);
+  assert.deepEqual([...MATERIAL_TARGETS], ["project-cover", "scene-background", "scene-audio", "character-portrait"]);
   assert.equal(materialKindLabel("image"), "Изображение");
   assert.equal(materialKindLabel("bogus"), "Другой файл");
+  assert.equal(targetLabel("project-cover"), "Обложка проекта");
   assert.equal(targetLabel("scene-audio"), "Звук сцены");
   assert.equal(materialKindFromMime("IMAGE/PNG"), "image");
   assert.equal(materialKindFromMime("audio/ogg"), "audio");
@@ -634,7 +643,7 @@ test("Материалы: помощники дают русские подпи�
   assert.equal(materialKindFromMime(null), "other");
   assert.deepEqual(targetsForKind("audio"), ["scene-audio"]);
   assert.deepEqual(targetsForKind("other"), []);
-  assert.deepEqual(targetsForKind("image"), ["scene-background", "character-portrait"]);
+  assert.deepEqual(targetsForKind("image"), ["project-cover", "scene-background", "character-portrait"]);
 
   assert.equal(formatByteSize(512), "512 Б");
   assert.equal(formatByteSize(20480), "20 КБ");

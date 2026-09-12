@@ -80,7 +80,7 @@ test("M03 project asset library: register/list/unlist keeps bytes referenced", a
       const db = new DatabaseSync(path);
       const row = db.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get();
       db.close();
-      assert.equal(Number(row.value), 6);
+      assert.equal(Number(row.value), 7);
     } finally {
       reopened.close();
     }

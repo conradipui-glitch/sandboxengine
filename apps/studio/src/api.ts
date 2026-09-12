@@ -14,9 +14,16 @@ import type {
   DraftChangeSet
 } from "@living-history/control";
 
+export interface ProjectCoverView {
+  readonly assetId: string;
+  readonly hash: string;
+}
+
 export interface ProjectView {
   readonly projectId: string;
   readonly title: string;
+  readonly cover: ProjectCoverView | null;
+  readonly coverRevision: number;
   readonly role: ControlProjectRole;
 }
 
@@ -456,6 +463,26 @@ export class ControlApiClient {
   async listProjects(): Promise<readonly ProjectView[]> {
     const body = await this.request<{ readonly projects: readonly ProjectView[] }>("GET", "/projects");
     return body.projects;
+  }
+
+  /**
+   * Устанавливает или снимает обложку проекта. Сервер сверяет проектную
+   * принадлежность и хэш выбранного материала; `coverRevision` защищает от
+   * тихого перетирания параллельной правки.
+   */
+  async setProjectCover(
+    projectId: string,
+    baseRevision: number,
+    cover: ProjectCoverView | null,
+    idempotencyKey = createClientIdempotencyKey()
+  ): Promise<ProjectView> {
+    const body = await this.request<{ readonly project: ProjectView }>(
+      "PUT",
+      `/projects/${encodeURIComponent(projectId)}/cover`,
+      { baseRevision, cover },
+      { idempotencyKey }
+    );
+    return body.project;
   }
 
   async listProjectMembers(projectId: string): Promise<readonly ControlProjectMemberView[]> {

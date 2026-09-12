@@ -89,6 +89,14 @@
       "summary": "Создание авторского проекта; в authenticated mode создатель атомарно становится owner"
     },
     {
+      "id": "control.projects.cover.update",
+      "method": "PUT",
+      "path": "/control/v1/projects/{projectId}/cover",
+      "readiness": "available",
+      "successStatus": 200,
+      "summary": "Owner/editor назначает или снимает project-owned image cover с CAS baseRevision и обязательным idempotency-key"
+    },
+    {
       "id": "control.members.list",
       "method": "GET",
       "path": "/control/v1/projects/{projectId}/members",

@@ -39,10 +39,11 @@ export interface MaterialItem {
   altText: string | null;
 }
 
-/** Куда материал можно поставить в сцене. */
-export type MaterialTarget = "scene-background" | "scene-audio" | "character-portrait";
+/** Куда материал можно поставить: в экран сцены или в карточку проекта. */
+export type MaterialTarget = "scene-background" | "scene-audio" | "character-portrait" | "project-cover";
 
 export const MATERIAL_TARGETS: readonly MaterialTarget[] = Object.freeze([
+  "project-cover",
   "scene-background",
   "scene-audio",
   "character-portrait"
@@ -69,6 +70,7 @@ export const MATERIAL_KIND_LABELS: Record<MaterialKind, string> = Object.freeze(
 });
 
 export const MATERIAL_TARGET_LABELS: Record<MaterialTarget, string> = Object.freeze({
+  "project-cover": "Обложка проекта",
   "scene-background": "Фон сцены",
   "scene-audio": "Звук сцены",
   "character-portrait": "Портрет персонажа"
@@ -93,7 +95,7 @@ export function materialKindFromMime(mimeType: string | null | undefined): Mater
 
 /** Допустимые назначения для вида материала: другой файл в сцену не ставится. */
 export function targetsForKind(kind: MaterialKind): readonly MaterialTarget[] {
-  if (kind === "image") return Object.freeze(["scene-background", "character-portrait"]);
+  if (kind === "image") return Object.freeze(["project-cover", "scene-background", "character-portrait"]);
   if (kind === "audio") return Object.freeze(["scene-audio"]);
   return Object.freeze([]);
 }
@@ -472,10 +474,10 @@ function renderAssigned(state: MaterialsPanelState): string {
     ].join("");
   }).join("");
   return [
-    `<section class="mat-assigned" data-material-assigned aria-label="Назначено в сцене">`,
-    `<h4>Назначено в сцене</h4>`,
+    `<section class="mat-assigned" data-material-assigned aria-label="Назначенные материалы">`,
+    `<h4>Назначенные материалы</h4>`,
     `<ul class="mat-assigned-list">${rows}</ul>`,
-    `<p class="mat-assigned-hint" style="${WRAP_STYLE}">Замена одного материала не меняет остальные назначения.</p>`,
+    `<p class="mat-assigned-hint" style="${WRAP_STYLE}">Замена одного назначения не меняет остальные.</p>`,
     `</section>`
   ].join("");
 }
@@ -518,8 +520,8 @@ function renderCard(item: MaterialItem, state: MaterialsPanelState): string {
       targets.map((target) => `<option value="${escapeAttr(target)}"${target === currentTarget ? " selected" : ""}>${escapeHtml(targetLabel(target))}</option>`).join(""),
       `</select>`,
       `</label>`,
-      `<button type="button" class="mat-use" data-material-action="use" data-asset-id="${escapeAttr(item.assetId)}"`,
-      ` aria-label="${escapeAttr(`Использовать в сцене: ${filename}`)}">Использовать в сцене</button>`
+      `<button type="button" class="mat-use" data-material-action="use" data-asset-id="${escapeAttr(item.assetId)}"`
+      + ` aria-label="${escapeAttr(`Применить назначение материала: ${filename}`)}">Применить назначение</button>`
     ].join("");
 
   return [

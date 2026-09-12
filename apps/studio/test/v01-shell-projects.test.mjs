@@ -160,8 +160,8 @@ test("V01 empty projects screen has AI prompt, honest paint note and blank-proje
 
 test("V01 project cards open the project and show quest counts with roles", async () => {
   const projects = [
-    { projectId: "p-one", title: "Первая история", role: "owner" },
-    { projectId: "p-two", title: "Вторая история", role: "editor" }
+    { projectId: "p-one", title: "Первая история", cover: null, coverRevision: 0, role: "owner" },
+    { projectId: "p-two", title: "Вторая история", cover: null, coverRevision: 0, role: "editor" }
   ];
   const { app, root } = await bootStudio({
     projects,

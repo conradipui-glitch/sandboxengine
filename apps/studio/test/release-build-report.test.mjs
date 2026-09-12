@@ -220,7 +220,7 @@ test("B09-03 authenticated editor builds immutable release idempotently without 
   try {
     const auth = await api.login("editor.user", "editor password 123");
     assert.equal(auth.user.userId, "editor");
-    assert.deepEqual(await api.listProjects(), [{ projectId: "project", title: "Project", role: "editor" }]);
+    assert.deepEqual(await api.listProjects(), [{ projectId: "project", title: "Project", cover: null, coverRevision: 0, role: "editor" }]);
 
     const built = await api.buildRelease("project", "quest", {
       releaseId: "release-r0",

@@ -301,17 +301,17 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
       if (this.#projectExists(input.projectId)) return frozen({ kind: "project_exists" });
       this.#db.prepare("INSERT INTO control_projects (project_id, title) VALUES (?, ?)").run(input.projectId, input.title);
       this.#db.prepare("INSERT INTO control_project_members (project_id, user_id, role) VALUES (?, ?, 'owner')").run(input.projectId, userId);
-      return frozen({ kind: "created", project: frozen({ projectId: input.projectId, title: input.title }) });
+      return frozen({ kind: "created", project: frozen({ projectId: input.projectId, title: input.title, cover: null, coverRevision: 0 }) });
     });
   }
 
   async listProjectsForUser(userId: string): Promise<readonly ProjectRecord[]> {
     this.#assertOpen();
     if (!isControlUserId(userId)) return Object.freeze([]);
-    const rows = this.#db.prepare(`SELECT p.project_id, p.title FROM control_projects p
+    const rows = this.#db.prepare(`SELECT p.project_id, p.title, p.cover_asset_id, p.cover_hash, p.cover_revision FROM control_projects p
       JOIN control_project_members m ON m.project_id = p.project_id
       WHERE m.user_id = ? ORDER BY p.project_id`).all(userId);
-    return Object.freeze(rows.map((row: any) => frozen({ projectId: String(row.project_id), title: String(row.title) })));
+    return Object.freeze(rows.map((row: any) => projectRecordFromRow(row)));
   }
 
   async getProjectRole(projectId: string, userId: string): Promise<ControlProjectRole | null> {
@@ -361,7 +361,11 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS control_projects (
         project_id TEXT PRIMARY KEY,
-        title TEXT NOT NULL
+        title TEXT NOT NULL,
+        cover_asset_id TEXT NULL,
+        cover_hash TEXT NULL,
+        cover_revision INTEGER NOT NULL DEFAULT 0 CHECK (cover_revision >= 0),
+        CHECK ((cover_asset_id IS NULL AND cover_hash IS NULL) OR (cover_asset_id IS NOT NULL AND cover_hash IS NOT NULL))
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_users (
         user_id TEXT PRIMARY KEY,
@@ -386,6 +390,15 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
       CREATE INDEX IF NOT EXISTS control_auth_sessions_user_idx ON control_auth_sessions(user_id);
       CREATE INDEX IF NOT EXISTS control_project_members_user_idx ON control_project_members(user_id);
     `);
+    this.#ensureProjectCoverColumns();
+  }
+
+  #ensureProjectCoverColumns(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(control_projects)").all() as any[];
+    const names = new Set(columns.map((column) => String(column.name)));
+    if (!names.has("cover_asset_id")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_asset_id TEXT NULL");
+    if (!names.has("cover_hash")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_hash TEXT NULL");
+    if (!names.has("cover_revision")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_revision INTEGER NOT NULL DEFAULT 0");
   }
 
   #transaction<T>(work: () => T): T {
@@ -413,6 +426,23 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
   #assertOpen(): void {
     if (this.#closed) throw new Error("SQLiteControlSecurityStore is closed");
   }
+}
+
+function projectRecordFromRow(row: any): ProjectRecord {
+  const projectId = String(row.project_id);
+  const title = String(row.title);
+  const coverAssetId = row.cover_asset_id;
+  const coverHash = row.cover_hash;
+  const coverRevision = Number(row.cover_revision);
+  if (!isId(projectId) || !isTitle(title) || !Number.isSafeInteger(coverRevision) || coverRevision < 0) {
+    throw new Error("invalid persisted project record");
+  }
+  if (coverAssetId === null && coverHash === null) return frozen({ projectId, title, cover: null, coverRevision });
+  if (typeof coverAssetId !== "string" || !isId(coverAssetId)
+    || typeof coverHash !== "string" || !/^[a-f0-9]{64}$/.test(coverHash)) {
+    throw new Error("invalid persisted project cover");
+  }
+  return frozen({ projectId, title, cover: frozen({ assetId: coverAssetId, hash: coverHash }), coverRevision });
 }
 
 function ownerCount(roles: ReadonlyMap<string, ControlProjectRole>): number {

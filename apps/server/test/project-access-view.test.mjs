@@ -55,7 +55,7 @@ test("B09-03 authenticated project list exposes only the current membership role
       const response = await fetch(`${base}/control/v1/projects`, { headers: session.headers });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), {
-        projects: [{ projectId: "project", title: "Project", role }]
+        projects: [{ projectId: "project", title: "Project", cover: null, coverRevision: 0, role }]
       });
     }
 
@@ -77,7 +77,7 @@ test("B09-03 local loopback project view exposes explicit synthetic owner role",
     const response = await fetch(`http://${address.host}:${address.port}/control/v1/projects`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      projects: [{ projectId: "local-project", title: "Local", role: "owner" }]
+      projects: [{ projectId: "local-project", title: "Local", cover: null, coverRevision: 0, role: "owner" }]
     });
   } finally {
     await control.close();

@@ -68,7 +68,7 @@ function fakeRoot({ querySelector = null } = {}) {
 }
 
 function mockHost(cards, options = {}) {
-  const calls = { list: 0, open: [], quest: [], ai: [], errors: [] };
+  const calls = { list: 0, open: [], quest: [], ai: [], cover: [], errors: [] };
   let result = cards;
   const host = {
     root: options.root ?? fakeRoot(),
@@ -86,6 +86,9 @@ function mockHost(cards, options = {}) {
     },
     createWithAi(projectId) {
       calls.ai.push(projectId);
+    },
+    editCover(projectId) {
+      calls.cover.push(projectId);
     },
     onError(error) {
       calls.errors.push(error);
@@ -174,6 +177,25 @@ test("LIB-02: без обложки — честная нейтральная з
   const blank = libraryCardHtml(card({ coverUrl: "   " }));
   assert.doesNotMatch(blank, /<img/);
   assert.match(blank, /lhp-card-cover-empty/);
+});
+
+test("LIB-COVER-01: автор видит действие обложки на карточке, тестировщик — нет", async () => {
+  const editable = card({ coverUrl: null, role: "editor" });
+  const html = libraryCardHtml(editable);
+  assert.match(html, /data-action="edit-cover"/);
+  assert.match(html, />Добавить обложку<\/button>/);
+
+  const filled = libraryCardHtml(card({ coverUrl: "https://example.test/cover.png", role: "owner" }));
+  assert.match(filled, />Сменить обложку<\/button>/);
+
+  const readonly = libraryCardHtml(card({ coverUrl: null, role: "tester" }));
+  assert.doesNotMatch(readonly, /data-action="edit-cover"/);
+
+  const { host, calls } = mockHost([editable]);
+  renderLibrary(host);
+  await tick();
+  host.root.click({ action: "edit-cover", projectId: editable.projectId });
+  assert.deepEqual(calls.cover, [editable.projectId]);
 });
 
 /* ------------------------------------------------------------------ */
@@ -454,9 +476,10 @@ test("LIB-11: действия — нативные кнопки, фильтр �
 
   const html = host.root.innerHTML;
   assert.doesNotMatch(html, /onclick=|onkeydown=|<div role="button"|tabindex="-1"/);
-  // Карточка — контейнер с тремя отдельными кнопками, а не одна кнопка-обёртка.
+  // Карточка — контейнер с отдельными кнопками, а не одна кнопка-обёртка.
+  // У автора есть ещё явный путь «Добавить обложку»; у тестировщика его нет.
   const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
-  assert.equal(buttons.length, 7, "2 карточки × 3 действия + фильтр приёмочных");
+  assert.equal(buttons.length, 8, "owner: 4 действия, tester: 3 действия, плюс фильтр приёмочных");
   for (const button of buttons) {
     assert.match(button, /<button type="button"/);
   }

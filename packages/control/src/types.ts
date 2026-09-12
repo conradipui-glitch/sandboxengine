@@ -180,10 +180,35 @@ export interface ProjectAssetLibrary {
   ): Promise<{ readonly kind: "updated" } | { readonly kind: "not_found" } | { readonly kind: "invalid_request" }>;
 }
 
+export interface ProjectCoverReference {
+  /** Immutable identity of an image already registered in this exact project. */
+  readonly assetId: string;
+  readonly hash: string;
+}
+
 export interface ProjectRecord {
   readonly projectId: string;
   readonly title: string;
+  /** Null is a deliberate state, not a synthetic placeholder. */
+  readonly cover: ProjectCoverReference | null;
+  /** Optimistic-concurrency revision for cover mutations only. */
+  readonly coverRevision: number;
 }
+
+export interface SetProjectCoverInput {
+  readonly baseRevision: number;
+  readonly cover: ProjectCoverReference | null;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type SetProjectCoverResult =
+  | { readonly kind: "updated"; readonly project: ProjectRecord }
+  | { readonly kind: "replay"; readonly project: ProjectRecord }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
 
 export interface DraftSnapshot {
   readonly projectId: string;
@@ -308,6 +333,7 @@ export type CreatePlaytestResult =
 export interface ControlStore {
   createProject(input: CreateProjectInput): Promise<CreateProjectResult>;
   listProjects(): Promise<readonly ProjectRecord[]>;
+  setProjectCover(projectId: string, input: SetProjectCoverInput): Promise<SetProjectCoverResult>;
   createQuest(input: CreateQuestInput): Promise<CreateQuestResult>;
   listQuests(projectId: string): Promise<readonly DraftSnapshot[] | null>;
   getDraft(projectId: string, questId: string): Promise<DraftSnapshot | null>;

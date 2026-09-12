@@ -283,7 +283,7 @@ test("FIN-06/GATE: идентичность Studio берётся из пров�
     assert.equal(await world.security.verifyCredentials(`telegram:${OWNER_TG}`, "owner password 123"), null);
 
     const projects = await browser.call("GET", "/control/v1/projects", { headers: { cookie: gateCookie } });
-    assert.deepEqual(projects.body.projects, [{ projectId: PROJECT, title: "Проект", role: "owner" }]);
+    assert.deepEqual(projects.body.projects, [{ projectId: PROJECT, title: "Проект", cover: null, coverRevision: 0, role: "owner" }]);
   });
 
   await t.test("GATE-02: повторный вход возвращает того же пользователя", async () => {
@@ -293,7 +293,7 @@ test("FIN-06/GATE: идентичность Studio берётся из пров�
     assert.equal(session.status, 200);
     assert.equal(session.body.user.userId, `telegram:${OWNER_TG}`);
     const projects = await browser.call("GET", "/control/v1/projects", { headers: { cookie: again } });
-    assert.deepEqual(projects.body.projects, [{ projectId: PROJECT, title: "Проект", role: "owner" }]);
+    assert.deepEqual(projects.body.projects, [{ projectId: PROJECT, title: "Проект", cover: null, coverRevision: 0, role: "owner" }]);
     assert.equal((await world.security.getUser(`telegram:${OWNER_TG}`)).username, `tg_user4273`);
   });
 
@@ -319,7 +319,7 @@ test("FIN-06/GATE: идентичность Studio берётся из пров�
     assert.equal(granted.body.member.role, "editor");
 
     const after = await editor.call("GET", "/control/v1/projects", { headers: { cookie: editorCookie } });
-    assert.deepEqual(after.body.projects, [{ projectId: PROJECT, title: "Проект", role: "editor" }]);
+    assert.deepEqual(after.body.projects, [{ projectId: PROJECT, title: "Проект", cover: null, coverRevision: 0, role: "editor" }]);
   });
 
   await t.test("GATE-04: участник gate без членства получает 404, а не доступ", async () => {
@@ -382,7 +382,7 @@ test("FIN-06/GATE: идентичность Studio берётся из пров�
       headers: { cookie: editorCookie, "x-lhc-gate-identity": forged, "x-lhc-telegram-id": OUTSIDER_TG }
     });
     assert.equal(impersonation.status, 200);
-    assert.deepEqual(impersonation.body.projects, [{ projectId: PROJECT, title: "Проект", role: "editor" }]);
+    assert.deepEqual(impersonation.body.projects, [{ projectId: PROJECT, title: "Проект", cover: null, coverRevision: 0, role: "editor" }]);
     const editorIdentity = await editor.call("GET", "/control/v1/auth/session", { headers: { cookie: editorCookie } });
     assert.equal(editorIdentity.body.user.userId, `telegram:${EDITOR_TG}`);
 

@@ -299,7 +299,7 @@ const LEGACY_DDL = `
     VALUES ('p1', 'q1', 'thread-1', 'message-2', 'author-2', 'Старый ответ', 1, 1001, 1001, NULL);
 `;
 
-test("FIN-12 message parent: a pre-parent file database opens, migrates to v6 and loses no rows", async () => {
+test("FIN-12 message parent: a pre-parent file database opens, migrates to v7 and loses no rows", async () => {
   const dir = await mkdtemp(join(tmpdir(), "living-history-fin12-parent-legacy-"));
   const path = join(dir, "control.sqlite");
   const legacy = new DatabaseSync(path);
@@ -350,7 +350,7 @@ test("FIN-12 message parent: a pre-parent file database opens, migrates to v6 an
   try {
     const columns = after.prepare("PRAGMA table_info(control_collaboration_messages)").all().map((column) => String(column.name));
     assert.ok(columns.includes("parent_message_id"));
-    assert.equal(Number(after.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get().value), 6);
+    assert.equal(Number(after.prepare("SELECT value FROM control_meta WHERE key = 'schema_version'").get().value), 7);
     assert.equal(Number(after.prepare("SELECT COUNT(*) AS n FROM control_collaboration_messages").get().n), 3);
     const foreignKeys = after.prepare("PRAGMA foreign_key_list(control_collaboration_messages)").all();
     const parentKey = foreignKeys.find((key) => String(key.table) === "control_collaboration_messages" && String(key.from) === "parent_message_id");

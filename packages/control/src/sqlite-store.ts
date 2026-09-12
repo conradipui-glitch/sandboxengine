@@ -62,9 +62,12 @@ import type {
   MissionSessionStore,
   ProjectAssetEntry,
   ProjectAssetLibrary,
+  ProjectCoverReference,
   ProjectRecord,
   RegisterProjectAssetInput,
   RegisterProjectAssetResult,
+  SetProjectCoverInput,
+  SetProjectCoverResult,
   RestoreDraftInput,
   RestoreDraftResult,
   SaveMissionInput,
@@ -72,7 +75,7 @@ import type {
   ValidateDraftResult
 } from "./types.js";
 
-const CONTROL_SCHEMA_VERSION = 6;
+const CONTROL_SCHEMA_VERSION = 7;
 export const DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS = 50;
 
 export interface SQLiteControlStoreOptions {
@@ -119,14 +122,65 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         return frozen({ kind: "project_exists" });
       }
       this.#db.prepare("INSERT INTO control_projects (project_id, title) VALUES (?, ?)").run(input.projectId, input.title);
-      return frozen({ kind: "created", project: cloneAndFreeze({ projectId: input.projectId, title: input.title }) });
+      return frozen({ kind: "created", project: cloneAndFreeze({ projectId: input.projectId, title: input.title, cover: null, coverRevision: 0 }) });
     });
   }
 
   async listProjects(): Promise<readonly ProjectRecord[]> {
     this.#assertOpen();
-    const rows = this.#db.prepare("SELECT project_id, title FROM control_projects ORDER BY project_id").all();
-    return Object.freeze(rows.map((row: any) => cloneAndFreeze({ projectId: String(row.project_id), title: String(row.title) })));
+    const rows = this.#db.prepare(`
+      SELECT project_id, title, cover_asset_id, cover_hash, cover_revision
+      FROM control_projects
+      ORDER BY project_id
+    `).all();
+    return Object.freeze(rows.map(projectRecordFromRow));
+  }
+
+  async setProjectCover(projectId: string, input: SetProjectCoverInput): Promise<SetProjectCoverResult> {
+    this.#assertOpen();
+    if (!isId(projectId)) return frozen({ kind: "invalid_request", errors: Object.freeze(["projectId"]) });
+    const errors = validateProjectCoverInput(input);
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(errors) });
+    const requestHash = createHash("sha256").update(JSON.stringify({ baseRevision: input.baseRevision, cover: input.cover }), "utf8").digest("hex");
+    return this.#transaction(() => {
+      const replay = this.#db.prepare(`
+        SELECT request_hash, result_json
+        FROM control_project_cover_idempotency
+        WHERE project_id = ? AND idempotency_key = ?
+      `).get(projectId, input.idempotencyKey);
+      if (replay) {
+        if (String(replay.request_hash) !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+        return frozen({ kind: "replay", project: parseProjectRecord(replay.result_json) });
+      }
+      const currentRow = this.#db.prepare(`
+        SELECT project_id, title, cover_asset_id, cover_hash, cover_revision
+        FROM control_projects WHERE project_id = ?
+      `).get(projectId);
+      if (!currentRow) return frozen({ kind: "project_not_found" });
+      const current = projectRecordFromRow(currentRow);
+      if (current.coverRevision !== input.baseRevision) {
+        return frozen({ kind: "revision_conflict", currentRevision: current.coverRevision });
+      }
+      if (current.coverRevision === Number.MAX_SAFE_INTEGER) {
+        return frozen({ kind: "invalid_request", errors: Object.freeze(["coverRevision.exhausted"]) });
+      }
+      const next = cloneAndFreeze({
+        projectId: current.projectId,
+        title: current.title,
+        cover: input.cover === null ? null : { assetId: input.cover.assetId, hash: input.cover.hash },
+        coverRevision: current.coverRevision + 1
+      });
+      this.#db.prepare(`
+        UPDATE control_projects
+        SET cover_asset_id = ?, cover_hash = ?, cover_revision = ?
+        WHERE project_id = ?
+      `).run(next.cover?.assetId ?? null, next.cover?.hash ?? null, next.coverRevision, projectId);
+      this.#db.prepare(`
+        INSERT INTO control_project_cover_idempotency (project_id, idempotency_key, request_hash, result_json)
+        VALUES (?, ?, ?, ?)
+      `).run(projectId, input.idempotencyKey, requestHash, JSON.stringify(next));
+      return frozen({ kind: "updated", project: cloneAndFreeze(next) });
+    });
   }
 
   async createQuest(input: CreateQuestInput): Promise<CreateQuestResult> {
@@ -1419,7 +1473,11 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_projects (
         project_id TEXT PRIMARY KEY,
-        title TEXT NOT NULL
+        title TEXT NOT NULL,
+        cover_asset_id TEXT NULL,
+        cover_hash TEXT NULL,
+        cover_revision INTEGER NOT NULL DEFAULT 0 CHECK (cover_revision >= 0),
+        CHECK ((cover_asset_id IS NULL AND cover_hash IS NULL) OR (cover_asset_id IS NOT NULL AND cover_hash IS NOT NULL))
       ) STRICT;
       CREATE TABLE IF NOT EXISTS control_quests (
         project_id TEXT NOT NULL REFERENCES control_projects(project_id),
@@ -1538,6 +1596,14 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
         PRIMARY KEY (project_id, idempotency_key),
         FOREIGN KEY (project_id, asset_id) REFERENCES control_project_assets(project_id, asset_id)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS control_project_cover_idempotency (
+        project_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        PRIMARY KEY (project_id, idempotency_key),
+        FOREIGN KEY (project_id) REFERENCES control_projects(project_id)
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS control_draft_snapshots (
         project_id TEXT NOT NULL,
         quest_id TEXT NOT NULL,
@@ -1645,6 +1711,7 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       // messages table without the parent link. Adding it is idempotent, so it
       // runs on every open, whatever the recorded version is.
       this.#ensureCollaborationParentColumn();
+      this.#ensureProjectCoverColumns();
       if (!schema) {
         this.#db.prepare("INSERT INTO control_meta (key, value) VALUES ('schema_version', ?)").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) === 1) {
@@ -1662,6 +1729,11 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       } else if (Number(schema.value) === 5) {
         // v6 adds the message-level parent link to collaboration messages; the
         // rebuild in #ensureCollaborationParentColumn above is the migration.
+        this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
+      } else if (Number(schema.value) === 6) {
+        // v7 adds a CAS-protected, idempotent project cover reference. Columns
+        // are installed by #ensureProjectCoverColumns; the idempotency table is
+        // created above so existing databases migrate without data loss.
         this.#db.prepare("UPDATE control_meta SET value = ? WHERE key = 'schema_version'").run(CONTROL_SCHEMA_VERSION);
       } else if (Number(schema.value) !== CONTROL_SCHEMA_VERSION) {
         throw new Error(`unsupported control schema version ${String(schema.value)}`);
@@ -1693,6 +1765,15 @@ export class SQLiteControlStore implements ControlStore, BoardDocumentStore, Mis
       FROM control_collaboration_messages_pre_parent;
       DROP TABLE control_collaboration_messages_pre_parent;
     `);
+  }
+
+  #ensureProjectCoverColumns(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(control_projects)").all() as any[];
+    if (columns.length === 0) return;
+    const names = new Set(columns.map((column) => String(column.name)));
+    if (!names.has("cover_asset_id")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_asset_id TEXT NULL");
+    if (!names.has("cover_hash")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_hash TEXT NULL");
+    if (!names.has("cover_revision")) this.#db.exec("ALTER TABLE control_projects ADD COLUMN cover_revision INTEGER NOT NULL DEFAULT 0");
   }
 
   #insertSnapshot(snapshot: DraftSnapshot): void {
@@ -2173,6 +2254,56 @@ function validationFromRow(row: any): DraftValidationRecord {
     });
   }
   throw new Error("invalid validation status");
+}
+
+function projectRecordFromRow(row: any): ProjectRecord {
+  const projectId = String(row.project_id);
+  const title = String(row.title);
+  const coverAssetId = row.cover_asset_id;
+  const coverHash = row.cover_hash;
+  const coverRevision = Number(row.cover_revision);
+  if (!isId(projectId) || !isTitle(title) || !isNonNegativeSafeInteger(coverRevision)) {
+    throw new Error("invalid persisted project record");
+  }
+  if (coverAssetId === null && coverHash === null) {
+    return cloneAndFreeze({ projectId, title, cover: null, coverRevision });
+  }
+  if (typeof coverAssetId !== "string" || typeof coverHash !== "string" || !isProjectCoverReference({ assetId: coverAssetId, hash: coverHash })) {
+    throw new Error("invalid persisted project cover");
+  }
+  return cloneAndFreeze({ projectId, title, cover: { assetId: coverAssetId, hash: coverHash }, coverRevision });
+}
+
+function parseProjectRecord(value: unknown): ProjectRecord {
+  const parsed = parseJson(value);
+  if (!isRecord(parsed) || !hasExactKeys(parsed, ["projectId", "title", "cover", "coverRevision"])
+    || !isId(parsed.projectId) || !isTitle(parsed.title) || !isNonNegativeSafeInteger(parsed.coverRevision)
+    || (parsed.cover !== null && !isProjectCoverReference(parsed.cover))) {
+    throw new Error("invalid stored project cover replay");
+  }
+  return cloneAndFreeze({
+    projectId: parsed.projectId,
+    title: parsed.title,
+    cover: parsed.cover === null ? null : { assetId: parsed.cover.assetId, hash: parsed.cover.hash },
+    coverRevision: parsed.coverRevision
+  });
+}
+
+function isProjectCoverReference(value: unknown): value is ProjectCoverReference {
+  return isRecord(value)
+    && hasExactKeys(value, ["assetId", "hash"])
+    && isId(value.assetId)
+    && typeof value.hash === "string"
+    && /^[a-f0-9]{64}$/.test(value.hash);
+}
+
+function validateProjectCoverInput(input: SetProjectCoverInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeSafeInteger(input.baseRevision)) errors.push("baseRevision");
+  if (input.cover !== null && !isProjectCoverReference(input.cover)) errors.push("cover");
+  if (!isId(input.idempotencyKey) || input.idempotencyKey.length > 200) errors.push("idempotencyKey");
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
 }
 
 function parseSnapshot(value: unknown): DraftSnapshot {

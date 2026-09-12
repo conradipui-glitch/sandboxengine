@@ -452,6 +452,47 @@ async function routeControlRequest(
     }
   }
 
+  const projectCoverMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/cover$/.exec(url.pathname);
+  if (projectCoverMatch) {
+    const projectId = projectCoverMatch[1];
+    if (!projectId || method !== "PUT") { sendNotFound(response); return; }
+    if (!(await requireProjectRole(response, auth, identity, projectId, "editor"))) return;
+    if (auth && !(await requireMutationProof(request, response, auth, identity!))) return;
+    const idempotencyKey = requireIdempotencyKey(request, response);
+    if (idempotencyKey === null) return;
+    const body = await requireJsonObject(request, response);
+    if (body === null) return;
+    if (!hasExactKeys(body, ["baseRevision", "cover"])
+      || !isRevision(body.baseRevision)
+      || (body.cover !== null && !isProjectCoverReference(body.cover))) {
+      sendJson(response, 400, { error: { code: "INVALID_PROJECT_COVER" } });
+      return;
+    }
+    const coverError = await verifyProjectCoverReference(store, assetLibrary, assetStorage, projectId, body.cover);
+    if (coverError !== null) {
+      const unavailable = coverError === "ASSET_STORAGE_UNAVAILABLE";
+      sendJson(response, unavailable ? 501 : 422, { error: { code: coverError } });
+      return;
+    }
+    const result = await store.setProjectCover(projectId, {
+      baseRevision: body.baseRevision,
+      cover: body.cover,
+      idempotencyKey,
+      actorUserId: identity?.user.userId ?? "local-owner"
+    });
+    if (result.kind === "updated") sendJson(response, 200, { project: result.project });
+    else if (result.kind === "replay") sendJson(response, 200, { project: result.project, replay: true });
+    else if (result.kind === "project_not_found") sendNotFound(response);
+    else if (result.kind === "revision_conflict") {
+      sendJson(response, 409, { error: { code: "PROJECT_COVER_REVISION_CONFLICT", currentRevision: result.currentRevision } });
+    } else if (result.kind === "idempotency_key_reused") {
+      sendJson(response, 409, { error: { code: "PROJECT_COVER_IDEMPOTENCY_KEY_REUSED" } });
+    } else {
+      sendJson(response, 422, { error: { code: "INVALID_PROJECT_COVER", details: result.errors } });
+    }
+    return;
+  }
+
   const memberCollectionMatch = /^\/control\/v1\/projects\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/members$/.exec(url.pathname);
   if (memberCollectionMatch) {
     if (!auth) { sendNotFound(response); return; }
@@ -3082,6 +3123,37 @@ async function verifyMissionAssetReferences(
     }
   }
   return Object.freeze(violations);
+}
+
+async function verifyProjectCoverReference(
+  store: ControlStore,
+  assetLibrary: ProjectAssetLibrary | null,
+  assetStorage: LocalAssetStore | null,
+  projectId: string,
+  cover: { readonly assetId: string; readonly hash: string } | null
+): Promise<string | null> {
+  if (cover === null) return null;
+  if (assetLibrary === null) return "ASSET_STORAGE_UNAVAILABLE";
+  const projectAssets = await assetLibrary.listProjectAssets(projectId, false);
+  const entry = projectAssets.find((candidate) => candidate.assetId === cover.assetId) ?? null;
+  if (entry === null) {
+    const foreign = await collectForeignAssetIds(store, assetLibrary, projectId);
+    return foreign.includes(cover.assetId) ? "PROJECT_COVER_ASSET_FOREIGN" : "PROJECT_COVER_ASSET_UNKNOWN";
+  }
+  if (entry.hash !== cover.hash) return "PROJECT_COVER_ASSET_HASH_MISMATCH";
+  if (entry.kind !== "image" || !entry.mimeType.toLowerCase().startsWith("image/")) return "PROJECT_COVER_NOT_IMAGE";
+  if (assetStorage !== null && !(await assetBytesReadable(assetStorage, cover.assetId, cover.hash))) {
+    return "PROJECT_COVER_BYTES_UNAVAILABLE";
+  }
+  return null;
+}
+
+function isProjectCoverReference(value: unknown): value is { readonly assetId: string; readonly hash: string } {
+  return isPlainObject(value)
+    && hasExactKeys(value, ["assetId", "hash"])
+    && isId(value.assetId)
+    && typeof value.hash === "string"
+    && /^[a-f0-9]{64}$/.test(value.hash);
 }
 
 /** assetIds that are registered to some *other* project (best effort). */

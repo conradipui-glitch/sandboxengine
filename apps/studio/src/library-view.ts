@@ -44,6 +44,7 @@ export interface LibraryHost {
   openProject(projectId: string): void;
   createQuest(projectId: string): void;
   createWithAi(projectId: string): void;
+  editCover(projectId: string): void;
   onError(error: unknown): void;
 }
 
@@ -193,6 +194,10 @@ export function libraryCardHtml(card: LibraryProjectCard): string {
     `<button type="button" class="lhp-action" data-action="${name}" data-project-id="${escapeAttr(
       projectId
     )}" aria-label="${escapeAttr(`${label} — проект «${title}»`)}">${label}</button>`;
+  const canEditCover = card.role === "owner" || card.role === "editor";
+  const coverAction = canEditCover
+    ? action("edit-cover", typeof card.coverUrl === "string" && card.coverUrl.trim() ? "Сменить обложку" : "Добавить обложку")
+    : "";
   return `<article class="lhp-card" data-project-id="${escapeAttr(projectId)}" aria-label="${escapeAttr(
     `Проект «${title}»`
   )}">
@@ -211,6 +216,7 @@ export function libraryCardHtml(card: LibraryProjectCard): string {
       </dl>
       <div class="lhp-card-actions">
         ${action("open-project", "Открыть")}
+        ${coverAction}
         ${action("create-quest", "Создать квест")}
         ${action("create-with-ai", "Создать с ИИ")}
       </div>
@@ -410,6 +416,9 @@ export function renderLibrary(host: LibraryHost): () => void {
         break;
       case "create-with-ai":
         if (projectId) host.createWithAi(projectId);
+        break;
+      case "edit-cover":
+        if (projectId) host.editCover(projectId);
         break;
       case "toggle-acceptance":
         state.hideAcceptance = !state.hideAcceptance;

@@ -176,7 +176,7 @@ test("B09-03 authenticated Studio restore keeps CSRF/idempotency authority and n
     const auth = await api.login("editor.user", "editor password 123");
     assert.equal(auth.user.userId, "editor");
     assert.equal(api.hasMutationProof(), true);
-    assert.deepEqual(await api.listProjects(), [{ projectId: "project", title: "Project", role: "editor" }]);
+    assert.deepEqual(await api.listProjects(), [{ projectId: "project", title: "Project", cover: null, coverRevision: 0, role: "editor" }]);
 
     const beforeRelease = await api.listReleases("project", "quest");
     assert.equal(beforeRelease.currentReleaseId, "release-r1");

@@ -113,6 +113,17 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/cover": {
+      "put": {
+        "operationId": "control_projects_cover_update",
+        "summary": "Owner/editor назначает или снимает project-owned image cover с CAS baseRevision и обязательным idempotency-key",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/members": {
       "get": {
         "operationId": "control_members_list",

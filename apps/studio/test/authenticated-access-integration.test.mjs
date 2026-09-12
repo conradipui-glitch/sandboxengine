@@ -51,7 +51,7 @@ test("B09-03 authenticated Studio round-trip preserves cookie, CSRF and canonica
     assert.match(cookie ?? "", /^lh_control_session=/);
 
     const projects = await api.listProjects();
-    assert.deepEqual(projects, [{ projectId: "project", title: "Project", role: "owner" }]);
+    assert.deepEqual(projects, [{ projectId: "project", title: "Project", cover: null, coverRevision: 0, role: "owner" }]);
 
     const before = await api.listProjectMembers("project");
     assert.equal(before.find((member) => member.userId === "tester")?.role, "tester");

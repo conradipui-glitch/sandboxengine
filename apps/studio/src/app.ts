@@ -3222,8 +3222,34 @@ export class StudioApp {
     });
   }
 
-  /** Запись материала в документ миссии: фон/звук экрана или слой-портрет выбранной сцены. */
+  /** Запись материала в документ миссии или в обложку карточки проекта. */
   private async useMaterialInScene(item: MaterialItem, target: MaterialTarget): Promise<void> {
+    const projectId = this.state.selectedProjectId;
+    if (target === "project-cover") {
+      const project = projectId === null
+        ? null
+        : this.state.projects.find((candidate) => candidate.projectId === projectId) ?? null;
+      if (project === null || (project.role !== "owner" && project.role !== "editor")) {
+        this.state.message = "У вас нет права менять обложку этого проекта.";
+        this.render();
+        return;
+      }
+      try {
+        const updated = await this.api.setProjectCover(project.projectId, project.coverRevision, assetRefFromMaterial(item));
+        this.state.projects = this.state.projects.map((candidate) => candidate.projectId === updated.projectId ? updated : candidate);
+        this.state.message = "Обложка проекта сохранена.";
+        this.render();
+      } catch (error) {
+        if (error instanceof ControlApiError && error.code === "PROJECT_COVER_REVISION_CONFLICT") {
+          try { this.state.projects = await this.api.listProjects(); } catch { /* Не скрываем исходную причину. */ }
+          this.state.message = "Обложка уже менялась в другой сессии. Список проектов обновлён — выберите изображение ещё раз.";
+        } else {
+          this.state.message = describeControlError(error);
+        }
+        this.render();
+      }
+      return;
+    }
     const nodeId = this.state.selectedStoryNodeId ?? this.state.selectedBoardNodeId;
     if (!nodeId) {
       this.state.message = "Сначала выберите сцену на доске или в разделе «Сюжет» — материал встанет в неё.";
@@ -3307,22 +3333,30 @@ export class StudioApp {
       openProject: (projectId) => void this.openProject(projectId),
       createQuest: (projectId) => void this.createQuestFromLibrary(projectId),
       createWithAi: (projectId) => void this.createQuestFromLibrary(projectId, { withAi: true }),
+      editCover: (projectId) => void this.editProjectCoverFromLibrary(projectId),
       onError: (error) => this.reportLibraryError(error)
     });
   }
 
-  /** Данные карточек проекта: только то, что реально отдаёт API, без выдуманных полей. */
+  /** Данные карточек проекта: обложка строится только по серверной immutable-ссылке assetId+hash. */
   private libraryCards(): LibraryProjectCard[] {
-    return this.state.projects.map((project) => ({
-      projectId: project.projectId,
-      title: project.title,
-      description: null,
-      coverUrl: null,
-      questCount: this.state.questCounts[project.projectId] ?? 0,
-      role: project.role,
-      updatedAtMs: null,
-      isAcceptance: isAcceptanceProject(project.projectId, project.title)
-    }));
+    return this.state.projects.map((project) => {
+      // Ответ без поля обложки (старый сервер во время раскатки) честно даёт
+      // «Без обложки», а не выдуманную ссылку и не падение рендера.
+      const cover = project.cover ?? null;
+      return {
+        projectId: project.projectId,
+        title: project.title,
+        description: null,
+        coverUrl: cover === null
+          ? null
+          : this.api.projectAssetUrl(project.projectId, cover.assetId, cover.hash),
+        questCount: this.state.questCounts[project.projectId] ?? 0,
+        role: project.role,
+        updatedAtMs: null,
+        isAcceptance: isAcceptanceProject(project.projectId, project.title)
+      };
+    });
   }
 
   /**
@@ -3336,6 +3370,14 @@ export class StudioApp {
       this.state.message = "Опишите идею миссии в панели «ИИ-помощник» — она соберёт сцены, связи и финалы.";
       this.render();
     }
+  }
+
+  private async editProjectCoverFromLibrary(projectId: string): Promise<void> {
+    await this.openProject(projectId);
+    if (this.state.selectedProjectId !== projectId) return;
+    this.state.utilityPanel = "materials";
+    this.state.message = "В «Материалах» выберите или загрузите изображение, укажите «Обложка проекта» и нажмите «Применить назначение».";
+    this.render();
   }
 
   private reportLibraryError(error: unknown): void {

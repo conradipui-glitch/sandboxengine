@@ -87,6 +87,7 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/auth/logout` — CSRF-защищённый отзыв текущей Control-сессии
 - `GET /control/v1/projects` — Список доступных текущему автору проектов
 - `POST /control/v1/projects` — Создание авторского проекта; в authenticated mode создатель атомарно становится owner
+- `PUT /control/v1/projects/{projectId}/cover` — Owner/editor назначает или снимает project-owned image cover с CAS baseRevision и обязательным idempotency-key
 - `GET /control/v1/projects/{projectId}/members` — Owner-only список участников проекта и ролей
 - `PUT /control/v1/projects/{projectId}/members/{userId}` — Owner-only назначение роли owner/editor/tester существующему закрытому пользователю
 - `DELETE /control/v1/projects/{projectId}/members/{userId}` — Owner-only удаление участника с защитой последнего owner

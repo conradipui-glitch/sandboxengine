@@ -21,7 +21,10 @@ import type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  ProjectCoverReference,
   ProjectRecord,
+  SetProjectCoverInput,
+  SetProjectCoverResult,
   RestoreDraftInput,
   RestoreDraftResult,
   ValidateDraftResult
@@ -37,6 +40,11 @@ interface RestoreReplayRecord {
   readonly draft: DraftSnapshot;
 }
 
+interface ProjectCoverReplayRecord {
+  readonly requestHash: string;
+  readonly project: ProjectRecord;
+}
+
 interface DraftChangeContext {
   readonly projectId: string;
   readonly questId: string;
@@ -50,13 +58,14 @@ export class MemoryControlStore implements ControlStore {
   readonly #validations = new Map<string, DraftValidationRecord>();
   readonly #playtests = new Map<string, FrozenPlaytestRecord>();
   readonly #restoreIdempotency = new Map<string, RestoreReplayRecord>();
+  readonly #projectCoverIdempotency = new Map<string, ProjectCoverReplayRecord>();
   #validationCounter = 0;
   #playtestCounter = 0;
 
   async createProject(input: CreateProjectInput): Promise<CreateProjectResult> {
     if (!isId(input.projectId) || !isTitle(input.title)) return frozen({ kind: "invalid_request" });
     if (this.#projects.has(input.projectId)) return frozen({ kind: "project_exists" });
-    const project = cloneAndFreeze({ projectId: input.projectId, title: input.title });
+    const project = cloneAndFreeze({ projectId: input.projectId, title: input.title, cover: null, coverRevision: 0 });
     this.#projects.set(project.projectId, project);
     this.#quests.set(project.projectId, new Map());
     return frozen({ kind: "created", project });
@@ -66,6 +75,36 @@ export class MemoryControlStore implements ControlStore {
     return Object.freeze([...this.#projects.values()]
       .sort((a, b) => a.projectId.localeCompare(b.projectId))
       .map(cloneAndFreeze));
+  }
+
+  async setProjectCover(projectId: string, input: SetProjectCoverInput): Promise<SetProjectCoverResult> {
+    const errors = validateProjectCoverInput(input);
+    if (!isId(projectId)) errors.push("projectId");
+    if (errors.length > 0) return frozen({ kind: "invalid_request", errors: Object.freeze(errors) });
+    const project = this.#projects.get(projectId);
+    if (!project) return frozen({ kind: "project_not_found" });
+    const requestHash = projectCoverRequestHash(input.baseRevision, input.cover);
+    const replayKey = `${projectId}\u0000${input.idempotencyKey}`;
+    const replay = this.#projectCoverIdempotency.get(replayKey);
+    if (replay) {
+      if (replay.requestHash !== requestHash) return frozen({ kind: "idempotency_key_reused" });
+      return frozen({ kind: "replay", project: cloneAndFreeze(replay.project) });
+    }
+    if (project.coverRevision !== input.baseRevision) {
+      return frozen({ kind: "revision_conflict", currentRevision: project.coverRevision });
+    }
+    if (project.coverRevision === Number.MAX_SAFE_INTEGER) {
+      return frozen({ kind: "invalid_request", errors: Object.freeze(["coverRevision.exhausted"]) });
+    }
+    const next = cloneAndFreeze({
+      projectId: project.projectId,
+      title: project.title,
+      cover: input.cover === null ? null : { assetId: input.cover.assetId, hash: input.cover.hash },
+      coverRevision: project.coverRevision + 1
+    });
+    this.#projects.set(projectId, next);
+    this.#projectCoverIdempotency.set(replayKey, frozen({ requestHash, project: next }));
+    return frozen({ kind: "updated", project: cloneAndFreeze(next) });
   }
 
   async createQuest(input: CreateQuestInput): Promise<CreateQuestResult> {
@@ -452,6 +491,27 @@ function isRestoreDraftInput(value: unknown): value is RestoreDraftInput {
     && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value.idempotencyKey)
     && typeof value.requestHash === "string"
     && /^[a-f0-9]{64}$/.test(value.requestHash);
+}
+
+function isProjectCoverReference(value: unknown): value is ProjectCoverReference {
+  return isRecord(value)
+    && hasExactKeys(value, ["assetId", "hash"])
+    && isId(value.assetId)
+    && typeof value.hash === "string"
+    && /^[a-f0-9]{64}$/.test(value.hash);
+}
+
+function validateProjectCoverInput(input: SetProjectCoverInput): string[] {
+  const errors: string[] = [];
+  if (!isNonNegativeSafeInteger(input.baseRevision)) errors.push("baseRevision");
+  if (input.cover !== null && !isProjectCoverReference(input.cover)) errors.push("cover");
+  if (!isId(input.idempotencyKey) || input.idempotencyKey.length > 200) errors.push("idempotencyKey");
+  if (!isId(input.actorUserId)) errors.push("actorUserId");
+  return errors;
+}
+
+function projectCoverRequestHash(baseRevision: number, cover: ProjectCoverReference | null): string {
+  return JSON.stringify({ baseRevision, cover });
 }
 
 function restoreKey(projectId: string, questId: string, idempotencyKey: string): string {
