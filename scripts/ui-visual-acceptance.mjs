@@ -499,10 +499,11 @@ const SCREENS = [
     id: "tour",
     title: "Тур по Studio (шаг тура в редакторе)",
     base: "editor",
-    // Шаг тура кладётся в state.message, а статусная строка рендерит его через
-    // escapeHtml (app.ts:4133) — поэтому элемента [data-tour-step] в DOM НЕ появляется,
-    // видна только экранированная разметка. Маркер ловит именно это состояние.
-    marker: `(() => { const el = document.querySelector(".ed-main .topbar-status, .topbar-status"); return el !== null && /lh-tour-step/.test(el.textContent || ""); })()`,
+    // Тур из редактора: шаг рисуется отдельным блоком (.lh-tour-step с атрибутом
+    // data-tour-step) с прогрессом «Шаг N из M» и кнопками далее/назад/пропустить.
+    // Маркер ловит именно рабочее состояние (раньше шаг экранировался в строке
+    // статуса и элемента в DOM не было вовсе).
+    marker: `document.querySelector("[data-tour-step]") !== null`,
     route: [{ click: CLICK('[data-action="start-tour"]'), wait: 1400 }],
     content: `document.querySelectorAll("[data-tour-step]").length`,
     contentExpected: 1,
@@ -1187,10 +1188,10 @@ async function main() {
     note("Продуктовые исходники не менялись: инструмент только читает приложение в браузере и пишет артефакты в artifacts/ui-acceptance.");
     note("Известный RED вне зоны инструмента: apps/studio, FIN-05B (screen composition persists through canonical /mission) — не дефект этого инструмента.");
     note("Инструмент не проверяет по-настоящему разрушительные сценарии (удаление, откат, публикацию и снятие с публикации) — они вне его зоны.");
-    note("Кнопка «Помощь» на экране «Мои проекты» (data-action=\"help-projects\", app.ts:825) справку НЕ открывает: она только пишет строку «Нажмите «Новый проект» или выберите карточку…» в статус экрана. Настоящая справка открывается кнопкой «Справка» (#studio-help-trigger, data-action=\"studio-help\"), которую модуль onboarding добавляет в body на каждом экране.");
-    note("Кнопка «Настроить подключение» (data-action=\"ai-configure\", apps/studio/src/ai-panel.ts:504) диспатчит CustomEvent \"ai-panel:configure\" на корне панели, но НИ ОДИН модуль приложения его не слушает (в apps/studio/src событие встречается только в определении константы) — нажатие не даёт ни изменения DOM, ни запроса.");
-    note("НАХОДКА (тур в редакторе): кнопка «Тур по Studio» (data-action=\"start-tour\", app.ts:595) кладёт в this.state.message разметку шага тура (renderOnboardingTourStep, onboarding-tour.ts:496), а статусная строка редактора рендерит сообщение через escapeHtml (app.ts:4133). В DOM не появляется ни одного элемента [data-tour-step] (класс .lh-tour-step) — пользователь видит экранированный HTML в статусной строке. Кнопок data-action=\"tour-next\"/\"tour-back\"/\"tour-skip\" в apps/studio/src нет вообще, хотя app.ts:603/618 их обрабатывает, поэтому тур из редактора нельзя ни продолжить, ни пропустить.");
-    note("Presence: клиент доски (apps/studio/src/app.ts:3306 mountPresenceIfNeeded) в локальном режиме всё равно открывает EventSource на /control/v1/.../presence/stream и POST .../presence/leave; серверный presence смонтирован только при auth, поэтому маршруты отвечают 404 {code:\"NOT_FOUND\"}, и клиент повторяет попытки.");
+    note("Кнопка «Помощь» на экране «Мои проекты» (data-action=\"help-projects\") ИСПРАВЛЕНА: открывает тот же диалог справки Studio (.lh-help-dialog), что и плавающая «Справка» — второго диалога нет.");
+    note("Кнопка «Настроить подключение» (data-action=\"ai-configure\") ИСПРАВЛЕНА: оболочка слушает ai-panel:configure и открывает блок подключения провайдера (#provider-form); подделок «ничего не произошло» больше нет — открывается реальная форма, панель при этом не пересоздаётся.");
+    note("ТУР В РЕДАКТОРЕ ИСПРАВЛЕН: шаг рисуется блоком .lh-tour-step (data-tour-step) с прогрессом и кнопками далее/назад/пропустить; в строке статуса больше нет экранированной разметки. Историю дефекта см. в отчётах зон fix/tour-and-help и fix/ai-configure-wiring.");
+    note("Presence ИСПРАВЛЕН: без подтверждённой личности (локальный режим) ряд присутствия не монтируется, поэтому нет ни 404 на поток/уход, ни вечного «переподключаемся».");
 
     const smallZoom = [];
     for (const r of screenResults) for (const row of r.layoutRows) {
