@@ -412,19 +412,49 @@ export class StudioApp {
     // Просьба панели ИИ-помощника «откройте форму подключения» приходит событием
     // и всплывает до корня приложения — слушатель ровно один, перерисовки нет.
     const onAiConfigure = (event: Event): void => this.onAiConfigureRequest(event);
+    /*
+     * Единый механизм закрытия окон и оверлеев: Escape закрывает верхний
+     * открытый слой — модальное окно проекта, модальную форму карточки или
+     * утилитарную панель, по одному слою за нажатие. Панели и формы без
+     * оверлея (панель ИИ, фильтры, поля редактора) Escape не закрывает:
+     * введённый там текст не теряется.
+     */
+    const onKeyDown = (event: Event): void => {
+      const keyEvent = event as { key?: unknown };
+      if (keyEvent?.key !== "Escape") return;
+      if (this.state.projectModal) {
+        this.state.projectModal = false;
+        this.state.projectModalError = null;
+        this.render();
+        return;
+      }
+      if (this.state.blockModalKind !== null) {
+        this.state.blockModalKind = null;
+        this.render();
+        return;
+      }
+      if (this.state.utilityPanel !== null) {
+        this.state.utilityPanel = null;
+        this.state.editorMenuOpen = false;
+        this.render();
+      }
+    };
+    const doc = typeof document !== "undefined" && typeof document.addEventListener === "function" ? document : null;
     root.addEventListener("click", onClick);
     root.addEventListener("submit", onSubmit);
     root.addEventListener("input", onInput);
     root.addEventListener("change", onChange);
     root.addEventListener("focusout", onFocusOut);
     root.addEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure);
+    doc?.addEventListener("keydown", onKeyDown);
     this.rootDisposers.push(
       () => root.removeEventListener("click", onClick),
       () => root.removeEventListener("submit", onSubmit),
       () => root.removeEventListener("input", onInput),
       () => root.removeEventListener("change", onChange),
       () => root.removeEventListener("focusout", onFocusOut),
-      () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure)
+      () => root.removeEventListener(AI_PANEL_CONFIGURE_EVENT, onAiConfigure),
+      () => doc?.removeEventListener("keydown", onKeyDown)
     );
     // Единственная проводка подсказок: слушатели на корне приложения
     // (наведение, фокус с клавиатуры, Escape). Тексты — в словаре tooltip.ts,
@@ -4432,21 +4462,21 @@ export class StudioApp {
     const allowProjectCreate = canCreateProject(this.state.access);
     return `
       <div class="projects-screen">
-        <header class="projects-topbar">
-          <div class="brand"><span class="brand-mark">М</span><span><span class="brand-name">Мастерская</span><br><span class="brand-sub">Living History Studio</span></span></div>
-          <nav>
+        <header class="projects-topbar layout-topbar">
+          <div class="layout-topbar-brand"><span class="brand-mark">М</span><span><span class="brand-name">Мастерская</span><br><span class="brand-sub">Living History Studio</span></span></div>
+          <nav class="layout-topbar-actions">
             <button data-action="help-projects" data-tooltip="help">Помощь</button>
             ${this.renderThemeToggle()}
             <span class="projects-profile" title="Профиль: роль и короткий ID">${escapeHtml(this.profileLabel())}</span>
           </nav>
         </header>
         <div class="projects-wrap">
-          <div class="projects-head">
-            <div><h1>Мои проекты</h1><p>${escapeHtml(this.state.message)}</p></div>
-            ${allowProjectCreate ? `<button class="primary" data-action="new-project">Новый проект</button>` : ``}
-          </div>
+          <header class="projects-head">
+            <div class="projects-head-title"><h1>Мои проекты</h1><p>${escapeHtml(this.state.message)}</p></div>
+            <div class="projects-head-actions action-bar">${allowProjectCreate ? `<button class="primary" data-action="new-project">Новый проект</button>` : ``}</div>
+          </header>
           ${this.state.projects.length === 0 ? `
-            <section class="projects-empty" aria-label="Первый проект">
+            <section class="projects-empty layout-panel" aria-label="Первый проект">
               <h2>О чём будет ваша первая миссия?</h2>
               <form data-form="ai-draft">
                 <div class="ai-row">
@@ -4480,16 +4510,16 @@ export class StudioApp {
 
     if (this.state.access.mode === "anonymous") {
       return `
-      <div class="studio-shell">
-        <header class="topbar">
-          <div>
+      <div class="ed-shell studio-shell layout-shell">
+        <header class="topbar ed-topbar layout-topbar">
+          <div class="layout-topbar-brand">
             <div class="brand">Living History Studio</div>
             <div class="brand-subtitle">Мастерская историй</div>
           </div>
           <div class="topbar-status ${escapeHtml(this.state.phase)}" role="status" aria-live="polite">${escapeHtml(this.state.message)}</div>
         </header>
-        <aside class="sidebar" aria-label="Вход в Studio">${renderAccessPanel(this.state.access, project)}</aside>
-        <main class="workspace"><div class="empty-workspace"><h1>Вход в Мастерскую</h1><p>Войдите слева, чтобы увидеть ваши проекты.</p></div></main>
+        <aside class="sidebar ed-library layout-sidebar" aria-label="Вход в Studio">${renderAccessPanel(this.state.access, project)}</aside>
+        <main class="workspace ed-main layout-main"><div class="empty-workspace"><h1>Вход в Мастерскую</h1><p>Войдите слева, чтобы увидеть ваши проекты.</p></div></main>
       </div>`;
     }
 
@@ -4499,9 +4529,9 @@ export class StudioApp {
     }
 
     return `
-      <div class="ed-shell">
-        <header class="ed-topbar">
-          <nav class="crumbs" aria-label="Навигация">
+      <div class="ed-shell layout-shell">
+        <header class="ed-topbar layout-topbar">
+          <nav class="crumbs layout-topbar-brand" aria-label="Навигация">
             <button data-action="back-projects" title="К списку проектов и миссий">${icon("arrow-left", 20)}<span>К миссиям</span></button>
             <span>${escapeHtml(project.title)}</span>
             ${quest ? `<span>· ${escapeHtml(quest.title)}</span>` : ``}
@@ -4513,7 +4543,7 @@ export class StudioApp {
           </form>` : draft ? `<strong>${escapeHtml(draft.title)}</strong>` : ``}
           ${saveStateLabel(this.state.phase) === "" ? "" : `<span class="ed-save-state" role="status" aria-live="polite">${escapeHtml(saveStateLabel(this.state.phase))}</span>`}
           <span class="spacer"></span>
-          <div class="actions">
+          <div class="actions layout-topbar-actions">
             ${this.renderThemeToggle()}
             ${draft ? `
             <button class="primary" data-action="play-quest" data-tooltip="play-quest" ${this.state.playerLaunching || !allowTest ? "disabled" : ""}>${this.state.playerLaunching ? "Проверяем и запускаем…" : "Проверить и сыграть"}</button>` : ``}
@@ -4533,7 +4563,7 @@ export class StudioApp {
         </header>
 
         <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}${this.state.inspectorTab === "notes" ? " notes-open" : ""}">
-          <aside class="ed-library" aria-label="Библиотека миссий">
+          <aside class="ed-library layout-sidebar" aria-label="Библиотека миссий">
             <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? `${icon("chevron-right", 20)}<span>Библиотека</span>` : `${icon("chevron-left", 20)}<span>Библиотека</span>`}</button>
             <div class="library-content">
               <section class="sidebar-section">
@@ -4554,11 +4584,11 @@ export class StudioApp {
             </div>
           </aside>
 
-          <main class="ed-main">
+          <main class="ed-main layout-main">
             <div class="topbar-status ${escapeHtml(this.state.phase)}" role="status" aria-live="polite">${escapeHtml(this.state.message)}</div>
             ${draft ? `
             <section class="draft-header">
-              <div>
+              <div class="draft-header-title">
                 <h1>${escapeHtml(draft.title)}</h1>
                 <p>Черновик хранится на сервере. Здесь всегда показана текущая версия.</p>
               </div>
@@ -4625,7 +4655,7 @@ export class StudioApp {
             </section>` : ``}
           </main>
 
-          <aside class="ed-inspector" aria-label="Правая панель">
+          <aside class="ed-inspector layout-panel" aria-label="Правая панель">
             <div class="ed-tabs" role="tablist">
               <button class="button-secondary ${this.state.inspectorTab === "props" ? "active" : ""}" data-action="inspector-tab" data-tab="props" role="tab">Свойства</button>
               <button class="button-secondary ${this.state.inspectorTab === "coauthor" ? "active" : ""}" data-action="inspector-tab" data-tab="coauthor" role="tab">ИИ-помощник</button>
@@ -4647,8 +4677,7 @@ export class StudioApp {
                 <button class="button-secondary settings-link" data-action="open-utility-panel" data-panel="settings">Настройки доступа и проекта</button>
               </section>
             ` : this.state.inspectorTab === "coauthor" ? `
-              <section class="inspector-section">
-                <div class="section-heading-row"><h2>ИИ-помощник</h2></div>
+              <section class="inspector-section ai-panel-flat" aria-label="ИИ-помощник">
                 <p class="paint-note">Опишите идею — помощник соберёт сцены, развилки и финалы. Текст и структуру потом правите теми же инструментами, что и ручной квест.</p>
                 <div class="ai-panel-host" data-ai-panel-host></div>
                 <details class="diagnostics">
@@ -4937,8 +4966,8 @@ export class StudioApp {
               questTitle: draft?.title ?? null
             }) : ``}
           </section>`;
-    return `<section class="ed-utility-panel" role="dialog" aria-label="${escapeAttr(panelTitle)}">
-      <header><h2>${escapeHtml(panelTitle)}</h2><button class="button-secondary" data-action="close-utility-panel" aria-label="Закрыть">Закрыть</button></header>
+    return `<section class="ed-utility-panel layout-panel" role="dialog" aria-label="${escapeAttr(panelTitle)}" data-utility-panel="${escapeAttr(this.state.utilityPanel ?? "")}">
+      <header class="ed-utility-head"><h2>${escapeHtml(panelTitle)}</h2><button class="button-secondary" data-action="close-utility-panel" aria-label="Закрыть">Закрыть</button></header>
       <div class="ed-utility-body">${body}</div>
     </section>`;
   }
@@ -4982,7 +5011,7 @@ function renderBlockCreationModal(kind: InspectorBlockKind, blocks: readonly Blo
            <label>Длительность, секунд<input name="durationSecondsPerUnit" type="number" min="0" step="1" required value="300"></label></div>
            <label class="checkbox"><input name="allowPartial" type="checkbox" checked> Разрешить частичное выполнение</label>`;
   return `<div class="modal-backdrop" data-modal="block">
-    <form class="modal block-modal" data-form="block-add" data-block-kind="${escapeAttr(kind)}">
+    <form class="modal block-modal layout-panel" data-form="block-add" data-block-kind="${escapeAttr(kind)}">
       <h2>Добавить: ${escapeHtml(title)}</h2>
       <p class="form-hint">ID создаст Studio и проверит Control API. ${escapeHtml(message)}</p>
       ${body}
@@ -5118,7 +5147,7 @@ function nextThemeLabel(active: ThemeName): string {
 
 function projectModal(error: string | null): string {
   return `<div class="modal-backdrop" data-modal="project">
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Новый проект">
+    <div class="modal layout-panel" role="dialog" aria-modal="true" aria-label="Новый проект">
       <h2>Новый проект</h2>
       <form data-form="project-new">
         <label>Название<input data-focus-key="project-new-title" name="title" required maxlength="200" placeholder="Моя история"></label>

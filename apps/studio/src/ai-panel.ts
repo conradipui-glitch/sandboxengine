@@ -328,11 +328,7 @@ function renderBody(state: PanelState): string {
 }
 
 function renderPanel(state: PanelState): string {
-  return `<section class="ai-panel" data-ai-panel>
-    <header class="ai-panel-head">
-      <h2>ИИ-помощник</h2>
-      <p>Опишите идею словами — помощник сам соберёт сцены, финалы и выборы, а затем их можно будет отредактировать.</p>
-    </header>
+  return `<section class="ai-panel" data-ai-panel role="region" aria-label="ИИ-помощник">
     <div class="ai-panel-body" data-ai-panel-body>${renderBody(state)}</div>
   </section>`;
 }

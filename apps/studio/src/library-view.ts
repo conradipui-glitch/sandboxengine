@@ -299,7 +299,7 @@ export function libraryView(state: LibraryState): string {
     const filterLabel = state.hideAcceptance
       ? `Показать приёмочные проекты (${hidden})`
       : `Скрыть приёмочные проекты (${hidden})`;
-    return `<div class="lhp-toolbar">
+    return `<div class="lhp-toolbar filter-row">
         <label class="lhp-search">
           <span class="lhp-search-label">Поиск по названию</span>
           <input class="lhp-search-input" type="search" data-input="project-search" data-focus-key="${escapeAttr(
@@ -315,7 +315,7 @@ export function libraryView(state: LibraryState): string {
       </div>
       <div class="lhp-results">${libraryResultsHtml(state)}</div>`;
   })();
-  return `<section class="lhp-library" aria-label="Проекты">
+  return `<section class="lhp-library" aria-label="Проекты" data-library="projects">
       ${body}
     </section>`;
 }
