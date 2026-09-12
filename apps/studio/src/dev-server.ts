@@ -7,6 +7,7 @@ import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
 import { isLocalOperatorRequest, isLocalProxyRequest, LocalAuthorProviderCredentialRequiredError, LocalAuthorProviderInvalidBaseUrlError, LocalAuthorProviderRequestError, readLocalJson, type LocalAuthorProvider } from "./local-author-provider.js";
+import { PLAYER_EMBED_PATH } from "./player-embed.js";
 
 const studioRoot = fileURLToPath(new URL("../../", import.meta.url));
 const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
@@ -35,6 +36,34 @@ const CONTROL_RESPONSE_HEADER_ALLOWLIST = Object.freeze([
 ] as const);
 const STUDIO_PROXY_BODY_LIMIT_BYTES = 262_144;
 const STUDIO_PROXY_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"]);
+
+/**
+ * Служебные пути запущенного Player, которые Studio проксирует на свой origin.
+ * Автор открывает их как same-origin маршруты Studio; внутренний loopback-адрес
+ * плеера в интерфейс не попадает (см. player-embed.ts).
+ */
+const PLAYER_PROXY_PREFIXES = Object.freeze(["/player-assets/", "/player-lib/", "/contracts-lib/", "/v1/"]);
+const PLAYER_PROXY_PATHS = Object.freeze(["/player-meta.json", "/player-story.json", "/player-turn.json", "/healthz"]);
+const PLAYER_REQUEST_HEADER_ALLOWLIST = Object.freeze(["content-type", "authorization", "idempotency-key", "accept"] as const);
+
+function isPlayerProxyRequest(pathname: string): boolean {
+  if (pathname === PLAYER_EMBED_PATH) return true;
+  if (PLAYER_PROXY_PATHS.includes(pathname)) return true;
+  return PLAYER_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+/** Origin запущенного Player для прокси; публичный и внешний адрес проксировать нельзя. */
+function loopbackPlayerOrigin(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" || !isLoopbackHost(parsed.hostname)) return null;
+  if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+  return parsed.origin;
+}
 
 export type PlayerLaunchOutcome =
   | { readonly ok: true; readonly url: string; readonly playtestId: string }
@@ -85,6 +114,11 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
     ? (options.importBodyLimitBytes as number)
     : STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
 
+  // Origin запущенного Player для same-origin прокси. Живёт в замыкании одного
+  // сервера Studio: второй стенд в том же процессе не переиспользует чужой
+  // Player, а закрытие стенда вместе с процессом снимает и прокси.
+  let playerOrigin: string | null = null;
+
   const server = createServer(async (request: any, response: any) => {
     try {
       const url = new URL(String(request.url ?? "/"), "http://studio.local");
@@ -102,8 +136,21 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
           const playtestId = typeof body?.playtestId === "string" ? body.playtestId.trim() : "";
           if (!playtestId || playtestId.length > 200) { sendJson(response, 400, { error: { code: "INVALID_PLAYTEST_ID" } }); return; }
           const outcome = await launchPlayerSerialized(options.playerLauncher, playtestId);
-          if (outcome.ok) sendJson(response, 200, { ok: true, url: outcome.url, playtestId: outcome.playtestId });
-          else sendJson(response, outcome.code === "playtest_not_found" ? 404 : 409, { error: { code: outcome.code, message: outcome.message } });
+          if (outcome.ok) {
+            // Внутренний loopback-адрес остаётся служебным (`url` — диагностика и
+            // ручной запуск), а браузер получает same-origin маршрут Studio.
+            // Публичный (не loopback) адрес проксировать нельзя — тогда автору
+            // отдаётся сам публичный адрес.
+            const origin = loopbackPlayerOrigin(outcome.url);
+            if (origin === null) {
+              sendJson(response, 200, { ok: true, url: outcome.url, playtestId: outcome.playtestId });
+            } else {
+              playerOrigin = origin;
+              sendJson(response, 200, { ok: true, url: outcome.url, playtestId: outcome.playtestId, embedPath: PLAYER_EMBED_PATH });
+            }
+          } else {
+            sendJson(response, outcome.code === "playtest_not_found" ? 404 : 409, { error: { code: outcome.code, message: outcome.message } });
+          }
         } catch (error) {
           if (error instanceof LocalAuthorProviderRequestError) {
             sendJson(response, error.status, { error: { code: error.code } });
@@ -160,6 +207,22 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
           if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
           else sendJson(response, 400, { error: { code: "INVALID_MISSION_DRAFT_REQUEST" } });
         }
+        return;
+      }
+      if (isPlayerProxyRequest(url.pathname)) {
+        // Права: тот же локальный операторский барьер, что и у прокси Control —
+        // Host обязан быть loopback с портом этого сервера, а Origin (если есть)
+        // loopback; запросы с публичного хоста и cross-site отклоняются.
+        if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        if (playerOrigin === null) {
+          if (url.pathname === PLAYER_EMBED_PATH) {
+            sendText(response, 409, "Плеер не запущен. В Studio нажмите «Проверить и сыграть».");
+            return;
+          }
+          sendJson(response, 404, { error: { code: "PLAYER_NOT_RUNNING" } });
+          return;
+        }
+        await proxyPlayer(request, response, playerOrigin, url);
         return;
       }
       if (url.pathname.startsWith("/control/")) {
@@ -242,6 +305,55 @@ async function proxyControl(request: any, response: any, control: URL, url: URL,
     const value = upstream.headers.get(name);
     if (value !== null) response.setHeader(name, value);
   }
+  response.end(payload);
+}
+
+/**
+ * Прокси служебных путей Player на origin запущенного плеера. Запросы браузера
+ * идут с origin Studio, поэтому автор видит один адрес, а не внутренний порт.
+ * Наружу отдаются только перечисленные заголовки; ответ не кешируется.
+ */
+async function proxyPlayer(request: any, response: any, playerOrigin: string, url: URL): Promise<void> {
+  const method = String(request.method ?? "GET").toUpperCase();
+  if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+  // Маршрут Studio "/player" — это корень плеера; остальные пути совпадают один
+  // в один, чтобы относительные ссылки и importmap внутри страницы Player
+  // работали без переписывания HTML.
+  const targetPath = url.pathname === PLAYER_EMBED_PATH ? "/" : url.pathname;
+  const target = new URL(targetPath + url.search, playerOrigin);
+
+  let body: ArrayBuffer | undefined;
+  if (method !== "GET" && method !== "HEAD") {
+    try {
+      body = await readRequestBody(request, STUDIO_PROXY_BODY_LIMIT_BYTES);
+    } catch (error) {
+      if (error instanceof StudioProxyRequestError) {
+        sendJson(response, error.status, { error: { code: error.code } });
+        return;
+      }
+      sendJson(response, 400, { error: { code: "INVALID_REQUEST" } });
+      return;
+    }
+  }
+
+  const headers: Record<string, string> = {};
+  for (const name of PLAYER_REQUEST_HEADER_ALLOWLIST) {
+    const value = request.headers?.[name];
+    if (typeof value === "string") headers[name] = value;
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, { method, headers, body });
+  } catch {
+    sendJson(response, 503, { error: { code: "PLAYER_UNAVAILABLE" } });
+    return;
+  }
+
+  const payload = new Uint8Array(await upstream.arrayBuffer());
+  response.statusCode = upstream.status;
+  response.setHeader("content-type", upstream.headers.get("content-type") ?? "application/octet-stream");
+  response.setHeader("cache-control", "no-store");
   response.end(payload);
 }
 
