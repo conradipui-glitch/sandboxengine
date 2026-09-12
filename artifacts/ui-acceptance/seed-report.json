@@ -1,0 +1,135 @@
+{
+  "dbPath": "C:\\Users\\kato55\\lhc-visual-accept\\artifacts\\ui-acceptance\\ui-acceptance.sqlite",
+  "projectId": "florence",
+  "questId": "florence-workshop",
+  "assets": [
+    {
+      "assetId": "workshop-background",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "6c321f860516d2926691e352405ad2a331a3b20e28c9f8b578f9b9c6736fa17e",
+      "byteLength": 145334,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "guildhall-background",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "753195865e1357f665afde0709f4b27ff2141374d5c61df01b0caf217c6a361c",
+      "byteLength": 158586,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "piazza-background",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "b63f228a3e8c9a7f73a18ac32dd92c96f3a8b444442150125e2f9293edc21198",
+      "byteLength": 137698,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "juliano-portrait",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "e011c1683e76028c5ef8452a6294b4e28d500d0006d80785278f285afbce8340",
+      "byteLength": 91112,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "ricci-portrait",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "67103d234536ccbcd6902f02dff19093da97073f1e03af63f3d90fe327a6cde6",
+      "byteLength": 84108,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "luca-portrait",
+      "kind": "image",
+      "mimeType": "image/webp",
+      "sha256": "ebe7ddb836ad575de29d59a486621cd5f539e3e9c693d17d0fd1f859d496aa04",
+      "byteLength": 85232,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "threshold",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "a0f6d972c55d487ef49969c21caac7e41dd06d2b53a3ba2590083fa9fb59409f",
+      "byteLength": 3166475,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "workshop-night",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "e4e31ba7a498a034534b27c4d0a58100d56092aa3dcf55e77e2900196f172a73",
+      "byteLength": 4197162,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "guildhall",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "d1023d84708f59228896aec3807cb8a00aab10d5e5431bb133beba60f89107f5",
+      "byteLength": 4312519,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "deadline",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "0da018600d576c3cab7963ccbf419115046f72605ae83c1011f0f99844eeb802",
+      "byteLength": 4311892,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "decision-reveal",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "8b98f67290f0d866da1dd8e442f181993ed0df27bfc83d7cd11bddbe5cd06500",
+      "byteLength": 1412300,
+      "action": "uploaded"
+    },
+    {
+      "assetId": "dawn-finale",
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "sha256": "ad73b0ee54970a151355eb8a5cbc7f725a22431e03108ef1746ba58989e8ed26",
+      "byteLength": 4137603,
+      "action": "uploaded"
+    }
+  ],
+  "assetCount": 12,
+  "mission": {
+    "action": "saved",
+    "contentRevision": 1,
+    "contentHash": "98442c2afc40547f1a67d468420f45d7f6654e2fbbd5f7ad150a5260a7916735",
+    "scenes": 6,
+    "endings": 3,
+    "reachableEndings": 3,
+    "entrySceneId": "contract-pressure"
+  },
+  "fieldsWithoutSource": [
+    "scene.dialogue — статических реплик сцены-открытия в источниках нет, оставлено []",
+    "screens.intros — вступительного экрана в источниках нет, оставлено []",
+    "choice.conditions — условные ветки (cases) narrative-beats не выражены одним выбором, оставлено []",
+    "ending.text — только первый абзац нейтральной ветки florence-engine.ts:ending()"
+  ],
+  "derivedFields": [
+    "listing.summary <- florence.ts:createFlorenceState objective",
+    "listing.playerRole <- florence.ts:createFlorenceState role",
+    "listing.period <- florence.ts date 1512-04-17",
+    "listing.place <- title/opening «Флоренция»",
+    "listing.coverAssetId <- background входной сцены (workshop-background)",
+    "listing.estimatedMinutes <- сумма clockAdvanceSeconds canonicalRoute / 60",
+    "screens.layers transform <- дефолты сайта mission-legacy-adapter (x 0.24/0.76, y 0.62, scale 1)",
+    "screens.*.music <- сопоставление по смыслу названий треков",
+    "screens.*.layers <- персонаж присутствует, если сцена называет его по имени (иначе дефолт движка)"
+  ],
+  "forbiddenProjectsUnchanged": [
+    "acceptance",
+    "c18",
+    "m06"
+  ]
+}

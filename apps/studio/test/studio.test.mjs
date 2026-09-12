@@ -54,9 +54,9 @@ test("B05-02 Studio serves responsive human authoring surface through loopback p
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, /Living History Studio/);
-    assert.match(html, /dist\/src\/app\.js/);
+    assert.match(html, /studio-assets\/dist\/src\/app\.js/);
 
-    const css = await fetch(`${origin}/styles.css`);
+    const css = await fetch(`${origin}/studio-assets/styles.css`);
     assert.equal(css.status, 200);
     assert.match(await css.text(), /@media \(max-width: 680px\)/);
   });

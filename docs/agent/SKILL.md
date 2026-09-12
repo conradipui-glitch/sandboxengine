@@ -94,6 +94,25 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests` — Owner/editor создание квеста с начальным draft snapshot
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft` — Получение текущего авторского draft snapshot доступного проекта
 - `POST /control/v1/projects/{projectId}/quests/{questId}/draft/changes` — Owner/editor атомарное применение change set к указанной draft revision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/board` — Получение server-authoritative layout BoardDocument отдельно от canonical draft
+- `POST /control/v1/projects/{projectId}/quests/{questId}/board/changes` — Owner/editor atomic CAS layout update with required idempotency-key
+- `GET /control/v1/projects/{projectId}/quests/{questId}/collaboration` — Server-authoritative заметки и треды комментариев проекта (не часть release/gameplay)
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes` — Editor создаёт стикер-заметку с позицией на доске (idempotency-key обязателен)
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/changes` — Автор заметки (или owner) меняет текст/позицию с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/delete` — Автор заметки (или owner) удаляет заметку с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments` — Editor открывает тред комментариев, привязанный к сцене/слою/полю или месту на доске
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages` — Editor добавляет сообщение-ответ в существующий тред
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/changes` — Автор сообщения (или owner) правит текст с CAS expectedRevision
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/delete` — Автор сообщения (или owner) удаляет сообщение, сохраняя место в треде
+- `POST /control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/status` — Editor закрывает (resolve) или переоткрывает (reopen) тред с CAS expectedRevision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/mission` — Получение server-authoritative MissionDraft отдельно от canonical draft
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission` — Owner/editor atomic CAS mission save with validation and required idempotency-key
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions` — Owner/editor mission session bound to an exact content revision
+- `GET /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}` — Чтение состояния mission session, привязанной к pinned release
+- `POST /control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns` — Owner/editor idempotent mission turn: choice effects and scene transition commit together
+- `POST /control/v1/projects/{projectId}/assets` — Owner/editor authorized octet-stream upload with real format inspection and required idempotency-key
+- `GET /control/v1/projects/{projectId}/assets` — Project asset library listing for authorized roles
+- `GET /control/v1/projects/{projectId}/assets/{assetId}` — Authorized immutable asset bytes by exact assetId and hash
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/history` — Постраничная история immutable draft revisions доступного проекта
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/compare` — Серверное сравнение двух конкретных draft revisions без автоматического merge
 - `GET /control/v1/projects/{projectId}/quests/{questId}/draft/references` — Typed preflight зависимостей блока и объяснение безопасности удаления
@@ -118,6 +137,12 @@ Generated file. Do not edit by hand.
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/cancel` — Owner/editor cancellation of a durable author job including abort of the exact in-flight backend signal and rejection of late output
 - `POST /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/apply` — Owner/editor CSRF/idempotency protected apply of the exact server-persisted proposal artifact by jobId and proposalId with durable applied checkpoint
 - `GET /control/v1/projects/{projectId}/quests/{questId}/author/jobs/{jobId}/proposals/{proposalId}/task-packages/{capabilityId}` — Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets
+- `GET /public/v1/missions` — Публичный каталог опубликованных миссий без авторских project/quest данных
+- `GET /public/v1/missions/{publicMissionIdOrSlug}` — Публичная карточка опубликованной миссии по стабильному id или slug
+- `POST /public/v1/missions/{publicMissionIdOrSlug}/sessions` — Создание server-bound гостевой сессии опубликованной миссии
+- `GET /public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}` — Получение состояния server-bound гостевой миссии по credential
+- `POST /public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}/turns` — Применение выбора опубликованной миссии с credential и idempotency
+- `POST /control/v1/projects/{projectId}/quests/{questId}/publication/unpublish` — Owner-only снятие миссии с публичного каталога с CAS по release
 - `GET /control/v1/agent-kit` — Authenticated read of the exact installed generated agent kit and compatibility identity used for write handshake
 
 Trusted plugin metadata is build-time registry data only; this Skill does not imply dynamic plugin loading or resolver execution. Planned registry entries are intentionally excluded from the available list. Read ../../AGENTS.md, ../STATUS.md and ../HANDOFF.md before changing code.

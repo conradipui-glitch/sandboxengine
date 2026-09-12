@@ -7,23 +7,48 @@ import type { WorldState } from "./world-state.js";
  * references that JSON Schema cannot express as membership constraints.
  */
 export function hasValidWorldStateReferences(state: WorldState): boolean {
-  const locationIds = new Set(state.locations.map((location) => location.id));
-  const entityIds = new Set(state.entities.map((entity) => entity.id));
-  const resourceIds = new Set(state.resources.map((resource) => resource.id));
-  const itemIds = new Set(state.items.map((item) => item.id));
+  if (state === null || typeof state !== "object") return false;
+  const candidate = state as unknown as Record<string, unknown>;
+  if (!Array.isArray(candidate.locations)
+    || !Array.isArray(candidate.entities)
+    || !Array.isArray(candidate.resources)
+    || !Array.isArray(candidate.items)) return false;
 
-  if (locationIds.size !== state.locations.length
-    || entityIds.size !== state.entities.length
-    || resourceIds.size !== state.resources.length
-    || itemIds.size !== state.items.length) return false;
+  const locations = candidate.locations as readonly (Record<string, unknown> | null)[];
+  const entities = candidate.entities as readonly (Record<string, unknown> | null)[];
+  const resources = candidate.resources as readonly (Record<string, unknown> | null)[];
+  const items = candidate.items as readonly (Record<string, unknown> | null)[];
 
-  for (const entity of state.entities) {
-    if (entity.locationId !== null && !locationIds.has(entity.locationId)) return false;
+  // Every element of every collection must be a present object: consumers in
+  // core dereference `.id` on each entry, so a bare `null` element is a
+  // definition error rather than an absent record. One pass covers all four
+  // collections so the guard cannot drift out of sync between them.
+  for (const collection of [locations, entities, resources, items]) {
+    for (const element of collection) {
+      if (element === null || typeof element !== "object") return false;
+    }
   }
 
-  for (const item of state.items) {
-    if (item.position.kind === "location" && !locationIds.has(item.position.locationId)) return false;
-    if (item.position.kind === "holder" && !entityIds.has(item.position.holderId)) return false;
+  const locationIds = new Set(locations.map((location) => location?.id));
+  const entityIds = new Set(entities.map((entity) => entity?.id));
+  const resourceIds = new Set(resources.map((resource) => resource?.id));
+  const itemIds = new Set(items.map((item) => item?.id));
+
+  if (locationIds.size !== locations.length
+    || entityIds.size !== entities.length
+    || resourceIds.size !== resources.length
+    || itemIds.size !== items.length) return false;
+
+  for (const entity of entities as readonly Record<string, unknown>[]) {
+    const locationId = entity.locationId;
+    if (locationId !== null && !locationIds.has(locationId)) return false;
+  }
+
+  for (const item of items as readonly Record<string, unknown>[]) {
+    const position = item.position as Record<string, unknown> | null | undefined;
+    if (position === null || typeof position !== "object") return false;
+    if (position.kind === "location" && !locationIds.has(position.locationId)) return false;
+    if (position.kind === "holder" && !entityIds.has(position.holderId)) return false;
   }
 
   return true;

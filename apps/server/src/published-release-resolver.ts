@@ -14,6 +14,7 @@ import {
 } from "./action-service.js";
 import { preflightStoredControlRelease } from "./release-authority.js";
 import type { PublishedSessionBinding } from "./published-session-binding.js";
+import { isId } from "./input-guards.js";
 
 export interface PublishedRuntimeTemplate {
   readonly sourceProjectId: string;
@@ -130,9 +131,6 @@ export function materializePublishedRuntimeTemplate(
   });
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

@@ -1,5 +1,184 @@
-import type { Block } from "@living-history/contracts";
-import type { CompiledQuestArtifact } from "@living-history/core";
+import type { Block, MissionDraft, WorldState } from "@living-history/contracts";
+import type { CompiledQuestArtifact, MissionTurnTarget } from "@living-history/core";
+
+export interface BoardPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface BoardDocument {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  readonly boardRevision: number;
+  readonly positions: Readonly<Record<string, BoardPosition>>;
+}
+
+export interface ApplyBoardChangesInput {
+  readonly baseRevision: number;
+  readonly positions: Readonly<Record<string, BoardPosition>>;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type ApplyBoardChangesResult =
+  | { readonly kind: "updated"; readonly board: BoardDocument }
+  | { readonly kind: "replay"; readonly board: BoardDocument }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface BoardDocumentStore {
+  getBoardDocument(projectId: string, questId: string): Promise<BoardDocument | null>;
+  applyBoardChanges(projectId: string, questId: string, input: ApplyBoardChangesInput): Promise<ApplyBoardChangesResult>;
+}
+
+export interface SaveMissionInput {
+  readonly baseRevision: number;
+  readonly mission: MissionDraft;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type SaveMissionResult =
+  | { readonly kind: "saved"; readonly mission: MissionDraft }
+  | { readonly kind: "replay"; readonly mission: MissionDraft }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface MissionHistoryEntry {
+  readonly contentRevision: number;
+  readonly contentHash: string;
+  readonly actorUserId: string;
+  readonly createdAtMs: number;
+}
+
+export interface MissionDocumentRevision {
+  readonly mission: MissionDraft;
+  readonly contentRevision: number;
+  readonly contentHash: string;
+}
+
+export interface MissionDocumentStore {
+  getMission(projectId: string, questId: string): Promise<MissionDraft | null>;
+  /**
+   * Resolves one immutable authored revision. Published content and open
+   * sessions resolve through this method so that later draft edits can never
+   * change what a player is already running.
+   */
+  getMissionAtRevision(projectId: string, questId: string, contentRevision: number): Promise<MissionDocumentRevision | null>;
+  saveMission(projectId: string, questId: string, input: SaveMissionInput): Promise<SaveMissionResult>;
+  getMissionHistory(projectId: string, questId: string): Promise<readonly MissionHistoryEntry[]>;
+  exportMission(projectId: string, questId: string): Promise<MissionDraft | null>;
+}
+
+export interface MissionSessionState {
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  /** Участник, за которым закреплена сессия (владелец хода). */
+  readonly actorUserId: string;
+  readonly contentRevision: number;
+  readonly contentHash: string;
+  readonly currentSceneId: string;
+  readonly world: WorldState;
+  readonly turn: number;
+}
+
+export interface CreateMissionSessionInput {
+  readonly sessionId: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly contentRevision?: number;
+  readonly initialWorld: WorldState;
+}
+
+export type CreateMissionSessionResult =
+  | { readonly kind: "created"; readonly session: MissionSessionState }
+  | { readonly kind: "replay"; readonly session: MissionSessionState }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "mission_not_found" }
+  | { readonly kind: "session_binding_conflict" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface ApplyMissionTurnInput {
+  readonly baseTurn: number;
+  readonly choiceId: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type ApplyMissionTurnResult =
+  | { readonly kind: "applied"; readonly session: MissionSessionState; readonly target: MissionTurnTarget }
+  | { readonly kind: "replay"; readonly session: MissionSessionState; readonly target: MissionTurnTarget }
+  | { readonly kind: "turn_conflict"; readonly currentTurn: number }
+  | { readonly kind: "session_not_found" }
+  | { readonly kind: "choice_not_in_scene" }
+  | { readonly kind: "choice_blocked" }
+  | { readonly kind: "effect_failed" }
+  | { readonly kind: "mission_ended" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface MissionSessionStore {
+  createMissionSession(projectId: string, questId: string, input: CreateMissionSessionInput): Promise<CreateMissionSessionResult>;
+  getMissionSession(sessionId: string): Promise<MissionSessionState | null>;
+  applyMissionTurn(sessionId: string, input: ApplyMissionTurnInput): Promise<ApplyMissionTurnResult>;
+}
+
+export interface ProjectAssetEntry {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly listed: boolean;
+  readonly uploadedBy: string;
+  readonly createdAtMs: number;
+}
+
+export interface RegisterProjectAssetInput {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export type RegisterProjectAssetResult =
+  | { readonly kind: "registered"; readonly asset: ProjectAssetEntry }
+  | { readonly kind: "replay"; readonly asset: ProjectAssetEntry }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface ProjectAssetLibrary {
+  registerProjectAsset(projectId: string, input: RegisterProjectAssetInput): Promise<RegisterProjectAssetResult>;
+  listProjectAssets(projectId: string, listedOnly: boolean): Promise<readonly ProjectAssetEntry[]>;
+  setProjectAssetListed(
+    projectId: string,
+    assetId: string,
+    listed: boolean,
+    actorUserId: string
+  ): Promise<{ readonly kind: "updated" } | { readonly kind: "not_found" } | { readonly kind: "invalid_request" }>;
+}
 
 export interface ProjectRecord {
   readonly projectId: string;
@@ -144,4 +323,198 @@ export interface ControlStore {
     readonly validationId: string;
   }): Promise<CreatePlaytestResult>;
   getPlaytest(playtestId: string): Promise<FrozenPlaytestRecord | null>;
+}
+
+// FIN-12 (V07) collaboration: notes and comment threads.
+//
+// Notes and comments are working material for the authoring team. They live in
+// their own server-authoritative tables and are deliberately NOT part of any
+// release, draft revision or gameplay content hash: writing a note or replying
+// to a thread must never move `draftRevision`/`contentHash` or reach the player.
+// Reads and writes are scoped to one project/quest and gated by the existing
+// live project role; edit/delete additionally require authorship (or owner).
+
+export type CollaborationAnchorKind = "board" | "scene" | "layer" | "field";
+
+export interface CollaborationAnchor {
+  readonly kind: CollaborationAnchorKind;
+  /** The anchored block/scene/layer/field id; `null` only for a board pin. */
+  readonly targetId: string | null;
+  /** Board coordinates; present only for `kind === "board"`. */
+  readonly position: BoardPosition | null;
+}
+
+export interface CollaborationNote {
+  readonly noteId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly text: string;
+  readonly authorUserId: string;
+  readonly position: BoardPosition;
+  /** Per-note CAS revision, incremented by every accepted change. */
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface CollaborationMessage {
+  readonly messageId: string;
+  readonly authorUserId: string;
+  readonly text: string;
+  /**
+   * Id of the message this one answers, or `null` for a top-level message.
+   * The link is structural: the parent must live in the same thread and must
+   * not be a soft-deleted tombstone, otherwise the reply is an
+   * `invalid_request`. The link survives the parent's deletion (the child is
+   * never orphaned silently, it just points at a tombstone).
+   */
+  readonly replyToMessageId: string | null;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  /** Soft-deleted messages keep their slot so the thread order and count stay honest. */
+  readonly deleted: boolean;
+}
+
+export interface CollaborationThread {
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly anchor: CollaborationAnchor;
+  /**
+   * True once the anchored object was deleted from the quest. The discussion is
+   * never dropped: the thread stays with this marker so the UI can render
+   * "Элемент удалён" instead of silently losing the conversation.
+   */
+  readonly anchorDeleted: boolean;
+  readonly status: "open" | "resolved";
+  /** Per-thread CAS revision, incremented by messages and status changes. */
+  readonly revision: number;
+  readonly createdByUserId: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly resolvedAtMs: number | null;
+  readonly messages: readonly CollaborationMessage[];
+}
+
+export interface CollaborationView {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  /** Collection-wide revision, incremented by every accepted mutation. */
+  readonly revision: number;
+  readonly unresolvedThreadCount: number;
+  readonly notes: readonly CollaborationNote[];
+  readonly threads: readonly CollaborationThread[];
+}
+
+export type CollaborationWriteResult =
+  | { readonly kind: "created"; readonly view: CollaborationView }
+  | { readonly kind: "updated"; readonly view: CollaborationView }
+  | { readonly kind: "replay"; readonly view: CollaborationView }
+  | { readonly kind: "project_not_found" }
+  | { readonly kind: "quest_not_found" }
+  | { readonly kind: "not_found" }
+  | { readonly kind: "revision_conflict"; readonly currentRevision: number }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "idempotency_key_reused" }
+  | { readonly kind: "invalid_request"; readonly errors: readonly string[] };
+
+export interface CreateNoteInput {
+  readonly text: string;
+  readonly position: BoardPosition;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface ChangeNoteInput {
+  readonly noteId: string;
+  readonly expectedRevision: number;
+  readonly text: string;
+  readonly position: BoardPosition;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface DeleteNoteInput {
+  readonly noteId: string;
+  readonly expectedRevision: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface CreateThreadInput {
+  readonly anchor: CollaborationAnchor;
+  readonly text: string;
+  /**
+   * Optional parent for the thread's opening message. A brand-new thread holds
+   * no messages, so a supplied value can never resolve to a parent inside that
+   * same thread and is always an `invalid_request`; the field exists so the
+   * store validates the link on every message-writing entry point.
+   */
+  readonly replyToMessageId?: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface AddMessageInput {
+  readonly threadId: string;
+  readonly text: string;
+  /**
+   * Optional parent message this reply answers. When present the parent must
+   * already exist in the same thread and must not be a soft-deleted tombstone;
+   * anything else is an `invalid_request` and nothing is written. Omitted by
+   * the pre-FIN-12 reply route, which keeps the flat reply semantics.
+   */
+  readonly replyToMessageId?: string;
+  /**
+   * Optional thread-level CAS guard. When present the reply is accepted only
+   * while the thread is still at this revision; a stale base is a
+   * `revision_conflict` and nothing is written. Omitted by the current HTTP
+   * reply route, which keeps the pre-existing lenient reply semantics.
+   */
+  readonly expectedRevision?: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface ChangeMessageInput {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly expectedRevision: number;
+  readonly text: string;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface DeleteMessageInput {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly expectedRevision: number;
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+  readonly actorRole: string;
+}
+
+export interface SetThreadStatusInput {
+  readonly threadId: string;
+  readonly expectedRevision: number;
+  readonly status: "open" | "resolved";
+  readonly idempotencyKey: string;
+  readonly actorUserId: string;
+}
+
+export interface CollaborationStore {
+  getCollaboration(projectId: string, questId: string): Promise<CollaborationView | null>;
+  createNote(projectId: string, questId: string, input: CreateNoteInput): Promise<CollaborationWriteResult>;
+  changeNote(projectId: string, questId: string, input: ChangeNoteInput): Promise<CollaborationWriteResult>;
+  deleteNote(projectId: string, questId: string, input: DeleteNoteInput): Promise<CollaborationWriteResult>;
+  createThread(projectId: string, questId: string, input: CreateThreadInput): Promise<CollaborationWriteResult>;
+  addMessage(projectId: string, questId: string, input: AddMessageInput): Promise<CollaborationWriteResult>;
+  changeMessage(projectId: string, questId: string, input: ChangeMessageInput): Promise<CollaborationWriteResult>;
+  deleteMessage(projectId: string, questId: string, input: DeleteMessageInput): Promise<CollaborationWriteResult>;
+  setThreadStatus(projectId: string, questId: string, input: SetThreadStatusInput): Promise<CollaborationWriteResult>;
 }

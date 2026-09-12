@@ -1,6 +1,7 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import type { JsonValue } from "./authoring.js";
 import { isRecord } from "./result.js";
+import { hasOnlyKeys, isId, isJsonValue } from "./primitives.js";
 
 export const SOCIAL_ACT_TYPES = ["request", "permission", "response"] as const;
 export type SocialActType = (typeof SOCIAL_ACT_TYPES)[number];
@@ -76,25 +77,4 @@ export function isSocialActionSubject(value: unknown): value is SocialActionSubj
     && value.targetIds.every(isId)
     && isRecord(value.args)
     && Object.values(value.args).every((entry) => isJsonValue(entry, 0));
-}
-
-function isJsonValue(value: unknown, depth: number): boolean {
-  if (depth > 16) return false;
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length <= 64 && value.every((entry) => isJsonValue(entry, depth + 1));
-  if (!isRecord(value) || Object.keys(value).length > 64) return false;
-  return Object.values(value).every((entry) => isJsonValue(entry, depth + 1));
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length >= 1
-    && value.length <= 200
-    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

@@ -100,6 +100,18 @@ test("L03 provider lifecycle: configure, safe status, failed update, rotation, d
   };
 
   try {
+    // 0. Provider mutation is local-operator only; forged host/origin fails before body handling
+    const remoteHost = await request(studioPort, "/local/author-provider", {
+      headers: { host: "evil.example", "x-lh-local-settings": "1" }
+    });
+    assert.equal(remoteHost.status, 403);
+    const crossSite = await request(studioPort, "/local/author-provider", {
+      method: "POST",
+      headers: { ...jsonHeaders, host: `127.0.0.1:${studioPort}`, origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      body: JSON.stringify({ preset: "compatible", baseUrl: "http://127.0.0.1:1/v1", model: "evil", credential: "never-used" })
+    });
+    assert.equal(crossSite.status, 403);
+
     // 1. Not configured: honest "not performed", no remaining-tokens invention
     const initial = await statusRead();
     assert.equal(initial.status, 200);

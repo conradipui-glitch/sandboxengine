@@ -7,6 +7,7 @@ import {
   type DraftHistoryEntry,
   type DraftReferenceAnalysis
 } from "./draft-history.js";
+import { isRevision } from "./json-primitives.js";
 
 export const DEFAULT_DRAFT_HISTORY_LIMIT = 100;
 export const MAX_DRAFT_HISTORY_LIMIT = 200;
@@ -112,10 +113,6 @@ function isPageOptions(value: unknown): value is DraftHistoryPageOptions {
     && (typeof record.limit !== "number" || !Number.isSafeInteger(record.limit)
       || record.limit < 1 || record.limit > MAX_DRAFT_HISTORY_LIMIT)) return false;
   return true;
-}
-
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }

@@ -1,9 +1,18 @@
+// B12 backup/restore drill (root verify evidence): back up the SQLite Runtime with
+// SQLite's online backup API, restore into a clean location, and verify session
+// revision, pinned release, turn history, idempotent replay and the 12 Florence
+// repository asset hashes. Fully local: no network, no deploy.
+//
+// Verdict / exit code / JSON reporting are shared via scripts/lib/drill-harness.mjs:
+// PASS prints `result: "pass"` and exits 0; a failed assertion prints
+// `result: "fail"` with the error and exits non-zero.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { backup, DatabaseSync } from "node:sqlite";
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { FAIL, PASS, reportDrill, runStep } from "./lib/drill-harness.mjs";
 import {
   ManualServiceClock,
   SQLiteRuntimeStorage
@@ -15,6 +24,7 @@ import {
   seedSession
 } from "../packages/runtime/test/storage-contract-suite.mjs";
 
+const DRILL_ID = "B12.2-backup-restore";
 const root = process.cwd();
 const workspace = await mkdtemp(join(tmpdir(), "living-history-b12-restore-"));
 
@@ -30,11 +40,7 @@ async function copyVerified(source, target, expected) {
   assert.equal(await sha256(target), expected.sha256, `sha256 mismatch after restore: ${target}`);
 }
 
-let sourceStorage;
-let restoredStorage;
-let backupConnection;
-
-try {
+async function drill() {
   const sourceDir = join(workspace, "source");
   const backupDir = join(workspace, "backup");
   const restoredDir = join(workspace, "restored");
@@ -117,9 +123,7 @@ try {
     await copyVerified(backupAsset, restoredAsset, file);
   }
 
-  console.log(JSON.stringify({
-    drill: "B12.2-backup-restore",
-    result: "pass",
+  return {
     database: {
       backedUpPages,
       sessionId: restoredSession.sessionId,
@@ -136,10 +140,36 @@ try {
       sha256VerifiedAfterRestore: true
     },
     scope: "local SQLite Runtime + repository Florence assets; not a Cloudflare Durable Object backup claim"
-  }));
+  };
+}
+
+let sourceStorage;
+let restoredStorage;
+let backupConnection;
+let step;
+
+try {
+  step = await runStep("B12.2-backup-restore", drill);
 } finally {
   try { backupConnection?.close(); } catch {}
   try { sourceStorage?.close(); } catch {}
   try { restoredStorage?.close(); } catch {}
   await rm(workspace, { recursive: true, force: true });
+}
+
+if (!step.ok) {
+  console.error(step.error);
+  reportDrill({
+    label: DRILL_ID,
+    result: FAIL,
+    printJson: true,
+    evidence: { drill: DRILL_ID, result: "fail", error: String(step.error?.message ?? step.error) }
+  });
+} else {
+  reportDrill({
+    label: DRILL_ID,
+    result: PASS,
+    printJson: true,
+    evidence: { drill: DRILL_ID, result: "pass", ...step.value }
+  });
 }

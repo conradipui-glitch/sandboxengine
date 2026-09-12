@@ -86,7 +86,7 @@ test("T22 B09 stale Studio editor conflict is visible, server-authoritative, and
 
     const html = renderConflictPanel(conflict);
     assert.match(html, /Server diff r0 → r1/);
-    assert.match(html, /Название квеста изменено/);
+    assert.match(html, /Название миссии изменено/);
     assert.match(html, /Автоматического overwrite не было/);
     assert.match(html, /Повторить правку на r1/);
 

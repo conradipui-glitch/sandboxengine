@@ -186,6 +186,211 @@
         }
       }
     },
+    "/control/v1/projects/{projectId}/quests/{questId}/board": {
+      "get": {
+        "operationId": "control_board_get",
+        "summary": "Получение server-authoritative layout BoardDocument отдельно от canonical draft",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/board/changes": {
+      "post": {
+        "operationId": "control_board_changes",
+        "summary": "Owner/editor atomic CAS layout update with required idempotency-key",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration": {
+      "get": {
+        "operationId": "control_collaboration_get",
+        "summary": "Server-authoritative заметки и треды комментариев проекта (не часть release/gameplay)",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes": {
+      "post": {
+        "operationId": "control_collaboration_notes_create",
+        "summary": "Editor создаёт стикер-заметку с позицией на доске (idempotency-key обязателен)",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/changes": {
+      "post": {
+        "operationId": "control_collaboration_notes_change",
+        "summary": "Автор заметки (или owner) меняет текст/позицию с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/notes/{noteId}/delete": {
+      "post": {
+        "operationId": "control_collaboration_notes_delete",
+        "summary": "Автор заметки (или owner) удаляет заметку с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments": {
+      "post": {
+        "operationId": "control_collaboration_comments_create",
+        "summary": "Editor открывает тред комментариев, привязанный к сцене/слою/полю или месту на доске",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages": {
+      "post": {
+        "operationId": "control_collaboration_comments_reply",
+        "summary": "Editor добавляет сообщение-ответ в существующий тред",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/changes": {
+      "post": {
+        "operationId": "control_collaboration_comments_message_change",
+        "summary": "Автор сообщения (или owner) правит текст с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/messages/{messageId}/delete": {
+      "post": {
+        "operationId": "control_collaboration_comments_message_delete",
+        "summary": "Автор сообщения (или owner) удаляет сообщение, сохраняя место в треде",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/collaboration/comments/{threadId}/status": {
+      "post": {
+        "operationId": "control_collaboration_comments_status",
+        "summary": "Editor закрывает (resolve) или переоткрывает (reopen) тред с CAS expectedRevision",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission": {
+      "get": {
+        "operationId": "control_mission_get",
+        "summary": "Получение server-authoritative MissionDraft отдельно от canonical draft",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "control_mission_save",
+        "summary": "Owner/editor atomic CAS mission save with validation and required idempotency-key",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions": {
+      "post": {
+        "operationId": "control_mission_sessions_create",
+        "summary": "Owner/editor mission session bound to an exact content revision",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}": {
+      "get": {
+        "operationId": "control_mission_sessions_get",
+        "summary": "Чтение состояния mission session, привязанной к pinned release",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/mission/sessions/{sessionId}/turns": {
+      "post": {
+        "operationId": "control_mission_turns_apply",
+        "summary": "Owner/editor idempotent mission turn: choice effects and scene transition commit together",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/assets": {
+      "post": {
+        "operationId": "control_assets_upload",
+        "summary": "Owner/editor authorized octet-stream upload with real format inspection and required idempotency-key",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "get": {
+        "operationId": "control_assets_list",
+        "summary": "Project asset library listing for authorized roles",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/assets/{assetId}": {
+      "get": {
+        "operationId": "control_assets_get",
+        "summary": "Authorized immutable asset bytes by exact assetId and hash",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/control/v1/projects/{projectId}/quests/{questId}/draft/history": {
       "get": {
         "operationId": "control_draft_history",
@@ -439,6 +644,72 @@
       "get": {
         "operationId": "control_author_jobs_proposals_task_package",
         "summary": "Owner/editor экспорт deterministic inert external task package для exact persisted missing capability без project content/secrets",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions": {
+      "get": {
+        "operationId": "control_public_missions_list",
+        "summary": "Публичный каталог опубликованных миссий без авторских project/quest данных",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}": {
+      "get": {
+        "operationId": "control_public_missions_get",
+        "summary": "Публичная карточка опубликованной миссии по стабильному id или slug",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions": {
+      "post": {
+        "operationId": "control_public_missions_sessions_create",
+        "summary": "Создание server-bound гостевой сессии опубликованной миссии",
+        "responses": {
+          "201": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}": {
+      "get": {
+        "operationId": "control_public_missions_sessions_get",
+        "summary": "Получение состояния server-bound гостевой миссии по credential",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/public/v1/missions/{publicMissionIdOrSlug}/sessions/{sessionId}/turns": {
+      "post": {
+        "operationId": "control_public_missions_sessions_turn",
+        "summary": "Применение выбора опубликованной миссии с credential и idempotency",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/control/v1/projects/{projectId}/quests/{questId}/publication/unpublish": {
+      "post": {
+        "operationId": "control_public_missions_unpublish",
+        "summary": "Owner-only снятие миссии с публичного каталога с CAS по release",
         "responses": {
           "200": {
             "description": "Successful response"

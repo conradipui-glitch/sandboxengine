@@ -1,0 +1,255 @@
+# 2026-09-10 — Studio V00–V02 correction K00–K08
+
+Статус: **IN_PROGRESS**
+
+## K00 — входная сверка
+
+- Репозиторий: `conradipui-glitch/sandboxengine` / локальная копия `C:/Users/kato55/Documents/Codex/2026-09-09-live-author-studio`.
+- Ветка: `feat/b13-acceptance-closure`.
+- Входной SHA: `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`.
+- Рабочее дерево на входе: clean.
+- Совместимый runtime: `npx --yes node@24.19.0` → `v24.19.0`; `npx --yes -p npm@11.9.0 npm --version` → `11.9.0`. Требование `package.json` `>=24.19.0 <25` не изменялось.
+- Локальные `STUDIO-V00-V02-REVIEW-RU.md` и `STUDIO-VISUAL-EDITOR-SPEC-RU.md` в checkout не найдены. Каноническим основанием этой карточки является переданное пользователем ТЗ; `docs/SPECIFICATION.md` прочитан по разделам, относящимся к авторскому циклу, API, проверкам и ограничениям.
+- Существующие проекты Florence и «Приёмка VPS» не используются для демонстрационных изменений.
+- Авторизация `@living_history_gate_bot` не меняется.
+- V00 namespaces `/studio-assets/*` и `/player-assets/*` сохраняются.
+
+## K01 — единый renderer и lifecycle — DONE
+
+- Активный renderer: `apps/studio/src/board-dom.ts` через `mountBoard`.
+- `apps/studio/src/board-render.ts` удалён после проверки импортов и полного Studio suite.
+- `apps/studio/src/board-lifecycle.ts` держит один handle на project/quest и предоставляет update, selection, viewport get/set, fit, destroy.
+- `app.ts` сохраняет host/handle между shell renders: вкладка inspector, save/validation и status не перемонтируют canvas и не вызывают fit.
+- На выходе из проекта/квеста/logout вызывается destroy; root listeners также снимаются публичным `StudioApp.destroy()`.
+- Callback wrappers получают generation token; async draft save проверяет project/quest context после ответа и не применяет stale result к новому квесту.
+
+Проверено:
+- K01 RED: `node@24.19.0 --test apps/studio/test/board-lifecycle.test.mjs` → отсутствовал `dist/src/board-lifecycle.js`.
+- K01 GREEN: тот же suite → **2/2 passed**.
+- `npm run typecheck` через Node 24.19.0 → exit 0.
+- `node@24.19.0 --test apps/studio/test/*.test.mjs` → **78/78 passed**.
+
+Ограничение, перенесённое в K02/K04: layout пока localStorage, а inspector и серверный BoardDocument ещё не реализованы.
+
+
+| R | Проверка на входе | Статус | Фактическое основание |
+|---|---|---|---|
+| R01 | Один renderer и lifecycle mount/update/selection/viewport/destroy | **DONE локально** | `app.ts` uses `mountBoard`/`BoardLifecycle`; `board-render.ts` removed after import/test check; browser lifecycle evidence remains in C09. |
+| R02 | Доска — главный экран, рабочие размеры и рабочие кнопки | **DONE локально + BROWSER/LOCAL** | K02 viewport shell, board-main workspace, utility menu and one board/list toggle are implemented; local browser smoke confirms board remains mounted while utility panels open. |
+| R03 | Настоящий inspector выбранного canonical block | **DONE локально + BROWSER/LOCAL** | `block-inspector.ts` + app inspector, полный `block.replace`, debounce и conflict preservation проверены browser smoke. |
+| R04 | Создание и редактирование четырёх типов блока | **DONE локально + BROWSER/LOCAL** | Library/modal создали location, character, resource и action; type-specific canonical fields подтверждены GET draft. |
+| R05 | Связи, drag/zoom/fit, collision-aware layout | **DONE локально + BROWSER/LOCAL** | `edgeToDraftChange` используется app; SVG edges имеют direction marker; valid/invalid pointer connections, два drag с edge tracking, zoom/pan/fit и collision-free fallback проверены. |
+| R06 | Серверный versioned BoardDocument, CAS/idempotency/restart/other browser | **DONE локально + BROWSER/LOCAL** | SQLite BoardDocument/idempotency tables, v1→v2 migration, atomic bounds/CAS, GET/POST route, generated registry/OpenAPI, close/reopen and profile A→B readback verified. VPS remains open. |
+| R07 | Read-only/role behavior and V00/Player regression evidence | **DONE локально + VPS unauthenticated** | K06 authenticated role/CSRF/revoke test, local Studio/Player/launch suites, and public VPS asset/auth matrix verified; logged-in Telegram browser playtest remains unavailable without user session. |
+| R08 | Regression suite C01–C18 and real connected renderer | **PARTIAL — C18 authenticated browser OPEN** | Added `apps/studio/test/correction-acceptance.test.mjs`: C01–C17 pass; C18 boundary passes after exact deploy, but authenticated Telegram browser proof is unavailable. Browser/CDP evidence is linked in `docs/acceptance/studio-c01-c18.md`; full verify passed after registry-count fix. |
+| R09 | Hosted identity and server-side global provider/project permissions | **DONE локально** | Authenticated Board GET/POST uses session identity and live project role; forged identity headers fail; revoked session returns 401; local provider mutation rejects non-loopback Host and cross-site Origin before body handling. VPS smoke remains open. |
+
+## Evidence at K00
+
+- `node --version` from default shell: `v22.23.2` (incompatible; not used for acceptance).
+- `npx --yes node@24.19.0 --version`: exit 0, `v24.19.0`.
+- `npx --yes -p node@24.19.0 -p npm@11.9.0 -c "node --version && npm --version"`: exit 0, `v24.19.0`, `11.9.0`.
+- `git branch --show-current`: exit 0, `feat/b13-acceptance-closure`.
+- `git rev-parse HEAD`: exit 0, `bc8313d31bca1fb0526e4b18a31d3ddd5bdbf7d9`.
+- `git status --short`: exit 0, empty.
+- Review files named in the task: not present locally; no claim of having read them.
+
+## Следующая точная операция
+
+K01: добавить failing lifecycle regression against the actually mounted board, switch `app.ts` to one `mountBoard` handle with generation/project guards, then verify focused board tests before K02.
+
+## C01–C18 preliminary status
+
+Все C01–C18: **OPEN** на входе; existing model tests are not counted as acceptance evidence.
+
+## K02 — доска как главный экран — DONE
+
+- `.ed-shell` занимает viewport; библиотека `240px`, inspector `336px`, центральная область и внутренние панели прокручиваются отдельно.
+- Validation перенесена внутрь центральной области; `ed-bottom` и основной поток versions/portability убраны.
+- Меню `…` открывает «История версий», «Импорт и экспорт», «Настройки проекта и доступа».
+- Inspector по умолчанию — «Свойства карточки» с подсказкой «Выберите карточку на доске»; доступ и ID перенесены в настройки.
+- Вкладка помощника подписана «ИИ-помощник»; видимый переключатель один: «Доска / Список».
+- Добавлена единая primary/secondary button system и responsive CSS с доступным inspector на 360px.
+- STATIC: Node 24.19.0 `npm run typecheck` exit 0; Studio suite `78/78`.
+- BROWSER/LOCAL: отдельная SQLite и чистый Chrome с CDP; через реальный DOM click создан throwaway project/quest. После открытия квеста `data-board-host=true`; меню, History и Portability открылись, доска оставалась в DOM.
+
+### R status after K02
+
+- R01 **DONE локально** (K01; browser lifecycle C09 ещё открыт).
+- R02 **DONE локально + BROWSER/LOCAL**, VPS для candidate ещё не обновлён.
+- R03/R04/R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+
+## K03 — canonical inspector и четыре типа — DONE локально + BROWSER/LOCAL
+
+- Добавлен `apps/studio/src/block-inspector.ts`: `createBlockForKind` строит только canonical `location/character/resource/action`, `replaceBlockWithPatch` выпускает полный `block.replace`; исходные `description` и неизменённые `data`-поля сохраняются, `block.update` не используется.
+- Библиотека редактора получила создание всех четырёх типов. Для action форма требует существующий resource и не создаёт dangling reference; character поддерживает `initialLocationId`/`initialStatus`, resource — unit/range/value, action — resource/cost/duration/allowPartial.
+- Inspector выбранного узла редактирует canonical title/description и type-specific data; ввод хранится локально до ответа сервера, debounce — 700 ms, есть явное «Сохранить карточку», read-only поля отключаются по access state.
+- Добавлен lifecycle focus после создания и отдельное сохранение inspector без перемонтирования доски.
+
+Проверено:
+- RED: `node@24.19.0 --test apps/studio/test/block-inspector.test.mjs` → отсутствовал `dist/src/block-inspector.js`.
+- GREEN: тот же тест после сборки → **3/3 passed**.
+- `npm run typecheck` через Node 24.19.0 → exit 0; Studio suite после K03 → **81/81 passed**.
+- BROWSER/LOCAL на `http://127.0.0.1:4184` с отдельной SQLite: реальный Chromium/CDP создал location, character, resource и action; после открытия квеста все пять узлов (включая start) видны на доске.
+- BROWSER/LOCAL inspector изменил title/description resource/action; Control GET подтвердил server draft revision `5` и canonical data.
+- BROWSER/LOCAL conflict: внешний `block.replace` поднял revision `5→6`; локальный inspector получил «Ничего не перезаписано», локальное имя осталось в поле, GET подтвердил серверную внешнюю description без overwrite.
+- BROWSER/LOCAL переключение «Свойства → ИИ-помощник → Свойства» не потеряло сохранённое содержимое и доску.
+
+Ограничения: это доказательство локального браузера и Control persistence; серверный BoardDocument/restart/другой браузер ещё относятся к K05, live VPS candidate не обновлялся.
+
+### R status after K03
+
+- R01 **DONE локально** (K01; browser lifecycle C09 ещё открыт).
+- R02 **DONE локально + BROWSER/LOCAL**, VPS для candidate ещё не обновлён.
+- R03 **DONE локально + BROWSER/LOCAL** (canonical inspector + full replace + conflict preservation).
+- R04 **DONE локально + BROWSER/LOCAL** (4 block kinds and type-specific fields).
+- R05/R06/R08/R09 **OPEN**; R07 **PARTIAL**.
+
+Следующая точная операция: K04 — допустимые связи, ports, drag/zoom/fit и collision-aware layout.
+
+## K04 — связи, жесты и collision-aware layout — DONE локально + BROWSER/LOCAL
+
+- `apps/studio/src/board-model.ts` теперь строит fallback без пересечений: четыре type columns (`location`, `character`, `resource`, `action`), локальный индекс вида и шаг 160px; saved positions по-прежнему имеют приоритет.
+- `apps/studio/src/board-dom.ts` добавляет явный SVG `marker-end` (`#board-arrowhead`) на каждую derived edge; `onConnect` остаётся типизированным и app применяет `edgeToDraftChange` как полный `block.replace`.
+- Editable board: port/body drag создаёт только `character→location` или `action→resource`; остальные комбинации показывают hint и не меняют edge count. Header drag меняет position live и обновляет path geometry; text inputs не запускают gestures.
+- Static: `npm run typecheck` exit 0; board-model **7/7**; полный Studio suite **81/81**.
+- BROWSER/LOCAL на чистом Chrome profile и отдельной SQLite: valid connection подняла edge count `1→2` с marker; invalid `resource→location` оставила count `2` и показала unsupported hint; два header drag изменили transform и edge `d` оба раза; wheel изменил `41%→47%`, Space+drag изменил pan, «Показать всё» вернул fit `41%`; localStorage подтвердил сохранённую координату; переключение Properties/AI/Properties сохранило transform и 5 nodes.
+
+Ограничение: layout пока localStorage и не доступен другому браузеру; это закрывается K05 BoardDocument.
+
+### R status after K04
+
+- R01/R02/R03/R04/R05/R06 **DONE локально + BROWSER/LOCAL** (VPS candidate ещё не обновлён).
+- R07 **PARTIAL**; R08/R09 **OPEN**.
+
+Следующая точная операция: K05 — серверный BoardDocument persistence, revision/idempotency, restart и другой браузер.
+
+## K05 — server BoardDocument persistence — DONE локально + BROWSER/LOCAL
+
+- Добавлены `BoardDocument`, `BoardPosition`, `BoardDocumentStore` и CAS result types в `packages/control/src/types.ts`; canonical draft/contentHash не изменены.
+- `SQLiteControlStore` получил `control_board_documents` и `control_board_idempotency`; schema v1→v2 migration выполняется при startup, future versions fail-closed. Validation: max 1000 positions, finite coordinates in `[-1000000,1000000]`, exact keys, actor audit, atomic `BEGIN IMMEDIATE`.
+- Added `GET /control/v1/projects/:projectId/quests/:questId/board` and `POST .../board/changes`; POST requires existing idempotency key, CAS `baseRevision`, replay returns same board, changed payload with same key returns 409, stale revision returns 409. Existing auth/role/mutation-proof gates are reused unchanged.
+- `apps/studio/src/api.ts` reads BoardDocument and sends full position maps; `app.ts` loads server positions independently from draft, coalesces drag saves at 700ms, updates board revision, and falls back to localStorage only when Board API is unavailable.
+- Registry source `packages/contracts/registry/endpoints.json`, generated `docs/agent/api.openapi.json`/compatibility and migration runbook `docs/migration/2026-09-10-board-document.md` updated through `docs:generate`.
+
+Проверено:
+- RED: new SQLite test initially failed because `getBoardDocument` was absent.
+- GREEN: `packages/control/test/board-document.test.mjs` → **2/2** (CAS, replay, key reuse, bounds, atomicity, close/reopen, v1 migration).
+- `apps/server/test/board-document-http.test.mjs` → **1/1**; full Control → **99/99**, full Server → **122/122**, full Studio → **81/81**.
+- `npm run typecheck` exit 0; `npm run docs:generate` exit 0; `loadInstalledAgentKit()` hash guard passed.
+- BROWSER/LOCAL profile A on fresh server `4186`/isolated SQLite: drag persisted through real board POST; profile B on separate Chrome profile with empty localStorage read `boardRevision=1`, `positions.item-tp6n7a={x:451,y:77}`, and DOM `translate(451px,77px)`.
+
+Следующее: K06 — hosted identity, project/global permissions и provider mutation security.
+
+## K06 — hosted identity, permissions и provider mutation security — DONE локально
+
+- Existing `control-server.ts` identity path verified: HttpOnly session token → server-side session lookup → user lookup; project role is read live per request, not accepted from UI/header.
+- Added `apps/server/test/board-permissions-http.test.mjs`: tester can GET board but cannot POST; editor with CSRF can POST; missing/forged owner headers do not elevate tester; changing editor→tester blocks the existing session; revoked session returns 401.
+- Existing `apps/studio/test/live-author-provider-lifecycle.test.mjs` extended with non-loopback Host and cross-site Origin/Fetch-Metadata cases; both return 403 before provider body/mutation. Provider credential remains process-memory and is never returned.
+
+Проверено:
+- Node 24.19.0 `npm run typecheck` → exit 0.
+- K06 role/revocation test → **1/1**.
+- Provider lifecycle/security test → **1/1**.
+
+Ограничение: доказательство пока локальное; live Telegram-gate/nginx/VPS identity matrix и C01–C18 переходят в K07/K08. GREEN не объявлен.
+
+## K07 — V00 assets, auth boundary и independent Player — DONE локально + VPS unauthenticated
+
+- Studio static entry and Player asset namespace remain separate: `/studio-assets/*` and `/player-assets/*`; no root `/styles.css`/`/app.js` restoration.
+- Local tests passed: Studio static/shell, Player UI/runtime, Player launch serialization and local Control/Studio boundary — **20/20** selected tests.
+- Public read-only VPS matrix on `https://85.137.95.104.sslip.io:8741`: `/studio-assets/*`, `/player-assets/*`, `/player-meta.json`, `/v1/*` unauthenticated → **401**; legacy `/styles.css` and `/app.js` → **410**; navigation `/` → **200** login fallback. No cookies or state writes used.
+- Logged-in Telegram browser playtest on the public VPS is not claimed: no session was available in this run. Existing local independent frozen Player path is the evidence for runtime behavior.
+
+Не закрыто: C01–C18, full verify and exact-SHA VPS Studio deployment/smoke (K08). GREEN не объявлен.
+
+## K08 — acceptance matrix / deployment — PARTIAL, role checks OPEN
+
+- Added `apps/studio/test/correction-acceptance.test.mjs`: local result **18 tests, 17 passed, 1 skipped (C18 without live URL)**; with `CORRECTION_VPS_URL`, C18 boundary check passed for public `/` 200, protected asset/runtime 401 and legacy roots 410.
+- Full `npm run verify` initially caught the expected registry count drift `42→44`; `b10-registry.test.mjs` was corrected and focused test passed. The rerun of full verify exited **0**, including docs/boundaries.
+- Candidate final branch HEAD was delivered through the branch, remote worktree reset exactly to it, Studio image rebuilt and only `lhc-studio` recreated with `--no-deps`. Remote readback (SHA/image digest) is recorded by the final delivery command; Studio loopback 200, Engine health 200, gate/Engine remained running.
+- Public unauthenticated VPS matrix after deploy: `/studio-assets/*`, `/player-assets/*`, `/player-meta.json`, `/v1/*` → 401; `/styles.css`/`/app.js` → 410; `/` → 200 login fallback.
+- C18 owner-scenario on live VPS (2026-09-10, isolated Chrome + fresh gate ticket, owner `lhc_session`): project «C18 Приёмка» + quest «C18 Миссия» created; board visible on open; resource «C18 Краска» / character «C18 Мастер» / action «C18 Рисовать» added via canonical modals; inspector edit title→«C18 Рисовать v2» persisted; valid character→location drag created `character-initial-location`, invalid resource→character drag rejected; node drag y 492→592 saved; reload keeps 4 nodes / 2 edges / moved layout / edited title; validation «Revision 5 валидна», «Квест готов»; frozen `playtest-3` launched, VPS `127.0.0.1:8745` → **200**. «Приёмка VPS» and Florence Workshop untouched.
+
+Next blocking item: editor/viewer/read-only checks need separate Telegram-gate sessions — one owner session does not prove them. Do not declare GREEN before that evidence.
+
+## M01 — mission schemas, validation, persistence — DONE
+
+- `packages/contracts/src/mission.ts`: `MissionDraft` (identity/listing/story/screens/defaults), `validateMissionDraft` (`mission.*` коды: entry/choices/endings reachability/asset refs/transforms), async `missionContentHash` (sha256 канонического payload без self-reference).
+- `packages/control`: `MissionDocumentStore` (get/save/history/export), SQLite append-only `control_mission_documents` + `control_mission_idempotency`, CAS + replay/key-reuse, migration v2→v3.
+- Tests: contracts `mission.test.mjs` 5/5, control `mission-document.test.mjs` 2/2; suites contracts 57/57, control 101/101; typecheck exit 0.
+- Docs: `docs/migration/2026-09-10-mission-document.md`.
+
+## M00 — сверка маршрута Studio→сайт — DONE (STATIC)
+
+- SHAs: engine `63ebda8` (`feat/b13-acceptance-closure`, pushed), site `55504e7` (`feat/florence-vertical-slice`, копия clean).
+- Проверено чтением кода: site hardcoded `scenarioSummaries` + engine-gate только для florence (`engine-bff.ts:119`); engine presentation-v2 с asset/hash/layerOrder годна к переиспользованию; `authored-scenario.ts:221` кодирует переход номером revision — в M02 заменить на `currentSceneId`.
+- ADR: `docs/decisions/2026-09-10-mission-site-route.md` — канонические `MissionDraft`/`MissionReleaseBundle`/`PublicationRecord`, reuse/new список, черновики контрактов обоих репозиториев.
+- K08 остаётся PARTIAL только по ролевым проверкам (editor/viewer/read-only, отдельные сессии).
+
+## M02 — mission execution + sessions — DONE (engine + BFF module)
+
+- `packages/core/src/mission-execution.ts`: `applyMissionChoice` (choice+effects+transition одним коммитом, `currentSceneId` вместо revision-индекса, финал ставит `terminal`), `availableMissionChoices`, legacy-адаптер `sidecarBeatsToMissionStory`. Tests 5/5.
+- `packages/control`: `MissionSessionStore` — сессии с pin `(contentRevision, contentHash)`, CAS по `turn`, idempotency create/turn, resume после reopen. SQLite v4 (`control_mission_sessions` + 2 idempotency tables). Tests 2/2.
+- `apps/server`: Control HTTP `mission` (GET/POST) + `mission/sessions` (POST 201) + session GET + `turns` (POST) с ролями tester/editor, mutation proof, idempotency-key. Test 1/1.
+- Registry +5 (`control.mission.*`), `docs:generate`, b10 count 44→49.
+- Site copy: `src/worker/mission-bff.ts` — generic preview-BFF без per-quest ifs (registry map → Control mission endpoints, binding хранит pinned doc). Vitest 3/3; full site suite 52/52. Live wiring — M06 (нужен publication registry).
+- Suites: core 64/64, control 103/103, contracts 57/57, server 124/124; typecheck exit 0.
+- Docs: `docs/migration/2026-09-10-mission-sessions.md`. VPS prod уже durable (`main.ts` → SQLite binding на общем volume; Memory store только в legacy `authored-server.mjs` вне compose).
+- OPEN в M02: live two-mission play через BFF на VPS (нужен engine deploy с mission endpoints + M06 publication wiring).
+
+## M03 — project asset library + HTTP + proxy — DONE
+
+- `packages/control`: `ProjectAssetLibrary` — register/list/unlist (unlist не трогает байты), idempotency, SQLite v5. Test 1/1.
+- `apps/server`: `POST .../assets` (octet-stream, bounded, metadata headers, ingest → 201/replay/409/422), `GET .../assets` (tester listed, editor `?all=1`), `GET .../assets/{id}?hash=` (immutable bytes). Test 1/1 (real PNG bytes, mismatch/HTML rejections).
+- `main.ts`: `LocalAssetStore(<data-dir>/assets)` + library wiring. Studio proxy: asset headers в allowlist, asset-body limit 20MB+1 только для `.../assets`, обычные маршруты по-прежнему 413.
+- Proxy test 1/1 (headers + 300KB проходят, draft-changes 413).
+- Registry +3 (`control.assets.*`), `docs:generate`, b10 count 49→52.
+- Suites (node 24.19): control 103+/103+, server 125/125, studio 99+1 skip, contracts green; typecheck exit 0.
+- Замечание: системный node v22 роняет C17 (`process.version startsWith v24`) — environment, не регрессия; все suites гоняются под node 24.19.
+- Thumbnails отложены в M04 (client-side, без выдуманного ресайза); не-ASCII metadata клиент кодирует (граница для M05).
+- Docs: `docs/migration/2026-09-10-project-assets.md`.
+
+## M04 — shared renderer + preview bundle + Studio host — DONE
+
+- Site `src/shared/mission-presentation/`: data-driven `MissionSceneStage`/`MissionChoicePanel`/`MissionIntroScreen`/`MissionEndingScreen`/`MissionCard`, тёмные токены, legacy-адаптер без scenario-ветвлений, bridge protocol v1 (origin/nonce/schema/size, `choice:`/`intro:`/`ending:` selection-конвенции).
+- Authored transform — только outer wrapper, анимация — только inner; reduced-motion гасит ambient, `data-paused` останавливает в редакторе. Проверено в собранном CSS.
+- `src/preview/main.tsx` + `vite.preview.config.ts` + `npm run build:preview`: single bundle (JS `10e862…`, CSS `ac188d…`, dist gitignored, хеши в worklog).
+- Живое доказательство: bundle в изолированном Chrome отрендерил кадр (2 слоя, «Депо», честный screen-статус, маркер renderer 1.0.0/bridge 1).
+- Studio: `preview-bridge.ts` + `PreviewHost` (mount/ready/post/destroy, stale guards, version mismatch fail-closed). Tests 2/2.
+- Suites: site 58/58 (tsc clean), studio 101+1 skip; typecheck engine exit 0.
+- Синхронизация версий: `MISSION_RENDERER_VERSION=1.0.0` + `PREVIEW_BRIDGE_VERSION=1` одинаковы в обоих репозиториях на этих commit; смена — только парой с записью в worklog.
+- `tsconfig.worker.json` получил `jsx: react-jsx` (shared .tsx в include).
+
+## M05 — story board + screen editor — DONE локально + BROWSER/LOCAL
+
+- Studio получает `ControlApiClient.getMission/saveMission`: GET/POST canonical `MissionDraft` через существующий CAS/idempotency endpoint; клиент использует `saved.mission.contentRevision`, а не выдуманное поле response.
+- `apps/studio/src/story-model.ts`: чистая проекция `MissionDraft.story` → scene/ending nodes и choice edges; deterministic fallback positions; `story:`-префикс layout-позиций не смешивает content с BoardDocument; мутации scene/ending/choice/update/delete fail-closed.
+- `apps/studio/src/story-dom.ts`: отдельный SVG/DOM story renderer с подписанными стрелками, connect mode, drag/fit/zoom/pan, selection lifecycle; read-only отключает drag, связи и кнопку «Связать».
+- `apps/studio/src/screen-model.ts`: canonical `screens.scenes/endings`, background/inherit/music, layer add/remove и bounded transform/asset validation.
+- `app.ts`: вкладка «Сюжет», mission create с минимально проходимым entry→ending графом, inspector текста/выборов, undo через новую revision, screen editor для каждого scene/ending (background asset ref + layers).
+- RED/GREEN: `screen-model.test.mjs` сначала получил ожидаемый `ERR_MODULE_NOT_FOUND`; после реализации — **3/3**. Story model — **7/7**. `npm run typecheck` через Node 24.19.0 — exit 0.
+- Browser route на чистой локальной SQLite/Chrome: mission create → scene add → 2 choice edges → text edit, server read-back revision `4`/hash/text, reload/reopen восстановил 3 nodes + 2 edges.
+- Browser screen route: background asset ref сохранён Revision `5`, layer transform сохранён Revision `6`; server read-back подтвердил `background`, `inherit=false`, layer `x=.4,y=.6,scale=1.2,opacity=.8,z=3`; reload восстановил hash и 1 layer.
+- `node@24.19.0 --test apps/studio/test/*.test.mjs` — **111 pass, 0 fail, 1 skip (C18)**. `packages/control + apps/server + packages/contracts` — **286/286**. Полный `npx --yes -p node@24.19.0 -p npm@11.9.0 -c "npm run verify"` — exit 0.
+
+## M06 — publication registry + generic catalog/BFF — DONE локально
+
+### Engine
+
+- Added `packages/control/src/publication-store.ts`: Memory/SQLite records with stable `publicMissionId`, slug uniqueness, channel/status, release/content hash, exact draft revision, idempotent publish/replay and unpublish; SQLite reopen and legacy-table migration are covered.
+- Existing owner publish route now creates/repins the public record only when the current mission exactly matches the release draft revision/hash. Existing authorization/session mechanics remain unchanged. Rollback repins the same public identity; owner unpublish uses expected release CAS.
+- Public routes are read-only catalog/detail plus credential-bound session create/get/turn. Public JSON omits project/quest internals; a deterministic credential derived from the server secret is accepted only by the public session routes.
+- Contract registry/OpenAPI/capabilities/compatibility regenerated: available operations `52→58`; `npm run docs:generate` and `npm run docs:check` passed.
+
+### Site
+
+- Added `public-catalog.ts`: validates the published catalog and maps it to existing `ScenarioSummary`; catalog upstream errors return explicit 503 instead of stale hardcoded data when configured.
+- Added `public-mission-bff.ts`: public engine session binding, server-side credential, mission scene/ending projection to the existing generic `GameState`.
+- `b11-entry.ts` now wires generic `/api/scenarios`, `/api/games`, reload and `/turn` through `PublishedMissionRouteSession`; Florence/legacy IDs still fall back to existing engine/legacy route. Added Durable Object binding + v4 migration in `wrangler.jsonc`.
+
+### Verification
+
+- Engine M06 focused: publication store **2/2**, owner publish→catalog sync **1/1**, public catalog/unpublish **1/1**, public runtime session/credential/turn **1/1**; engine `npm run typecheck` passed; full Control + Server + Contracts regression **290/290 pass, 0 fail, 0 skipped** under Node 24.19.0; full `npm run verify` exit 0 (including boundaries and docs-check).
+- Site M06 focused: catalog + public BFF + worker route **5/5**; site `npm run check` passed; full Vitest **63/63**; `npm run build` and `npm run build:preview` passed.
+- Live VPS/Cloudflare delivery was not performed: public catalog/runtime URL variables and reverse-proxy exposure still require a read-only port/config check and explicit deployment step. C18 editor/viewer/read-only role sessions and deployed two-mission play remain OPEN.

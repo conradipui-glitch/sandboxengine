@@ -1,0 +1,12 @@
+{
+  "operationId": "b13-b2-live-acceptance-20260909",
+  "receipt": {
+    "deploymentId": "preview-34324006071",
+    "runId": "34324006071",
+    "artifactCommitSha": "ffba7c896bc9a02ab2485cce55ee1445f455f942",
+    "smokeUrl": "https://living-history-florence-preview.conradipui.workers.dev/",
+    "smokePassed": true
+  },
+  "gateway": "gh-cli",
+  "note": "live dispatch through B13.b2 adapter; workflow deploys the ref HEAD"
+}

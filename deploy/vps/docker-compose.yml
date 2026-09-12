@@ -1,0 +1,99 @@
+services:
+  engine:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.engine
+    container_name: lhc-engine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8742
+      - CONTROL_PORT=8788
+      - CONTROL_AUTH_MODE=authenticated
+      - CONTROL_SECURE_COOKIES=true
+      - RUNTIME_DB_PATH=/data/living-history.sqlite
+      # Public mission sessions are derived from this secret; it comes from
+      # deploy/vps/.env (never committed) via --env-file, not from /tmp.
+      - LH_PUBLIC_MISSION_SESSION_SECRET=${LH_PUBLIC_MISSION_SESSION_SECRET}
+    volumes:
+      - engine-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8742/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Legacy authored scenario runtime (:8746). It used to be a manual
+  # `docker exec -d` process outside compose, so a container recreate silently
+  # dropped it and nginx started answering 502.
+  authored:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.engine
+    container_name: lhc-authored
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /engine
+    command: ["node", "/engine/deploy/vps/authored-server.mjs"]
+    environment:
+      - AUTHORED_PORT=8746
+      - AUTHORED_DB_PATH=/data/living-history.sqlite
+    volumes:
+      - engine-data:/data
+    depends_on:
+      engine:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8746/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  studio:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.studio
+    container_name: lhc-studio
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - LH_DATABASE_PATH=/data/living-history.sqlite
+      - LH_STUDIO_PORT=8740
+      - LH_PLAYER_FIXED_PORT=8745
+      # Единый вход включается на стенде одной строкой в deploy/vps/.env:
+      #   LHC_STUDIO_AUTH_MODE=authenticated
+      #   LH_GATE_IDENTITY_SECRET=<тот же секрет, что у gate: >=32 символов>
+      # Пока они не заданы, Studio работает в прежнем локальном режиме, поэтому
+      # доставка кода сама по себе не может запереть владельца вне мастерской.
+      - CONTROL_AUTH_MODE=${LHC_STUDIO_AUTH_MODE:-local}
+      - CONTROL_SECURE_COOKIES=${LHC_STUDIO_SECURE_COOKIES:-false}
+      - CONTROL_ALLOWED_ORIGINS=${LHC_STUDIO_ALLOWED_ORIGINS:-}
+      - LH_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET:-}
+    volumes:
+      - engine-data:/data
+    depends_on:
+      engine:
+        condition: service_started
+
+  gate:
+    image: node:24.19-slim
+    container_name: lhc-gate
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /app
+    command: ["node", "/app/lhc-gate.mjs"]
+    environment:
+      - LHC_GATE_PORT=8744
+      - LHC_STUDIO_ORIGIN=https://85.137.95.104.sslip.io:8741
+      - LHC_STORE=/data/lhc-gate-state.json
+      - LHC_GATE_SECRET=${LHC_GATE_SECRET}
+      - LHC_TELEGRAM_BOT_TOKEN=${LHC_TELEGRAM_BOT_TOKEN}
+      - LHC_OWNER_TELEGRAM_ID=${LHC_OWNER_TELEGRAM_ID:-332664273}
+    volumes:
+      - ../vps:/app:ro
+      - engine-data:/data
+
+volumes:
+  engine-data:

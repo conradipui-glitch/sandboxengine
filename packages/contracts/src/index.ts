@@ -185,6 +185,25 @@ export {
 } from "./presentation-validation.js";
 export { presentationPlanConvergesToTargetFrameV2 } from "./presentation-convergence.js";
 export { hasValidPresentationTransitionV2 } from "./presentation-contract.js";
+export {
+  MISSION_SCHEMA_VERSION,
+  missionContentHash,
+  validateMissionDraft,
+  type MissionChoice,
+  type MissionDefaults,
+  type MissionDialogueLine,
+  type MissionDraft,
+  type MissionEnding,
+  type MissionIntroScreen,
+  type MissionListing,
+  type MissionSchemaVersion,
+  type MissionScene,
+  type MissionSceneScreen,
+  type MissionScreenLayer,
+  type MissionScreens,
+  type MissionStory,
+  type MissionSupportedMode
+} from "./mission.js";
 
 export {
   BLOCK_KINDS,
@@ -213,3 +232,20 @@ export {
   hasValidQuestReleaseReferences,
   hasValidWorldStateReferences
 } from "./references.js";
+
+export {
+  MAX_PROVIDER_API_KEY_LENGTH,
+  MAX_PROVIDER_API_KEY_MASK_LENGTH,
+  MAX_PROVIDER_CONNECTION_BASE_URL_LENGTH,
+  MAX_PROVIDER_CONNECTION_MODEL_LENGTH,
+  MAX_PROVIDER_CONNECTION_PRESET_LENGTH,
+  PROVIDER_CONNECTION_ERROR_CODES,
+  PROVIDER_CONNECTION_STATUSES,
+  isProviderConnectionErrorCode,
+  isProviderConnectionStatus,
+  type ControlProviderConnectionConfig,
+  type ControlProviderConnectionSummary,
+  type ProviderConnectionErrorCode,
+  type ProviderConnectionProbeOutcome,
+  type ProviderConnectionStatus
+} from "./provider-connections.js";

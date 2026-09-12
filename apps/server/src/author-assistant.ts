@@ -31,6 +31,7 @@ import { loadInstalledAgentKit } from "./agent-kit.js";
 import { AUTHOR_OUTPUT_CONTRACT } from "./author-output-contract.js";
 import type { AuthorMcpClient } from "./author-mcp.js";
 import { AUTHOR_REFERENCE_TOOL_PROTOCOL_INSTRUCTION, runAuthorBackendToolProtocol } from "./author-backend-tool-protocol.js";
+import { isId, isRecord, hasExactKeys, cloneJson } from "./input-guards.js";
 
 const MAX_AUTHOR_INSTRUCTION_CHARS = 20_000;
 const MAX_AUTHOR_CONTEXT_CHARS = 64_000;
@@ -696,23 +697,9 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
-function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
 
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function frozen<const T extends object>(value: T): Readonly<T> {
   return Object.freeze(value);

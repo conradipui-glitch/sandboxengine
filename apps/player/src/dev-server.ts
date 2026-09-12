@@ -7,12 +7,20 @@ import { extname, join, normalize } from "node:path";
 // @ts-ignore — repository is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { fileURLToPath } from "node:url";
 import type { AssetManifestV2, JsonValue } from "@living-history/contracts";
+import { isPlayableStoryMission } from "@living-history/player";
+import { createPlayerTurnRoute, type PlayerTurnRoute, type PlayerTurnRouteOptions } from "./turn-route.js";
+import { isId } from "./story-guards.js";
 
 const playerRoot = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 
+/**
+ * Метаданные шелла Player. Ключи всегда одни и те же (их читает браузерный
+ * app.js), но `resource*`/`action*` принадлежат блочному (paint) шеллу: у
+ * сюжетной миссии их нет вовсе, поэтому пустая строка здесь честнее
+ * выдуманного ресурса. Сюжетный шелл этих полей не читает.
+ */
 export interface PlayerSurfaceMetadata {
   readonly templateId: string;
   readonly playtestId: string;
@@ -25,6 +33,10 @@ export interface PlayerSurfaceMetadata {
   readonly actionId: string;
   readonly actionTitle: string;
 }
+
+const ALWAYS_PRESENT_METADATA_FIELDS = Object.freeze([
+  "templateId", "playtestId", "questTitle", "locationTitle", "sceneText"
+] as const);
 
 export interface PlayerAssetReader {
   read(assetId: string, hash: string): Promise<{
@@ -45,10 +57,18 @@ export interface PlayerPresentationProxyOptions {
   readonly assetReader?: PlayerAssetReader;
 }
 
+export interface PlayerStoryOptions {
+  /** Canonical `MissionDraft`-shaped content pinned to the frozen playtest. */
+  readonly mission: JsonValue;
+}
+
 export interface PlayerDevServerOptions {
   readonly runtimeOrigin: string;
   readonly metadata: PlayerSurfaceMetadata;
   readonly presentation?: PlayerPresentationProxyOptions;
+  readonly story?: PlayerStoryOptions;
+  /** Серверное применение хода истории; без него маршрут хода не поднимается. */
+  readonly turn?: PlayerTurnRouteOptions;
 }
 
 export interface PlayerDevServer {
@@ -62,6 +82,8 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
   if (!isLoopbackHost(runtime.hostname)) throw new Error("Player proxy may target loopback Runtime only in B05-03");
   const metadata = validateMetadata(options.metadata);
   const presentation = options.presentation ? validatePresentationProxy(options.presentation) : null;
+  const story = options.story ? validateStory(options.story) : null;
+  const turn: PlayerTurnRoute | null = options.turn ? createPlayerTurnRoute(options.turn) : null;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -69,6 +91,17 @@ export function createPlayerDevServer(options: PlayerDevServerOptions): PlayerDe
       const method = String(request.method ?? "GET").toUpperCase();
       if (url.pathname === "/player-meta.json" && method === "GET") {
         sendJson(response, 200, metadata);
+        return;
+      }
+
+      if (url.pathname === "/player-story.json" && method === "GET") {
+        if (story === null) sendJson(response, 404, { error: { code: "STORY_NOT_FOUND" } });
+        else sendJson(response, 200, { mission: story.mission });
+        return;
+      }
+
+      if (turn !== null && turn.matches(url.pathname)) {
+        await turn.handle(request, response, url, method);
         return;
       }
 
@@ -146,8 +179,7 @@ async function proxyRuntime(
     try {
       const parsed = JSON.parse(new TextDecoder().decode(payload)) as unknown;
       if (isRecord(parsed)
-        && typeof parsed.sessionId === "string"
-        && ID_PATTERN.test(parsed.sessionId)
+        && isId(parsed.sessionId)
         && isRecord(parsed.playerView)
         && releaseMatches(parsed.playerView.release, presentation.release)) {
         const initial = presentation.initialForSession(parsed.sessionId);
@@ -256,13 +288,34 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
     return;
   }
 
+  // Канонические пути статики Player — только /player-assets/* (V00: разводка
+  // неймспейсов со стилями Studio). Корневые /styles.css, /app.js и др. больше
+  // не обслуживаются. Игровые scope-пути (/player-lib, /contracts-lib,
+  // /player-meta.json, /v1) без изменений.
+  if (pathname.startsWith("/player-assets/")) {
+    const name = pathname.slice("/player-assets/".length);
+    if (name === "styles.css" || name === "presentation.css"
+      || name === "app.js" || name === "presentation-renderer.js") {
+      await sendFile(response, join(playerRoot, name));
+      return;
+    }
+    // FIN-05: чистая модель экранов истории (скомпилирована вместе с src).
+    if (name === "story-screens.js") {
+      await sendFile(response, join(playerRoot, "dist/src/story-screens.js"));
+      return;
+    }
+    // FIN-05: общие стражи недоверенного ввода, импортируемые story-screens.js.
+    if (name === "story-guards.js") {
+      await sendFile(response, join(playerRoot, "dist/src/story-guards.js"));
+      return;
+    }
+    sendText(response, 404, "Not found");
+    return;
+  }
+
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "");
-  const allowed = normalized === "index.html"
-    || normalized === "styles.css"
-    || normalized === "presentation.css"
-    || normalized === "app.js"
-    || normalized === "presentation-renderer.js";
+  const allowed = normalized === "index.html";
   if (!allowed) {
     sendText(response, 404, "Not found");
     return;
@@ -309,8 +362,17 @@ function proxyHeaders(request: any): Record<string, string> {
 }
 
 function validateMetadata(value: PlayerSurfaceMetadata): PlayerSurfaceMetadata {
-  for (const [key, entry] of Object.entries(value)) {
+  for (const key of ALWAYS_PRESENT_METADATA_FIELDS) {
+    const entry = value[key];
     if (typeof entry !== "string" || entry.length < 1 || entry.length > 2_000) {
+      throw new TypeError(`invalid Player metadata field: ${key}`);
+    }
+  }
+  // Поля блочного шелла обязаны быть строками, но могут быть пустыми: сюжетная
+  // миссия не имеет ни ресурса, ни действия, и выдумывать их нельзя.
+  for (const [key, entry] of Object.entries(value)) {
+    if ((ALWAYS_PRESENT_METADATA_FIELDS as readonly string[]).includes(key)) continue;
+    if (typeof entry !== "string" || entry.length > 2_000) {
       throw new TypeError(`invalid Player metadata field: ${key}`);
     }
   }
@@ -326,7 +388,7 @@ function validatePresentationProxy(value: PlayerPresentationProxyOptions): Reado
   }
   const ids = new Set<string>();
   for (const asset of value.assets) {
-    if (!ID_PATTERN.test(asset.id) || !HASH_PATTERN.test(asset.hash) || ids.has(asset.id)) {
+    if (!isId(asset.id) || !HASH_PATTERN.test(asset.hash) || ids.has(asset.id)) {
       throw new TypeError("invalid or duplicate presentation asset");
     }
     ids.add(asset.id);
@@ -341,6 +403,20 @@ function validatePresentationProxy(value: PlayerPresentationProxyOptions): Reado
 
 function releaseMatches(value: unknown, expected: PlayerPresentationReleaseIdentity): boolean {
   return isRecord(value) && value.questId === expected.questId && value.releaseId === expected.releaseId;
+}
+
+/**
+ * Fail-closed валидация экранного контента: без `story.entrySceneId`, сцен,
+ * финалов и списка вступлений Player не отдаёт историю, а не изобретает экран.
+ * Предикат общий с веткой запуска сюжетной миссии (`@living-history/player`),
+ * чтобы «запустилось» и «отдаётся» не могли разойтись.
+ */
+function validateStory(value: PlayerStoryOptions): Readonly<PlayerStoryOptions> {
+  const mission = value.mission;
+  if (!isRecord(mission) || !isPlayableStoryMission(mission)) {
+    throw new TypeError("invalid Player story mission");
+  }
+  return Object.freeze({ mission: deepFreeze(mission as JsonValue) });
 }
 
 function safeModulePath(value: string): string | null {
@@ -361,10 +437,6 @@ function mimeType(path: string): string {
 
 function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "::1" || host === "localhost";
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
 }
 
 function errorCode(error: unknown): string {

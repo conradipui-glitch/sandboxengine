@@ -1,13 +1,31 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark light">
   <title>Living History Studio</title>
-  <link rel="stylesheet" href="/styles.css">
+  <!-- Типографика сайта: серифные заголовки (Prata) и sans тела (Manrope).
+       Без сети стек падает на системный серифный фолбэк из --font-display. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Prata&display=swap">
+  <link rel="stylesheet" href="/studio-assets/styles.css">
+  <!-- Листы панелей: каждый модуль подключает свой, пути отдаёт сервер Studio. -->
+  <link rel="stylesheet" href="/studio-assets/styles/theme-graphite.css">
+  <link rel="stylesheet" href="/studio-assets/styles/library.css">
+  <link rel="stylesheet" href="/studio-assets/styles/materials.css">
+  <link rel="stylesheet" href="/studio-assets/styles/ai-panel.css">
+  <link rel="stylesheet" href="/studio-assets/styles/collab.css">
+  <link rel="stylesheet" href="/studio-assets/styles/inspector.css">
+  <link rel="stylesheet" href="/studio-assets/styles/board.css">
+  <link rel="stylesheet" href="/studio-assets/styles/publish.css">
 </head>
 <body>
+  <div id="app"><div class="boot">Загружаем Living History Studio…</div></div>
+  <!-- Подключение ИИ-помощника — служебная панель поверх рабочей области
+       (внизу слева), а не полоса над шапкой мастерской: она не должна быть
+       первым элементом экрана и не должна отжимать шапку вниз. -->
   <details class="provider-settings">
     <summary>Подключение ИИ-помощника</summary>
     <form id="provider-form">
@@ -22,9 +40,8 @@
       <p>Выберите модель с поддержкой JSON-ответов. Остаток лимита: неизвестен; баланс смотрите у провайдера.</p>
     </form>
   </details>
-  <div id="app"><div class="boot">Загружаем Living History Studio…</div></div>
-  <script type="module" src="/dist/src/app.js"></script>
-  <script type="module" src="/dist/src/onboarding.js"></script>
-  <script type="module" src="/dist/src/provider-settings.js"></script>
+  <script type="module" src="/studio-assets/dist/src/app.js"></script>
+  <script type="module" src="/studio-assets/dist/src/onboarding.js"></script>
+  <script type="module" src="/studio-assets/dist/src/provider-settings.js"></script>
 </body>
 </html>

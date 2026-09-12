@@ -13,8 +13,15 @@ const CONTROL_REQUEST_HEADER_ALLOWLIST = Object.freeze([
   "content-type",
   "cookie",
   "origin",
+  "x-lhc-gate-identity",
   "x-csrf-token",
   "idempotency-key",
+  "x-asset-id",
+  "x-filename",
+  "x-claimed-mime",
+  "x-alt-text",
+  "x-source",
+  "x-rights",
   "x-lh-engine-version",
   "x-lh-registry-hash",
   "x-lh-docs-hash"
@@ -35,10 +42,26 @@ export type PlayerLaunchOutcome =
 
 export type PlayerLauncher = (playtestId: string) => Promise<PlayerLaunchOutcome>;
 
+/** Запрос автора «создай полную миссию из идеи» (FIN-09). */
+export interface LocalMissionDraftRequest {
+  readonly idea: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly genre?: string;
+  readonly language?: string;
+  readonly targetDurationMinutes?: number;
+  readonly branchCount?: number;
+  readonly endingCount?: number;
+}
+
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
+  /** Генерация полной миссии тем же провайдером, что настроен в «Настройки → ИИ». */
+  readonly missionDrafter?: (request: LocalMissionDraftRequest) => Promise<unknown>;
   readonly playerLauncher?: PlayerLauncher;
+  /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
+  readonly importBodyLimitBytes?: number;
 }
 
 export interface StudioDevServer {
@@ -58,6 +81,9 @@ function launchPlayerSerialized(launcher: PlayerLauncher, playtestId: string): P
 export function createStudioDevServer(options: StudioDevServerOptions): StudioDevServer {
   const control = new URL(options.controlOrigin);
   if (!isLoopbackHost(control.hostname)) throw new Error("Studio proxy may target loopback Control only in B05-02");
+  const importLimitBytes = Number.isSafeInteger(options.importBodyLimitBytes) && (options.importBodyLimitBytes as number) > 0
+    ? (options.importBodyLimitBytes as number)
+    : STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
 
   const server = createServer(async (request: any, response: any) => {
     try {
@@ -104,9 +130,28 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         }
         return;
       }
+      if (url.pathname === "/local/author-provider/probe" && options.authorProvider) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        await options.authorProvider.probe();
+        sendJson(response, 200, options.authorProvider.status());
+        return;
+      }
+      if (url.pathname === "/local/mission-draft" && options.missionDrafter) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
+        if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
+        try {
+          const body = await readLocalJson(request) as LocalMissionDraftRequest;
+          sendJson(response, 200, await options.missionDrafter(body));
+        } catch (error) {
+          if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
+          else sendJson(response, 400, { error: { code: "INVALID_MISSION_DRAFT_REQUEST" } });
+        }
+        return;
+      }
       if (url.pathname.startsWith("/control/")) {
         if (!isLocalProxyRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
-        await proxyControl(request, response, control, url);
+        await proxyControl(request, response, control, url, importLimitBytes);
         return;
       }
       await serveStatic(response, url.pathname);
@@ -147,13 +192,13 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   });
 }
 
-async function proxyControl(request: any, response: any, control: URL, url: URL): Promise<void> {
+async function proxyControl(request: any, response: any, control: URL, url: URL, importLimitBytes: number): Promise<void> {
   const target = new URL(url.pathname + url.search, control);
   const method = String(request.method ?? "GET").toUpperCase();
   if (!STUDIO_PROXY_METHODS.has(method)) { sendJson(response, 405, { error: { code: "METHOD_NOT_ALLOWED" } }); return; }
   let body: ArrayBuffer | undefined;
   try {
-    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+    body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request, proxyBodyLimit(url.pathname, importLimitBytes));
   } catch (error) {
     if (error instanceof StudioProxyRequestError) {
       sendJson(response, error.status, { error: { code: error.code } });
@@ -188,10 +233,29 @@ async function proxyControl(request: any, response: any, control: URL, url: URL)
 }
 
 async function serveStatic(response: any, pathname: string): Promise<void> {
-  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+  // Канонические пути статики Studio — только /studio-assets/* (V00: разводка
+  // неймспейсов со стилями Player). Корневые /styles.css и /dist/* больше
+  // не обслуживаются: публичный /styles.css раньше уходил в Player (F01).
+  let relative: string;
+  if (pathname === "/") {
+    relative = "index.html";
+  } else if (pathname === "/studio-assets/styles.css") {
+    relative = "styles.css";
+  } else if (/^\/studio-assets\/styles\/[a-z0-9-]+\.css$/.test(pathname)) {
+    // Стили панелей редактора лежат отдельными листами (styles/<имя>.css): их
+    // подключают сами модули по явному пути. Имя ограничено строчными буквами,
+    // цифрами и дефисом — вложенность и обход каталога невозможны.
+    relative = pathname.slice("/studio-assets/".length);
+  } else if (pathname.startsWith("/studio-assets/dist/")) {
+    relative = pathname.slice("/studio-assets/".length);
+  } else {
+    sendText(response, 404, "Not found");
+    return;
+  }
   const normalized = normalize(relative).replace(/^\.\.(?:[\\/]|$)/, "").replace(/\\/g, "/");
   const allowed = normalized === "index.html"
     || normalized === "styles.css"
+    || /^styles\/[a-z0-9-]+\.css$/.test(normalized)
     || normalized.startsWith("dist/");
   if (!allowed) {
     sendText(response, 404, "Not found");
@@ -215,18 +279,18 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
 }
 
-async function readRequestBody(request: any): Promise<ArrayBuffer> {
+async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_BYTES): Promise<ArrayBuffer> {
   const chunks: Uint8Array[] = [];
   let total = 0;
   const contentLength = Number(request.headers?.["content-length"] ?? "");
-  if (Number.isSafeInteger(contentLength) && contentLength > STUDIO_PROXY_BODY_LIMIT_BYTES) {
+  if (Number.isSafeInteger(contentLength) && contentLength > maxBytes) {
     throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
   }
   for await (const chunk of request) {
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk);
     chunks.push(bytes);
     total += bytes.byteLength;
-    if (total > STUDIO_PROXY_BODY_LIMIT_BYTES) throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
+    if (total > maxBytes) throw new StudioProxyRequestError("BODY_TOO_LARGE", 413);
   }
   const result = new Uint8Array(total);
   let offset = 0;
@@ -235,6 +299,28 @@ async function readRequestBody(request: any): Promise<ArrayBuffer> {
     offset += chunk.byteLength;
   }
   return result.buffer;
+}
+
+// Must stay at or above the base64-encoded .lhquest.zip import payload accepted
+// by Control: MAX_LHQUEST_ARCHIVE_BYTES (8 MiB) becomes ceil(bytes / 3) * 4
+// base64 chars plus the JSON envelope and idempotency metadata
+// (MAX_CONTROL_IMPORT_BODY_CHARS). Control re-validates the archive; the proxy
+// only forwards it, so the default below (64 MiB) is deliberately headroom, not
+// a second, weaker gate: anything Control refuses is still refused there.
+const STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES = 64 * 1024 * 1024;
+
+// Must stay equal to DEFAULT_ASSET_LIMITS.maxInputBytes + 1 from
+// @living-history/assets; Control re-validates, the proxy only forwards.
+const STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES = 20 * 1024 * 1024 + 1;
+
+function proxyBodyLimit(pathname: string, importLimitBytes: number): number {
+  if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/assets$/.test(pathname)) {
+    return STUDIO_PROXY_ASSET_BODY_LIMIT_BYTES;
+  }
+  if (/^\/control\/v1\/projects\/[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\/imports$/.test(pathname)) {
+    return Math.max(STUDIO_PROXY_BODY_LIMIT_BYTES, importLimitBytes);
+  }
+  return STUDIO_PROXY_BODY_LIMIT_BYTES;
 }
 
 class StudioProxyRequestError extends Error {

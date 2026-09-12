@@ -1,15 +1,50 @@
+// B12 startup/shutdown drill (root verify evidence): start the persistent
+// Runtime+Control entrypoint on ephemeral loopback ports, verify actual bound-port
+// reporting, Runtime /healthz, a safe Control read, SQLite creation and a clean
+// SIGTERM exit. Local process only: no network, no deploy.
+//
+// Process spawning and reaping are shared via scripts/lib/drill-harness.mjs.
+// Exit code: FAIL exits non-zero; the win32 platform SKIP path exits 0 explicitly
+// (a skip is not a product failure — POSIX CI is the authoritative gate).
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  FAIL,
+  PASS,
+  SKIP,
+  reportDrill,
+  runStep,
+  spawnCollected,
+  waitForExit,
+  waitForStdoutMatch
+} from "./lib/drill-harness.mjs";
+
+const DRILL_ID = "B12-startup-shutdown";
+
+function waitForAddresses(handle, readStdout, readStderr) {
+  return waitForStdoutMatch(handle, () => {
+    const text = readStdout();
+    const runtime = /Living History Runtime listening on http:\/\/([^:\s]+):(\d+)/.exec(text);
+    const control = /Living History Control listening on http:\/\/([^:\s]+):(\d+)/.exec(text);
+    if (!runtime || !control) return undefined;
+    return {
+      runtime: { host: runtime[1], port: Number(runtime[2]) },
+      control: { host: control[1], port: Number(control[2]) }
+    };
+  }, {
+    timeoutMs: 10_000,
+    timeoutMessage: () => `startup timeout\nstdout:\n${readStdout()}\nstderr:\n${readStderr()}`
+  });
+}
 
 const directory = await mkdtemp(join(tmpdir(), "sandboxengine-b12-startup-"));
 const databasePath = join(directory, "runtime.sqlite");
-let child = null;
+let handle = null;
 
-try {
-  child = spawn(process.execPath, ["apps/server/dist/main.js"], {
+async function drill() {
+  const spawned = spawnCollected(process.execPath, ["apps/server/dist/main.js"], {
     env: {
       ...process.env,
       RUNTIME_DB_PATH: databasePath,
@@ -17,18 +52,11 @@ try {
       PORT: "0",
       CONTROL_AUTH_MODE: "local",
       CONTROL_PORT: "0"
-    },
-    stdio: ["ignore", "pipe", "pipe"]
+    }
   });
+  handle = spawned.child;
 
-  let stdout = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-
-  const addresses = await waitForAddresses(child, () => stdout, () => stderr);
+  const addresses = await waitForAddresses(handle, spawned.stdout, spawned.stderr);
   assert.notEqual(addresses.runtime.port, 0, "Runtime must report the actual ephemeral port");
   assert.notEqual(addresses.control.port, 0, "Control must report the actual ephemeral port");
 
@@ -51,26 +79,31 @@ try {
     // (verified: SIGTERM/SIGINT/SIGBREAK all report code:null + signal). The graceful
     // shutdown contract is exercised by the POSIX CI runner (B12 evidence) — skip here
     // without counting it as a product failure.
-    child.kill("SIGKILL");
-    await waitForExit(child, 10_000);
-    console.log(JSON.stringify({
-      drill: "B12-startup-shutdown",
-      result: "skip",
-      reason: "win32 child.kill() cannot deliver a graceful signal; POSIX CI is the authoritative gate",
-      runtimeHealth: "/healthz:200",
-      controlProbe: "/control/v1/agent-kit:200",
-      sqliteCreated: true
-    }));
-    child = null;
-  } else {
-    child.kill("SIGTERM");
-    const exit = await waitForExit(child, 10_000);
-    assert.deepEqual(exit, { code: 0, signal: null }, `unexpected shutdown: ${JSON.stringify(exit)}\n${stderr}`);
-    child = null;
-    const afterShutdown = await stat(databasePath);
-    assert.ok(afterShutdown.size > 0);
-    console.log(JSON.stringify({
-      drill: "B12-startup-shutdown",
+    handle.kill("SIGKILL");
+    await waitForExit(handle, 10_000);
+    handle = null;
+    return {
+      skip: true,
+      evidence: {
+        drill: DRILL_ID,
+        result: "skip",
+        reason: "win32 child.kill() cannot deliver a graceful signal; POSIX CI is the authoritative gate",
+        runtimeHealth: "/healthz:200",
+        controlProbe: "/control/v1/agent-kit:200",
+        sqliteCreated: true
+      }
+    };
+  }
+
+  handle.kill("SIGTERM");
+  const exit = await waitForExit(handle, 10_000);
+  assert.deepEqual(exit, { code: 0, signal: null }, `unexpected shutdown: ${JSON.stringify(exit)}\n${spawned.stderr()}`);
+  handle = null;
+  const afterShutdown = await stat(databasePath);
+  assert.ok(afterShutdown.size > 0);
+  return {
+    evidence: {
+      drill: DRILL_ID,
       result: "pass",
       runtimeHealth: "/healthz:200",
       controlProbe: "/control/v1/agent-kit:200",
@@ -78,62 +111,32 @@ try {
       sqliteCreated: true,
       sigtermExitCode: 0,
       scope: "standalone Node 24 Runtime + Control + local SQLite entrypoint"
-    }));
-  }
+    }
+  };
+}
+
+let step;
+try {
+  step = await runStep(DRILL_ID, drill);
 } finally {
-  if (child) {
+  if (handle) {
     // Ensure the child is fully reaped (SQLite handles released) before removing the temp dir.
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    await waitForExit(child, 3_000).catch(() => {});
+    if (handle.exitCode === null && handle.signalCode === null) handle.kill("SIGKILL");
+    await waitForExit(handle, 3_000).catch(() => {});
   }
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
 }
 
-function waitForAddresses(processHandle, readStdout, readStderr) {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`startup timeout\nstdout:\n${readStdout()}\nstderr:\n${readStderr()}`)), 10_000);
-    const inspect = () => {
-      const text = readStdout();
-      const runtime = /Living History Runtime listening on http:\/\/([^:\s]+):(\d+)/.exec(text);
-      const control = /Living History Control listening on http:\/\/([^:\s]+):(\d+)/.exec(text);
-      if (!runtime || !control) return;
-      clearTimeout(timeout);
-      cleanup();
-      resolve({
-        runtime: { host: runtime[1], port: Number(runtime[2]) },
-        control: { host: control[1], port: Number(control[2]) }
-      });
-    };
-    const onExit = (code, signal) => {
-      clearTimeout(timeout);
-      cleanup();
-      reject(new Error(`server exited before readiness: code=${code} signal=${signal}\nstdout:\n${readStdout()}\nstderr:\n${readStderr()}`));
-    };
-    const cleanup = () => {
-      processHandle.stdout.off("data", inspect);
-      processHandle.off("exit", onExit);
-    };
-    processHandle.stdout.on("data", inspect);
-    processHandle.once("exit", onExit);
-    inspect();
+if (!step.ok) {
+  console.error(step.error);
+  reportDrill({
+    label: DRILL_ID,
+    result: FAIL,
+    printJson: true,
+    evidence: { drill: DRILL_ID, result: "fail", error: String(step.error?.message ?? step.error) }
   });
-}
-
-function waitForExit(processHandle, timeoutMs) {
-  if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
-    return Promise.resolve({ code: processHandle.exitCode, signal: processHandle.signalCode });
-  }
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("shutdown timeout"));
-    }, timeoutMs);
-    const onExit = (code, signal) => {
-      clearTimeout(timeout);
-      cleanup();
-      resolve({ code, signal });
-    };
-    const cleanup = () => processHandle.off("exit", onExit);
-    processHandle.once("exit", onExit);
-  });
+} else if (step.value.skip) {
+  reportDrill({ label: DRILL_ID, result: SKIP, printJson: true, evidence: step.value.evidence, exitCode: 0 });
+} else {
+  reportDrill({ label: DRILL_ID, result: PASS, printJson: true, evidence: step.value.evidence });
 }

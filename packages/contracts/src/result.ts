@@ -1,5 +1,6 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isActionStatus, type ActionStatus } from "./status.js";
+import { hasOnlyKeys, isBoundedId } from "./primitives.js";
 
 /**
  * Minimal effect envelope mirrored from schemas/v1/effect.schema.json.
@@ -49,18 +50,11 @@ export function isEffect(value: unknown): value is Effect {
   return value.schemaVersion === CONTRACT_SCHEMA_VERSION
     && typeof value.type === "string"
     && /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(value.type)
-    && typeof value.sourceId === "string"
-    && value.sourceId.length > 0
-    && value.sourceId.length <= 200;
+    && isBoundedId(value.sourceId, 200);
 }
 
 export const isEffectRef = isEffect;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

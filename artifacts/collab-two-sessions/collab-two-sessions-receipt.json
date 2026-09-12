@@ -1,0 +1,211 @@
+{
+  "projectId": "collab-two-sessions",
+  "questId": "quest-shared",
+  "artifacts": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions",
+  "steps": [
+    {
+      "name": "design-evidence: Studio-local mode answers 404 on /presence",
+      "ok": true,
+      "detail": {
+        "accessMode": "local-loopback-owner",
+        "status": 404,
+        "code": "NOT_FOUND"
+      }
+    },
+    {
+      "name": "boot: authenticated Control + real Studio bundle + streaming proxy",
+      "ok": true,
+      "detail": {
+        "controlOrigin": "http://127.0.0.1:8891",
+        "publicOrigin": "http://127.0.0.1:4191",
+        "accessMode": "authenticated",
+        "databasePath": "C:\\Temp\\lh-collab-two-sessions-KCBH33\\control.sqlite"
+      }
+    },
+    {
+      "name": "chrome: headless remote debugging reachable",
+      "ok": true,
+      "detail": {
+        "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+        "endpoint": "http://127.0.0.1:9339",
+        "browser": "Chrome/153.0.8010.36"
+      }
+    },
+    {
+      "name": "sessions: two authenticated accounts issued really distinct sessions",
+      "ok": true,
+      "detail": {
+        "alice": "alice",
+        "bob": "bob",
+        "distinct": true
+      }
+    },
+    {
+      "name": "context A: isolated browser context on Studio with its own session",
+      "ok": true,
+      "detail": {
+        "browserContextId": "D5B89CCC719E0B3ECD627DA1C8B58165",
+        "targetId": "29605A14E4C4AB5887BD79D533FD7F3C",
+        "url": "http://127.0.0.1:4191"
+      }
+    },
+    {
+      "name": "context B: isolated browser context on Studio with its own session",
+      "ok": true,
+      "detail": {
+        "browserContextId": "B7459E2ECD4016111C799E4354BD13B6",
+        "targetId": "B2DBB5C9F9FA44657C4E370C57E6F974",
+        "url": "http://127.0.0.1:4191"
+      }
+    },
+    {
+      "name": "context A: opened the shared quest board",
+      "ok": true,
+      "detail": {
+        "presenceBar": "На доске: 1\nAL alice.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+      }
+    },
+    {
+      "name": "context B: opened the shared quest board",
+      "ok": true,
+      "detail": {
+        "presenceBar": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+      }
+    },
+    {
+      "name": "sessions: each browser context resolves to its own user",
+      "ok": true,
+      "detail": {
+        "contextA": "alice",
+        "contextB": "bob"
+      }
+    },
+    {
+      "name": "presence: each browser context SEES the other participant",
+      "ok": true,
+      "detail": {
+        "contextA": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник.",
+        "contextB": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+      }
+    },
+    {
+      "name": "presence stream: alice's session receives the room snapshot",
+      "ok": true,
+      "detail": {
+        "frames": 1
+      }
+    },
+    {
+      "name": "presence stream: a frame about bob is pushed into alice's live stream",
+      "ok": true,
+      "detail": {
+        "bobStatus": 200
+      }
+    },
+    {
+      "name": "presence snapshot: the shared room lists both accounts",
+      "ok": true,
+      "detail": {
+        "userIds": [
+          "alice",
+          "alice",
+          "bob"
+        ]
+      }
+    },
+    {
+      "name": "collaboration: alice created a board note",
+      "ok": true,
+      "detail": {
+        "revision": 1
+      }
+    },
+    {
+      "name": "collaboration: alice opened a thread",
+      "ok": true,
+      "detail": {
+        "threadId": "thread-2"
+      }
+    },
+    {
+      "name": "collaboration: bob reads alice's note and thread",
+      "ok": true,
+      "detail": {
+        "revision": 2
+      }
+    },
+    {
+      "name": "collaboration: bob's reply is visible to alice",
+      "ok": true,
+      "detail": {
+        "threadId": "thread-2"
+      }
+    },
+    {
+      "name": "concurrency: stale thread write rejected with a conflict",
+      "ok": true,
+      "detail": {
+        "firstStatus": 200,
+        "staleStatus": 409,
+        "verdict": "HTTP 409 COLLABORATION_REVISION_CONFLICT"
+      }
+    },
+    {
+      "name": "concurrency: no silent overwrite — alice's write survived, bob's stale write is absent",
+      "ok": true,
+      "detail": {
+        "texts": [
+          "Обсудить финал",
+          "Беру финал на себя",
+          "Алиса: правка по ревизии 2"
+        ]
+      }
+    },
+    {
+      "name": "concurrency: stale draft write rejected, alice's title is the stored one",
+      "ok": true,
+      "detail": {
+        "staleStatus": 409,
+        "finalTitle": "Квест после Алисы"
+      }
+    },
+    {
+      "name": "screenshot: context A (alice.user)",
+      "ok": true,
+      "detail": {
+        "board": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-A-board-alice.user.png",
+        "story": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-A-story-alice.user.png",
+        "tourDismissed": true,
+        "presenceBar": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+      }
+    },
+    {
+      "name": "screenshot: context B (bob.user)",
+      "ok": true,
+      "detail": {
+        "board": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-B-board-bob.user.png",
+        "story": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-B-story-bob.user.png",
+        "tourDismissed": true,
+        "presenceBar": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+      }
+    }
+  ],
+  "screenshots": {
+    "A": {
+      "userId": "alice",
+      "username": "alice.user",
+      "board": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-A-board-alice.user.png",
+      "story": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-A-story-alice.user.png",
+      "presenceBar": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+    },
+    "B": {
+      "userId": "bob",
+      "username": "bob.user",
+      "board": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-B-board-bob.user.png",
+      "story": "C:\\Users\\kato55\\lhc-harness-collab\\artifacts\\collab-two-sessions\\studio-context-B-story-bob.user.png",
+      "presenceBar": "На доске: 2\nAL alice.user на доске\nBO bob.user на доске\nКурсоры видны с реальных сессий. Клик по аватару показывает, где работает участник."
+    }
+  },
+  "conflictExpectation": 409,
+  "exitCode": 0
+}

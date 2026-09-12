@@ -1,5 +1,6 @@
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
+import { isTimestamp, isTitle } from "./json-primitives.js";
 import type { ControlStore, CreateProjectInput, CreateProjectResult, ProjectRecord } from "./types.js";
 import {
   createPasswordVerifier,
@@ -111,6 +112,15 @@ export class MemoryControlSecurityStore implements ControlSecurityStore {
     const entry = this.#sessions.get(sessionId);
     if (!entry || entry.revoked) return false;
     entry.revoked = true;
+    return true;
+  }
+
+  async rotateSessionCsrf(sessionId: string, csrfHash: string): Promise<boolean> {
+    if (!isControlUserId(sessionId) || !isControlSecretHash(csrfHash)) return false;
+    const entry = this.#sessions.get(sessionId);
+    if (!entry || entry.revoked) return false;
+    const next = { session: entry.session, tokenHash: entry.tokenHash, csrfHash, revoked: false };
+    this.#sessions.set(sessionId, next);
     return true;
   }
 
@@ -276,6 +286,13 @@ export class SQLiteControlSecurityStore implements ControlSecurityStore {
     return Number(result.changes ?? 0) === 1;
   }
 
+  async rotateSessionCsrf(sessionId: string, csrfHash: string): Promise<boolean> {
+    this.#assertOpen();
+    if (!isControlUserId(sessionId) || !isControlSecretHash(csrfHash)) return false;
+    const result = this.#db.prepare("UPDATE control_auth_sessions SET csrf_hash = ? WHERE session_id = ? AND revoked = 0").run(csrfHash, sessionId);
+    return Number(result.changes ?? 0) === 1;
+  }
+
   async createProjectAsOwner(input: CreateProjectInput, userId: string): Promise<CreateProjectResult> {
     this.#assertOpen();
     if (!isId(input.projectId) || !isTitle(input.title) || !isControlUserId(userId)) return frozen({ kind: "invalid_request" });
@@ -403,14 +420,8 @@ function ownerCount(roles: ReadonlyMap<string, ControlProjectRole>): number {
   for (const role of roles.values()) if (role === "owner") count += 1;
   return count;
 }
-function isTimestamp(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-function isTitle(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 200;
 }
 function frozen<T extends object>(value: T): Readonly<T> {
   return Object.freeze(value);

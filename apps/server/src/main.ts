@@ -1,12 +1,14 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { mkdirSync } from "node:fs";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
+  SQLiteControlPublicationStore,
   SQLiteControlReleaseStore,
   SQLiteControlSecurityStore,
   SQLiteControlStore
 } from "@living-history/control";
+import { LocalAssetStore } from "@living-history/assets";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
 import {
@@ -43,6 +45,7 @@ const guestAccess = new SQLiteGuestSessionAccess({ path: databasePath });
 const playtestTrace = new SQLitePlaytestTraceReader({ path: databasePath });
 const controlStore = new SQLiteControlStore({ path: databasePath });
 const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
+const publicationStore = new SQLiteControlPublicationStore({ path: databasePath });
 const publishedBindings = new SQLitePublishedSessionBindingStore({ path: databasePath });
 const controlSecurity = controlAuthenticated ? new SQLiteControlSecurityStore({ path: databasePath }) : null;
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
@@ -84,8 +87,14 @@ const runtime = createRuntimeHttpServer({
 });
 const control = createControlHttpServer({
   store: controlStore,
+  boardStore: controlStore,
+  missionStore: controlStore,
+  assetLibrary: controlStore,
+  assetStorage: new LocalAssetStore(join(dirname(databasePath), "assets")),
   releases: {
     store: releaseStore,
+    publicationStore,
+    publicMissionSessionSecret: String(process.env.LH_PUBLIC_MISSION_SESSION_SECRET ?? ""),
     pluginRegistry,
     nowMs: clock.nowMs
   },
@@ -108,6 +117,7 @@ async function shutdown(): Promise<void> {
   await runtime.close();
   controlSecurity?.close();
   publishedBindings.close();
+  publicationStore.close();
   releaseStore.close();
   controlStore.close();
   guestAccess.close();

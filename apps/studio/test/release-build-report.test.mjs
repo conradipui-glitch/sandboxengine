@@ -142,7 +142,7 @@ test("B09-03 Versions release build/report binds exact server truth and never cl
       idempotencyKey: "publish-r7-fixed"
     }
   );
-  assert.match(ownerReport, /Owner publish report: release-r7/);
+  assert.match(ownerReport, /Публикация release-r7/);
   assert.match(ownerReport, /Expected current pointer: none/);
   assert.match(ownerReport, /Этот report ничего не меняет/);
   assert.match(ownerReport, /отдельного server receipt/);

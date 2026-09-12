@@ -4,6 +4,7 @@ import { CONTRACT_SCHEMA_VERSION } from "@living-history/contracts";
 import { canonicalStringify } from "@living-history/core";
 import type { ControlStore } from "./types.js";
 import { writeStoredZip } from "./zip-store.js";
+import { isRevision } from "./json-primitives.js";
 
 export const LHQUEST_FORMAT_VERSION = "1.0" as const;
 export const LHQUEST_MEDIA_TYPE = "application/vnd.living-history.quest+zip" as const;
@@ -135,9 +136,6 @@ function sha256(bytes: Uint8Array): string {
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 function frozen<const T extends object>(value: T): Readonly<T> { return Object.freeze(value); }
 function deepFreeze<T>(value: T): T {

@@ -1,5 +1,6 @@
 import type { Block } from "@living-history/contracts";
 import type { DraftSnapshot } from "./types.js";
+import { cloneJson } from "./json-primitives.js";
 
 export const MAX_AUTHOR_CONTEXT_SELECTED_BLOCKS = 32;
 export const MAX_AUTHOR_CONTEXT_INCLUDED_BLOCKS = 64;
@@ -150,10 +151,6 @@ function normalizeIds(value: readonly string[]): readonly string[] | null {
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {

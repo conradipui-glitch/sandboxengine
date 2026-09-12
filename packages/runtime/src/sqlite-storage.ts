@@ -1,13 +1,38 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0 where node:sqlite is built in; no @types/node dependency is installed yet.
 import { DatabaseSync } from "node:sqlite";
 import {
-  CONTRACT_SCHEMA_VERSION,
-  hasValidWorldStateReferences,
-  type JsonValue,
-  type WorldState
-} from "@living-history/contracts";
-import { MAX_LEASE_DURATION_MS, MAX_PUBLIC_RESPONSE_JSON_CHARS } from "./memory-storage.js";
+  cloneAndFreeze,
+  frozen,
+  canonicalRequestHash,
+  isLeaseEndSafe,
+  isNonEmptyPath,
+  isPositiveSafeInteger,
+  isPublicResponse,
+  isRuntimeId,
+  isSafeNonNegativeInteger,
+  isValidCandidateState,
+  isValidClaimInput,
+  isValidRenewInput,
+  isValidSeedSession,
+  isValidTurnRecord,
+  parseJsonColumn
+} from "./json-guards.js";
 import type { ServiceClock } from "./service-clock.js";
+import {
+  OPERATION_ROW_COLUMNS,
+  SESSION_INSERT_SQL,
+  SESSION_ROW_COLUMNS,
+  SESSION_ROW_COLUMNS_WITH_FENCING,
+  nullableString,
+  operationRecordFromColumns,
+  sessionInsertParameters,
+  sessionRecordFromColumns
+} from "./session-rows.js";
+import {
+  SQLiteStorageBusyError,
+  SQLiteStorageCorruptionError,
+  normalizeSQLiteError
+} from "./sqlite-errors.js";
 import type {
   ClaimOperationInput,
   ClaimOperationResult,
@@ -18,11 +43,14 @@ import type {
   OperationRecord,
   RenewLeaseInput,
   RenewLeaseResult,
-  RuntimePublicResponse,
   RuntimeStorage,
   SessionRecord,
   TurnRecordBoundary
 } from "./storage.js";
+
+// Error types moved to sqlite-errors.ts; re-exported here so the package public
+// API (index.ts imports them from this module) and existing importers are unchanged.
+export { SQLiteStorageBusyError, SQLiteStorageCorruptionError } from "./sqlite-errors.js";
 
 const SQLITE_SCHEMA_VERSION = 1;
 export const DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 50;
@@ -37,24 +65,6 @@ export interface SQLiteRuntimeStorageOptions {
   readonly sessions?: readonly SessionRecord[];
   readonly busyTimeoutMs?: number;
   readonly faultInjector?: SQLiteFaultInjector;
-}
-
-export class SQLiteStorageBusyError extends Error {
-  readonly code = "SQLITE_BUSY";
-
-  constructor(message = "SQLite storage remained busy past the bounded wait") {
-    super(message);
-    this.name = "SQLiteStorageBusyError";
-  }
-}
-
-export class SQLiteStorageCorruptionError extends Error {
-  readonly code = "SQLITE_CORRUPT_STATE";
-
-  constructor(message: string) {
-    super(message);
-    this.name = "SQLiteStorageCorruptionError";
-  }
 }
 
 /**
@@ -97,21 +107,20 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
     this.#assertOpen();
     if (!isRuntimeId(sessionId)) return null;
     const row = this.#db.prepare(`
-      SELECT session_id, quest_id, release_id, content_hash, state_json, revision, active_operation_id
+      SELECT ${SESSION_ROW_COLUMNS}
       FROM sessions WHERE session_id = ?
     `).get(sessionId);
-    return row ? sessionFromRow(row) : null;
+    return row ? sessionRecordFromColumns(row) : null;
   }
 
   async getOperation(sessionId: string, operationId: string): Promise<OperationRecord | null> {
     this.#assertOpen();
     if (!isRuntimeId(sessionId) || !isRuntimeId(operationId)) return null;
     const row = this.#db.prepare(`
-      SELECT operation_id, session_id, idempotency_key, request_hash, expected_revision,
-             status, lease_expires_at_ms, fencing_token, completion_kind, turn_id, public_response_json
+      SELECT ${OPERATION_ROW_COLUMNS}
       FROM operations WHERE session_id = ? AND operation_id = ?
     `).get(sessionId, operationId);
-    return row ? operationFromRow(row) : null;
+    return row ? operationRecordFromColumns(row) : null;
   }
 
   async claimOperation(input: ClaimOperationInput): Promise<ClaimOperationResult> {
@@ -124,16 +133,15 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
     return this.#transaction(() => {
       const sessionRow = this.#getSessionRow(input.sessionId);
       if (!sessionRow) return frozen({ kind: "session_not_found" });
-      const session = sessionFromRow(sessionRow);
+      const session = sessionRecordFromColumns(sessionRow);
       const requestHash = canonicalRequestHash(input.requestHash);
       const existingRow = this.#db.prepare(`
-        SELECT operation_id, session_id, idempotency_key, request_hash, expected_revision,
-               status, lease_expires_at_ms, fencing_token, completion_kind, turn_id, public_response_json
+        SELECT ${OPERATION_ROW_COLUMNS}
         FROM operations WHERE session_id = ? AND idempotency_key = ?
       `).get(input.sessionId, input.idempotencyKey);
 
       if (existingRow) {
-        const existing = operationFromRow(existingRow);
+        const existing = operationRecordFromColumns(existingRow);
         if (existing.requestHash !== requestHash || existing.expectedRevision !== input.expectedRevision) {
           return frozen({ kind: "idempotency_key_reused", operationId: existing.operationId });
         }
@@ -225,7 +233,7 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
       if (!sessionRow) return frozen({ kind: "session_not_found" });
       const operationRow = this.#getOperationRow(input.sessionId, input.operationId);
       if (!operationRow) return frozen({ kind: "operation_not_found" });
-      const operation = operationFromRow(operationRow);
+      const operation = operationRecordFromColumns(operationRow);
       if (operation.status !== "processing") return frozen({ kind: "operation_not_processing" });
       if (nullableString(sessionRow.active_operation_id) !== operation.operationId) return frozen({ kind: "operation_not_active" });
       if (operation.fencingToken !== input.fencingToken) return frozen({ kind: "stale_fencing_token" });
@@ -249,10 +257,10 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
     return this.#transaction(() => {
       const sessionRow = this.#getSessionRow(input.sessionId);
       if (!sessionRow) return frozen({ kind: "session_not_found" });
-      const session = sessionFromRow(sessionRow);
+      const session = sessionRecordFromColumns(sessionRow);
       const operationRow = this.#getOperationRow(input.sessionId, input.operationId);
       if (!operationRow) return frozen({ kind: "operation_not_found" });
-      const operation = operationFromRow(operationRow);
+      const operation = operationRecordFromColumns(operationRow);
       if (operation.status !== "processing") return frozen({ kind: "operation_not_processing" });
       if (session.revision !== input.expectedRevision || operation.expectedRevision !== input.expectedRevision) {
         return frozen({ kind: "revision_conflict", currentRevision: session.revision });
@@ -303,7 +311,7 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
         leaseExpiresAtMs: null,
         completionKind: "turn" as const,
         turnId: input.turnRecord.turnId,
-        publicResponse: cloneAndFreezePublicResponse(input.publicResponse)
+        publicResponse: cloneAndFreeze(input.publicResponse)
       });
       return frozen({ kind: "committed", session: nextSession, operation: nextOperation });
     });
@@ -320,10 +328,10 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
     return this.#transaction(() => {
       const sessionRow = this.#getSessionRow(input.sessionId);
       if (!sessionRow) return frozen({ kind: "session_not_found" });
-      const session = sessionFromRow(sessionRow);
+      const session = sessionRecordFromColumns(sessionRow);
       const operationRow = this.#getOperationRow(input.sessionId, input.operationId);
       if (!operationRow) return frozen({ kind: "operation_not_found" });
-      const operation = operationFromRow(operationRow);
+      const operation = operationRecordFromColumns(operationRow);
       if (operation.status !== "processing") return frozen({ kind: "operation_not_processing" });
       if (session.revision !== input.expectedRevision || operation.expectedRevision !== input.expectedRevision) {
         return frozen({ kind: "revision_conflict", currentRevision: session.revision });
@@ -349,7 +357,7 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
         leaseExpiresAtMs: null,
         completionKind: "without_turn" as const,
         turnId: null,
-        publicResponse: cloneAndFreezePublicResponse(input.publicResponse)
+        publicResponse: cloneAndFreeze(input.publicResponse)
       });
       return frozen({
         kind: "finished",
@@ -362,7 +370,7 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
   inspectTurnsForTest(sessionId: string): readonly TurnRecordBoundary[] {
     this.#assertOpen();
     const rows = this.#db.prepare("SELECT record_json FROM turns WHERE session_id = ? ORDER BY rowid").all(sessionId);
-    return Object.freeze(rows.map((row: any) => cloneAndFreeze(parseJson(row.record_json, "turn record")) as TurnRecordBoundary));
+    return Object.freeze(rows.map((row: any) => cloneAndFreeze(parseJsonColumn(row.record_json, "turn record")) as TurnRecordBoundary));
   }
 
   #initializeSchema(): void {
@@ -421,38 +429,26 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
     this.#transaction(() => {
       const existing = this.#getSessionRow(session.sessionId);
       if (existing) {
-        const current = sessionFromRow(existing);
+        const current = sessionRecordFromColumns(existing);
         if (JSON.stringify(current) !== JSON.stringify(session)) {
           throw new SQLiteStorageCorruptionError(`seed session ${session.sessionId} already exists with different state`);
         }
         return;
       }
-      this.#db.prepare(`
-        INSERT INTO sessions (
-          session_id, quest_id, release_id, content_hash, state_json, revision, active_operation_id, fencing_counter
-        ) VALUES (?, ?, ?, ?, ?, ?, NULL, 0)
-      `).run(
-        session.sessionId,
-        session.release.questId,
-        session.release.releaseId,
-        session.release.contentHash.toLowerCase(),
-        JSON.stringify(session.state),
-        session.revision
-      );
+      this.#db.prepare(SESSION_INSERT_SQL).run(...sessionInsertParameters(session));
     });
   }
 
   #getSessionRow(sessionId: string): any | undefined {
     return this.#db.prepare(`
-      SELECT session_id, quest_id, release_id, content_hash, state_json, revision, active_operation_id, fencing_counter
+      SELECT ${SESSION_ROW_COLUMNS_WITH_FENCING}
       FROM sessions WHERE session_id = ?
     `).get(sessionId);
   }
 
   #getOperationRow(sessionId: string, operationId: string): any | undefined {
     return this.#db.prepare(`
-      SELECT operation_id, session_id, idempotency_key, request_hash, expected_revision,
-             status, lease_expires_at_ms, fencing_token, completion_kind, turn_id, public_response_json
+      SELECT ${OPERATION_ROW_COLUMNS}
       FROM operations WHERE session_id = ? AND operation_id = ?
     `).get(sessionId, operationId);
   }
@@ -500,202 +496,12 @@ export class SQLiteRuntimeStorage implements RuntimeStorage {
   }
 }
 
-function sessionFromRow(row: any): SessionRecord {
-  const state = parseJson(row.state_json, "session state") as WorldState;
-  const session: SessionRecord = {
-    sessionId: String(row.session_id),
-    release: {
-      questId: String(row.quest_id),
-      releaseId: String(row.release_id),
-      contentHash: String(row.content_hash)
-    },
-    state,
-    revision: Number(row.revision),
-    activeOperationId: nullableString(row.active_operation_id)
-  };
-  if (!isValidSeedSession({ ...session, activeOperationId: null }) || state.revision !== session.revision) {
-    throw new SQLiteStorageCorruptionError(`invalid session row ${session.sessionId}`);
-  }
-  return cloneAndFreeze(session);
-}
-
-function operationFromRow(row: any): OperationRecord {
-  const status = String(row.status);
-  if (status !== "processing" && status !== "completed" && status !== "finished_without_turn") {
-    throw new SQLiteStorageCorruptionError("invalid operation status");
-  }
-  const completionKindRaw = nullableString(row.completion_kind);
-  if (completionKindRaw !== null && completionKindRaw !== "turn" && completionKindRaw !== "without_turn") {
-    throw new SQLiteStorageCorruptionError("invalid completion kind");
-  }
-  const response = row.public_response_json === null
-    ? null
-    : cloneAndFreezePublicResponse(parseJson(row.public_response_json, "public response") as RuntimePublicResponse);
-  return cloneAndFreeze({
-    operationId: String(row.operation_id),
-    sessionId: String(row.session_id),
-    idempotencyKey: String(row.idempotency_key),
-    requestHash: String(row.request_hash),
-    expectedRevision: Number(row.expected_revision),
-    status,
-    leaseExpiresAtMs: row.lease_expires_at_ms === null ? null : Number(row.lease_expires_at_ms),
-    fencingToken: Number(row.fencing_token),
-    completionKind: completionKindRaw,
-    turnId: nullableString(row.turn_id),
-    publicResponse: response
-  } as OperationRecord);
-}
-
-function isValidSeedSession(session: SessionRecord): boolean {
-  return isRuntimeId(session.sessionId)
-    && session.activeOperationId === null
-    && isRuntimeId(session.release.questId)
-    && isRuntimeId(session.release.releaseId)
-    && isSha256(session.release.contentHash)
-    && isSafeNonNegativeInteger(session.revision)
-    && session.state.revision === session.revision
-    && isValidWorldState(session.state);
-}
-
-function isValidClaimInput(input: ClaimOperationInput): boolean {
-  return isRuntimeId(input.sessionId)
-    && isIdempotencyKey(input.idempotencyKey)
-    && isSha256(input.requestHash)
-    && isSafeNonNegativeInteger(input.expectedRevision)
-    && isValidLeaseDuration(input.leaseDurationMs);
-}
-
-function isValidRenewInput(input: RenewLeaseInput): boolean {
-  return isRuntimeId(input.sessionId)
-    && isRuntimeId(input.operationId)
-    && isPositiveSafeInteger(input.fencingToken)
-    && isValidLeaseDuration(input.leaseDurationMs);
-}
-
-function isValidLeaseDuration(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= MAX_LEASE_DURATION_MS;
-}
-
-function isLeaseEndSafe(now: number, duration: number): boolean {
-  return Number.isSafeInteger(now + duration);
-}
-
-function isValidCandidateState(state: WorldState, expectedRevision: number): boolean {
-  if (expectedRevision === Number.MAX_SAFE_INTEGER) return false;
-  return isValidWorldState(state) && state.revision === expectedRevision + 1;
-}
-
-function isValidWorldState(state: WorldState): boolean {
-  if (state.schemaVersion !== CONTRACT_SCHEMA_VERSION
-    || !isSafeNonNegativeInteger(state.revision)
-    || !isSafeNonNegativeInteger(state.clock?.elapsedSeconds)
-    || !Array.isArray(state.locations)
-    || !Array.isArray(state.entities)
-    || !Array.isArray(state.resources)
-    || !Array.isArray(state.items)) return false;
-  if (!hasValidWorldStateReferences(state)) return false;
-  for (const resource of state.resources) {
-    if (!Number.isSafeInteger(resource.value) || !Number.isSafeInteger(resource.min) || !Number.isSafeInteger(resource.max)) return false;
-    if (resource.min > resource.max || resource.value < resource.min || resource.value > resource.max) return false;
-  }
-  return true;
-}
-
-function isValidTurnRecord(record: TurnRecordBoundary, operation: OperationRecord, expectedRevision: number): boolean {
-  return isRuntimeId(record.turnId)
-    && record.operationId === operation.operationId
-    && record.sessionId === operation.sessionId
-    && record.beforeRevision === expectedRevision
-    && record.afterRevision === expectedRevision + 1
-    && isSha256(record.stateHash);
-}
-
-function isPublicResponse(value: RuntimePublicResponse): boolean {
-  if (!isPlainObject(value) || !isJsonValue(value, 0)) return false;
-  try { return JSON.stringify(value).length <= MAX_PUBLIC_RESPONSE_JSON_CHARS; } catch { return false; }
-}
-
-function isJsonValue(value: unknown, depth: number): value is JsonValue {
-  if (depth > 20) return false;
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length <= 1_000 && value.every((entry) => isJsonValue(entry, depth + 1));
-  if (!isPlainObject(value)) return false;
-  const entries = Object.entries(value);
-  return entries.length <= 1_000 && entries.every(([key, entry]) => key.length <= 200 && isJsonValue(entry, depth + 1));
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function isRuntimeId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isIdempotencyKey(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
-}
-
-function canonicalRequestHash(value: string): string {
-  return value.toLowerCase();
-}
-
+/**
+ * DIVERGENT from `memory-storage.ts#nextFencingToken(session)`: the SQLite copy
+ * re-validates the counter it just read from a row (`isSafeNonNegativeInteger`),
+ * so the two are intentionally not unified.
+ */
 function nextFencingToken(current: number): number | null {
   if (!isSafeNonNegativeInteger(current) || current === Number.MAX_SAFE_INTEGER) return null;
   return current + 1;
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isPositiveSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
-}
-
-function nullableString(value: unknown): string | null {
-  return value === null || value === undefined ? null : String(value);
-}
-
-function isNonEmptyPath(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 4_096;
-}
-
-function parseJson(value: unknown, label: string): unknown {
-  if (typeof value !== "string") throw new SQLiteStorageCorruptionError(`${label} is not text`);
-  try { return JSON.parse(value); } catch { throw new SQLiteStorageCorruptionError(`${label} is invalid JSON`); }
-}
-
-function cloneAndFreezePublicResponse(response: RuntimePublicResponse): RuntimePublicResponse {
-  return cloneAndFreeze(response);
-}
-
-function cloneAndFreeze<T>(value: T): T {
-  return deepFreeze(JSON.parse(JSON.stringify(value)) as T);
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-function frozen<T extends object>(value: T): Readonly<T> {
-  return Object.freeze(value);
-}
-
-function normalizeSQLiteError(error: unknown): unknown {
-  if (error instanceof SQLiteStorageBusyError || error instanceof SQLiteStorageCorruptionError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  if (/database is locked|SQLITE_BUSY/i.test(message)) return new SQLiteStorageBusyError(message);
-  return error;
 }

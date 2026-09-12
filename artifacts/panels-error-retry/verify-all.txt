@@ -1,0 +1,19 @@
+✔ tsc -b --force
+✔ check:boundaries
+✔ apps/builder-runner — tests=26 pass=26 fail=0 skipped=0
+✔ apps/player — tests=40 pass=40 fail=0 skipped=0
+✔ apps/server — tests=278 pass=278 fail=0 skipped=0
+✖ apps/studio — tests=492 pass=490 fail=1 skipped=1
+    ✖ FIN-05B screen composition persists through canonical /mission without a new write path (406.357ms)
+    ✖ FIN-05B screen composition persists through canonical /mission without a new write path (406.357ms)
+✔ packages/ai — tests=87 pass=87 fail=0 skipped=0
+✔ packages/assets — tests=19 pass=19 fail=0 skipped=0
+✔ packages/contracts — tests=78 pass=78 fail=0 skipped=0
+✔ packages/control — tests=214 pass=213 fail=0 skipped=1
+✔ packages/core — tests=81 pass=81 fail=0 skipped=0
+✔ packages/player — tests=29 pass=29 fail=0 skipped=0
+✔ packages/plugins — tests=38 pass=38 fail=0 skipped=0
+✔ packages/runtime — tests=56 pass=56 fail=0 skipped=0
+✔ scripts — tests=47 pass=47 fail=0 skipped=0
+
+шагов: 15, провалено шагов: 1, тестовых падений: 1

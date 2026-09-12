@@ -1,0 +1,488 @@
+/*
+ * Инспектор сцены Studio: разметка разделов, материалы, статус.
+ *
+ * Правила этого файла сознательно не обрезают авторский текст: ни многоточий
+ * в конце строк, ни обрезки строк по счётчику, ни ограничения высоты со
+ * скрытием остатка. Длинный текст переносится (overflow-wrap: anywhere) и виден
+ * целиком — автор должен читать то, что правит.
+ *
+ * Статус никогда не передаётся только цветом: у сообщения есть слово
+ * («Сохранено» / «Ошибка сохранения») и рамка-подложка.
+ */
+
+.si-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3, 12px);
+  padding: var(--gap-3, 12px);
+  color: var(--text);
+  min-width: 0;
+}
+
+.si-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1, 4px);
+}
+
+.si-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.si-scene-caption {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.si-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--text-strong);
+}
+
+.si-subheading {
+  margin: var(--gap-3, 12px) 0 var(--gap-2, 8px);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+/* ───────────────────────────── вкладки-разделы ───────────────────────────── */
+
+.si-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2, 8px);
+  padding-bottom: var(--gap-2, 8px);
+  border-bottom: 1px solid var(--border-subtle, #2b2924);
+}
+
+.si-tab {
+  padding: 6px 12px;
+  border-radius: var(--radius-s, 8px);
+  border: 1px solid var(--border-strong, #45413a);
+  background: var(--surface-soft, #211f1b);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.si-tab:hover {
+  background: var(--surface-sunken, #26241f);
+}
+
+.si-tab-active {
+  border-color: var(--primary, #c94c36);
+  background: var(--selected, #2c231f);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.si-tab:focus-visible,
+.si-button:focus-visible,
+.si-field input:focus-visible,
+.si-field textarea:focus-visible,
+.si-field select:focus-visible,
+.si-technical-summary:focus-visible,
+.si-audio:focus-visible {
+  outline: 2px solid var(--focus, #e6a184);
+  outline-offset: 2px;
+}
+
+.si-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3, 12px);
+  min-width: 0;
+}
+
+.si-panel:focus-visible {
+  outline: 2px solid var(--focus, #e6a184);
+  outline-offset: 2px;
+}
+
+/* ──────────────────────────────── поля ──────────────────────────────────── */
+
+.si-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3, 12px);
+  min-width: 0;
+}
+
+.si-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1, 4px);
+  font-size: 0.85rem;
+  color: var(--muted-strong, #b0a898);
+  min-width: 0;
+}
+
+.si-field input,
+.si-field textarea,
+.si-field select {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-sunken, #26241f);
+  border: 1px solid var(--border, #33302a);
+  border-radius: var(--radius-s, 8px);
+  padding: 8px 10px;
+  width: 100%;
+  box-sizing: border-box;
+  /* Авторский текст не обрезается: переносим, но показываем целиком. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+.si-field textarea {
+  min-height: 4.5em;
+  line-height: 1.5;
+}
+
+.si-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2, 8px);
+  align-items: center;
+}
+
+.si-button {
+  padding: 8px 12px;
+  border-radius: var(--radius-s, 8px);
+  border: 1px solid var(--border-strong, #45413a);
+  background: var(--surface-soft, #211f1b);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.si-button:hover {
+  background: var(--surface-sunken, #26241f);
+}
+
+.si-button-primary {
+  border-color: var(--primary, #c94c36);
+  background: var(--primary, #c94c36);
+  color: var(--on-accent, #fff);
+  font-weight: 600;
+}
+
+.si-button-primary:hover {
+  background: var(--primary-hover, #e0644c);
+}
+
+.si-button-danger {
+  border-left: 3px solid var(--danger);
+  text-decoration: underline;
+
+  border-color: var(--border-danger, #5c3430);
+  background: var(--danger-bg, #2f1e1c);
+  color: var(--danger-strong, #e8a79c);
+}
+
+.si-button-quiet {
+  border-color: var(--border-subtle, #2b2924);
+  background: transparent;
+}
+
+.si-button[aria-pressed="true"] {
+  border-color: var(--primary, #c94c36);
+  background: var(--selected, #2c231f);
+  font-weight: 600;
+}
+
+/* ─────────────────────────── диалоги и выборы ───────────────────────────── */
+
+.si-dialogue,
+.si-choices,
+.si-rules,
+.si-materials,
+.si-layers,
+.si-id-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2, 8px);
+  min-width: 0;
+}
+
+.si-dialogue-row,
+.si-choice,
+.si-material {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2, 8px);
+  padding: var(--gap-2, 8px);
+  border: 1px solid var(--border-subtle, #2b2924);
+  border-radius: var(--radius-s, 8px);
+  background: var(--surface-soft, #211f1b);
+  min-width: 0;
+}
+
+.si-row-caption,
+.si-rule-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-soft, #8a8272);
+  overflow-wrap: anywhere;
+}
+
+.si-rule-label {
+  font-size: 1rem;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.si-rule-line,
+.si-choice-target,
+.si-current,
+.si-hint,
+.si-empty,
+.si-layer {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.si-rule-line strong,
+.si-choice-target strong,
+.si-current strong {
+  color: var(--text-strong);
+}
+
+.si-note {
+  color: var(--muted, #9c9484);
+  font-style: italic;
+}
+
+.si-hint {
+  color: var(--muted, #9c9484);
+  font-size: 0.85rem;
+}
+
+.si-empty {
+  padding: var(--gap-3, 12px);
+  border: 1px dashed var(--border-strong, #45413a);
+  border-radius: var(--radius-s, 8px);
+  color: var(--text-secondary);
+}
+
+/* ────────────────────────────── материалы ──────────────────────────────── */
+
+.si-material {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "thumb name"
+    "thumb state"
+    "thumb preview"
+    "thumb action";
+  gap: var(--gap-1, 4px) var(--gap-3, 12px);
+  align-items: start;
+}
+
+.si-material .si-thumb,
+.si-material .si-material-noimg {
+  grid-area: thumb;
+  width: 64px;
+  height: 64px;
+  object-fit: cover; /* миниатюра кадрируется рамкой, текст не обрезается */
+  border-radius: var(--radius-s, 8px);
+  border: 1px solid var(--border, #33302a);
+  background: var(--surface-sunken, #26241f);
+}
+
+.si-material-noimg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--muted, #9c9484);
+  text-align: center;
+  padding: 4px;
+}
+
+.si-material-name {
+  grid-area: name;
+  color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.si-material-state {
+  grid-area: state;
+  font-size: 0.8rem;
+  color: var(--muted, #9c9484);
+}
+
+.si-material-assigned {
+  border-color: var(--border-success, #2f4a38);
+}
+
+.si-material-assigned .si-material-state {
+  color: var(--success-strong, #8fd8a6);
+  font-weight: 600;
+}
+
+.si-material .si-audio,
+.si-material .si-audio-unavailable {
+  grid-area: preview;
+}
+
+.si-audio {
+  width: 100%;
+  max-width: 320px;
+}
+
+.si-material .si-button {
+  grid-area: action;
+  align-self: start;
+}
+
+.si-materials-other .si-material {
+  grid-template-areas:
+    "name"
+    "state";
+  grid-template-columns: 1fr;
+  opacity: 0.8;
+}
+
+.si-layer {
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle, #2b2924);
+  border-radius: var(--radius-s, 8px);
+  background: var(--surface-sunken, #26241f);
+}
+
+.si-layer-asset {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--text-code, #cfc8b9);
+}
+
+/* ───────────────────────── статус и «Дополнительно» ────────────────────── */
+
+.si-status {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-s, 8px);
+  border: 1px solid var(--border-subtle, #2b2924);
+  background: var(--surface-sunken, #26241f);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.si-status .si-status-word {
+  font-weight: 700;
+}
+
+.si-status-ok {
+  border-color: var(--border-success, #2f4a38);
+  background: var(--success-bg, #1e2f24);
+  color: var(--success-strong, #8fd8a6);
+}
+
+.si-status-error {
+  border-color: var(--border-danger, #5c3430);
+  background: var(--danger-bg, #2f1e1c);
+  color: var(--danger-strong, #e8a79c);
+  font-weight: 600;
+}
+
+.si-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2, 8px);
+  margin-top: auto;
+  min-width: 0;
+}
+
+.si-grow {
+  flex: 1 1 auto;
+}
+
+.si-technical {
+  border: 1px solid var(--border-subtle, #2b2924);
+  border-radius: var(--radius-s, 8px);
+  background: var(--surface-sunken, #26241f);
+  padding: 6px 10px;
+}
+
+.si-technical-summary {
+  cursor: pointer;
+  color: var(--muted-strong, #b0a898);
+  font-size: 0.85rem;
+}
+
+.si-tech-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--gap-3, 12px);
+  margin: var(--gap-2, 8px) 0 0;
+  font-size: 0.85rem;
+}
+
+.si-tech-list dt {
+  color: var(--muted, #9c9484);
+}
+
+.si-tech-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.si-id,
+.si-hash {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--text-code, #cfc8b9);
+  overflow-wrap: anywhere;
+}
+
+.si-id-list {
+  gap: 2px;
+}
+
+.si-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .si-inspector * {
+    transition: none;
+  }
+}
+
+/* Состояния несут нецветовой признак: глиф и подчёркивание, а не только цвет. */
+.publish-error-text::before,
+.si-status-error::before {
+  content: "✕  ";
+  font-weight: 700;
+}
+
+.publish-error,
+.si-status-error {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+}

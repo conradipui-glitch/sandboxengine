@@ -30,15 +30,18 @@
     "test:e2e": "npm run test:player",
     "eval:ai": "npm run typecheck && node scripts/eval-ai.mjs",
     "audit:release": "node scripts/b12-release-audit.mjs",
+    "migrate:fin01": "npm run typecheck && node scripts/fin01-legacy-migration.mjs",
     "drill:backup-restore": "npm run typecheck && node scripts/b12-backup-restore-drill.mjs",
     "drill:rollback": "npm run typecheck && node scripts/b12-rollback-drill.mjs",
     "drill:startup-shutdown": "npm run typecheck && node scripts/b12-startup-shutdown-drill.mjs",
     "dev:studio": "npm run typecheck && node apps/studio/dist/src/main.js",
     "dev:player": "npm run typecheck && node apps/player/dist/src/main.js",
+    "test:scripts": "node --test scripts/test/*.test.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "docs:generate": "node scripts/docs-generate.mjs",
     "docs:check": "node scripts/docs-check.mjs",
-    "verify": "npm run typecheck && npm run audit:release && npm run test:contracts && npm run test:assets && npm run test:plugins && npm run test:core && npm run test:ai && npm run test:storage && npm run drill:backup-restore && npm run drill:rollback && npm run drill:startup-shutdown && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run test:builder && npm run check:boundaries && npm run docs:check"
+    "verify": "npm run typecheck && npm run audit:release && npm run test:contracts && npm run test:assets && npm run test:plugins && npm run test:core && npm run test:ai && npm run test:storage && npm run drill:backup-restore && npm run drill:rollback && npm run drill:startup-shutdown && npm run test:control && npm run test:server && npm run test:studio && npm run test:player && npm run test:builder && npm run check:boundaries && npm run docs:check",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0",

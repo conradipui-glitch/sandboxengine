@@ -1,6 +1,7 @@
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
 import type { PinnedReleaseIdentity } from "@living-history/runtime";
+import { isId, isPlainObject, hasExactKeys } from "./input-guards.js";
 
 export interface PublishedSessionBinding {
   readonly sessionId: string;
@@ -137,7 +138,7 @@ export class SQLitePublishedSessionBindingStore implements PublishedSessionBindi
 }
 
 function isBinding(value: unknown): value is PublishedSessionBinding {
-  if (!isRecord(value) || !hasExactKeys(value, ["sessionId", "projectId", "release"]) || !isRecord(value.release)) return false;
+  if (!isPlainObject(value) || !hasExactKeys(value, ["sessionId", "projectId", "release"]) || !isPlainObject(value.release)) return false;
   return hasExactKeys(value.release, ["questId", "releaseId", "contentHash"])
     && isId(value.sessionId) && isId(value.projectId)
     && isId(value.release.questId) && isId(value.release.releaseId) && isHash(value.release.contentHash);
@@ -147,16 +148,7 @@ function sameBinding(left: PublishedSessionBinding, right: PublishedSessionBindi
     && left.release.questId === right.release.questId && left.release.releaseId === right.release.releaseId
     && left.release.contentHash.toLowerCase() === right.release.contentHash.toLowerCase();
 }
-function isId(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value); }
 function isHash(value: unknown): value is string { return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value); }
-function isRecord(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value); return prototype === Object.prototype || prototype === null;
-}
-function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort(); const wanted = [...expected].sort();
-  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
 function cloneFreeze<T>(value: T): T { return deepFreeze(JSON.parse(JSON.stringify(value)) as T); }
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

@@ -80,6 +80,11 @@ export function createPreviewDeploymentPolicy(input: PreviewDeploymentPolicyInpu
 
 /** Environment-provided deployment operations; implemented with `gh` per environment. */
 export interface PreviewDeploymentGateway {
+  /**
+   * The repository this gateway is authorized to act on ("owner/repo"). When present, a
+   * policy targeting any other repository is refused before dispatch.
+   */
+  readonly repositoryId?: string;
   dispatchWorkflow(target: PreviewDeploymentTarget, commitSha: string): Promise<string>;
   waitForRunConclusion(runId: string, commitSha: string, timeoutMs: number): Promise<"success" | "failure">;
   fetchText(url: string, timeoutMs: number): Promise<string>;
@@ -100,9 +105,51 @@ export class PreviewDeploymentAdapter {
     private readonly policy: PreviewDeploymentPolicy,
     private readonly gateway: PreviewDeploymentGateway
   ) {
-    if (policy.target.repositoryId !== policy.target.repositoryId) {
-      throw new PreviewDeploymentError("deployment_not_authorized", "target mismatch");
+    // A dead tautology lived here (`policy.target.repositoryId !== policy.target.repositoryId`
+    // is never true), so an adapter happily accepted any hand-assembled target. The target is
+    // re-validated through the one authorized factory and the gateway must be bound to the very
+    // repository the target names: a policy pointing at another repository can no longer be
+    // dispatched, because the run lookup would otherwise reconcile a different repository's run.
+    createPreviewDeploymentPolicy(policy);
+    if (gateway.repositoryId !== undefined && gateway.repositoryId !== policy.target.repositoryId) {
+      throw new PreviewDeploymentError("deployment_not_authorized", "target repository is not the authorized one");
     }
+  }
+
+  /**
+   * Reconciles a lost deployment response without dispatching: resolves an existing
+   * successful run for the required commit SHA through the gateway's run lookup and
+   * confirms it with smoke. Returns the same receipt a deploy would produce.
+   */
+  async reconcileLostResponse(
+    findRunForSha: (sha: string) => Promise<string | null>
+  ): Promise<PreviewDeploymentReceipt | null> {
+    const existingRunId = await findRunForSha(this.policy.requiredCommitSha);
+    if (!existingRunId) return null;
+    let conclusion: "success" | "failure";
+    try {
+      conclusion = await this.gateway.waitForRunConclusion(existingRunId, this.policy.requiredCommitSha, 300_000);
+    } catch {
+      return null;
+    }
+    if (conclusion !== "success") return null;
+    let body: string;
+    try {
+      body = await this.gateway.fetchText(this.policy.smokeUrl, 30_000);
+    } catch {
+      throw new PreviewDeploymentError("smoke_failed", "smoke probe failed during reconciliation", { runId: existingRunId });
+    }
+    if (body.length > MAX_SMOKE_BYTES) body = body.slice(0, MAX_SMOKE_BYTES);
+    if (!body.includes(this.policy.smokeExpectSubstring)) {
+      throw new PreviewDeploymentError("smoke_failed", "smoke response does not contain the expected substring", { runId: existingRunId });
+    }
+    return Object.freeze({
+      deploymentId: `preview-${existingRunId}`,
+      runId: existingRunId,
+      artifactCommitSha: this.policy.requiredCommitSha,
+      smokeUrl: this.policy.smokeUrl,
+      smokePassed: true as const
+    });
   }
 
   /** Dispatches the fixed preview workflow pinned to the required commit SHA. */
@@ -163,7 +210,11 @@ export function createGhPreviewDeploymentGateway(repositoryId: string): PreviewD
     }
   }
   return Object.freeze({
+    repositoryId,
     async dispatchWorkflow(target: PreviewDeploymentTarget, commitSha: string) {
+      if (target.repositoryId !== repositoryId) {
+        throw new Error("target repository is not the repository this gateway is authorized for");
+      }
       // workflow_dispatch has no input to pin a SHA, so the adapter dispatches the
       // fixed ref and later reconciles headSha === requiredCommitSha; a ref move
       // between push and dispatch fails reconciliation instead of deploying drift.

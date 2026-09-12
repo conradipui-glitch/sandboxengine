@@ -6,6 +6,7 @@ import { canonicalStringify } from "@living-history/core";
 import type { AuthoringProposal } from "./authoring-proposal.js";
 import type { AuthorAgentJobStore } from "./author-agent-jobs.js";
 import { DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS, type SQLiteControlStoreOptions } from "./sqlite-store.js";
+import { cloneJson, isHash, isNonNegativeSafeInteger, isTimestamp } from "./json-primitives.js";
 
 export interface AuthorAgentProposalUsage {
   readonly inputTokens: number | null;
@@ -209,18 +210,6 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
 
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
-function isTimestamp(value: unknown): value is number {
-  return isNonNegativeSafeInteger(value);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
 function isRecord(value: unknown): value is Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -229,10 +218,6 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((item, index) => item === expected[index]);
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {

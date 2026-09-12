@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Living History — творческая мастерская · вход</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: #f3e9d7;
+    font-family: Georgia, "Times New Roman", serif;
+    background: radial-gradient(1200px 700px at 20% -10%, #4a2c6b 0%, transparent 60%),
+                radial-gradient(1000px 600px at 110% 110%, #0e4a4a 0%, transparent 55%),
+                linear-gradient(160deg, #17101f 0%, #1e1428 50%, #121a1e 100%);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: min(560px, 100%); text-align: center;
+    background: rgba(255, 244, 224, 0.05);
+    border: 1px solid rgba(243, 233, 215, 0.22);
+    border-radius: 20px; padding: 36px 32px 30px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+  }
+  .art { width: 148px; height: 148px; margin: 0 auto 10px; display: block; }
+  h1 { font-size: 30px; margin: 10px 0 4px; letter-spacing: 0.5px; }
+  .sub { color: #d9c9a8; font-size: 15px; margin: 0 0 18px; font-style: italic; }
+  .steps { text-align: left; margin: 0 auto 20px; max-width: 430px; font-size: 15px; line-height: 1.65; color: #efe3cb; }
+  .steps b { color: #ffd98a; }
+  .btn {
+    display: inline-block; font-family: inherit; cursor: pointer; text-decoration: none;
+    font-size: 19px; padding: 14px 34px; border-radius: 999px; border: 0;
+    background: linear-gradient(135deg, #ffcf6e, #ff9d5c); color: #3a1f0d; font-weight: bold;
+    box-shadow: 0 8px 28px rgba(255, 170, 80, 0.35);
+  }
+  .btn:disabled { opacity: 0.55; cursor: wait; }
+  .btn.ghost { background: transparent; color: #ffd98a; border: 1px solid rgba(255, 217, 138, 0.5); box-shadow: none; font-size: 16px; padding: 10px 24px; }
+  .note { margin-top: 16px; font-size: 13.5px; color: #bfae8b; line-height: 1.6; }
+  .who { font-size: 17px; margin: 6px 0 16px; }
+  .who b { color: #ffd98a; }
+  .err { color: #ff9d9d; }
+  .hidden { display: none !important; }
+  .spinner { width: 34px; height: 34px; margin: 10px auto; border-radius: 50%;
+    border: 3px solid rgba(255,217,138,.25); border-top-color: #ffd98a; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 520px) {
+    .card { padding: 26px 20px; }
+    h1 { font-size: 24px; }
+    .btn { width: 100%; padding: 14px 10px; }
+    .art { width: 112px; height: 112px; }
+  }
+</style>
+</head>
+<body>
+<main class="card">
+  <svg class="art" viewBox="0 0 120 120" aria-hidden="true">
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="38%" r="65%">
+        <stop offset="0%" stop-color="#ffd98a" stop-opacity="0.9"/>
+        <stop offset="55%" stop-color="#b4762e" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <circle cx="60" cy="52" r="46" fill="url(#glow)"/>
+    <ellipse cx="60" cy="52" rx="30" ry="34" fill="none" stroke="#f3e9d7" stroke-width="3"/>
+    <ellipse cx="60" cy="52" rx="15" ry="22" fill="none" stroke="#f3e9d7" stroke-width="2" opacity="0.7"/>
+    <path d="M38 96 Q60 84 82 96" stroke="#ffd98a" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <circle cx="48" cy="40" r="3" fill="#ffd98a"/>
+    <circle cx="72" cy="40" r="3" fill="#ffd98a"/>
+    <circle cx="60" cy="68" r="3" fill="#ffd98a"/>
+  </svg>
+  <h1>Living History</h1>
+  <p class="sub">творческая мастерская · вход участников</p>
+
+  <div id="loading"><div class="spinner"></div><p class="note">Проверяем приглашение…</p></div>
+
+  <!-- Вход по персональной ссылке из бота -->
+  <section id="ticket-ok" class="hidden">
+    <p class="who">Персональное приглашение для <b id="who-name">участника</b>.</p>
+    <p class="note" style="margin-top:0">Остался один шаг — подтвердите вход этим браузером:</p>
+    <p><button class="btn" id="enter-btn">Войти в мастерскую</button></p>
+    <p class="note" id="ticket-note">Ссылка одноразовая и действует 90 секунд.</p>
+  </section>
+
+  <!-- Тикет недействителен -->
+  <section id="ticket-bad" class="hidden">
+    <p class="who err">Эта ссылка уже недействительна.</p>
+    <p class="note">Ссылка одноразовая и живёт 90 секунд. Откройте бота и нажмите <b>«🎭 Открыть Studio»</b> — придёт свежая.</p>
+    <p><a class="btn" href="https://t.me/living_history_gate_bot">Открыть бота</a></p>
+  </section>
+
+  <!-- Обычный заход без ссылки: отправляем в бота -->
+  <section id="no-ticket" class="hidden">
+    <div class="steps">
+      <div><b>1.</b> Откройте бота и нажмите <b>/start</b> — он узнает вас по Telegram.</div>
+      <div><b>2.</b> Нажмите <b>«🎭 Открыть Studio»</b> — бот пришлёт персональную ссылку.</div>
+      <div><b>3.</b> Откройте ссылку и нажмите <b>«Войти»</b> — мастерская откроется.</div>
+    </div>
+    <p><a class="btn" href="https://t.me/living_history_gate_bot">Открыть бота в Telegram</a></p>
+    <p class="note">Никаких кодов вводить не нужно. Если доступа ещё нет — бот отправит заявку владельцу.</p>
+  </section>
+
+  <p class="note hidden" id="fatal"></p>
+</main>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var ticket = params.get("ticket") || "";
+  var $ = function (id) { return document.getElementById(id); };
+  function show(id) {
+    ["loading", "ticket-ok", "ticket-bad", "no-ticket"].forEach(function (x) {
+      $(x).classList.toggle("hidden", x !== id);
+    });
+  }
+  function fatal(text) {
+    show("ticket-bad");
+    var f = $("fatal");
+    f.textContent = text;
+    f.classList.remove("hidden");
+  }
+  if (!ticket) { show("no-ticket"); return; }
+  fetch("/gate/ticket/info?ticket=" + encodeURIComponent(ticket))
+    .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+    .then(function (res) {
+      if (res.status !== 200 || !res.body.valid) { show("ticket-bad"); return; }
+      var name = res.body.username ? "@" + res.body.username : "участника";
+      $("who-name").textContent = name;
+      var secs = Math.round((res.body.expiresInMs || 0) / 1000);
+      if (secs > 0) $("ticket-note").textContent = "Ссылка одноразовая, осталось около " + secs + " сек.";
+      show("ticket-ok");
+      $("enter-btn").addEventListener("click", function () {
+        var btn = $("enter-btn");
+        btn.disabled = true;
+        btn.textContent = "Входим…";
+        fetch("/gate/ticket/consume", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ticket: ticket }),
+        }).then(function (r) {
+          if (r.ok) { location.href = "/"; return; }
+          show("ticket-bad");
+        }).catch(function () { fatal("Нет связи с сервером. Проверьте соединение и попробуйте ещё раз."); });
+      });
+    })
+    .catch(function () { fatal("Нет связи с сервером. Проверьте соединение и попробуйте ещё раз."); });
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 # Статус движка
 
-Последнее обновление: 2026-09-09.
+Последнее обновление: 2026-09-11.
+
+Маршрут завершения **FIN-00…FIN-14**: план — [PLAN-FIN-RU.md](PLAN-FIN-RU.md), состояние — [FIN-CHECKLIST.md](FIN-CHECKLIST.md).
 
 Ветка `feat/live-author-studio` завершила [L00–L09 — live authoring](tasks/LIVE-AUTHOR-COMPLETION.md). L00–L07 и L09 приняты; L08 — `UNVERIFIED: нет доступа к провайдеру`. Сквозной цикл через HTTP adapter, запуск frozen Player и браузерная приёмка пройдены; живой прогон реальной модели не заявляется. Следующий отдельный блок — B13 Builder.
 
@@ -20,6 +22,22 @@
 | Codex live subscription | **UNAVAILABLE / documented** | deterministic T37 boundary green; no authenticated live App Server run claimed |
 | Release | **`v0.1.0` published** | tag resolves exactly to `3e6fcfd9c42910561500aca8c73e639d9bcf2f9b`; main CI #729 success |
 | B13 Builder/deployment | **B13.0–B13.c1 GREEN (adapters) / приёмка живых dispatch отдельно** | policy + read-only clone + bounded patch executor + authorized change set w/ exact-SHA CI check + preview adapter + production policy/lost-response reconciliation/verified rollback; live dispatches pending operator |
+| M06 mission→site publication | **PARTIAL** | исправления F01–F07 доставлены на стенд (`7e61f98` engine / `db7cbe8` site) и hosted happy-path подтверждён; открыты live F01/F03, браузерный проход, C18 и повторный аудит. См. `docs/HANDOFF.md` |
+| FIN-01 release bundle / rollback (B02) | **LOCAL_PASS** | `apps/server/test/fin01-release-bundle.test.mjs` 5/5 (до фикса 0/5: `2 !== 1`); Control 106/106, Server 138/138; hosted-проверка ожидает доставки (FIN-04) |
+| FIN-02 согласованная публикация (B03) | **TODO** | следующий шаг |
+| FIN-03 ассеты открытых сессий (B04) | **TODO** | — |
+| FIN-04 доставка компонентов (B01) | **PARTIAL** | engine `7e61f98` + supervised `lhc-authored` на стенде; открыт вопрос собственного Control-писателя Studio `:8740` |
+
+## M06 publication route — текущее состояние (2026-09-11)
+
+Независимая проверка зафиксировала семь дефектов; шесть исправлены локально с регрессионными тестами:
+
+- **F01/F02/F03 (P1)** — `5475da0`: публичный контент и открытые сессии разрешаются по неизменяемому `contentRevision`, публикация новой ревизии перекрепляет каталог, каталог пишется до release pointer с компенсирующим откатом, unpublish блокирует только новые запуски.
+- **F04 (P1)** — site `f7f1233`: финал сохраняется в binding, GET реконсилируется с движком.
+- **F05/F06 (P1/P2)** — site `db7cbe8` + engine `8ebe741`: авторский frame (фон, слои, диалоги, варианты, финал) строится из pinned-ревизии и рендерится общим mission renderer; published namespace не уходит в legacy, сбой каталога даёт 5xx, legacy-карточки остаются в каталоге; ассеты pinned-ревизии отдаются публично.
+- **F07 (P1) — исправлено (`83f5cbf`) и подтверждено hosted**: authored-runtime стал supervised compose-сервисом `lhc-authored` с собственным healthcheck на `127.0.0.1:8746/healthz`; конфигурация вынесена из `/tmp` в `deploy/vps/.env` (0600). Проверено на стенде: пересоздание engine больше не теряет runtime, `docker restart lhc-authored` → healthy.
+
+M06 не считается завершённым: hosted happy-path подтверждён (создание игры, два хода, финал, reload, 404 на неизвестную ссылку, каталог аддитивен), но живые F01/F03 (правка черновика и unpublish при открытой сессии), браузерный проход глазами игрока, C18 и повторный независимый аудит — открыты.
 
 ## Published B12 result
 

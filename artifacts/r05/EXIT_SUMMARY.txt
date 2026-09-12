@@ -1,0 +1,73 @@
+# R05 consolidated exit summary — HEAD 1886041 — runtime node v24.19.0 / npm 11.17.0
+### npm ci :: npm ci
+EXIT 0
+--
+### typecheck :: npm run typecheck
+EXIT 0
+--
+### build :: npm run build
+EXIT 0
+--
+### audit-release :: npm run audit:release
+EXIT 0
+--
+### check-boundaries :: npm run check:boundaries
+EXIT 0
+--
+### docs-check :: npm run docs:check
+EXIT 0
+--
+### test-contracts :: npm run test:contracts
+EXIT 0
+--
+### test-assets :: npm run test:assets
+EXIT 0
+--
+### test-plugins :: npm run test:plugins
+EXIT 0
+--
+### test-core :: npm run test:core
+EXIT 0
+--
+### test-ai :: npm run test:ai
+EXIT 0
+--
+### test-storage :: npm run test:storage
+EXIT 0
+--
+### test-control :: npm run test:control
+EXIT 0
+--
+### test-server :: npm run test:server
+EXIT 0
+--
+### test-studio :: npm run test:studio
+EXIT 0
+--
+### test-player :: npm run test:player
+EXIT 0
+--
+### test-builder :: npm run test:builder
+EXIT 0
+--
+### drill-backup-restore :: npm run drill:backup-restore
+EXIT 0
+--
+### drill-rollback :: npm run drill:rollback
+EXIT 0
+--
+### drill-startup-shutdown :: npm run drill:startup-shutdown
+EXIT 0
+--
+### eval-ai :: npm run eval:ai
+EXIT 0
+--
+### npm-test-umbrella :: npm test
+EXIT 0
+--
+### verify-umbrella :: npm run verify
+EXIT 0
+--
+
+TOTALS: 20 named commands + npm ci + 2 umbrellas = all EXIT 0; failed = 0.
+Tests: npm test = 631 (pass 630 / fail 0 / skip 1); verify = 656 (pass 655 / fail 0 / skip 1).

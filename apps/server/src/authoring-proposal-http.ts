@@ -5,6 +5,7 @@ import {
   type ControlProjectRole,
   type ControlStore
 } from "@living-history/control";
+import { isRecord, hasExactKeys } from "./input-guards.js";
 
 export interface AuthoringProposalHttpContext {
   readonly method: string;
@@ -118,12 +119,4 @@ export async function routeAuthoringProposalHttp(context: AuthoringProposalHttpC
   return true;
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
-function hasExactKeys(value: Record<string, any>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}

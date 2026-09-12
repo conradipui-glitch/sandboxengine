@@ -122,3 +122,26 @@ test("B09-03 Studio clears stale mutation proof when server rejects the session"
   );
   assert.equal(api.hasMutationProof(), false);
 });
+
+test("R-30 Studio client: пустое тело с кодом 200 — ошибка протокола, а не TypeError у вызывающего", async () => {
+  const api = new ControlApiClient(async (input) => {
+    const path = String(input);
+    if (path.endsWith("/projects")) return new Response("", { status: 200 });
+    if (path.endsWith("/auth/session")) return new Response(null, { status: 204 });
+    throw new Error(`unexpected request: ${path}`);
+  });
+
+  // Раньше request() возвращал null и вызывающий падал `Cannot read properties of null (reading 'projects')`.
+  await assert.rejects(
+    () => api.listProjects(),
+    (error) => {
+      assert.ok(error instanceof ControlApiError, `ожидалась ControlApiError, а не ${error?.constructor?.name}: ${error?.message}`);
+      assert.equal(error.status, 200);
+      assert.equal(error.code, "INVALID_CONTROL_RESPONSE");
+      return true;
+    }
+  );
+
+  // Законный ответ без тела (204) по-прежнему не считается ошибкой.
+  assert.equal(await api.getSession(), null);
+});

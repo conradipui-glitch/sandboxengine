@@ -1,0 +1,3 @@
+Living History Studio: http://127.0.0.1:4217
+Control API (loopback only): http://127.0.0.1:8927
+Author Assistant: configure an API provider in Studio (key held in process memory; no tools)

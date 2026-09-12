@@ -1,5 +1,6 @@
 import type { JsonValue } from "@living-history/contracts";
 import type { CompiledQuestArtifact } from "@living-history/core";
+import { isJsonValue, isNonNegativeSafeInteger, isPlainObject } from "./json-primitives.js";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH = /^[0-9a-f]{64}$/;
@@ -169,15 +170,6 @@ function isBoundedJsonValue(value: unknown, maxChars: number): value is JsonValu
   return isJsonValue(value, 0) && jsonLengthWithin(value, maxChars);
 }
 
-function isJsonValue(value: unknown, depth: number): value is JsonValue {
-  if (depth > 16) return false;
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length <= 1_024 && value.every((child) => isJsonValue(child, depth + 1));
-  if (!isPlainObject(value) || Object.keys(value).length > 1_024) return false;
-  return Object.values(value).every((child) => isJsonValue(child, depth + 1));
-}
-
 function jsonLengthWithin(value: unknown, maxChars: number): boolean {
   try {
     const encoded = JSON.stringify(value);
@@ -187,20 +179,10 @@ function jsonLengthWithin(value: unknown, maxChars: number): boolean {
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const wanted = [...expected].sort();
   return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function deepFreeze<T>(value: T): T {

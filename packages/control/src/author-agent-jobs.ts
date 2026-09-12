@@ -1,6 +1,7 @@
 // @ts-ignore — Node 24.19.0 provides node:sqlite; repository intentionally has no @types/node dependency yet.
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_CONTROL_SQLITE_BUSY_TIMEOUT_MS, type SQLiteControlStoreOptions } from "./sqlite-store.js";
+import { cloneJson, isHash, isNonNegativeSafeInteger, isTimestamp } from "./json-primitives.js";
 
 export const AUTHOR_AGENT_JOB_STATES = Object.freeze([
   "queued",
@@ -181,6 +182,7 @@ export type CompleteAuthorAgentOperationResult =
   | { readonly kind: "job_not_found" }
   | { readonly kind: "operation_not_found" }
   | { readonly kind: "operation_id_reused" }
+  | { readonly kind: "result_kind_mismatch"; readonly operationKind: AuthorAgentOperationKind; readonly resultKind: AuthorAgentOperationResult["kind"] }
   | { readonly kind: "invalid_request" };
 
 export interface AuthorAgentJobStore {
@@ -300,6 +302,8 @@ export class MemoryAuthorAgentJobStore implements AuthorAgentJobStore {
     const existing = operations.get(input.operationId);
     if (!existing) return frozen({ kind: "operation_not_found" });
     if (existing.requestHash !== input.requestHash) return frozen({ kind: "operation_id_reused" });
+    const mismatch = resultKindMismatch(existing.operationKind, input.result);
+    if (mismatch) return mismatch;
     if (existing.status === "completed") return frozen({ kind: "replay", job: current, operation: existing });
     const operation = completedOperation(existing, input);
     const nextActive = current.activeTimeMsUsed + input.activeTimeMs;
@@ -560,6 +564,11 @@ export class SQLiteAuthorAgentJobStore implements AuthorAgentJobStore {
         this.#db.exec("ROLLBACK");
         return frozen({ kind: "operation_id_reused" });
       }
+      const mismatch = resultKindMismatch(existing.operationKind, input.result);
+      if (mismatch) {
+        this.#db.exec("ROLLBACK");
+        return mismatch;
+      }
       if (existing.status === "completed") {
         this.#db.exec("ROLLBACK");
         return frozen({ kind: "replay", job: current, operation: existing });
@@ -778,6 +787,29 @@ function validateCompleteInput(input: CompleteAuthorAgentOperationInput): boolea
     && isTimestamp(input.atMs);
 }
 
+const OPERATION_RESULT_KIND: Readonly<Record<AuthorAgentOperationKind, AuthorAgentOperationResult["kind"]>> = Object.freeze({
+  "draft.read": "read_blocks",
+  "proposal.preview": "proposal_previewed",
+  "proposal.apply": "proposal_applied",
+  "docs.reference.read": "reference_read"
+});
+
+function resultKindMatchesOperation(operationKind: AuthorAgentOperationKind, resultKind: string): boolean {
+  return OPERATION_RESULT_KIND[operationKind] === resultKind;
+}
+
+function resultKindMismatch(
+  operationKind: AuthorAgentOperationKind,
+  result: AuthorAgentOperationResult
+): Readonly<{
+  kind: "result_kind_mismatch";
+  operationKind: AuthorAgentOperationKind;
+  resultKind: AuthorAgentOperationResult["kind"];
+}> | null {
+  if (resultKindMatchesOperation(operationKind, result.kind)) return null;
+  return Object.freeze({ kind: "result_kind_mismatch" as const, operationKind, resultKind: result.kind });
+}
+
 function pendingOperation(jobId: string, input: ReserveAuthorAgentOperationInput): AuthorAgentOperationRecord {
   return deepFreeze({
     jobId,
@@ -886,6 +918,9 @@ function operationFromRow(row: any): AuthorAgentOperationRecord {
     result = parsed;
   }
   if (status === "completed" && result === null) throw new Error("completed author agent operation missing result");
+  if (result !== null && !resultKindMatchesOperation(operationKind, result.kind)) {
+    throw new Error("corrupt author agent operation result kind");
+  }
   return deepFreeze({
     jobId: String(row.job_id),
     operationId: String(row.operation_id),
@@ -1019,18 +1054,6 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
 }
 
-function isHash(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-}
-
-function isTimestamp(value: unknown): value is number {
-  return isNonNegativeSafeInteger(value);
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 0;
-}
-
 function isRecord(value: unknown): value is Record<string, any> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -1043,10 +1066,6 @@ function hasExactKeys(value: Record<string, any>, keys: readonly string[]): bool
 
 function safeRollback(db: any): void {
   try { db.exec("ROLLBACK"); } catch {}
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function frozen<const T extends object>(value: T): Readonly<T> {

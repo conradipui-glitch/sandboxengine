@@ -1,0 +1,264 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-09-11T11:24:03.531Z",
+  "generatedAtMs": 1789125843531,
+  "status": "complete",
+  "blockers": [],
+  "source": {
+    "commit": "626e1a46be2068464dfe21ae4ba0a76b6cc0e198",
+    "commitShort": "626e1a4",
+    "commitReason": null,
+    "node": "v24.19.0",
+    "npmObserved": "10.9.8",
+    "npmObservedReason": null,
+    "npmDeclared": "npm@11.9.0",
+    "composeServices": [
+      "authored",
+      "engine",
+      "gate",
+      "studio"
+    ],
+    "composeReason": null
+  },
+  "addresses": {
+    "host": "85.137.95.104.sslip.io",
+    "hostReason": null,
+    "scheme": "https",
+    "components": [
+      {
+        "name": "studio",
+        "purpose": "мастерская автора: редактор, доска, ИИ-композер, запуск playtest",
+        "url": "https://85.137.95.104.sslip.io:8741/",
+        "publicPort": 8741,
+        "loopbackPort": 8740,
+        "composeService": "studio",
+        "envVars": [
+          "LH_DATABASE_PATH",
+          "LH_PLAYER_FIXED_PORT",
+          "LH_STUDIO_PORT"
+        ],
+        "envVarsWithheld": 0,
+        "envVarsReason": null,
+        "reason": null
+      },
+      {
+        "name": "control",
+        "purpose": "Control API движка (сессии, черновики, релизы, публикация)",
+        "url": null,
+        "publicPort": null,
+        "loopbackPort": 8788,
+        "composeService": "engine",
+        "envVars": [
+          "CONTROL_AUTH_MODE",
+          "CONTROL_PORT",
+          "HOST",
+          "PORT",
+          "RUNTIME_DB_PATH"
+        ],
+        "envVarsWithheld": 2,
+        "envVarsReason": null,
+        "reason": "Control API слушает loopback: наружу выходит только Engine через nginx, прямого публичного адреса нет"
+      },
+      {
+        "name": "engine",
+        "purpose": "runtime API для приложения и Player",
+        "url": "https://85.137.95.104.sslip.io:8743/",
+        "publicPort": 8743,
+        "loopbackPort": 8742,
+        "composeService": "engine",
+        "envVars": [
+          "CONTROL_AUTH_MODE",
+          "CONTROL_PORT",
+          "HOST",
+          "PORT",
+          "RUNTIME_DB_PATH"
+        ],
+        "envVarsWithheld": 2,
+        "envVarsReason": null,
+        "reason": null
+      },
+      {
+        "name": "authored",
+        "purpose": "legacy authored-scenario runtime (:8746)",
+        "url": null,
+        "publicPort": null,
+        "loopbackPort": 8746,
+        "composeService": "authored",
+        "envVars": [
+          "AUTHORED_DB_PATH",
+          "AUTHORED_PORT"
+        ],
+        "envVarsWithheld": 0,
+        "envVarsReason": null,
+        "reason": "legacy authored runtime слушает loopback :8746 и вызывается движком: публичного адреса у него нет"
+      },
+      {
+        "name": "site",
+        "purpose": "публичный каталог миссий и просмотр playtest",
+        "url": "https://85.137.95.104.sslip.io:8745/",
+        "publicPort": 8745,
+        "loopbackPort": 8745,
+        "composeService": "studio",
+        "envVars": [
+          "LH_DATABASE_PATH",
+          "LH_PLAYER_FIXED_PORT",
+          "LH_STUDIO_PORT"
+        ],
+        "envVarsWithheld": 0,
+        "envVarsReason": null,
+        "reason": null,
+        "note": "страница конкретного playtest открывается по пути /p/<playerId>/"
+      },
+      {
+        "name": "gate",
+        "purpose": "Telegram-вход и проверка сессии для Studio и Player",
+        "url": "https://85.137.95.104.sslip.io:8741/gate/",
+        "publicPort": 8741,
+        "loopbackPort": 8744,
+        "composeService": "gate",
+        "envVars": [
+          "LHC_GATE_PORT",
+          "LHC_STORE",
+          "LHC_STUDIO_ORIGIN"
+        ],
+        "envVarsWithheld": 3,
+        "envVarsReason": null,
+        "reason": null
+      }
+    ],
+    "accessNote": "Вход участника — только через gate-бота: персональная одноразовая ссылка в личном сообщении Telegram ставит сессию для Studio. Постоянных ссылок со встроенным доступом в пакет передачи не входит по устройству входа."
+  },
+  "demoMissions": [
+    {
+      "index": 1,
+      "id": "mission:florence:florence-workshop",
+      "projectId": "florence",
+      "questId": "florence-workshop",
+      "slug": null,
+      "source": "CLI --mission (порядок 1)",
+      "slugReason": "slug не передан в CLI: назначается автором в Studio, генератор его не придумывает",
+      "verifiedFromCatalog": null,
+      "verifiedReason": "генератор офлайн: каталог стенда не опрашивается, поэтому наличие и публикация миссии этим манифестом не подтверждены"
+    },
+    {
+      "index": 2,
+      "id": "mission:transfer-desk:transfer-desk",
+      "projectId": "transfer-desk",
+      "questId": "transfer-desk",
+      "slug": null,
+      "source": "CLI --mission (порядок 2)",
+      "slugReason": "slug не передан в CLI: назначается автором в Studio, генератор его не придумывает",
+      "verifiedFromCatalog": null,
+      "verifiedReason": "генератор офлайн: каталог стенда не опрашивается, поэтому наличие и публикация миссии этим манифестом не подтверждены"
+    }
+  ],
+  "roles": {
+    "available": true,
+    "source": "docs/CAPABILITY-MATRIX.md",
+    "rank": "owner > editor > tester (строгий ранг; роль выдаётся участнику проекта и проверяется на сервере)",
+    "roles": [
+      {
+        "name": "owner",
+        "summary": "владелец проекта: редактирует, публикует, управляет участниками.",
+        "sourceLine": 14,
+        "routes": [
+          "GET, POST, PATCH, DELETE /control/v1/projects/{p}/members",
+          "POST .../publish",
+          "POST .../rollback",
+          "POST .../publication/unpublish"
+        ]
+      },
+      {
+        "name": "editor",
+        "summary": "автор: редактирует, собирает релизы, запускает проверки. Не публикует и не управляет составом.",
+        "sourceLine": 15,
+        "routes": [
+          "POST /control/v1/projects/{p}/quests",
+          "POST /control/v1/projects/{p}/quests/{q}/draft/changes",
+          "POST /control/v1/projects/{p}/quests/{q}/board/changes",
+          "POST /control/v1/projects/{p}/quests/{q}/collaboration/**",
+          "POST /control/v1/projects/{p}/quests/{q}/mission",
+          "POST .../mission/sessions",
+          "POST .../mission/sessions/{id}/turns",
+          "GET /control/v1/projects/{p}/assets?all=1",
+          "POST /control/v1/projects/{p}/assets",
+          "POST .../releases"
+        ]
+      },
+      {
+        "name": "tester",
+        "summary": "участник без права записи: читает всё, что видит проект, и запускает неразрушающие проверки (валидация, playtest). Роль **является** read-only/viewer ролью продукта: отдельной роли `viewer` в модели нет, и это осознанно — отдельная роль потребовала бы миграции схемы безопасности без новой возможности.",
+        "sourceLine": 16,
+        "routes": [
+          "GET /control/v1/projects/{p}/quests",
+          "GET /control/v1/projects/{p}/quests/{q}/draft",
+          "GET /control/v1/projects/{p}/quests/{q}/board",
+          "GET /control/v1/projects/{p}/quests/{q}/collaboration/**",
+          "GET /control/v1/projects/{p}/quests/{q}/mission",
+          "GET .../mission/sessions/{id}",
+          "GET /control/v1/projects/{p}/assets",
+          "GET /control/v1/projects/{p}/assets/{a}",
+          "POST .../validations",
+          "GET .../releases",
+          "POST .../playtests",
+          "GET .../playtests/{id} , .../playtests/{id}/trace"
+        ]
+      }
+    ]
+  },
+  "instructions": [
+    {
+      "path": "docs/TEAM-HANDOFF.md",
+      "purpose": "человеческая инструкция: вход, миссия, прохождение, комментарий, частые проблемы",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "docs/CAPABILITY-MATRIX.md",
+      "purpose": "роли участников и что каждая может (источник roles в этом манифесте)",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "deploy/vps/README.md",
+      "purpose": "размещение на стенде, вход через gate-бота, приёмка, известные ограничения",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "deploy/vps/ACCEPTANCE-checklist.md",
+      "purpose": "живая приёмка входа и сессий с реальными людьми",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "docs/RUNBOOK.md",
+      "purpose": "эксплуатация: запуск, диагностика, восстановление",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "docs/TEAM.md",
+      "purpose": "зоны ответственности команды и порядок подключения",
+      "exists": true,
+      "reason": null
+    },
+    {
+      "path": "docs/STATUS.md",
+      "purpose": "текущее состояние проекта и открытые задачи",
+      "exists": true,
+      "reason": null
+    }
+  ],
+  "standOnlySettings": {
+    "enumerated": false,
+    "where": "deploy/vps/.env на стенде; имена переменных — в deploy/vps/docker-compose.yml и deploy/vps/README.md",
+    "note": "Значения настроек доступа в пакет передачи не входят и здесь намеренно не перечисляются: имена, обозначающие материал доступа или персональный идентификатор, заменены счётчиком envVarsWithheld."
+  },
+  "knownLimitations": [
+    "Один активный Player на стенде: одновременный второй playtest даст честный listen_failed (LH_PLAYER_FIXED_PORT).",
+    "Права привязаны к подтверждённому числовому Telegram ID; приглашение по @username — предзаявка до первого /start.",
+    "Размещение на стенде не является изоляцией исполнения (B13.a2 остаётся PARTIAL).",
+    "Этот манифест не подтверждает содержание каталога: идентификаторы миссий заданы оператором в CLI."
+  ]
+}

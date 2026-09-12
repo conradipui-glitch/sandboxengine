@@ -1,0 +1,16 @@
+services:
+  engine-runtime:
+    build: .
+    container_name: sandboxengine-runtime
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8742:8742"
+    environment:
+      - LH_DATABASE_PATH=/data/living-history.sqlite
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8742/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

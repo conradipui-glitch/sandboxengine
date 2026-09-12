@@ -1,0 +1,70 @@
+panels-error-retry.harness: repo=C:\Users\kato55\lhc-panels-retry
+  workdir=C:\Temp\lhc-panels-retry
+  studio=4199->4200 control=8909 cdp=9359
+[PASS] setup.db-copy — C:\Users\kato55\Documents\Codex\2026-09-09-live-author-studio\data\living-history.sqlite -> C:\Temp\lhc-panels-retry\harness.sqlite
+[PASS] setup.seed — реальный контент (материалы + документ миссии)
+[PASS] setup.studio — studio={"ok":true,"status":200} control={"ok":true,"status":200}
+[PASS] setup.proxy — прокси-счётчик на 127.0.0.1:4199 -> Studio 4200
+[PASS] setup.stub-provider — заглушка провайдера на 127.0.0.1:8821
+[PASS] setup.chrome — свой headless Chrome на 9359
+[PASS] setup.cdp — сессия B7B8A8942293934EF937EDEFCA1F12E0
+[PASS] ui.editor-open — редактор квеста открыт
+  метрика M1.cards = 12
+  метрика M1.assets-list-requests = 1
+[PASS] M1.materials-baseline — карточек=12, ошибок нет, запросов списка=1
+  метрика M2.assets-list-requests-in-4s = 164
+  метрика M2.failed-requests-in-4s = 164
+  метрика M2.browser-requests-to-assets-in-4s = 164
+[FAIL] M2.failure-no-flood — за 4 с недоступного списка ушло 164 запрос(ов) (на дефектном коде — сотни)
+[FAIL] M2.error-inside-panel — текст="null", кнопка="null"
+[FAIL] M2.text-says-what-to-do — панель предлагает повторить: "null"
+  снимок: C:\Temp\lhc-panels-retry\shots\M2-materials-error.png
+[FAIL] M3.error-block-exists — Error: блока ошибки материалов нет
+    at <anonymous>:3:23
+    at <anonymous>:6:5
+  метрика M3.assets-list-requests-in-next-4s = 172
+[FAIL] M3.host-not-replaced — метка на блоке ошибки НЕ пережила 4 с: хост панели не подменяется
+[FAIL] M4.retry-button-visible — Error: кнопки «Повторить» в панели материалов нет
+    at <anonymous>:3:20
+    at <anonymous>:6:5
+  метрика M4.requests-per-retry-press = 66
+[FAIL] M4.retry-one-attempt — нажатие «Повторить» -> 66 запрос(ов), из них отклонено прокси: 66
+[FAIL] M4.error-still-visible-while-down — после повтора ошибка снова видна: "null"
+  снимок: C:\Temp\lhc-panels-retry\shots\M4-materials-retry-pressed.png
+[FAIL] M5.retry-button-visible — Error: кнопки «Повторить» в панели материалов нет
+    at <anonymous>:3:20
+    at <anonymous>:6:5
+  метрика M5.cards-after-recovery = 12
+[PASS] M5.retry-after-recovery-loads-list — после восстановления списка карточек=12, ошибка убрана
+  снимок: C:\Temp\lhc-panels-retry\shots\M5-materials-recovered.png
+  метрика A1.provider-status-requests-in-4s = 1
+[PASS] A1.no-loop-when-provider-down — 1 запрос(ов) готовности за 4 с (на дефектном коде — сотни)
+[PASS] A1.explains-in-panel — состояние=объяснение, текст="Подключение к ИИ не настроено.", повтор="Проверить снова"
+  снимок: C:\Temp\lhc-panels-retry\shots\A1-ai-provider-down.png
+[PASS] A1.retry-control-visible — действие повтора доступно
+  метрика A1.requests-per-retry-press = 1
+[PASS] A1.retry-one-attempt — повтор -> 1 запрос(ов) готовности
+[PASS] A2.ai-form-available — состояние: {"mounted":true,"error":false,"unavailable":false,"form":true,"text":null,"retryLabel":null,"recheckLabel":null}
+  метрика A2.mission-draft-requests-per-attempt = 1
+[PASS] A2.generate-error-inside-panel — ошибка внутри панели, текст="ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.", кнопка="Повторить"
+  снимок: C:\Temp\lhc-panels-retry\shots\A2-ai-generate-error.png
+  метрика A2.mission-draft-requests-per-retry = 1
+[PASS] A2.retry-one-attempt — «Повторить» -> 1 запрос(ов) миссии
+[PASS] A2.idea-kept — описание идеи осталось в поле после сбоя и повтора
+  снимок: C:\Temp\lhc-panels-retry\shots\A2-ai-retry-pressed.png
+[PASS] P1.check-button-visible — кнопка проверки доступна
+  метрика P1.draft-read-requests-in-4s = 1
+[PASS] P1.no-loop-when-draft-down — 1 запрос(ов) черновика за 4 с после запуска проверки (на дефектном коде — сотни)
+[FAIL] P1.error-inside-panel — действие="publish" («Опубликовать»), текст="null"
+  снимок: C:\Temp\lhc-panels-retry\shots\P1-publish-error.png
+[FAIL] P1.text-says-what-to-do — панель объясняет причину: "null"
+[FAIL] P1.retry-button-visible — Error: кнопки «Повторить» в панели публикации нет
+    at <anonymous>:3:20
+    at <anonymous>:6:5
+  метрика P1.draft-read-requests-per-retry = 0
+[FAIL] P1.retry-one-attempt — «Повторить» -> 0 запрос(ов) черновика
+  снимок: C:\Temp\lhc-panels-retry\shots\P1-publish-retry-pressed.png
+[PASS] browser.no-console-errors — ошибок в консоли нет
+
+panels-error-retry.harness: 21/34 проверок пройдено
+отчёт: C:\Temp\lhc-panels-retry\report.json

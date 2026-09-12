@@ -53,6 +53,121 @@ export class BrowserPresentationRenderer {
     stage.replaceChildren(fragment);
   }
 
+  /**
+   * FIN-05: экраны истории (intro/scene/dialogue/choice/ending) рисуются тем же
+   * renderer'ом, что и SceneFrame — общий DOM-слой, без второго параллельного
+   * рендерера. Контент экрана приходит из чистой модели story-screens.
+   */
+  async renderStoryScreens(view, resolveAssetUrl) {
+    const stage = this.#stage();
+    const wrapper = document.createElement("section");
+    wrapper.className = "presentation-story";
+    wrapper.dataset.role = "story-screen";
+    wrapper.dataset.phase = view.phase;
+
+    const background = document.createElement("div");
+    background.className = "presentation-story-background";
+    background.dataset.role = "story-background";
+    const backgroundRef = view.background;
+    if (backgroundRef && typeof resolveAssetUrl === "function") {
+      try {
+        const url = await resolveAssetUrl(backgroundRef);
+        if (typeof url === "string" && url.length > 0) {
+          const image = document.createElement("img");
+          image.alt = "Фон сцены";
+          image.src = url;
+          background.append(image);
+        } else {
+          background.textContent = "Фон недоступен";
+        }
+      } catch {
+        background.textContent = "Фон недоступен";
+      }
+    }
+    wrapper.append(background);
+
+    const title = document.createElement("h2");
+    title.className = "presentation-story-title";
+    title.textContent = view.title;
+    wrapper.append(title);
+
+    if (view.body) {
+      const body = document.createElement("p");
+      body.className = "presentation-story-body";
+      body.textContent = view.body;
+      wrapper.append(body);
+    }
+
+    if (view.dialogue.length > 0) {
+      const history = document.createElement("div");
+      history.className = "presentation-dialogue-history";
+      history.dataset.role = "story-dialogue";
+      for (const line of view.dialogue) history.append(this.#dialogueElement(line, line.id === view.activeDialogueLineId));
+      wrapper.append(history);
+    }
+
+    if (view.choices.length > 0) {
+      const choices = document.createElement("div");
+      choices.className = "presentation-story-choices";
+      choices.dataset.role = "story-choices";
+      for (const choice of view.choices) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "story-choice";
+        button.dataset.action = "story-choice";
+        button.dataset.choiceId = choice.choiceId;
+        button.dataset.target = choice.target;
+        button.textContent = choice.label;
+        choices.append(button);
+      }
+      wrapper.append(choices);
+    }
+
+    if (view.primary) {
+      // Кнопка навигации вступлений/диалога: type=button, never a form submit.
+      const primary = document.createElement("button");
+      primary.type = "button";
+      primary.className = "story-primary";
+      primary.dataset.action = "story-primary";
+      primary.dataset.intent = view.primary.action;
+      primary.textContent = view.primary.label;
+      wrapper.append(primary);
+    }
+
+    if (view.intro) {
+      const progress = document.createElement("p");
+      progress.className = "presentation-story-progress";
+      progress.dataset.role = "story-progress";
+      progress.textContent = `${view.intro.page} / ${view.intro.pageCount}`;
+      wrapper.append(progress);
+    }
+
+    if (view.actions) {
+      const actions = document.createElement("div");
+      actions.className = "presentation-story-actions";
+      actions.dataset.role = "story-actions";
+      if (view.actions.repeat) {
+        const repeat = document.createElement("button");
+        repeat.type = "button";
+        repeat.className = "story-repeat";
+        repeat.dataset.action = "story-repeat";
+        repeat.textContent = "Повторить";
+        actions.append(repeat);
+      }
+      if (view.actions.exit) {
+        const exit = document.createElement("button");
+        exit.type = "button";
+        exit.className = "story-exit";
+        exit.dataset.action = "story-exit";
+        exit.textContent = "Выход";
+        actions.append(exit);
+      }
+      wrapper.append(actions);
+    }
+
+    stage.replaceChildren(wrapper);
+  }
+
   async setBackground(asset, _transition, durationMs, signal) {
     throwIfAborted(signal);
     const background = this.#required('[data-role="background"]');

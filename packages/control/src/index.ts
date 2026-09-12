@@ -1,4 +1,13 @@
 export {
+  collectMissionAssetReferences,
+  evaluateMissionAssetReferences,
+  missionAssetRefErrorCode,
+  type MissionAssetInventory,
+  type MissionAssetReference,
+  type MissionAssetRefKind,
+  type MissionAssetRefViolation
+} from "./mission-asset-refs.js";
+export {
   LHQUEST_FORMAT_VERSION,
   LHQUEST_MEDIA_TYPE,
   buildDraftQuestExport,
@@ -24,6 +33,12 @@ export {
   MAX_LHQUEST_UNPACKED_BYTES,
   MAX_LHQUEST_FILE_COUNT
 } from "./zip-read.js";
+export {
+  COLLABORATION_REPLY_POLICY,
+  flattenReplyTarget,
+  resolveThreadRoot,
+  withReplyPolicy
+} from "./collaboration-replies.js";
 export {
   importQuestPackageFromStore,
   type ImportCapableControlStore,
@@ -161,9 +176,13 @@ export {
 } from "./draft-history-service.js";
 export {
   CONTROL_ROLES,
+  CONTROL_TELEGRAM_USER_PREFIX,
+  controlUserIdForTelegram,
+  controlUsernameForTelegram,
   createControlOpaqueSecret,
   createControlSessionId,
   createPasswordVerifier,
+  ensureControlIdentityUser,
   hashControlOpaqueSecret,
   isControlProjectRole,
   isControlSecretHash,
@@ -177,6 +196,7 @@ export {
   type ControlSessionRecord,
   type ControlUserRecord,
   type CreateControlSessionResult,
+  type EnsureControlIdentityUserResult,
   type ProvisionControlUserResult,
   type RemoveProjectMemberResult,
   type SetProjectMemberResult
@@ -212,9 +232,106 @@ export {
   SQLiteControlReleaseStore,
   type SQLiteControlReleaseStoreOptions
 } from "./release-stores.js";
+export {
+  backupLegacyDatabase,
+  inspectLegacyReleaseMigration,
+  readSchemaObjects,
+  type LegacyDatabaseBackup,
+  type LegacyMigrationReport,
+  type LegacyMigrationSchemaChange,
+  type LegacyPublicationFinding,
+  type LegacyPublicationVerdict,
+  type LegacyReleaseFinding,
+  type LegacyReleaseProvenance,
+  type LegacyReleaseVerdict
+} from "./release-migration.js";
+export {
+  MemoryControlPublicationStore,
+  SQLiteControlPublicationStore,
+  type ControlPublicationRecord,
+  type ControlPublicationReleasePin,
+  type ControlPublicationStore,
+  type PinReleaseResult,
+  type PublishPublicationResult,
+  type UnpublishPublicationResult,
+  type SQLiteControlPublicationStoreOptions
+} from "./publication-store.js";
+export {
+  DEFAULT_PROVIDER_PROBE_TIMEOUT_MS,
+  MAX_PROVIDER_PROBE_TIMEOUT_MS,
+  MemoryControlProviderConnectionStore,
+  PROVIDER_CONNECTION_DB_FILE_MODE,
+  PROVIDER_CONNECTION_SCHEMA_VERSION,
+  SQLiteControlProviderConnectionStore,
+  maskProviderApiKey,
+  probeProviderConnection,
+  type ControlProviderConnectionStore,
+  type ProbeProviderConnectionOptions,
+  type ProviderConnectionProbeTarget,
+  type ProviderProbeFetch,
+  type RevealProviderApiKeyInput,
+  type SaveProviderConnectionInput,
+  type SaveProviderConnectionResult,
+  type SQLiteControlProviderConnectionStoreOptions,
+  type UpdateProviderConnectionStateInput,
+  type UpdateProviderConnectionStateResult
+} from "./provider-connections-store.js";
+export {
+  BOARD_PRESENCE_SCHEMA_VERSION,
+  DEFAULT_BOARD_PRESENCE_TTL_MS,
+  MAX_BOARD_NODES,
+  MAX_BOARD_PRESENCE_PARTICIPANTS,
+  MAX_BOARD_PRESENCE_TTL_MS,
+  MIN_BOARD_PRESENCE_TTL_MS,
+  MemoryControlBoardPresenceStore,
+  SQLiteControlBoardPresenceStore,
+  type BoardCursor,
+  type BoardPresenceHeartbeatInput,
+  type BoardPresenceHeartbeatResult,
+  type BoardPresenceJoinInput,
+  type BoardPresenceJoinResult,
+  type BoardPresenceLeaveInput,
+  type BoardPresenceLeaveResult,
+  type BoardPresenceListInput,
+  type BoardPresenceParticipant,
+  type BoardPresencePruneInput,
+  type BoardPresencePruneResult,
+  type BoardSaveInput,
+  type BoardSaveResult,
+  type BoardSnapshot,
+  type ControlBoardPresenceStore,
+  type MemoryControlBoardPresenceStoreOptions,
+  type SQLiteControlBoardPresenceStoreOptions
+} from "./board-presence-store.js";
+
 export type {
+  ApplyBoardChangesInput,
+  ApplyBoardChangesResult,
   ApplyDraftChangesResult,
+  ApplyMissionTurnInput,
+  ApplyMissionTurnResult,
+  BoardDocument,
+  BoardDocumentStore,
+  BoardPosition,
+  CollaborationAnchor,
+  CollaborationAnchorKind,
+  CollaborationMessage,
+  CollaborationNote,
+  CollaborationStore,
+  CollaborationThread,
+  CollaborationView,
+  CollaborationWriteResult,
+  AddMessageInput,
+  ChangeMessageInput,
+  ChangeNoteInput,
+  CreateNoteInput,
+  CreateThreadInput,
+  DeleteMessageInput,
+  DeleteNoteInput,
+  SetThreadStatusInput,
   ControlStore,
+  CreateMissionSessionInput,
+  CreateMissionSessionResult,
   CreatePlaytestResult,
   CreateProjectInput,
   CreateProjectResult,
@@ -225,8 +342,19 @@ export type {
   DraftSnapshot,
   DraftValidationRecord,
   FrozenPlaytestRecord,
+  MissionDocumentRevision,
+  MissionDocumentStore,
+  MissionHistoryEntry,
+  MissionSessionState,
+  MissionSessionStore,
+  ProjectAssetEntry,
+  ProjectAssetLibrary,
   ProjectRecord,
+  RegisterProjectAssetInput,
+  RegisterProjectAssetResult,
   RestoreDraftInput,
   RestoreDraftResult,
+  SaveMissionInput,
+  SaveMissionResult,
   ValidateDraftResult
 } from "./types.js";

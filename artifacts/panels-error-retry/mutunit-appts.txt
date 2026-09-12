@@ -1,0 +1,35 @@
+✔ панели/ошибка: недоступный список материалов — ошибка видна внутри панели, запрос ровно один (134.4687ms)
+✔ панели/ошибка: «Повторить» в материалах делает ровно одну попытку и не допускает лавины (214.0438ms)
+✔ панели/ошибка: недоступная проверка ИИ видна внутри панели, ровно одна попытка и один повтор (130.7082ms)
+✔ панели/ошибка: сбой генерации ИИ не показывает технический текст, повторяет ровно одну попытку (140.662ms)
+✔ панели/ошибка: сбой проверки публикации даёт «Повторить» и ровно одну попытку (129.9087ms)
+✔ панели/ошибка: сбой ПРОВЕРКИ публикации назван именно проверкой и обходится без кода стенда (5.1374ms)
+✖ панели/ошибка: onError панелей материалов, ИИ и публикации не вызывает полную перерисовку оболочки (0.7615ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 848.8033
+
+✖ failing tests:
+
+test at apps\studio\test\panels-error-retry.test.mjs:362:1
+✖ панели/ошибка: onError панелей материалов, ИИ и публикации не вызывает полную перерисовку оболочки (0.7615ms)
+  AssertionError [ERR_ASSERTION]: mountMaterialsIfNeeded: onError не должен перерисовывать оболочку — это заменяет хост панели и запускает цикл запросов
+      at TestContext.<anonymous> (file:///C:/Users/kato55/lhc-panels-retry/apps/studio/test/panels-error-retry.test.mjs:370:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'onError: (error) => {\r\n        this.state.message = describeControlError(error);\r\n        this.render();\r\n        // Панель показывает ошибку сама: полная перерисовка заменила бы её хост,\r\n        // панель смонтировалась бы заново и грузила список по кругу вместо «Повторить».\r',
+    expected: /this\.render\(\)/,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }

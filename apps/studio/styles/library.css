@@ -1,0 +1,387 @@
+/*
+ * Экран «Мои проекты» (библиотека проектов Studio).
+ *
+ * Правила:
+ *  - текст карточек не обрезается многоточием/line-clamp — переносится;
+ *  - смысл не передаётся только цветом: у приёмочного проекта есть текстовая
+ *    метка, у фильтра — текст с aria-pressed, у ошибки — заголовок и текст;
+ *  - клавиатурный фокус всегда виден (:focus-visible).
+ *
+ * Адрес в namespace Studio: /studio-assets/styles/library.css
+ */
+
+.lhp-library {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  color: var(--text, #e8e6e1);
+  background: var(--bg, #14161a);
+  padding: 1.25rem;
+}
+
+.lhp-status {
+  margin: 0;
+  padding: 0.75rem 0;
+  color: var(--text-dim, #a9a49b);
+}
+
+.lhp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #2c3038);
+  border-radius: 10px;
+  background: var(--surface, #1b1e24);
+}
+
+.lhp-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.lhp-search-label {
+  font-size: 0.8rem;
+  color: var(--text-dim, #a9a49b);
+}
+
+.lhp-search-input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border, #2c3038);
+  border-radius: 8px;
+  background: var(--bg, #14161a);
+  color: inherit;
+  font: inherit;
+}
+
+.lhp-filter,
+.lhp-action {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border, #2c3038);
+  border-radius: 8px;
+  background: var(--surface-strong, #23272f);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.lhp-action-primary {
+  border-color: var(--accent, #7bb6a1);
+  background: var(--accent, #7bb6a1);
+  color: var(--accent-contrast, #10130f);
+  font-weight: 600;
+}
+
+.lhp-filter[aria-pressed="true"] {
+  border-color: var(--accent, #7bb6a1);
+  text-decoration: underline;
+}
+
+.lhp-count {
+  margin: 0;
+  color: var(--text-dim, #a9a49b);
+}
+
+.lhp-results {
+  display: block;
+  width: 100%;
+}
+
+.lhp-group + .lhp-group {
+  margin-top: 1.5rem;
+}
+
+.lhp-group-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  color: var(--text-dim, #a9a49b);
+}
+
+.lhp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lhp-grid-item {
+  display: flex;
+}
+
+.lhp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.9rem;
+  border: 1px solid var(--border, #2c3038);
+  border-radius: 12px;
+  background: var(--surface, #1b1e24);
+}
+
+.lhp-card-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.lhp-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.lhp-card-cover {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border, #2c3038);
+}
+
+.lhp-card-cover-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.75rem;
+  padding: 0.25rem;
+  background: var(--surface-strong, #23272f);
+  color: var(--text-dim, #a9a49b);
+  /* Заглушка не искажает смысл: текст всегда виден целиком. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.lhp-card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  /* Название не обрезается: переносится по словам и длинным строкам. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.lhp-badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.1rem 0.45rem;
+  border: 1px dashed var(--border-strong, #5a6270);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--text, #e8e6e1);
+  background: var(--surface-strong, #23272f);
+}
+
+.lhp-card-desc {
+  margin: 0;
+  color: var(--text, #e8e6e1);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.lhp-card-desc-empty {
+  color: var(--text-dim, #a9a49b);
+  font-style: italic;
+}
+
+.lhp-card-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+
+.lhp-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.lhp-meta-term {
+  font-size: 0.75rem;
+  color: var(--text-dim, #a9a49b);
+}
+
+.lhp-meta-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.lhp-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.lhp-action:hover,
+.lhp-filter:hover {
+  border-color: var(--accent, #7bb6a1);
+}
+
+.lhp-error,
+.lhp-empty,
+.lhp-no-match {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border, #2c3038);
+  border-radius: 10px;
+  background: var(--surface, #1b1e24);
+}
+
+.lhp-error {
+  border-color: var(--danger, #e07a6b);
+}
+
+.lhp-error-title,
+.lhp-empty-title,
+.lhp-no-match-text {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.lhp-error-text,
+.lhp-empty-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Клавиатура: фокус виден и не передаётся цветом фона без контура. */
+.lhp-library :focus-visible {
+  outline: 2px solid var(--accent, #7bb6a1);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lhp-library * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ==== интеграция в оболочку Studio (2026-09-11) ====
+   Модуль писался как самостоятельный экран, поэтому часть имён переменных у него
+   своя (--bg/--surface-strong/--text-dim/--accent). Здесь они привязываются к
+   токенам мастерской, чтобы экран был продолжением продукта, а не отдельной темой. */
+.library-host {
+  --bg: var(--canvas);
+  --surface-strong: var(--surface-soft);
+  --text-dim: var(--muted);
+  --accent: var(--primary);
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+
+/* Заголовок «Мои проекты» рисует оболочка мастерской; модуль его не выводит,
+   поэтому подавлять дубль правилом не нужно. */
+
+.library-host .lhp-toolbar {
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.library-host .lhp-search {
+  flex: 0 1 20rem;
+  min-width: 12rem;
+}
+
+.library-host .lhp-grid {
+  /* auto-fit, а не auto-fill: пустые дорожки не оставляют мёртвую полосу справа,
+     когда проектов в разделе меньше, чем помещается колонок. */
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  width: 100%;
+}
+
+.library-host .lhp-card {
+  gap: 0.6rem;
+  /* Карточка тянется на доступную ширину, но не превращается в полосу. */
+  max-width: 34rem;
+}
+
+/* Заглушка обложки: обычная плашка с читаемой подписью, а не вертикальная строка. */
+.library-host .lhp-card-cover,
+.library-host .lhp-card-cover-empty {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 72px;
+  min-height: 72px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.4rem;
+  border-radius: var(--radius-s);
+  background: var(--surface-sunken);
+  color: var(--muted);
+}
+
+.library-host .lhp-card-meta {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.3rem 1rem;
+}
+
+/* Метка и значение читаются одной строкой: «Миссий 2», «Роль Владелец», «Изменён нет данных». */
+.library-host .lhp-meta-row {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.15rem;
+}
+
+.library-host .lhp-meta-term {
+  color: var(--muted-soft);
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  white-space: normal;
+}
+
+.library-host .lhp-meta-value {
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.library-host .lhp-group-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--muted-strong);
+}
+
+.library-host .lhp-action {
+  min-height: 32px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.library-host .lhp-action:hover {
+  border-color: var(--primary);
+}
+
+.library-host .lhp-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

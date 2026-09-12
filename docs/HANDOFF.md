@@ -1,9 +1,162 @@
 # Передача работы
 
-Обновлено: 2026-09-09
+Обновлено: 2026-09-11 (вечерняя волна: материалы, экран проектов, ИИ-помощник, палитра).
 
-Текущий блок: **B13 принят (B13.0–B13.c1 GREEN, adapter-level); L00–L07 и L09 приняты, L08 UNVERIFIED; B12 опубликован**
-Рабочая ветка: `feat/live-author-studio`. Задание L00–L09: [LIVE-AUTHOR-COMPLETION.md](tasks/LIVE-AUTHOR-COMPLETION.md). L09 закрыт локальным verify и Linux CI. B13.0–B13.c1 приняты на уровне адаптеров; живые preview/production dispatch — отдельные шаги приёмки по разрешению оператора.
+**Текущее состояние.** Ветка `feat/b13-acceptance-closure`, локальный HEAD `172bb14`, дерево чистое. На командный стенд **доставлен `172bb1471398d2602a0138f0c2fb1d038510ae86`** (Engine + authored + Studio; сайт не доставлялся). Мастерская: https://85.137.95.104.sslip.io:8741/. **На стенде загружен реальный квест Florence Workshop**: 12 материалов (6 изображений, 6 аудио) и документ миссии — 6 сцен, 3 достижимых финала (резервная копия базы сделана перед изменениями). Проверки: `tsc -b --force` = 0; studio 423/422/0, server 274/274, control 213/0, scripts 40/40; снаружи мастерская 200, ресурсы под gate, каталог движка доступен.
+**Подключено в интерфейс:** экран «Мои проекты» (модуль library-view, приёмочные отделены), панель «Материалы» (список/загрузка/«Использовать в сцене»), ИИ-помощник как авторский путь (служебный журнал — под «Дополнительно»), графитовая палитра с одним изумрудным акцентом, сервер отдаёт листы стилей панелей.
+**Осталось (неблокирующее):** сайт на Cloudflare не доставлен (ветка `feat/site-wave2-integration` @ `d5022c8`, нужна санкция владельца с точным SHA); публикация реального квеста — от сессии владельца; не подключены модули инспектора сцены, вписывания доски, панели публикации, панели совместной работы и страж-тесты UI; AI-генерация через интерфейс вживую не прогонялась (провайдер на локальной базе не настроен); тур открывается сам при первом входе.
+
+**Закрыто в этой волне.**
+- Публикации (FIN-01/FIN-02): релиз без пина не публикуется — `409 LEGACY_PIN_UNPROVABLE` (запись релиза хранит ревизию доски, а не документа миссии, доказать содержание нечем); коммит каталога сверяется с указателем релиза **внутри транзакции** — `409 PUBLICATION_CANDIDATE_STALE`. Воспроизводящие тесты `apps/server/test/fin02-publication-consistency.test.mjs` 5/5 (до правки 2 из 3 красных), мутации M1/M2 краснят, откат зелёный. Все релизы в тестовых харнессах обязаны замораживаться экспортируемым `freezeReleaseBundle` — 13 файлов приведены к продуктовому пути.
+- FIN-07: ключ провайдера живёт в локальном файле стенда, наружу только маска, отключение стирает секрет (`clearConnection`), отдельная проверка соединения `POST /local/author-provider/probe`. Живьём: `connected` через OpenRouter, подключение переживает перезапуск процесса.
+- FIN-09: `packages/ai/src/mission-writer.ts` + две детерминированные починки плана (дубли идентификаторов сцен, висячие цели выборов) + `POST /local/mission-draft` + кнопка «Создать с ИИ». Живьём: 9 сцен / 2 финала / 18 выборов, сохранение (ревизия 1) и повторное открытие.
+- FIN-10: тур `apps/studio/src/onboarding-tour.ts` смонтирован — кнопка «Тур по Studio» и объяснение ошибок действием в `setError`.
+- Влито 13 веток субагентов: FIN-04 (скрипты доставки), FIN-05 (CDP-сценарий), FIN-07×2, FIN-08×2, FIN-09, FIN-10, FIN-11, FIN-12×2, FIN-13, FIN-14.
+
+**Первый незакрытый критерий:** живой проход новой миссии целиком в браузере (создание → доска и связи → материалы → диалоги → две развилки → два финала → сохранение и повторное открытие → публикация → прохождение на сайте). По API маршрут пройден, в браузере — нет; скрипт `scripts/live-acceptance/new-mission-journey.mjs` готов (запускался в `--plan` и offline-режиме, Chrome не поднимался).
+
+**Дальше по убыванию:** сайт на Cloudflare (нужен канал доставки и каталог сайта на стенде); смонтировать в интерфейс FIN-08 (выбор модели), FIN-12 (пины; серверная политика ответов включается одной строкой композиции `collaborationStore: withReplyPolicy(store)` — поле в `ControlServerDependencies` уже есть), FIN-13 (присутствие); прогнать `deploy/vps/deliver-rollback.sh`; миграция реальной дофиксовой БД на стенде.
+
+**Где доказательства:** `docs/FIN-CHECKLIST.md` (карточки FIN-01…FIN-14 с фактическими результатами), `docs/E-MATRIX.md` (шаг → маршрут → тест → что не покрыто), отчёт `C:\Users\kato55\Downloads\Living-History-итерация-2026-09-11.md` (копия отправлена в Telegram), worklog'и волны в `docs/worklog/`.
+## Доска: точки соединения и перетаскивание карточки (2026-09-11)
+
+Владелец повторно показал один косяк: точка соединения блока была только на одном ребре, а карточку можно было
+тащить только за шапку («хватаешь за нижнюю часть — почему-то она не хватается»). Причина в коде: шапка была
+объявлена единственной ручкой перетаскивания, тело карточки жёстко превращало жест в создание связи, порт был
+один — на правом ребре.
+
+Сделано в `apps/studio/src/board-dom.ts`: 4 точки соединения на карточку (выход справа и снизу, вход слева и
+сверху), связь создаётся только от порта, перетаскивание — за любую часть карточки кроме полей ввода/кнопок/портов,
+рёбра одного узла расходятся по сторонам и слотам (`distributePortSides`/`portSlotFraction`), сторона протяжки
+запоминается (`preferredSourceSide`), кривая строится по стороне порта (`boardEdgePath(..., sourceSide, targetSide)`)
+от фактической высоты карточки. Тесты: `board-ports.test.mjs` 4/4, `board-gestures.test.mjs` 5/5 (мини-DOM);
+несущая способность доказана двумя мутациями (возврат «только шапка»; всегда `right`) — откачены.
+Живой прогон (Studio :4185, Chrome 152 CDP, `step13…step26`, consoleErrors 0): 7 карточек × 4 порта,
+перетаскивание за `.node-body` `(48,64) → (230,206)`, связь от порта: рёбер 2 → 3, новое ребро из правого порта
+в левый порт цели. Worklog: [worklog/2026-09-11-BOARD-ports-and-drag.md](worklog/2026-09-11-BOARD-ports-and-drag.md).
+Не закрыто: тёмная тема мастерской (§2.4), терминология «квест/миссия», скриншоты (таймаут `Page.captureScreenshot`
+под нагрузкой).
+
+## FIN-12 (сервер и UI влиты) и FIN-05 site-половина (2026-09-11)
+
+- **FIN-12, сервер:** заметки/треды комментариев поверх Control: append-only ревизии, CAS (`409 COLLABORATION_REVISION_CONFLICT`), мягкие tombstone, авторство/роли, HTTP-маршруты (401/403/404, CSRF + idempotency-key, `replay`). Влито мержем `e129da2`; тесты `collaboration-store.test.mjs` + `collaboration-http.test.mjs` 10/10, несущая способность доказана 6 временными мутациями исходников (каждая красила конкретные тесты; мутации откачены, `git diff` по `src/**` пуст).
+- **FIN-12, UI:** влито мержем `b20d72b` (ветка `feat/fin12-notes-ui`, `d337abd`): третья вкладка «Заметки» в правой панели Studio — заметки с координатами и якорями board/scene/layer/field, треды с ответами и закрытием/переоткрытием, счётчики из реальных данных, справка с примером, действие прямо под списком, read-only без единого write-контрола, `409` показывается баннером с сохранением локального текста и кнопкой «Перечитать с сервера». 10 тестов `apps/studio/test/fin12-notes-ui.test.mjs`; несущая способность доказана 3 временными мутациями (снятие read-only guard, ветка `409`, `text-overflow: ellipsis`) — каждая красила конкретные тесты, мутации откачены, дерево чистое. Не сделано: живой браузерный прогон вкладки, пин на доске (видны только координаты).
+- **FIN-05, site-половина** (репозиторий сайта, ветка `feat/fin03-site-session-assets`, `ed27170`): публичный плеер рендерит авторскую композицию — фон (own/inherited/none), preset анимации ко всем слоям, музыка экрана с mute и явным «Играть» при блокировке автоплея; `screen-composition.ts` + тесты. 21 файл / 109 тестов, `check` и `build` exit 0. Не сделано: живой браузерный прогон, реальная библиотека материалов, диалоги/пагинация интро.
+- **FIN-05, site-половина, диалоги и интро** (репозиторий сайта, ветка `feat/fin05-site-dialogue`, `fea316b`): строки диалога сцены листаются по клику/тапу и по Enter/Space/стрелкам/PageDown, клавиша на самоактивирующемся контроле и Ctrl/Meta/Alt не перехватываются, на паузе продвижение недоступно; интро пагинируются «Далее», на последней странице — «Начать»; позиция идентифицируется авторским контентом (`contentHash` + сами строки), поэтому перерисовка кадра её сохраняет, а другой экран начинает с начала; один native-событие продвигает не более чем на шаг. 23 файла / 129 тестов (было 21/109), `check` и `build` exit 0, lockfile не тронут. Несущая способность: 3 временные мутации (снятие guard'а самоактивирующихся контролов, повторное использование одного события, отсутствие ре-анкора при смене контента) — 3 теста краснели, мутации откачены. Не сделано: живой браузерный прогон (клик/фокус/геометрия оверлея/reduced-motion), в контракте нет отображаемого имени говорящего (только `speakerId`).
+- Регрессия после мержа: typecheck / test:server / test:control / test:contracts / docs:check / check:boundaries — exit 0; `test:studio` в фоновом прогоне дал ложный C17 (внутри вложенного процесса оказался системный Node v22) — в интерактивном прогоне зелёный.
+
+
+
+## FIN-06 (C18) — права проверены на живом HTTP, живые роли ещё нет (2026-09-11, `191ba30`)
+
+`docs/CAPABILITY-MATRIX.md` фиксирует политику, снятую с кода: `owner | editor | tester` со строгим рангом, где `tester` — это и есть read-only/viewer роль продукта; не участник проекта получает `404` (существование не подтверждается), участник с недостаточной ролью — `403 CONTROL_FORBIDDEN`; любая mutation требует CSRF-доказательство, а заголовки `x-lh-user-id`/`x-user-role` роль не повышают.
+
+`apps/server/test/fin06-role-matrix-http.test.mjs` (3/3) прогоняет матрицу на реальном Control-сервере с четырьмя локальными identities: 13 разрешённых проверок и 20 отказов по маршрутам (tester читает draft/mission/board/releases и запускает validation/playtest, но не получает ни одной mutation; editor редактирует, но не публикует, не откатывает, не снимает и не управляет составом; посторонний закрыт везде), плюс немедленное действие смены роли и отзыва членства, отзыв сессии (`401`), CSRF и публичный контур. Несущая способность подтверждена двумя мутациями исходников (снятие `owner` на `publish`; снятие требования CSRF-токена) — обе откачены, `git diff` по `src` пуст.
+
+Не проверено: живые роли C18 (нужны приглашённые Telegram-аккаунты; gate не ослаблялся, одна owner-cookie за три роли не выдавалась) и привязка прав к подтверждённому numeric Telegram ID. Открытые решения владельца: отдельная роль `viewer` и право комментировать для read-only участника.
+
+## FIN-02 (B03) — прерванная публикация закрывается при старте (2026-09-11, `9caec73`)
+
+Публикация идёт в две долговременные стадии: сначала сдвиг указателя релиза (с CAS), затем появление записи в каталоге. Падение процесса между ними оставляло `pending`-операцию и указатель, расходящийся с каталогом; в пути запроса это состояние никто не наблюдает и не лечит.
+
+- `settleInterruptedPublications` в `apps/server/src/control-server.ts`: до приёма первого запроса (в `listen()`) каждая `pending`-операция закрывается **по факту**, а не догадкой — если указатель уже называет целевой релиз, запись каталога коммитится (идемпотентно); если указатель называет другой релиз, операция снимается как несостоявшаяся; если коммит не удался — операция остаётся `pending` и указатель не трогается (громко, вместо угаданного «ремонта»). Rollback settles так же.
+- Тест `apps/server/test/fin02-publication-recovery.test.mjs` **2/2** (до правки RED: оба кейса падали). Падение не мокается: сервер поднимается на файловой SQLite, ровно один метод стора подменяется на бросающий на время одного запроса, затем сервер перезапускается на том же файле. Набор проверяет и кейс «крэш после сдвига указателя», и «крэш до сдвига» (там же — повторная публикация проходит нормально).
+- Несущая способность: инверсия решения (`current !== targetReleaseId`) красит оба теста; откачено, `git diff` чист. Регресс: Server **157/157** (было 155), `docs:check` exit 0.
+- Не проверено: реальный перезапуск процесса на стенде (нужна доставка новой ревизии engine) и миграция настоящей дофиксовой БД (пока фикстуры).
+
+## FIN-01 (B02), второй проход — публичный контур был не закрыт (2026-09-11)
+
+Независимая adversarial-проверка (`origin/feat/fin01-adversarial-verify`) нашла три живые дыры в **публичном** контуре; все три закрыты в этой ветке:
+
+- сборка замораживает пин **до** создания релиза; если заморозить нельзя (нет ассета) — `422 RELEASE_FREEZE_FAILED`, релиз не регистрируется (раньше `201` + релиз без пина);
+- пин фиксирует ревизию **на момент сборки**; публикация/rollback резолвят её, а не «текущий черновик» (закрыт кейс «собран на r1 — отдаёт r2»);
+- создание публичной сессии сверяет манифест пина с библиотекой → `409 PUBLIC_MISSION_ASSET_CHANGED` при дрейфе;
+- adopted legacy-пин сохраняет уже объявленный `contentHash` (один `releaseId` не меняет identity).
+
+Доказательство: `apps/server/test/fin01-release-contract.test.mjs` 4/4 (3 из 4 были RED до правки). Характеризующий набор `fin01-verify-*.test.mjs` (описывал старое поведение) намеренно не переносится в эту ветку — он остаётся в ветке субагента как исторический снимок. Worklog: [worklog/2026-09-11-FIN01-adversarial-fixes.md](worklog/2026-09-11-FIN01-adversarial-fixes.md).
+
+
+
+- **FIN-03 engine-половина (B04):** открытая сессия теперь получает ассеты по session-pinned маршруту `/public/v1/missions/:id/sessions/:sid/assets/:assetId`; credential сессии обязателен (нет/подделка → 401, чужая сессия или миссия → 404), отдача `private`. Оба маршрута (публичный и session) отдают байты **pinned digest** релиза, а не текущую запись библиотеки — иначе повторная загрузка того же `assetId` подменяла содержимое под `cache-control: immutable`. Тесты: `apps/server/test/fin03-session-assets.test.mjs` **3/3** (3-й кейс был RED: 2/3), независимый репро-тест субагента `apps/server/test/fin03-open-session-assets.test.mjs` **3/3** против этой ветки (до фикса 2/3). Site-половина — отдельный репозиторий, ветка `feat/fin03-site-session-assets` (`6eb4f9c`): BFF запрашивает тот же session-pinned URL. Worklog: [worklog/2026-09-11-FIN03-engine-session-assets.md](worklog/2026-09-11-FIN03-engine-session-assets.md).
+- **FIN-04 (B01) — манифест состава:** `deploy/vps/delivery-manifest.json` (генерируется `deploy/vps/delivery-manifest.mjs`) перечисляет версии компонентов состава (engine/authored/studio — commit exact-SHA, gate — SHA-256 файла) и объявляет общего писателя общей БД. Тест `apps/server/test/fin04-delivery-manifest.test.mjs` **2/2** (RED до манифеста 1/2; тест написан субагентом-репро). Worklog: [worklog/2026-09-11-FIN04-delivery-manifest.md](worklog/2026-09-11-FIN04-delivery-manifest.md). **Не закрыто:** runtime-детекция «старый Control пишет в общую БД» и hosted-проверка; манифест — снимок доставленного SHA.
+- **FIN-05B влит** в рабочую ветку (`426c944`), конфликт был только в `docs/FIN-CHECKLIST.md`. После слияния: typecheck/docs:check/boundaries exit 0, Server **144/144**, Control 106/106, Contracts 57/57, Studio 142 pass / 0 fail / 1 skip.
+- **FIN-12 (серверная половина заметок/комментариев) — ветка `feat/fin12-project-notes` (`eee9234`)**, ещё не влита: тонкие тесты (2 + 1), отправлена на усиление.
+
+## FIN-05B — композиция экрана (2026-09-11, worktree `C:/Temp/lhc-fin05b-compose`, ветка `feat/fin05b-screen-composition`)
+
+Второй bounded-срез FIN-05: слои-материалы и ручная композиция экрана в Studio.
+
+- Модель `apps/studio/src/screen-composition.ts` (без новых полей контракта): update/duplicate/delete слоя, drag/resize(пропорц.)/rotate/flip/opacity/z-order/lock/visible, contain/cover + фокус и crop, наследование фона (own/inherited/none), preset + reduced-motion/пауза, реальные mute/play/blocked музыки, клавиатура; запись через тот же CAS `POST /mission`.
+- `apps/studio/src/screen-dom.ts` — живая сцена (drag, ручка resize, клавиатура); `app.ts` — инспектор слоёв с действиями и inline-формой, монтаж сцены с сохранением host между render'ами.
+- Проверка: `apps/studio/test/fin05b-screen-composition.test.mjs` **16/16** (RED до реализации — `ERR_MODULE_NOT_FOUND`); `test:studio` 142/0/1; Control 106/106, Server 141/141, Contracts 57/57; typecheck/boundaries/docs:check — exit 0.
+- **Не закрыто:** реальная библиотека материалов (hash/MIME/размеры, restart/другой браузер), воспроизведение сцены в Player/сайте/runtime, browser-приёмка 3+ сцен/2 финалов не-Florence. Карточка остаётся **PARTIAL**. Worklog: [worklog/2026-09-11-FIN05B-screen-composition.md](worklog/2026-09-11-FIN05B-screen-composition.md).
+
+## Независимая проверка M06 и корректирующие работы (2026-09-11)
+
+Внешний аудит признал предыдущий отчёт о завершении M06 недействительным: hosted happy-path работал, но полная приёмка не проходила. Все семь дефектов воспроизведены регрессионными тестами и исправлены, кроме F07.
+
+| Дефект | Severity | Исправление | Проверка |
+|---|---|---|---|
+| F01 сохранение черновика ломает опубликованную игру | P1 | `5475da0` | `apps/server/test/m06-immutable-release.test.mjs` 4/4 |
+| F02 неуспешная публикация частично меняет состояние | P1 | `5475da0` | там же (каталог пишется до указателя, откат при отказе promotion) |
+| F03 unpublish убивает начатую игру | P1 | `5475da0` | там же |
+| F04 финал теряется при reload сайта | P1 | site `f7f1233` | `src/worker/public-mission-recovery.test.ts`, `b11-public-route.test.ts` |
+| F05 опубликованные миссии не идут через общий renderer | P1 | site `db7cbe8` + engine `8ebe741` | `frame-build.test.ts`, `published-mission-stage.test.tsx`, `b11-public-route.test.ts` |
+| F06 отсутствующая миссия падает в legacy, каталог теряет legacy-карточки | P2 | site `db7cbe8` | `b11-catalog-route.test.ts` 4/4 |
+| F07 authored-runtime не восстановится штатным перезапуском | P1 | `83f5cbf` | hosted: `lhc-authored` — supervised compose service, healthy, переживает `docker restart` |
+
+Ключевые решения:
+
+- Опубликованный контент и открытая сессия разрешаются по неизменяемому `contentRevision` (`getMissionAtRevision`), а не по latest draft; сессия создаётся с явным pin.
+- Публикация новой версии перекрепляет каталог (`draftRevision`/`draftContentHash` = текущая авторская ревизия) вместо отказа `PUBLICATION_SOURCE_STALE`; stable id/slug сохраняются.
+- `contentHash` каталога — bundle-identity: renderer contract + авторский `missionContentHash` (story, screens, listing, defaults) + дайджесты используемых ассетов. Quest-board compile hash намеренно не используется как идентичность MissionDraft.
+- Каталог пишется до release pointer; при отказе promotion выполняется компенсирующий откат каталога.
+- Continuation игры не требует активной публикации: unpublish блокирует только новые запуски.
+- Терминал (финал) хранится в binding, GET реконсилируется с движком — потерянная запись DO самоизлечивается.
+- Публичные ассеты опубликованной ревизии отдаются по `/public/v1/missions/:id/assets/:assetId`; при unpublish отзываются; всё, что ревизия не упоминает, остаётся приватным.
+
+Регрессия после R01–R03 (Node 24.19.0):
+
+- Engine `npm run build` (tsc -b) — exit 0;
+- Control 106/106, Server 133/133, Contracts 57/57, fail 0;
+- Site `npm run check` — exit 0; Vitest 18 файлов / 82 теста, fail 0; production build — exit 0.
+
+### Доставка exact-SHA и hosted-подтверждение (2026-09-11)
+
+- Engine доставлен: `/opt/lhc/engine` → `7e61f9889724f01a5f5c1c2e511093c177ceac6b`, worktree чист (fast-forward от `b1546da`; скрипт доставки fail-closed по полному SHA).
+- `lhc-authored` — новый supervised compose-сервис (`restart: unless-stopped`, собственный healthcheck на `127.0.0.1:8746/healthz`, отдельный контейнер); прежний ручной процесс `docker exec -d … authored-server.mjs` больше не используется. Проверено: `docker restart lhc-authored` → снова `healthy`, создание публичной сессии после рестарта — **201**.
+- Конфигурация: `LH_PUBLIC_MISSION_SESSION_SECRET` перенесён в `deploy/vps/.env` (`600`, ровно одна запись, значение [REDACTED]); `/tmp/lhc-m06-compose-override.yml` удалён.
+- Site Worker для `db7cbe8` задеплоен workflow run `34536157061` (completed/success).
+- Live-проверки (реальный HTTPS + site BFF):
+  1. `GET /public/v1/missions` и slug/detail — 200, каталог отдаёт опубликованную миссию;
+  2. `POST /api/games` (published ref) — **201**, `presentation.kind = published-mission`, кадр авторской сцены с `contentRevision 1` / `contentHash b05ba76…`;
+  3. ход 1 → сцена «Бастион», ход 2 → финал «Отчёт написан», `status: victory`;
+  4. `GET /api/games/:id` после финала — финал сохранён (`frame.kind = ending`), сессия не потеряна;
+  5. `POST /api/games` с неизвестным `mission:`-ref — **404 `PUBLIC_MISSION_NOT_FOUND`**, без отката в legacy;
+  6. `GET /api/scenarios` — 6 карточек: опубликованная миссия **плюс** 5 legacy (каталог аддитивный).
+- Rollback подготовлен (`/root/m06-r04-rollback.sh`): возврат worktree на `b1546da`, пересборка engine, снятие `authored`, восстановление ручного процесса и `/tmp`-override. Скрипт проверен синтаксически, **не выполнялся** (откат не потребовался).
+
+Не подтверждено live: F01/F03 в сценарии «правка черновика / unpublish при открытой сессии» (требует owner-сессии Control — не создавалась, чужие сессии не использовались); браузерный проход глазами игрока; C18 editor/viewer/read-only. M06 остаётся PARTIAL: live happy-path подтверждён, полная приёмка нет.
+
+## M06 hosted acceptance (2026-09-11, до независимой проверки)
+
+- SSH восстановлен из проектных данных: ключ [REDACTED], host 85.137.95.104, port 48176, user root; ключи для root без порта 48176 не работают — отказ «ключей root» был следствием неверного порта.
+- Engine доставлен на `b1546dad200aa9995b0b1d98bbabad20047b19e7` (M06 `df07f5f` + hosted-фиксы `4fdfd74`, `b1546da`), worktree чист.
+- Site preview Worker пере деплоен из `c604421` (`feat/florence-vertical-slice`, M06 `b00b7d1` + hosted-config commit) через workflow run 34510822807, version b27f01fa.
+- Hosted-фиксы, найденные при приёмке (оба закоммичены и задеплоены):
+  - Studio control server не получал `publicationStore` → публикации не появлялись в каталоге (`4fdfd74`);
+  - regex публичных маршрутов не матчил percent-encoded `publicMissionId` → Worker BFF получал 401 (`b1546da`).
+- Конфигурация: override `/tmp/lhc-m06-compose-override.yml` задаёт `LH_PUBLIC_MISSION_SESSION_SECRET` (значение [REDACTED]); runtime 8742, authored runtime 8746 (`docker exec -d lhc-engine node /engine/deploy/vps/authored-server.mjs`), nginx 8743: `/public/v1/missions` → control 8788, `/` → 8746.
+- Worker vars: `ENGINE_PUBLIC_CATALOG_URL` и `ENGINE_PUBLIC_MISSION_URL` добавлены в `wrangler.jsonc`; DO `PublishedMissionRouteSession` и миграция `v4-m06-published-missions` задеплоены вместе с Worker.
+- Приёмочные доказательства (hosted):
+  1. `/public/v1/missions` отдал обе миссии; site `/api/scenarios` их зеркалирует;
+  2. Alpha: create session → turn 1 → turn 2 → `status: victory` через site BFF;
+  3. Beta: сыграна до `victory` так же;
+  4. reload по id сессии вернул сохранённое состояние (turn 2, финальная сцена);
+  5. unpublish Beta (owner CAS по expectedReleaseId) убрал её из engine-каталога и site-каталога; повторное создание игры Beta → 500 (нет в каталоге), Alpha и legacy Florence работают (201);
+  6. legacy Florence продолжает играть через тот же Worker (регрессии нет).
+- Не покрыто: C18 editor/viewer/read-only — на gate есть только один Telegram-owner; нужны отдельные аккаунты для ролевых проверок.
+
 
 ## L00 — baseline review (2026-09-09)
 
@@ -132,3 +285,94 @@ B13.0–B13.c1 приняты на уровне адаптеров: policy фи�
 Последние проверки: CI success `34315990935` на `9f17250` (b1), `34317405839` на `14a1619` (b2); локальный `npm run verify` exit 0, builder 24/24.
 
 Operational procedure: `docs/RUNBOOK.md`. Acceptance truth: `docs/B12-ACCEPTANCE-MATRIX.md`. Evidence ledger: `docs/RELEASE-REPORT.md`.
+
+## Studio V00–V02 correction — K03 DONE локально + BROWSER/LOCAL
+
+- `apps/studio/src/block-inspector.ts` реализует canonical create/replace helper; для edit используется только полный `block.replace`.
+- Library/modal создаёт location, character, resource и action; action требует существующий resource.
+- Реальный Chromium/CDP на изолированном `127.0.0.1:4184` создал все четыре типа; Control GET подтвердил revision `5` и canonical `data`.
+- Inspector edit + 700 ms debounce сохранили title/description на сервере; переключение Properties/AI/Properties не потеряло состояние.
+- Conflict smoke: внешний write `r5→r6` оставил server state нетронутым локальной правкой, показал conflict panel, локальный input сохранился.
+- Static: Node 24.19.0 `npm run typecheck` exit 0; Studio tests **81/81**.
+- Не закрыто этим этапом: K04 connections/layout, K05 BoardDocument/other-browser restart, C01–C18 full matrix и VPS exact-SHA smoke.
+
+Следующее: K04 — valid/invalid connections, ports, drag/zoom/fit и collision-aware layout.
+
+## Studio V00–V02 correction — K04 DONE локально + BROWSER/LOCAL
+
+- Fallback layout разделён на четыре type columns с локальными индексами; regression подтверждает отсутствие пересечений карточек.
+- Derived SVG edges получили `marker-end`; valid/invalid connection gestures идут через canonical `block.replace`, недопустимые связи не меняют draft.
+- Реальный CDP pointer smoke подтвердил valid edge `1→2`, invalid edge count без изменения, два drag с обновлением path, wheel zoom, Space+drag pan, fit, localStorage position и сохранение transform при переключении вкладок; осталось 5 nodes.
+- Static: Node 24.19.0 `npm run typecheck` exit 0; board-model **7/7**; Studio **81/81**.
+- Ограничение: позиции ещё только localStorage одного браузера; K05 добавит server BoardDocument/restart/other-browser.
+
+Следующее: K05 — server BoardDocument persistence, revision/idempotency, restart и другой браузер.
+
+## Studio V00–V02 correction — K05 DONE локально + BROWSER/LOCAL
+
+- SQLiteControlStore v2: `control_board_documents` + `control_board_idempotency`, v1→v2 migration, atomic CAS, bounded positions, actor audit.
+- Exact GET/POST board endpoints используют существующие identity/project-role/mutation-proof gates; generated registry/OpenAPI и migration runbook обновлены.
+- Client отдельно читает server positions, сохраняет drag map coalesced after 700ms, обновляет `boardRevision`, localStorage остаётся fallback только при недоступном Board API.
+- Static: typecheck exit 0; Control **99/99**; Server **122/122**; Studio **81/81**; docs:generate/hash guard exit 0.
+- Browser: fresh profile A on local `4186` saved drag; separate profile B with empty localStorage read server `boardRevision=1`, `positions.item-tp6n7a={x:451,y:77}`, DOM `translate(451px,77px)`.
+
+Не закрыто: K06 hosted identity/permissions/provider security, K07 assets/auth/independent Player, K08 C01–C18/full verify/VPS exact-SHA. GREEN не объявлен.
+
+Следующее: K06 — hosted identity, project/global permissions и provider mutation security.
+
+## Studio V00–V02 correction — K06 DONE локально
+
+- Board HTTP uses server session identity, live project role and CSRF; tester GET/read works, tester write is 403, editor write works, role downgrade blocks existing session, revoke returns 401; forged owner headers do not elevate.
+- Local provider mutation boundary rejects non-loopback Host and cross-site Origin/Fetch-Metadata before body handling; credential stays process-memory and is absent from status.
+- Tests: typecheck exit 0; role/revoke **1/1**; provider lifecycle/security **1/1**.
+
+Не закрыто: live gate/nginx/VPS matrix, K07 assets/auth/player, K08 C01–C18/full verify. GREEN не объявлен.
+
+Следующее: K07 — V00 assets, auth 401 и independent playtest/runtime.
+
+## Studio V00–V02 correction — K07 DONE локально + VPS unauthenticated
+
+- Namespaces `/studio-assets/*` и `/player-assets/*` сохранены; root `/styles.css`/`/app.js` не возвращены.
+- Selected local static/Player/launch/boundary checks: **20/20**.
+- Public VPS без cookie: studio/player assets, player-meta и runtime API → **401**; legacy root assets → **410**; navigation `/` → **200** login fallback.
+- Logged-in Telegram browser playtest на VPS не заявлен: сессии в run не было; local independent frozen Player path проверен.
+
+Не закрыто: K08 C01–C18/full verify/exact-SHA VPS Studio deployment + authenticated smoke. GREEN не объявлен.
+
+Следующее: K08 — C01–C18, full verify, deployment and VPS smoke.
+
+## Studio V00–V02 correction — K08 PARTIAL, authenticated browser OPEN
+
+- Acceptance harness: C01–C17 pass; C18 public boundary passes after deploy, authenticated Telegram browser is not verified.
+- `npm run verify` under Node 24.19.0 → exit 0 after updating the registry count from 42 to 44 for the two board endpoints.
+- Studio-only VPS delivery: final branch candidate read back exactly on the remote; rebuilt image read back; `lhc-studio` recreated with `--no-deps`; Engine health 200 and gate/Engine uptime remained unchanged.
+- Public unauthenticated checks: `/` 200 login fallback; namespaced assets/player-meta/runtime 401; legacy root assets 410. No credentials, ticket or cookie was guessed.
+- Local browser/CDP scenario remains the completed interaction evidence for C01–C17.
+
+Blocking item: role-separated checks (editor/viewer/read-only) need their own Telegram-gate sessions; one owner session does not prove them. GREEN is not declared.
+
+## Studio V00–V02 correction — K08 C18 owner-scenario PASSED (2026-09-10, VPS live)
+
+- Session: isolated Chrome profile + fresh gate ticket, owner cookie `lhc_session`; remote SHA `59bb112`, Studio loopback 200.
+- Isolated mission only: project «C18 Приёмка» + quest «C18 Миссия». «Приёмка VPS» (1 quest) and Florence Workshop untouched.
+- Quest open shows working board immediately (start location «Начало», `board-nodes 1`).
+- Created via library modals with canonical fields: resource «C18 Краска» (шт), character «C18 Мастер», action «C18 Рисовать» (resourceId preset to the new resource). Nodes 1→4, each step «Сохранено на сервере».
+- Inspector edits canonical fields of the selected block (title→«C18 Рисовать v2», resourceId `c18-doj8v1`, units/duration/allowPartial); edit persisted server-side.
+- Valid drag character→location created `character-initial-location`; invalid drag resource→character rejected (edges stayed 2: `character-initial-location`, `action-resource` «Расходует»).
+- Node drag moved location y 492→592, edges tracked, BoardDocument saved.
+- Reload: project list shows C18 (3 of 3 projects); reopened quest has 4 nodes, 2 edges, moved position y=592, edited title — content+layout persisted.
+- Validation: «Revision 5 валидна. Можно заморозить playtest», «Квест готов».
+- Player: frozen `playtest-3` (revision 5, compiled `6243bb1…1288fb`); VPS loopback `http://127.0.0.1:8745` → **200**.
+
+Следующее: M06 — публикация и generic site catalog/BFF.
+
+## M06 — publication registry + generic site route DONE локально (2026-09-10)
+
+- `packages/control/src/publication-store.ts`: Memory/SQLite publication registry, stable `publicMissionId`/slug, release/content hash + draft revision pin, idempotent publish/replay, owner unpublish и SQLite reopen/migration coverage.
+- Existing owner `POST /control/v1/.../publish` теперь синхронизирует published catalog record только при exact current mission revision/hash; rollback repins the same public identity to the selected release. Existing auth/session mechanics unchanged.
+- Public engine routes: `GET /public/v1/missions`, slug/id detail, credential-bound session create/get/turn; public payload excludes project/quest internals. Unpublish uses owner role, expected release CAS and idempotency.
+- Site worker consumes the catalog through `ENGINE_PUBLIC_CATALOG_URL`; generic `/api/games`/reload/turn path uses a `PublishedMissionRouteSession` Durable Object and keeps engine credential server-side. Florence/legacy route remains fallback for non-published IDs.
+- Site runtime wiring includes `PUBLIC_MISSION_ROUTE_SESSIONS` binding and v4 migration in `wrangler.jsonc`; deploy variables and reverse-proxy exposure are intentionally not changed yet.
+- Engine tests: M06 publication store **2/2**, owner publish→catalog sync **1/1**, public catalog/unpublish **1/1** and public runtime **1/1**; engine `npm run typecheck` passed. Full Control + Server + Contracts regression: **290/290 pass, 0 fail, 0 skipped** under Node 24.19.0.
+- Site: `npm run check` passed; full Vitest **63/63**; production `npm run build` passed; M06 worker/presentation tests included.
+- Still OPEN: live deployment of the new engine/control public routes and site worker config, exact-SHA VPS smoke, real two-mission play through the deployed BFF, and C18 editor/viewer/read-only Telegram-gate sessions. No production Engine/gate restart was performed.

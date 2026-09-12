@@ -1,4 +1,4 @@
-import type { Block, JsonValue } from "@living-history/contracts";
+import type { Block, JsonValue, MissionDraft } from "@living-history/contracts";
 import type {
   AuthorAgentCheckpoint,
   AuthorAgentJobRecord,
@@ -8,6 +8,8 @@ import type {
   AuthoringProposal,
   AuthoringProposalApplication,
   AuthoringProposalPreview,
+  BoardDocument,
+  BoardPosition,
   ControlProjectRole,
   DraftChangeSet
 } from "@living-history/control";
@@ -144,6 +146,12 @@ export type RollbackResultView =
 
 export type PublicationResultView = PublishResultView | RollbackResultView;
 
+export interface ValidationReleaseReadinessView {
+  readonly status: "ready" | "blocked";
+  readonly missionRevision?: number;
+  readonly code?: string;
+}
+
 export interface ValidationView {
   readonly validationId: string;
   readonly projectId: string;
@@ -153,6 +161,11 @@ export interface ValidationView {
   readonly status: "valid" | "invalid";
   readonly errors: readonly string[];
   readonly compiledContentHash: string | null;
+  /**
+   * Готовность к сборке выпуска на момент проверки: `blocked` значит, что
+   * проверка пройдена, но «Опубликовать» из неё не соберётся — причина в `code`.
+   */
+  readonly releaseReadiness?: ValidationReleaseReadinessView | null;
 }
 
 export interface PlaytestView {
@@ -266,6 +279,99 @@ export interface AgentKitView {
   }[];
 }
 
+/* FIN-12 (V07): заметки и обсуждения команды. Studio читает и пишет их через
+   тот же Control API; форма ответа описана отдельными View-типами, чтобы
+   клиент не зависел от деталей хранилища. */
+export interface CollaborationNoteView {
+  readonly noteId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly text: string;
+  readonly authorUserId: string;
+  readonly position: BoardPosition;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+}
+
+export interface CollaborationMessageView {
+  readonly messageId: string;
+  readonly authorUserId: string;
+  readonly text: string;
+  readonly revision: number;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly deleted: boolean;
+}
+
+export interface CollaborationAnchorView {
+  readonly kind: "board" | "scene" | "layer" | "field";
+  readonly targetId: string | null;
+  readonly position: BoardPosition | null;
+}
+
+export interface CollaborationThreadView {
+  readonly threadId: string;
+  readonly projectId: string;
+  readonly questId: string;
+  readonly anchor: CollaborationAnchorView;
+  readonly anchorDeleted: boolean;
+  readonly status: "open" | "resolved";
+  readonly revision: number;
+  readonly createdByUserId: string;
+  readonly createdAtMs: number;
+  readonly updatedAtMs: number;
+  readonly resolvedAtMs: number | null;
+  readonly messages: readonly CollaborationMessageView[];
+}
+
+export interface CollaborationView {
+  readonly schemaVersion: "1.0";
+  readonly projectId: string;
+  readonly questId: string;
+  readonly revision: number;
+  readonly unresolvedThreadCount: number;
+  readonly notes: readonly CollaborationNoteView[];
+  readonly threads: readonly CollaborationThreadView[];
+}
+
+/** Материал проекта так, как его отдаёт список материалов. */
+export interface ProjectAssetView {
+  readonly assetId: string;
+  readonly hash: string;
+  readonly filename: string | null;
+  readonly mimeType: string;
+  readonly kind: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly byteLength: number;
+  readonly listed: boolean;
+}
+
+/** Манифест загруженного материала (ответ ingest). */
+export interface ProjectAssetManifestView {
+  readonly id: string;
+  readonly hash: string;
+  readonly kind: string;
+  readonly mimeType: string;
+  readonly widthPx: number | null;
+  readonly heightPx: number | null;
+  readonly durationMs: number | null;
+  readonly altText: string | null;
+}
+
+export interface ProjectAssetUpload {
+  readonly assetId: string;
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly altText?: string;
+  readonly source?: string;
+  readonly rights?: string;
+  readonly bytes: Blob | ArrayBuffer | Uint8Array;
+  readonly idempotencyKey?: string;
+}
+
 export class ControlApiError extends Error {
   constructor(
     readonly status: number,
@@ -297,11 +403,34 @@ export class ControlApiClient {
     return this.csrfToken !== null;
   }
 
+  /** CSRF-токен для модулей, которые ходят в Control сами (presence, FIN-13). */
+  currentCsrfToken(): string | null {
+    return this.csrfToken;
+  }
+
   async login(username: string, password: string): Promise<ControlAuthView> {
     const body = await this.request<ControlLoginResponse>(
       "POST",
       "/auth/login",
       { username, password },
+      { csrf: "omit" }
+    );
+    if (typeof body.csrfToken !== "string" || body.csrfToken.length < 20 || body.csrfToken.length > 256) {
+      throw new ControlApiError(200, "INVALID_CONTROL_RESPONSE", body);
+    }
+    this.csrfToken = body.csrfToken;
+    return Object.freeze({ user: body.user, session: body.session });
+  }
+
+  /**
+   * Единый вход: подтверждённая сессия gate обменивается на сессию Control без
+   * логина и пароля. Подпись и секрет живут на сервере — браузер их не знает.
+   */
+  async openGateSession(): Promise<ControlAuthView> {
+    const body = await this.request<ControlLoginResponse>(
+      "POST",
+      "/auth/gate/session",
+      {},
       { csrf: "omit" }
     );
     if (typeof body.csrfToken !== "string" || body.csrfToken.length < 20 || body.csrfToken.length > 256) {
@@ -484,6 +613,57 @@ export class ControlApiClient {
       { proposal },
       { idempotencyKey, agentKitIdentity: agentKit.identity }
     );
+  }
+
+  async getBoard(projectId: string, questId: string): Promise<BoardDocument> {
+    const body = await this.request<{ readonly board: BoardDocument }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/board`
+    );
+    return body.board;
+  }
+
+  async applyBoardChanges(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    positions: Readonly<Record<string, BoardPosition>>
+  ): Promise<BoardDocument> {
+    const body = await this.request<{ readonly board: BoardDocument; readonly replay?: boolean }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/board/changes`,
+      { baseRevision, positions },
+      { idempotencyKey: createClientIdempotencyKey() }
+    );
+    return body.board;
+  }
+
+  async getMission(projectId: string, questId: string): Promise<MissionDraft | null> {
+    try {
+      const body = await this.request<{ readonly mission: MissionDraft }>(
+        "GET",
+        `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/mission`
+      );
+      return body.mission;
+    } catch (error) {
+      if (error instanceof ControlApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async saveMission(
+    projectId: string,
+    questId: string,
+    baseRevision: number,
+    mission: MissionDraft
+  ): Promise<{ readonly mission: MissionDraft; readonly replay?: boolean }> {
+    const body = await this.request<{ readonly mission: MissionDraft; readonly replay?: boolean }>(
+      "POST",
+      `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/mission`,
+      { baseRevision, mission },
+      { idempotencyKey: createClientIdempotencyKey() }
+    );
+    return body;
   }
 
   async getDraft(projectId: string, questId: string): Promise<DraftView> {
@@ -694,6 +874,200 @@ export class ControlApiClient {
     return body.trace;
   }
 
+  /* FIN-12 (V07): заметки и треды комментариев. GET требует роль tester,
+     каждая запись — editor, CSRF proof и idempotency-key; CAS идёт через
+     expectedRevision, поэтому панель никогда не переписывает чужую правку. */
+  async getCollaboration(projectId: string, questId: string): Promise<CollaborationView> {
+    const body = await this.request<{ readonly collaboration: CollaborationView }>(
+      "GET",
+      collaborationPath(projectId, questId)
+    );
+    return body.collaboration;
+  }
+
+  async createCollaborationNote(
+    projectId: string,
+    questId: string,
+    input: { readonly text: string; readonly position: BoardPosition },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes`, input, idempotencyKey);
+  }
+
+  async changeCollaborationNote(
+    projectId: string,
+    questId: string,
+    noteId: string,
+    input: { readonly expectedRevision: number; readonly text: string; readonly position: BoardPosition },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes/${encodeURIComponent(noteId)}/changes`, input, idempotencyKey);
+  }
+
+  async deleteCollaborationNote(
+    projectId: string,
+    questId: string,
+    noteId: string,
+    expectedRevision: number,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/notes/${encodeURIComponent(noteId)}/delete`, { expectedRevision }, idempotencyKey);
+  }
+
+  async createCollaborationThread(
+    projectId: string,
+    questId: string,
+    input: { readonly anchor: CollaborationAnchorView; readonly text: string },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(`${collaborationPath(projectId, questId)}/comments`, input, idempotencyKey);
+  }
+
+  async addCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    text: string,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages`,
+      { text },
+      idempotencyKey
+    );
+  }
+
+  async changeCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    messageId: string,
+    input: { readonly expectedRevision: number; readonly text: string },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/changes`,
+      input,
+      idempotencyKey
+    );
+  }
+
+  async deleteCollaborationMessage(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    messageId: string,
+    expectedRevision: number,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/delete`,
+      { expectedRevision },
+      idempotencyKey
+    );
+  }
+
+  async setCollaborationThreadStatus(
+    projectId: string,
+    questId: string,
+    threadId: string,
+    input: { readonly expectedRevision: number; readonly status: "open" | "resolved" },
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    return this.collaborationWrite(
+      `${collaborationPath(projectId, questId)}/comments/${encodeURIComponent(threadId)}/status`,
+      input,
+      idempotencyKey
+    );
+  }
+
+  private async collaborationWrite(
+    path: string,
+    body: unknown,
+    idempotencyKey: string
+  ): Promise<CollaborationView> {
+    if (typeof idempotencyKey !== "string" || idempotencyKey.length === 0) {
+      throw new ControlApiError(0, "CLIENT_IDEMPOTENCY_KEY_REQUIRED", null);
+    }
+    const response = await this.request<{ readonly collaboration: CollaborationView }>(
+      "POST",
+      path,
+      body,
+      { idempotencyKey }
+    );
+    return response.collaboration;
+  }
+
+  /** Список материалов проекта. `includeUnlisted` — режим редактора (включая скрытые). */
+  async listProjectAssets(
+    projectId: string,
+    options: { readonly includeUnlisted?: boolean } = {}
+  ): Promise<readonly ProjectAssetView[]> {
+    const suffix = options.includeUnlisted === true ? "?all=1" : "";
+    const body = await this.request<{ readonly assets: readonly ProjectAssetView[] }>(
+      "GET",
+      `/projects/${encodeURIComponent(projectId)}/assets${suffix}`
+    );
+    return body.assets;
+  }
+
+  /**
+   * Прямая ссылка на байты материала. Адрес неизменяем: он строится по паре
+   * (assetId, hash), поэтому перезагрузка файла под тем же id не подменяет
+   * уже отданные байты.
+   */
+  projectAssetUrl(projectId: string, assetId: string, hash: string): string {
+    return `${this.basePath}/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}?hash=${encodeURIComponent(hash)}`;
+  }
+
+  /**
+   * Загрузка материала. Байты идут octet-stream, текстовые поля — заголовками;
+   * HTTP-заголовки допускают только ASCII, поэтому русские имена и описания
+   * percent-encoded (сервер раскодирует их обратно).
+   */
+  async uploadProjectAsset(
+    projectId: string,
+    input: ProjectAssetUpload
+  ): Promise<ProjectAssetManifestView> {
+    const headers: Record<string, string> = {
+      "content-type": "application/octet-stream",
+      "idempotency-key": input.idempotencyKey ?? createClientIdempotencyKey(),
+      "x-asset-id": input.assetId,
+      "x-claimed-mime": input.mimeType
+    };
+    const textHeaders: readonly (readonly [string, string | undefined])[] = [
+      ["x-filename", input.filename],
+      ["x-alt-text", input.altText],
+      ["x-source", input.source],
+      ["x-rights", input.rights]
+    ];
+    for (const [name, value] of textHeaders) {
+      if (typeof value === "string" && value.length > 0) headers[name] = encodeURIComponent(value);
+    }
+    if (this.csrfToken !== null) headers["x-csrf-token"] = this.csrfToken;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.basePath}/projects/${encodeURIComponent(projectId)}/assets`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: input.bytes as unknown as BodyInit
+      });
+    } catch (error) {
+      throw new ControlApiError(0, "CONTROL_UNAVAILABLE", error);
+    }
+    const payload = await parseJson(response);
+    if (!response.ok) {
+      const code = readErrorCode(payload) ?? `HTTP_${response.status}`;
+      if (response.status === 401 && code === "CONTROL_AUTH_REQUIRED") this.csrfToken = null;
+      throw new ControlApiError(response.status, code, payload);
+    }
+    const manifest = (payload as { readonly manifest?: ProjectAssetManifestView }).manifest;
+    if (manifest === undefined) throw new ControlApiError(response.status, "INVALID_CONTROL_RESPONSE", payload);
+    return manifest;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
@@ -730,9 +1104,25 @@ export class ControlApiClient {
   }
 }
 
+function collaborationPath(projectId: string, questId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}/quests/${encodeURIComponent(questId)}/collaboration`;
+}
+
+function createClientIdempotencyKey(): string {
+  const cryptoObject = globalThis.crypto as Crypto & { randomUUID?: () => string };
+  if (typeof cryptoObject?.randomUUID === "function") return `board-${cryptoObject.randomUUID()}`;
+  return `board-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 async function parseJson(response: Response): Promise<unknown> {
   const text = await response.text();
-  if (text.length === 0) return null;
+  if (text.length === 0) {
+    // 204/205 — законный ответ без тела. Пустое тело с любым другим кодом —
+    // не структурный ответ Control, и раньше это превращалось в TypeError
+    // (`null.projects`) где-то у вызывающего, без внятной причины.
+    if (response.status === 204 || response.status === 205) return null;
+    throw new ControlApiError(response.status, "INVALID_CONTROL_RESPONSE", "empty body");
+  }
   try {
     return JSON.parse(text);
   } catch {

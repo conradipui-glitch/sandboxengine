@@ -37,6 +37,7 @@ import {
   diceCheckPluginRequirements,
   type DiceCheckDefinition
 } from "@living-history/plugins/dice-check";
+import { isId, isPlainObject, cloneJson } from "./input-guards.js";
 
 export const DICE_CHECK_AUTHORED_SIDECAR_KIND = "dice-check.authored" as const;
 
@@ -291,19 +292,8 @@ function sha256Canonical(value: unknown): string {
   return createHash("sha256").update(canonicalStringify(value), "utf8").digest("hex");
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
 
-function isPlainObject(value: unknown): value is Record<string, any> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 function frozen<const T extends object>(value: T): Readonly<T> {
   return Object.freeze(value);

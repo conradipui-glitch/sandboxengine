@@ -1,6 +1,7 @@
 import { CONTRACT_SCHEMA_VERSION, type ContractSchemaVersion } from "./schema.js";
 import { isGameplayEffect, type GameplayEffect } from "./gameplay-effect.js";
 import { isRecord } from "./result.js";
+import { hasOnlyKeys, isId } from "./primitives.js";
 import {
   isSocialActionSubject,
   type SocialActionSubject,
@@ -155,22 +156,16 @@ function isReasonCode(value: unknown): boolean {
   return value === null || (typeof value === "string" && value.length > 0 && value.length <= 100);
 }
 
+/**
+ * NOT merged with `isSafeNonNegativeInteger` / a shared positive-integer
+ * primitive on purpose: these two copies use `Number.isInteger`, which also
+ * accepts integers beyond `Number.MAX_SAFE_INTEGER`. The safe variants in
+ * `primitives.ts` reject those, so merging would tighten accepted input.
+ */
 function isPositiveInteger(value: unknown): boolean {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
 }
 
 function isNonNegativeInteger(value: unknown): boolean {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-function isId(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length >= 1
-    && value.length <= 200
-    && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  const allowedSet = new Set(allowed);
-  return Object.keys(value).every((key) => allowedSet.has(key));
 }

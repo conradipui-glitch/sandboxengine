@@ -4,6 +4,28 @@ import {
   type PublicationResultView,
   type ReleaseSummaryView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
+import { shortHashWide as shortHash } from "./short-hash.js";
+
+/**
+ * Точка входа «Опубликовать» в верхней панели миссии — целевой сценарий владельца:
+ * собрал историю, проверил, опубликовал. Кнопка не врёт: если есть собранный, но ещё
+ * не опубликованный выпуск, она открывает его publish report; если публиковать нечего,
+ * она ведёт в историю версий, где выпуск создаётся, и объясняет это в подсказке.
+ */
+export function renderPublishEntry(versions: VersionsReadModel | null): string {
+  const candidate = versions === null
+    ? null
+    : versions.releases.find((release) => !release.isCurrent && !release.wasPublished) ?? null;
+  if (candidate !== null) {
+    return `<button class="button-secondary" data-action="prepare-publish" data-release-id="${escapeAttr(candidate.releaseId)}" title="Опубликовать выпуск ${escapeAttr(candidate.releaseId)}: история появится на сайте">Опубликовать</button>`;
+  }
+  if (versions !== null && versions.currentReleaseId !== null
+      && versions.releases.every((release) => release.wasPublished || release.isCurrent)) {
+    return `<button class="button-secondary" data-action="open-utility-panel" data-panel="publish" title="Все выпуски уже опубликованы — открыть историю версий">Опубликовать…</button>`;
+  }
+  return `<button class="button-secondary" data-action="open-utility-panel" data-panel="publish" title="Публиковать пока нечего: проверьте миссию и создайте выпуск в истории версий">Опубликовать…</button>`;
+}
 
 export interface RestoreIntent {
   readonly sourceRevision: number;
@@ -79,7 +101,7 @@ export function renderVersionsPanel(
   if (!currentDraft) return "";
   if (!model) {
     return `<section class="versions-section" aria-labelledby="versions-heading">
-      <div class="section-title"><div><h2 id="versions-heading">Версии</h2><p>История и immutable releases загружаются с Control API.</p></div></div>
+      <div class="section-title"><div><h2 id="versions-heading">Версии</h2><p>История и выпуски загружаются с сервера.</p></div></div>
       <div class="versions-loading ${errorMessage ? "error" : ""}">${escapeHtml(errorMessage ?? "Загружаем server history…")}</div>
     </section>`;
   }
@@ -91,7 +113,7 @@ export function renderVersionsPanel(
 
   return `<section class="versions-section" aria-labelledby="versions-heading">
     <div class="section-title">
-      <div><h2 id="versions-heading">Версии</h2><p>Только серверные immutable revisions и releases. Никакой локальной истории.</p></div>
+      <div><h2 id="versions-heading">Версии</h2><p>Только серверные версии и выпуски. Никакой локальной истории.</p></div>
       <div class="versions-current">
         <span>draft <strong>r${currentDraft.draftRevision}</strong></span>
         <code title="current draft content hash">${escapeHtml(shortHash(currentDraft.contentHash))}</code>
@@ -106,7 +128,7 @@ export function renderVersionsPanel(
 
     <div class="versions-grid">
       <div class="versions-card">
-        <div class="versions-card-title"><h3>Draft history</h3><span>${model.history.length}${model.historyHasMore ? "+" : ""}</span></div>
+        <div class="versions-card-title"><h3>История черновика</h3><span>${model.history.length}${model.historyHasMore ? "+" : ""}</span></div>
         <div class="version-list">
           ${history.map((entry) => `<article class="version-row ${entry.draftRevision === model.currentRevision ? "current" : ""}">
             <div>
@@ -125,7 +147,7 @@ export function renderVersionsPanel(
       </div>
 
       <div class="versions-card">
-        <div class="versions-card-title"><h3>Immutable releases</h3><span>${releases.length}</span></div>
+        <div class="versions-card-title"><h3>Неизменяемые выпуски</h3><span>${releases.length}</span></div>
         <div class="version-list">
           ${releases.map((release) => `<article class="version-row release-row ${release.isCurrent ? "current" : ""}">
             <div>
@@ -138,7 +160,7 @@ export function renderVersionsPanel(
             </div>
           </article>`).join("") || `<div class="empty-panel">Immutable releases ещё не создавались.</div>`}
         </div>
-        <p class="form-hint">Current pointer: ${model.currentReleaseId === null ? "не установлен" : `<code>${escapeHtml(model.currentReleaseId)}</code>`}.</p>
+        <p class="form-hint">Текущий выпуск: ${model.currentReleaseId === null ? "не установлен" : `<code>${escapeHtml(model.currentReleaseId)}</code>`}.</p>
         ${renderReleaseBuildForm(canBuildRelease, currentDraft, validation)}
       </div>
     </div>
@@ -191,10 +213,10 @@ function renderReleaseBuildIntent(
 function publicationAction(release: ReleaseSummaryView, model: VersionsReadModel, allowed: boolean): string {
   if (!allowed || release.isCurrent) return "";
   if (release.wasPublished && model.currentReleaseId !== null) {
-    return `<button data-action="prepare-rollback" data-release-id="${escapeAttr(release.releaseId)}">Rollback report</button>`;
+    return `<button data-action="prepare-rollback" data-release-id="${escapeAttr(release.releaseId)}">Откатить…</button>`;
   }
   if (!release.wasPublished) {
-    return `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Publish report</button>`;
+    return `<button data-action="prepare-publish" data-release-id="${escapeAttr(release.releaseId)}">Опубликовать…</button>`;
   }
   return "";
 }
@@ -203,7 +225,7 @@ function renderPublishReport(report: PublishReportIntent): string {
   const rollback = report.action === "rollback";
   return `<div class="restore-confirm publish-report" role="status">
     <div>
-      <strong>Owner ${rollback ? "rollback" : "publish"} report: ${escapeHtml(report.releaseId)}</strong>
+      <strong>${rollback ? "Откат" : "Публикация"} ${escapeHtml(report.releaseId)}</strong>
       <p>При подтверждении сервер выполнит CAS current pointer на этот exact immutable release.</p>
       <p>Draft r${report.draftRevision} · draft hash ${escapeHtml(shortHash(report.draftContentHash))} · compiled hash ${escapeHtml(shortHash(report.compiledContentHash))}.</p>
       <p>Expected current pointer: ${report.expectedCurrentReleaseId === null ? "none" : `<code>${escapeHtml(report.expectedCurrentReleaseId)}</code>`}.</p>
@@ -244,23 +266,6 @@ function renderRestoreIntent(intent: RestoreIntent, currentRevision: number): st
       <button data-action="cancel-restore">Отмена</button>
     </div>
   </div>`;
-}
-
-function shortHash(value: string): string {
-  return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function deepFreeze<T>(value: T): T {

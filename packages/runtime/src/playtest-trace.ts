@@ -1,7 +1,20 @@
 // @ts-ignore — runtime is pinned to Node 24.19.0 where node:sqlite is built in; no @types/node dependency is installed yet.
 import { DatabaseSync } from "node:sqlite";
-import { MAX_PUBLIC_RESPONSE_JSON_CHARS } from "./memory-storage.js";
-import { SQLiteStorageCorruptionError } from "./sqlite-storage.js";
+import {
+  cloneJson,
+  deepFreeze,
+  frozen,
+  isJsonValue,
+  isNonEmptyPath,
+  isPlainObject,
+  isRuntimeId,
+  isSha256,
+  isSafeNonNegativeInteger,
+  MAX_PUBLIC_RESPONSE_JSON_CHARS,
+  normalizeContentHash
+} from "./json-guards.js";
+import { sessionSummaryFromColumns, turnEvidenceFromColumns } from "./session-rows.js";
+import { SQLiteStorageCorruptionError } from "./sqlite-errors.js";
 import type { PinnedReleaseIdentity, RuntimePublicResponse } from "./storage.js";
 
 export const DEFAULT_PLAYTEST_TRACE_SESSION_LIMIT = 20;
@@ -62,7 +75,7 @@ export class SQLitePlaytestTraceReader implements PlaytestTraceReader {
   #closed = false;
 
   constructor(options: SQLitePlaytestTraceReaderOptions) {
-    if (typeof options.path !== "string" || options.path.length < 1 || options.path.length > 4_096) {
+    if (!isNonEmptyPath(options.path)) {
       throw new TypeError("SQLite path is required");
     }
     this.#db = new DatabaseSync(options.path, {
@@ -99,7 +112,7 @@ export class SQLitePlaytestTraceReader implements PlaytestTraceReader {
     const release = frozen({
       questId: input.questId,
       releaseId: input.releaseId,
-      contentHash: input.contentHash.toLowerCase()
+      contentHash: normalizeContentHash(input.contentHash)
     });
 
     const tableState = this.#runtimeTableState();
@@ -121,11 +134,7 @@ export class SQLitePlaytestTraceReader implements PlaytestTraceReader {
     const sessions: PlaytestTraceSessionEvidence[] = [];
 
     for (const row of sessionRows.slice(0, sessionLimit)) {
-      const sessionId = String(row.session_id);
-      const currentRevision = Number(row.revision);
-      if (!isRuntimeId(sessionId) || !isSafeNonNegativeInteger(currentRevision)) {
-        throw new SQLiteStorageCorruptionError("invalid session row in playtest trace");
-      }
+      const { sessionId, currentRevision } = sessionSummaryFromColumns(row);
       const operationRows = this.#db.prepare(`
         SELECT o.operation_id, o.expected_revision, o.status, o.completion_kind,
                o.turn_id, o.public_response_json,
@@ -171,6 +180,11 @@ export class SQLitePlaytestTraceReader implements PlaytestTraceReader {
   }
 }
 
+/**
+ * DIVERGENT from `session-rows.ts#operationRecordFromColumns`: this projection is
+ * evidence (no idempotency/request/fencing material) and admits only the two
+ * historical statuses, so it is intentionally not unified with the storage mapper.
+ */
 function operationEvidenceFromRow(row: any, expectedSessionId: string): PlaytestTraceOperationEvidence {
   const operationId = String(row.operation_id);
   const expectedRevision = Number(row.expected_revision);
@@ -193,17 +207,7 @@ function operationEvidenceFromRow(row: any, expectedSessionId: string): Playtest
 
   let turn: PlaytestTraceTurnEvidence | null = null;
   if (completionKind === "turn") {
-    const turnId = nullableString(row.turn_id);
-    const beforeRevision = Number(row.before_revision);
-    const afterRevision = Number(row.after_revision);
-    const stateHash = nullableString(row.state_hash);
-    if (!turnId || !isRuntimeId(turnId)
-      || !isSafeNonNegativeInteger(beforeRevision)
-      || afterRevision !== beforeRevision + 1
-      || !stateHash || !isSha256(stateHash)) {
-      throw new SQLiteStorageCorruptionError("completed turn evidence is missing or invalid");
-    }
-    turn = frozen({ turnId, beforeRevision, afterRevision, stateHash: stateHash.toLowerCase() });
+    turn = frozen(turnEvidenceFromColumns(row));
   } else if (row.turn_id !== null || row.before_revision !== null || row.after_revision !== null || row.state_hash !== null) {
     throw new SQLiteStorageCorruptionError("without-turn operation unexpectedly has turn evidence");
   }
@@ -226,59 +230,19 @@ function boundedLimit(value: unknown, fallback: number, max: number, label: stri
   return value as number;
 }
 
+/**
+ * DIVERGENT from `json-guards.ts#isPublicResponse`: no serialized-size bound here,
+ * because the raw TEXT column length is already bounded by the caller above.
+ */
 function isPublicResponse(value: unknown): value is RuntimePublicResponse {
   return isPlainObject(value) && isJsonValue(value, 0);
 }
 
-function isJsonValue(value: unknown, depth: number): boolean {
-  if (depth > 20) return false;
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length <= 1_000 && value.every((entry) => isJsonValue(entry, depth + 1));
-  if (!isPlainObject(value)) return false;
-  const entries = Object.entries(value);
-  return entries.length <= 1_000
-    && entries.every(([key, entry]) => key.length <= 200 && isJsonValue(entry, depth + 1));
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
+/**
+ * DIVERGENT from `json-guards.ts#parseJsonColumn`: callers here pre-check
+ * `typeof ... === "string"`, and this variant intentionally omits the "is not
+ * text" branch (JSON.parse would coerce a non-string instead of throwing).
+ */
 function parseJson(value: string, label: string): unknown {
   try { return JSON.parse(value); } catch { throw new SQLiteStorageCorruptionError(`${label} is invalid JSON`); }
-}
-
-function isRuntimeId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value);
-}
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
-}
-
-function isSafeNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function nullableString(value: unknown): string | null {
-  return value === null || value === undefined ? null : String(value);
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-function frozen<T extends object>(value: T): Readonly<T> {
-  return Object.freeze(value);
 }

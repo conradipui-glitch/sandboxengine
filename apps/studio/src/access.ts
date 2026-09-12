@@ -5,6 +5,7 @@ import {
   type ControlProjectMemberView,
   type ProjectView
 } from "./api.js";
+import { escapeHtml } from "./dom-escape.js";
 
 export type StudioAccessMode = "probing" | "local-owner" | "anonymous" | "authenticated";
 
@@ -32,6 +33,14 @@ export async function probeStudioAccess(api: ControlApiClient): Promise<StudioAc
     return authenticatedAccessState(api, auth);
   } catch (error) {
     if (error instanceof ControlApiError && error.status === 401 && error.code === "CONTROL_AUTH_REQUIRED") {
+      // Режим единого входа: сессия уже подтверждена на краю (gate), поэтому
+      // вторая форма с логином и паролем не показывается — берём сессию Control
+      // по подписанному ассерту. Если режим не включён, поведение прежнее.
+      try {
+        return authenticatedAccessState(api, await api.openGateSession());
+      } catch {
+        // gate-режим не включён — обычная форма входа.
+      }
       return freeze({
         mode: "anonymous" as const,
         auth: null,
@@ -118,7 +127,7 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
 
   if (access.mode === "local-owner") {
     return `<section class="access-panel">
-      <div><strong>Local loopback owner</strong><span>Локальный режим без сетевой identity. Сервер всё равно остаётся authority.</span></div>
+      <div><strong>Локальный режим</strong><span>Работа без входа: проверки и сохранения выполняет сервер.</span></div>
       ${project ? roleSummary(project.role) : ""}
     </section>`;
   }
@@ -150,11 +159,18 @@ export function renderAccessPanel(access: StudioAccessState, project: ProjectVie
 
 function roleSummary(role: ProjectView["role"]): string {
   const permissions = role === "owner"
-    ? "редактирование · validation/playtest · release build · publish/rollback · access"
+    ? "редактирование · проверка и запуск · выпуски · публикация и откат · участники"
     : role === "editor"
-      ? "редактирование · validation/playtest · release build; publish/access — owner only"
-      : "read · validation/playtest; редактирование/publish/access недоступны";
-  return `<div class="access-role"><span>role</span><strong>${escapeHtml(role)}</strong><small>${escapeHtml(permissions)}</small></div>`;
+      ? "редактирование · проверка и запуск · выпуски; публикация и участники — только владелец"
+      : "чтение · проверка и запуск; редактирование, публикация и участники недоступны";
+  return `<div class="access-role"><span>Роль</span><strong>${escapeHtml(projectRoleLabel(role))}</strong><small>${escapeHtml(permissions)}</small></div>`;
+}
+
+export function projectRoleLabel(role: string): string {
+  if (role === "owner") return "Владелец";
+  if (role === "editor") return "Редактор";
+  if (role === "tester") return "Наблюдатель";
+  return role;
 }
 
 function renderMembers(
@@ -208,15 +224,6 @@ function hasMutationTransport(access: StudioAccessState): boolean {
 
 function shortId(value: string): string {
   return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function freeze<const T extends object>(value: T): Readonly<T> {

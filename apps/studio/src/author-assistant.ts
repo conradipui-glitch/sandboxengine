@@ -9,6 +9,8 @@ import {
   ControlApiClient,
   type AuthorJobReadView
 } from "./api.js";
+import { escapeAttr, escapeHtml } from "./dom-escape.js";
+import { shortHash } from "./short-hash.js";
 
 export interface AuthorProposalCardView {
   readonly artifact: AuthorAgentProposalArtifact;
@@ -86,7 +88,7 @@ export function renderAuthorAssistantPanel(
     return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Server contract недоступен.</p></div></div><div class="assistant-empty">${escapeHtml(state.reason)}</div></section>`;
   }
   if (state.kind === "empty") {
-    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Author Assistant</h2><p>Persistent author chat · server authority</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
+    return `<section class="author-assistant" data-author-assistant><div class="author-assistant-head"><div><h2>Соавтор</h2><p>Переписка хранится на сервере</p></div></div>${options.canMutate && options.hasMutationProof && options.busy !== true
       ? `<button class="primary" data-action="author-start">Начать диалог</button>`
       : `<div class="assistant-empty">Для нового диалога нужна editor/owner роль и свежий CSRF proof.</div>`}</section>`;
   }
@@ -125,7 +127,7 @@ export function renderAuthorAssistantPanel(
     ${job.state === "paused_budget" ? `<div class="assistant-budget-note">Segment budget исчерпан. Следующее сообщение может явно открыть новый bounded segment.</div>` : ""}
     ${canSend ? `<form class="assistant-composer" data-form="author-message">
       <input type="hidden" name="jobId" value="${escapeAttr(job.jobId)}">
-      <textarea name="instruction" required maxlength="20000" rows="3" placeholder="Опишите, что изменить в текущем квесте…"></textarea>
+      <textarea name="instruction" required maxlength="20000" rows="3" placeholder="Опишите, что изменить в текущей миссии…"></textarea>
       ${job.state === "paused_budget" ? `<input type="hidden" name="resumeBudget" value="true">` : ""}
       <button class="primary" type="submit">Отправить</button>
     </form>` : terminal
@@ -190,7 +192,7 @@ function checkpointLabel(checkpoint: AuthorAgentCheckpoint): string {
 }
 
 function jobFailedHint(code: string): string {
-  if (code === "context_too_large") return " — контекст кампании превышает локальный лимит; сократите квест до 32 блоков или уменьшите объём текста.";
+  if (code === "context_too_large") return " — контекст кампании превышает локальный лимит; сократите миссию до 32 блоков или уменьшите объём текста.";
   if (code === "backend.auth_required") return " — ИИ не подключён или ключ отклонён: укажите провайдера, модель и ключ в форме «Подключение ИИ-помощника» выше.";
   if (code === "backend.rate_limited") return " — провайдер отвечает 429 (лимит запросов); повторите позже.";
   if (code === "backend.timeout") return " — провайдер не ответил за отведённое время; повторите запрос.";
@@ -200,16 +202,6 @@ function jobFailedHint(code: string): string {
   if (code === "backend.backend_error") return " — провайдер вернул ошибку; проверьте адрес API и модель, затем повторите.";
   return "";
 }
-
-function shortHash(value: string): string {
-  return value.length > 14 ? `${value.slice(0, 7)}…${value.slice(-6)}` : value;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
-}
-
-function escapeAttr(value: string): string { return escapeHtml(value); }
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {

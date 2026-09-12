@@ -75,13 +75,13 @@ test("B05-03 Player UI serves human surface, safe metadata and the compiled Runt
   assert.equal(page.status, 200);
   const html = await page.text();
   assert.match(html, /Living History Player/);
-  assert.match(html, /app\.js/);
+  assert.match(html, /player-assets\/app\.js/);
 
-  const css = await fetch(`${fixture.baseUrl}/styles.css`);
+  const css = await fetch(`${fixture.baseUrl}/player-assets/styles.css`);
   assert.equal(css.status, 200);
   assert.match(await css.text(), /\.scene-surface/);
 
-  const browserEntry = await fetch(`${fixture.baseUrl}/app.js`);
+  const browserEntry = await fetch(`${fixture.baseUrl}/player-assets/app.js`);
   assert.equal(browserEntry.status, 200);
   const browserCode = await browserEntry.text();
   assert.match(browserCode, /RuntimePlayerClient/);
@@ -93,6 +93,13 @@ test("B05-03 Player UI serves human surface, safe metadata and the compiled Runt
   const clientLibrary = await fetch(`${fixture.baseUrl}/player-lib/client.js`);
   assert.equal(clientLibrary.status, 200);
   assert.match(await clientLibrary.text(), /class RuntimePlayerClient/);
+
+  // V00: корневые пути статики больше не обслуживаются (их забирала чужая поверхность).
+  assert.equal((await fetch(`${fixture.baseUrl}/styles.css`)).status, 404);
+  assert.equal((await fetch(`${fixture.baseUrl}/app.js`)).status, 404);
+  assert.equal((await fetch(`${fixture.baseUrl}/presentation-renderer.js`)).status, 404);
+  const renderer = await fetch(`${fixture.baseUrl}/player-assets/presentation-renderer.js`);
+  assert.equal(renderer.status, 200);
 
   const metaResponse = await fetch(`${fixture.baseUrl}/player-meta.json`);
   assert.equal(metaResponse.status, 200);

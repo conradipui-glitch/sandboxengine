@@ -202,3 +202,35 @@ That smoke does not create sessions and does not enable Florence Engine rollout.
 - no shared-network SQLite multi-writer guarantee;
 - no built-in log rotation;
 - no automatic paid API fallback from subscription/Codex paths.
+
+## 15. VPS compose services (M06/R04 candidate)
+
+`deploy/vps/docker-compose.yml` defines four services on the same SQLite volume:
+
+| Service | Container | Ports | Healthcheck |
+|---|---|---|---|
+| `engine` | `lhc-engine` | 8742 (runtime), 8788 (control, loopback) | `http://127.0.0.1:8742/healthz` |
+| `authored` | `lhc-authored` | 8746 (legacy authored runtime) | `http://127.0.0.1:8746/healthz` |
+| `studio` | `lhc-studio` | 8740, 8745 | — |
+| `gate` | `lhc-gate` | 8744 | — |
+
+nginx front: 8743 → `/public/v1/missions*` to control 8788, `/` to authored 8746; 8741 → Studio.
+
+Configuration:
+
+- secrets live in `deploy/vps/.env` (not committed) and are injected with `--env-file`:
+  `docker compose --env-file deploy/vps/.env -f deploy/vps/docker-compose.yml up -d <service>`;
+- `LH_PUBLIC_MISSION_SESSION_SECRET` is required by `engine` for public mission sessions. Do not place it in `/tmp` overrides: the file would be world-readable and would not survive a reboot;
+- `authored` uses `SQLitePublishedSessionBindingStore`, so a container restart no longer drops already started legacy authored sessions.
+
+Delivered state (2026-09-11): `/opt/lhc/engine` is at `7e61f9889724f01a5f5c1c2e511093c177ceac6b`; `lhc-engine`, `lhc-authored`, `lhc-studio` and `lhc-gate` are healthy; the legacy `/tmp/lhc-m06-compose-override.yml` override is removed and the public session secret lives only in `deploy/vps/.env` (mode 600).
+
+Recovery procedure after recreating a container:
+
+1. `docker compose --env-file deploy/vps/.env -f deploy/vps/docker-compose.yml up -d` (start/reconcile all services);
+2. verify each healthcheck: `docker ps --filter name=lhc- --format '{{.Names}} {{.Status}}'` must show `(healthy)` for `lhc-engine` and `lhc-authored`;
+3. smoke the public routes: `curl -fsS https://<host>:8743/healthz`, `curl -fsS https://<host>:8743/public/v1/missions`;
+4. smoke Studio: `curl -fsS -o /dev/null -w '%{http_code}' https://<host>:8741/`;
+5. resolve an existing legacy authored session by id to confirm bindings survived.
+
+Rollback: keep the previous image tags and the previous `deploy/vps/.env`; recreate the affected service with the earlier compose file revision. Do not rewrite active sessions — prefer release-pointer rollback for a bad published release.

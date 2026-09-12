@@ -1,4 +1,5 @@
 import { PRESENTATION_SCHEMA_VERSION } from "./schema.js";
+import { isBoundedText, isId } from "./primitives.js";
 import {
   ASSET_MIME_TYPES,
   PRESENTATION_MAX_CHILDREN,
@@ -15,7 +16,6 @@ import {
   type SceneFrameV2
 } from "./presentation-v2.js";
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const IMAGE_MIME_TYPES = new Set<AssetMimeTypeV2>(["image/png", "image/webp", "image/jpeg"]);
 const AUDIO_MIME_TYPES = new Set<AssetMimeTypeV2>(["audio/mpeg", "audio/ogg", "audio/wav"]);
@@ -252,18 +252,10 @@ function isNullableSafeInteger(value: number | null): boolean {
   return value === null || (Number.isSafeInteger(value) && value >= 0);
 }
 
-function isId(value: unknown): value is string {
-  return typeof value === "string" && ID_PATTERN.test(value);
-}
-
 function isHash(value: unknown): value is string {
   return typeof value === "string" && HASH_PATTERN.test(value);
 }
 
 function isNullableBoundedText(value: string | null, max: number): boolean {
   return value === null || isBoundedText(value, 1, max);
-}
-
-function isBoundedText(value: unknown, min: number, max: number): value is string {
-  return typeof value === "string" && value.length >= min && value.length <= max;
 }

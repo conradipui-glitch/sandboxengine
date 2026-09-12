@@ -1,6 +1,6 @@
 # B13 — подключаемый Builder и deployment
 
-Статус: **B13.0–B13.c1 GREEN (все карточки)**
+Статус: **B13.0–B13.c1 реализованы; приёмка 2026-09-09: 4×PROVEN + 1×PARTIAL (изоляция a2) — [сводка](../worklog/2026-09-09-B13-acceptance-closure.md)**
 Вход: опубликованный B12 (`6f2ad73fca228c60361012250b72609447edc968` в истории текущей ветки), §25 и T33–35 спецификации.
 
 ## Граница блока
@@ -17,8 +17,9 @@ Builder работает отдельным процессом от Core/Runtime
 | B13.a1 | Отдельный workspace adapter: чтение exact base SHA, realpath/symlink boundary, отсутствие записи в исходный checkout | GREEN (2026-09-09) |
 | B13.a2 | Bounded agent job, patch только в разрешённые пути, diff и проверки на точном tree hash | PARTIAL (2026-09-09): policy-граница + CI-runner изоляция; локальная процессная изоляция отсутствует (нет Docker/WSL) — [worklog](../worklog/2026-09-09-B13-acceptance-environment.md) |
 | B13.b1 | Разрешённый commit/push/change set, внешний operation ID и сверка CI с нужным SHA | GREEN (2026-09-09) |
-| B13.b2 | Один preview deployment adapter с artifact identity и smoke | GREEN (2026-09-09, adapter; живой dispatch — отдельный шаг) |
-| B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | GREEN (2026-09-09, adapter; живой production dispatch — по разрешению оператора) |
+| B13.b2 | Один preview deployment adapter с artifact identity и smoke | GREEN adapter + **живой прогон PROVEN** (operationId `b13-b2-live-acceptance-20260909`, run `34324006071`, квитанция сохранена) |
+| B13.c1 | Production policy, reconciliation потерянного ответа и проверенный rollback | GREEN (adapter; живой production dispatch — по разрешению оператора) |
+| B13.приёмка | §25/T33–35 сверка: изоляция a2, живой деплой, версии, игровой smoke, rollback preview | **4 PROVEN + a2-изоляция PARTIAL** — [acceptance-closure worklog](../worklog/2026-09-09-B13-acceptance-closure.md) |
 
 ## B13.0 — policy baseline
 
@@ -57,11 +58,12 @@ exact artifact SHA, smoke URL + подстрока) → `PreviewDeploymentAdapte
 `deployment_not_authorized` при другом SHA; failed run/smoke fail closed. Gateway реализован
 через `gh` (fixed argv, чистое environment); Cloudflare-токены остаются только в CI.
 
-**Проверить:** `npm run test:builder` — 19/19; verify exit 0. Живой dispatch workflow
-`Deploy Florence Preview` не выполнялся из этой сессии (ref чужой вертикали) и фиксируется
-как отдельный шаг приёмки.
+**Проверить:** `npm run test:builder` — 19/19; verify exit 0. Живой прогон выполнен 2026-09-09
+через сам адаптер: operationId `b13-b2-live-acceptance-20260909`, run `34324006071` success,
+smoke preview 200 — квитанция `b13-b2-live-receipt.json`.
 
-**Доказательство:** [worklog b2](../worklog/2026-09-09-B13-b2-preview-deployment.md).
+**Доказательство:** [worklog b2](../worklog/2026-09-09-B13-b2-preview-deployment.md),
+[acceptance-closure](../worklog/2026-09-09-B13-acceptance-closure.md).
 
 ## B13.c1 — production policy, reconciliation, rollback (2026-09-09, GREEN)
 
