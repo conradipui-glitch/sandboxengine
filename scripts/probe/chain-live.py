@@ -100,9 +100,16 @@ status, parsed, elapsed = post("/local/mission-chain/document", {"sessionId": se
 document = parsed.get("document") if isinstance(parsed, dict) else None
 print(f"HTTP {status} за {elapsed:.1f} с | ok={parsed.get('ok') if isinstance(parsed, dict) else None}")
 if isinstance(document, dict):
-    print("title:", str(document.get("title") or "")[:80])
-    print("logline:", str(document.get("logline") or "")[:120])
-    print("scenes:", len(document.get("scenes") or []), "| endings:", len(document.get("endings") or []))
+    # Документ держит сюжет внутри story: сцены, выборы и финалы лежат там,
+    # а не на верхнем уровне (раньше probe печатал нули и это путало).
+    story = document.get("story") if isinstance(document.get("story"), dict) else {}
+    scenes = story.get("scenes") or []
+    endings = story.get("endings") or []
+    choices = sum(len(scene.get("choices") or []) for scene in scenes if isinstance(scene, dict))
+    print("title:", str(story.get("title") or document.get("title") or "")[:80])
+    print("logline:", str(story.get("logline") or document.get("logline") or "")[:120])
+    print("scenes:", len(scenes), "| choices:", choices, "| endings:", len(endings))
+    print("endingTitles:", [str(e.get("title") or "")[:40] for e in endings if isinstance(e, dict)][:4])
     print("keys:", sorted(document.keys())[:14])
 else:
     print("document:", str(document)[:200])

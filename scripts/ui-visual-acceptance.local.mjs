@@ -273,8 +273,11 @@ const FINGERPRINT = `(() => {
   let h = 5381;
   for (let i = 0; i < html.length; i += 3) { h = ((h * 33) ^ html.charCodeAt(i)) >>> 0; }
   const overlays = Array.from(document.querySelectorAll(".modal-backdrop, [role=dialog], .ed-utility-panel, .ed-menu, .lh-tour-card, .lh-help-dialog")).filter(vis).length;
+  // Раскрытие <details> (служебная панель подключения ИИ) не меняет innerHTML:
+  // без этого признака рабочая кнопка «Закрыть» выглядела бы мёртвой.
+  const details = Array.from(document.querySelectorAll("details")).map((d) => (d.open ? "1" : "0")).join("");
   const zoomEl = document.querySelector(".board-zoom-value, .story-zoom-value");
-  return JSON.stringify({ h, len: html.length, overlays, zoom: zoomEl ? String(zoomEl.textContent || "").trim() : null });
+  return JSON.stringify({ h, len: html.length, overlays, details, zoom: zoomEl ? String(zoomEl.textContent || "").trim() : null });
 })()`;
 
 const FORM_VALIDITY = (uaId) => `(() => {
@@ -855,7 +858,7 @@ async function probeControls(s) {
     const badDelta = httpProblems.slice(beforeBad);
     const dlDelta = downloadsSeen.length - beforeDownloads;
 
-    const domChanged = after.h !== before.h || after.len !== before.len || after.overlays !== before.overlays;
+    const domChanged = after.h !== before.h || after.len !== before.len || after.overlays !== before.overlays || after.details !== before.details;
     const navigated = afterUrl !== beforeUrl;
     const reacted = clicked && (domChanged || reqDelta > 0 || navigated || dlDelta > 0);
 
