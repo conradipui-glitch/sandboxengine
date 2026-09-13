@@ -110,6 +110,8 @@ export const CHAIN_SEND_LABEL = "Ответить";
 export const CHAIN_CONFIRM_LABEL = "Собрать миссию по цепочке";
 export const CHAIN_ASSEMBLE_HINT =
   "Можно собрать миссию уже сейчас: помощник возьмёт то, что вы рассказали, и сам дополнит детали.";
+export const CHAIN_WAIT_TEXT =
+  "Собираем миссию по цепочке: сцены, диалоги, условия и финалы. Модель пишет весь документ сразу, поэтому это может занять несколько минут — окно не закрывайте.";
 export const CHAIN_RESTART_LABEL = "Начать заново";
 export const CHAIN_ACCEPT_LABEL = "Принять и редактировать";
 export const CHAIN_DECLINE_LABEL = "Отклонить";
@@ -253,7 +255,7 @@ function renderComposer(session: ChainSessionView, composerError: string | null)
        </div>`
     : "";
   const waitNote = session.stage === "generating"
-    ? `<p class="chain-wait" data-chain-wait role="status">Собираем миссию по цепочке: сцены, диалоги, условия и финалы. Это занимает до пары минут.</p>`
+    ? `<p class="chain-wait" data-chain-wait role="status">${CHAIN_WAIT_TEXT}</p>`
     : "";
   return `${sessionError}${composer}${assembleNow}${review}${waitNote}${composerError !== null ? `<p class="chain-error" data-chain-composer-error role="alert">${escapeHtml(composerError)}</p>` : ""}`;
 }

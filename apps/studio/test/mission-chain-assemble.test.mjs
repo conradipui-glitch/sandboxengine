@@ -242,3 +242,36 @@ test("AI-CHAIN UI: ошибка сборки показывается автор
   assert.match(html, /chain-error/, "ошибка стилизована отдельным классом");
   assert.ok(html.includes("data-chain-composer") || html.includes("data-action=\"chain-confirm\""), "автор может повторить или ответить дальше");
 });
+
+test("AI-CHAIN UI: во время сборки автор знает, что это несколько минут", async () => {
+  const root = fakeRoot();
+  let release = () => {};
+  const pending = new Promise((resolve) => { release = resolve; });
+  const host = hostFor(root, [session(), session()]);
+  // Сборка идёт минутами: держим ответ, чтобы увидеть состояние ожидания.
+  host.confirmChain = async (sessionId) => {
+    host.calls.confirm.push(sessionId);
+    await pending;
+    return session({ stage: "generating" });
+  };
+  renderMissionChainPanel(host);
+  await flush();
+
+  typeIdea(root, "Маяк");
+  click(root, "chain-start");
+  await flush();
+  await flush();
+
+  click(root, "chain-confirm");
+  await flush();
+
+  const html = root.innerHTML;
+  assert.match(html, /data-chain-wait/, "во время сборки показано ожидание");
+  assert.ok(html.includes("несколько минут"), "ожидание честно называет длительность: писатель генерирует документ минутами");
+  assert.ok(html.includes("окно не закрывайте"), "автор знает, что вкладку закрывать нельзя");
+  assert.match(html, /chain-wait/, "ожидание стилизовано отдельным классом");
+
+  release();
+  await flush();
+  await flush();
+});
