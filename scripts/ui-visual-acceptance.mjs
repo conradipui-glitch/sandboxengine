@@ -257,7 +257,10 @@ async function shot(name) {
 
 // --- страничные выражения ----------------------------------------------------
 
-const VIS = "function vis(el){if(!el||!el.getBoundingClientRect)return false;const r=el.getBoundingClientRect();if(r.width<=0||r.height<=0)return false;const cs=getComputedStyle(el);if(cs.visibility==='hidden'||cs.display==='none'||cs.pointerEvents==='none')return false;return true;}";
+// Элемент внутри закрытого <details> (или скрытого предка) автору не виден,
+// хотя Chrome отдаёт ему ненулевой прямоугольник. Без этой проверки приёмка
+// нажимает невидимую кнопку и объявляет её мёртвой.
+const VIS = "function vis(el){if(!el||!el.getBoundingClientRect)return false;const r=el.getBoundingClientRect();if(r.width<=0||r.height<=0)return false;const cs=getComputedStyle(el);if(cs.visibility==='hidden'||cs.display==='none'||cs.pointerEvents==='none')return false;for(let p=el.parentElement;p;p=p.parentElement){if(p.tagName==='DETAILS'&&!p.open)return false;if(p.hasAttribute&&p.hasAttribute('hidden'))return false;const pcs=getComputedStyle(p);if(pcs.display==='none'||pcs.visibility==='hidden')return false;}return true;}";
 
 const DISMISS_TOUR = `(() => {
   const b = document.querySelector('[data-onboarding-action="tour-skip"]');
