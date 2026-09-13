@@ -35,6 +35,7 @@ export type AgentBackendErrorCode =
   | "session_expired"
   | "rate_limited"
   | "invalid_response"
+  | "output_truncated"
   | "backend_error";
 
 export interface AgentBackendError {
@@ -280,7 +281,7 @@ function requestDeadlineError(deadlineAtMs: number, signal: AbortSignal | undefi
 }
 
 function normalizeAgentError(value: Partial<AgentBackendError> & Pick<AgentBackendError, "code">): AgentBackendError {
-  const retryableDefault = value.code === "timeout" || value.code === "rate_limited" || value.code === "backend_error";
+  const retryableDefault = value.code === "timeout" || value.code === "rate_limited" || value.code === "output_truncated" || value.code === "backend_error";
   return Object.freeze({
     code: value.code,
     message: boundedMessage(value.message ?? value.code),

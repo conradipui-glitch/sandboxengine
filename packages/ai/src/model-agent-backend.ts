@@ -21,11 +21,12 @@ function failure(
   code: AgentBackendErrorCode,
   retryable = false,
   usage: ProviderUsage = EMPTY_USAGE,
-  backendRequestId: string | null = null
+  backendRequestId: string | null = null,
+  message: string = code
 ) {
   return Object.freeze({
     ok: false as const,
-    error: Object.freeze({ code, message: code, retryable, retryAfterMs: null, backendRequestId }),
+    error: Object.freeze({ code, message, retryable, retryAfterMs: null, backendRequestId }),
     usage
   });
 }
@@ -127,9 +128,9 @@ export class ModelProviderAgentBackend implements AgentBackend {
       if (!result.ok) {
         const code = result.error.httpStatus === 401 || result.error.httpStatus === 403 ? "auth_required"
           : result.error.httpStatus === 429 ? "rate_limited"
-          : ["aborted", "timeout", "invalid_response"].includes(result.error.code)
+          : ["aborted", "timeout", "invalid_response", "output_truncated"].includes(result.error.code)
             ? result.error.code as AgentBackendErrorCode : "backend_error";
-        return failure(code, result.error.retryable, result.usage, result.error.providerRequestId);
+        return failure(code, result.error.retryable, result.usage, result.error.providerRequestId, result.error.message);
       }
       if (result.output.format !== "json_object" || !isJsonObject(result.output.value)) {
         return failure("invalid_response", false, result.usage, result.providerRequestId);

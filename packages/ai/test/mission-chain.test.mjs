@@ -50,6 +50,12 @@ function chainPayload() {
   });
 }
 
+/** Цепочка с подменённым куском chain — для проверки брака структуры. */
+function brokenChain(chainOverrides) {
+  const payload = JSON.parse(chainPayload());
+  return JSON.stringify({ ...payload, chain: { ...payload.chain, ...chainOverrides } });
+}
+
 /** Бэкенд: ответы по очереди на каждый runTurn. */
 function scripted(turnSteps) {
   return new ScriptedAgentBackend({
@@ -146,15 +152,14 @@ test("AI-CHAIN: вопросы сверх максимума отклоняют�
 });
 
 test("AI-CHAIN: на исчерпанном лимите вопросов ход обязан собрать цепочку", async () => {
-  // start=Q1, a1=Q2, a2=Q3 → лимит исчерпан. Следующий ход дважды пытается
-  // задать вопрос (обе попытки нарушают контракт «только цепочка») → финальная
-  // ошибка. Счётчик вопросов при этом не растёт: сверхлимитных вопросов нет.
+  // start=Q1, a1=Q2, a2=Q3 → лимит исчерпан. Следующий ход все попытки задаёт
+  // вопрос (каждая нарушает контракт «только цепочка») → финальная ошибка.
+  // Счётчик вопросов при этом не растёт: сверхлимитных вопросов нет.
   const backend = scripted([
     { kind: "success", outputText: QUESTION_1 },
     { kind: "success", outputText: QUESTION_2 },
     { kind: "success", outputText: QUESTION_3 },
-    { kind: "success", outputText: QUESTION_1 },
-    { kind: "success", outputText: QUESTION_1 }
+    ...Array.from({ length: MISSION_CHAIN_MAX_ATTEMPTS }, () => ({ kind: "success", outputText: QUESTION_1 }))
   ]);
   const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
   await agent.start(DEADLINE());
@@ -285,15 +290,127 @@ test("AI-CHAIN: сбой бэкенда (нет ключа) — честный b
 });
 
 test("AI-CHAIN: таймаут бэкенда — backend_failure с понятным сообщением", async () => {
-  const backend = scripted([
-    { kind: "failure", error: { code: "timeout", retryable: true } },
-    { kind: "failure", error: { code: "timeout", retryable: true } }
-  ]);
+  // Попыток теперь MISSION_CHAIN_MAX_ATTEMPTS: скрипт обязан покрыть все,
+  // иначе проверялся бы не таймаут, а исчерпание скрипта.
+  const backend = scripted(
+    Array.from({ length: MISSION_CHAIN_MAX_ATTEMPTS }, () => ({
+      kind: "failure",
+      error: { code: "timeout", retryable: true }
+    }))
+  );
   const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
   const result = await agent.start(DEADLINE());
   assert.equal(result.kind, "failed");
   assert.equal(result.kind === "failed" && result.code, "backend_failure");
   assert.match(result.kind === "failed" ? result.message : "", /время/);
+  assert.equal(backend.capturedTurnRequests.length, MISSION_CHAIN_MAX_ATTEMPTS, "исчерпаны все попытки");
+});
+
+test("AI-CHAIN: обрезанный ответ модели — output_truncated, а не «нечитаемый ответ»", async () => {
+  // Провайдер упёрся в лимит вывода: JSON недописан. Автор должен узнать про
+  // обрыв, а не про «модель ответила ерунду» — действия у них разные.
+  const backend = scripted(
+    Array.from({ length: MISSION_CHAIN_MAX_ATTEMPTS }, () => ({
+      kind: "failure",
+      error: { code: "output_truncated", retryable: true }
+    }))
+  );
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  const result = await agent.start(DEADLINE());
+  assert.equal(result.kind, "failed");
+  assert.equal(result.kind === "failed" && result.code, "backend_failure");
+  assert.match(result.kind === "failed" ? result.message : "", /обрез/i);
+});
+
+test("AI-CHAIN: повтор не тратит попытки впустую — при первом же успехе ход закрыт", async () => {
+  const backend = scripted([
+    { kind: "failure", error: { code: "output_truncated", retryable: true } },
+    { kind: "success", outputText: QUESTION_1 }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  const result = await agent.start(DEADLINE());
+  assert.equal(result.kind, "question");
+  assert.equal(backend.capturedTurnRequests.length, 2, "повтор после обрыва");
+});
+
+test("AI-CHAIN: структурный брак цепочки — повтор с собственным JSON модели и списком нарушений", async () => {
+  // Живой случай: провайдер вернул цепочку со ссылкой в несуществующую сцену.
+  // Слепая перегенерация даёт ту же ошибку, поэтому на повторе модель обязана
+  // увидеть свой забракованный JSON и точный перечень нарушений.
+  const broken = brokenChain({
+    choices: [
+      ...JSON.parse(chainPayload()).chain.choices,
+      { from: "storm", label: "Уйти в туман", to: "nowhere", consequence: "Сцена не существует" }
+    ]
+  });
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: QUESTION_2 },
+    { kind: "success", outputText: broken },
+    { kind: "success", outputText: chainPayload() }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  await agent.reply("Тревогу и ответственность сразу.", DEADLINE());
+  const result = await agent.reply("Временем, ресурсы трогать нельзя.", DEADLINE());
+
+  assert.equal(result.kind, "chain_ready", "после ремонта ход собирает цепочку");
+  assert.equal(backend.capturedTurnRequests.length, 4, "брак → ремонт → успех, без лишних попыток");
+
+  const repairRequest = backend.capturedTurnRequests[3];
+  const messages = repairRequest.messages;
+  const tail = messages.slice(-2);
+  assert.equal(tail[0].role, "assistant", "модель видит свой предыдущий ответ");
+  assert.equal(tail[0].content, broken, "предыдущий ответ передан дословно");
+  assert.equal(tail[1].role, "user");
+  assert.match(tail[1].content, /Твой предыдущий JSON не принят проверкой цепочки/);
+  assert.match(tail[1].content, /chain\.choice_to_unknown:nowhere/, "нарушение названо точно");
+  assert.match(tail[1].content, /endings/, "ремонт напоминает про обязательные ключи");
+
+  // Забракованный ответ не подменяет историю интервью: вопросы автора на месте.
+  assert.equal(
+    messages.filter((message) => message.role === "user").length,
+    4,
+    "три ответа автора плюс директива ремонта"
+  );
+});
+
+test("AI-CHAIN: неструктурный брак (слишком рано) — обычный повтор без директивы ремонта", async () => {
+  // «Цепочка раньше времени» лечится не ремонтом JSON, а ещё одним вопросом:
+  // подсовывать модели директиву про структуру здесь было бы вредно.
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: chainPayload() },
+    { kind: "success", outputText: QUESTION_2 }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  const result = await agent.reply("Тревогу.", DEADLINE());
+  assert.equal(result.kind, "question", "модель вернулась к вопросу");
+  const second = backend.capturedTurnRequests[1];
+  const last = second.messages.at(-1);
+  assert.equal(last.role, "user", "ход остался на ответе автора");
+  assert.match(last.content, /Тревогу/, "последнее сообщение — ответ автора, а не директива");
+  assert.doesNotMatch(JSON.stringify(second.messages), /не принят проверкой цепочки/);
+});
+
+test("AI-CHAIN: исчерпаны все попытки — автор видит нарушения, а не «нечитаемый ответ»", async () => {
+  const broken = brokenChain({ endings: [] });
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: QUESTION_2 },
+    ...Array.from({ length: MISSION_CHAIN_MAX_ATTEMPTS }, () => ({ kind: "success", outputText: broken }))
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  await agent.reply("Тревогу.", DEADLINE());
+  const result = await agent.reply("Временем.", DEADLINE());
+  assert.equal(result.kind, "failed");
+  assert.equal(result.kind === "failed" && result.code, "invalid_response");
+  assert.ok(
+    result.kind === "failed" && Array.isArray(result.problems) && result.problems.some((p) => p.startsWith("chain.")),
+    "нарушения перечислены автору"
+  );
 });
 
 test("AI-CHAIN: вопрос без текста и пустой ответ автора отклоняются честно", async () => {

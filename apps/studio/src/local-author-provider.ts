@@ -39,6 +39,8 @@ export type LocalAuthorProviderCause =
   | "generation_timeout"
   /** Модель вернула пустой ответ: весь лимит вывода ушёл на размышления. */
   | "generation_empty"
+  /** Модель не договорила: ответ оборвался по лимиту вывода. */
+  | "generation_truncated"
   /** Ключ принят, но пробная генерация не удалась по другой причине. */
   | "generation_failed";
 
@@ -329,6 +331,7 @@ export class LocalAuthorProvider {
     const code = result.error?.code ?? "";
     const httpStatus = result.error?.httpStatus ?? null;
     if (code === "timeout") return { cause: "generation_timeout", latencyMs };
+    if (code === "output_truncated") return { cause: "generation_truncated", latencyMs };
     if (code === "invalid_response") return { cause: "generation_empty", latencyMs };
     if (code === "http" && (httpStatus === 401 || httpStatus === 403)) return { cause: "auth_required", latencyMs };
     if (code === "http" && httpStatus === 429) return { cause: "rate_limited", latencyMs };

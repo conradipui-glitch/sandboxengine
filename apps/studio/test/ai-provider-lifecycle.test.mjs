@@ -210,13 +210,14 @@ test("L03-подключение: ключ сохраняется, пережи�
     assert.ok(probeBody.max_tokens >= 128, `проверка просит слишком мало вывода: ${probeBody.max_tokens}`);
 
     // 5a. Проверка не ограничивается списком моделей: провайдер отвечает, но
-    //     модель отдаёт пустой ответ (лимит ушёл на размышления) — это отдельная
-    //     причина, а не «подключение работает».
+    //     модель не договорила (finish_reason=length: лимит вывода ушёл на
+    //     размышления) — это отдельная причина, а не «подключение работает» и не
+    //     «нечитаемый ответ». Проверка обязана назвать обрыв обрывом.
     stand.setGenerationMode("empty");
     const empties = remember(await probe());
     assert.equal(empties.body.state, "error");
-    assert.equal(empties.body.probeCause, "generation_empty");
-    assert.equal(empties.body.lastErrorCode, "generation_empty");
+    assert.equal(empties.body.probeCause, "generation_truncated");
+    assert.equal(empties.body.lastErrorCode, "generation_truncated");
 
     // 5b. Провайдер отвечает на список моделей, но не успевает сгенерировать
     //     ответ: причина — тайм-аут генерации, а не «неверный ключ».

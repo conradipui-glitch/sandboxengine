@@ -30,6 +30,7 @@ export type ProviderErrorCode =
   | "network"
   | "http"
   | "invalid_response"
+  | "output_truncated"
   | "capability_mismatch";
 
 export interface ProviderError {

@@ -28,7 +28,7 @@ export type RunAuthorBackendToolProtocolResult =
   | { readonly kind: "completed"; readonly job: AuthorAgentJobRecord; readonly outputText: string; readonly usage: ProviderUsage }
   | { readonly kind: "paused_budget"; readonly job: AuthorAgentJobRecord }
   | { readonly kind: "cancelled"; readonly job: AuthorAgentJobRecord }
-  | { readonly kind: "backend_failure"; readonly job: AuthorAgentJobRecord; readonly code: "aborted" | "timeout" | "auth_required" | "session_expired" | "rate_limited" | "invalid_response" | "backend_error"; readonly usage: ProviderUsage }
+  | { readonly kind: "backend_failure"; readonly job: AuthorAgentJobRecord; readonly code: "aborted" | "timeout" | "auth_required" | "session_expired" | "rate_limited" | "invalid_response" | "output_truncated" | "backend_error"; readonly usage: ProviderUsage }
   | { readonly kind: "invalid_output"; readonly job: AuthorAgentJobRecord; readonly usage: ProviderUsage; readonly code: "invalid_tool_request" | "tool_loop_limit" | "tool_unavailable" }
   | { readonly kind: "broker_failure"; readonly job: AuthorAgentJobRecord };
 

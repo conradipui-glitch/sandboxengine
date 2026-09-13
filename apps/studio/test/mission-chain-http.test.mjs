@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createStudioDevServer } from "../dist/src/dev-server.js";
 import { MissionChainDialogStore } from "../dist/src/mission-chain-dialogs.js";
-import { ModelProviderAgentBackend } from "@living-history/ai";
+import { ModelProviderAgentBackend, MISSION_CHAIN_MAX_ATTEMPTS } from "@living-history/ai";
 
 /*
  * AI-CHAIN: HTTP-контракт /local/mission-chain на живом Studio-сервере.
@@ -360,11 +360,12 @@ test("AI-CHAIN HTTP: честная ошибка при сбое провайд�
 });
 
 test("AI-CHAIN HTTP: битый JSON ответа модели — invalid_response, повтор хода возможен", async () => {
-  // Модель отдаёт валидный JSON, но не по контракту (нет kind).
-  const env = await bootStudio([
-    { content: JSON.stringify({ say: "привет" }) },
-    { content: JSON.stringify({ say: "привет" }) }
-  ]);
+  // Модель отдаёт валидный JSON, но не по контракту (нет kind). Попыток ровно
+  // столько, сколько отведено агенту: иначе проверялся бы не брак контракта,
+  // а исчерпание скрипта провайдера.
+  const env = await bootStudio(
+    Array.from({ length: MISSION_CHAIN_MAX_ATTEMPTS }, () => ({ content: JSON.stringify({ say: "привет" }) }))
+  );
   const { studioPort, close } = env;
   try {
     const started = await post(studioPort, "/local/mission-chain", {

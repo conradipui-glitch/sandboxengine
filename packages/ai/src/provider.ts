@@ -169,18 +169,18 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
       if (!isRecord(payload)) return failure("invalid_response", "Model provider response must be an object", false, response.status, requestId, request.model);
 
       const content = readAssistantContent(payload);
+      const finish = readFinishReason(payload);
       if (content === null) return failure("invalid_response", "Model provider response has no assistant content", false, response.status, requestId, request.model);
       if (content.trim().length === 0) {
         // Пустой текст при 200 — отдельная причина: модель израсходовала бюджет
         // вывода (размышления) и не написала ответ. Без этого отличия автор
         // видел бы то же «проверьте ключ», что и при неверном ключе.
-        const finish = readFinishReason(payload);
         return failure(
-          "invalid_response",
+          finish === "length" ? "output_truncated" : "invalid_response",
           finish === "length"
             ? "Model provider returned an empty answer: the output budget was spent before the text (finish_reason=length)"
             : "Model provider returned an empty assistant answer",
-          false,
+          finish === "length",
           response.status,
           requestId,
           request.model
@@ -194,7 +194,19 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
           if (!isRecord(value)) return failure("invalid_response", "JSON response must be an object", false, response.status, requestId, request.model);
           output = Object.freeze({ format: "json_object", value });
         } catch {
-          return failure("invalid_response", "Assistant content is not valid JSON", false, response.status, requestId, request.model);
+          // Обрыв по лимиту вывода — не «кривой» ответ провайдера, а нехватка
+          // бюджета: повтор с большим лимитом может пройти, и автор должен
+          // увидеть причину, а не «проверьте модель и ключ».
+          return failure(
+            finish === "length" ? "output_truncated" : "invalid_response",
+            finish === "length"
+              ? "Assistant content was cut off before the end of the JSON (finish_reason=length)"
+              : "Assistant content is not valid JSON",
+            finish === "length",
+            response.status,
+            requestId,
+            request.model
+          );
         }
       } else {
         output = Object.freeze({ format: "text", value: content });

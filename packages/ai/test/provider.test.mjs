@@ -201,7 +201,9 @@ test("B06-01 capability mismatch and expired deadline fail before network", asyn
 
 // B06-01. Пустой ответ модели назван отдельной причиной: раньше он выглядел как
 // «неверный ключ», хотя ключ и адрес верны, а весь лимит вывода ушёл на размышления.
-test("B06-01 пустой ответ модели → invalid_response с причиной про израсходованный лимит", async () => {
+// Если провайдер прямо сказал finish_reason=length — это обрыв бюджета
+// (output_truncated, повторяемо), а не «нечитаемый ответ».
+test("B06-01 пустой ответ модели → output_truncated при finish_reason=length, иначе invalid_response", async () => {
   const emptyProvider = new OpenAiCompatibleModelProvider({
     baseUrl: "https://provider.example/v1",
     credential: "TOP-SECRET",
@@ -220,7 +222,8 @@ test("B06-01 пустой ответ модели → invalid_response с при
     deadlineAtMs: Date.now() + 5_000
   });
   assert.equal(truncated.ok, false);
-  assert.equal(truncated.error.code, "invalid_response");
+  assert.equal(truncated.error.code, "output_truncated");
+  assert.equal(truncated.error.retryable, true, "обрыв бюджета повторяем");
   assert.match(truncated.error.message, /output budget was spent/);
 
   const blankProvider = new OpenAiCompatibleModelProvider({
@@ -239,6 +242,59 @@ test("B06-01 пустой ответ модели → invalid_response с при
   assert.equal(blank.ok, false);
   assert.equal(blank.error.code, "invalid_response");
   assert.match(blank.error.message, /empty assistant answer/);
+});
+
+// Живой случай стенда: reasoning-модель упёрлась в лимит вывода и недописала JSON
+// (finish_reason=length). Автор обязан узнать про обрыв, а не про «модель ответила
+// ерунду»: действия у этих причин разные.
+test("B06-01 недописанный JSON при finish_reason=length → output_truncated, повторяемо", async () => {
+  const provider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({
+      model: "reasoning/model",
+      choices: [{
+        finish_reason: "length",
+        message: { content: "{\"kind\":\"chain\",\"chain\":{\"scenes\":[{\"id\":\"storm\"" }
+      }],
+      usage: { prompt_tokens: 1200, completion_tokens: 12000, total_tokens: 13200 }
+    })
+  });
+  const result = await provider.generate({
+    model: "reasoning/model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "json_object",
+    maxOutputTokens: 12000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "output_truncated");
+  assert.equal(result.error.retryable, true);
+  assert.match(result.error.message, /cut off|finish_reason=length/i);
+});
+
+// Обрыв бывает и без finish_reason (провайдер его не прислал): тогда честнее
+// сказать «нечитаемый ответ», чем выдумывать причину.
+test("B06-01 недописанный JSON без finish_reason → invalid_response", async () => {
+  const provider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({
+      model: "model",
+      choices: [{ message: { content: "{\"kind\":\"chain\"" } }]
+    })
+  });
+  const result = await provider.generate({
+    model: "model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "json_object",
+    maxOutputTokens: 12000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "invalid_response");
 });
 
 test("B06-02 проверка связи не ставит микроскопический лимит вывода: reasoning-модель отвечает", async () => {

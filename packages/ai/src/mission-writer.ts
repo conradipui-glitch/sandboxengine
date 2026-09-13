@@ -1058,6 +1058,7 @@ function normalizeBackendFailure(code: AgentBackendErrorCode, message: string): 
   if (code === "aborted") return "Mission writing was aborted";
   if (code === "rate_limited") return "Mission writer backend was rate limited";
   if (code === "auth_required") return "Mission writer backend requires authentication";
+  if (code === "output_truncated") return "Mission writer backend response was cut off by the output limit";
   return message.length > 0 ? message : "Mission writer backend failed";
 }
 
