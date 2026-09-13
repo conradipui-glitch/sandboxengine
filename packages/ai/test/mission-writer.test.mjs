@@ -7,6 +7,7 @@ import {
   MISSION_WRITER_DEFAULT_ENDING_COUNT,
   MISSION_WRITER_MAX_IDEA_CHARS,
   MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS,
+  MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING,
   MISSION_WRITER_TRUNCATED_BUDGET_FACTOR,
   validateChainPayload,
   missionIntentFromChain
@@ -552,12 +553,18 @@ test("FIN-09 обрыв по лимиту вывода → повтор с уд�
   assert.equal(result.kind, "ok", `ожидали ok, получили ${result.kind}`);
   assert.equal(result.evidence.attempts.length, 2, "была вторая попытка");
   assert.equal(result.evidence.attempts[0].errorCode, "output_truncated");
+  assert.equal(result.evidence.attempts[0].maxOutputTokens, MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS, "след попытки называет бюджет вывода");
+  assert.equal(
+    result.evidence.attempts[1].maxOutputTokens,
+    MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING,
+    "повтор поднимает бюджет до потолка, который принимает бэкенд"
+  );
   const first = backend.capturedTurnRequests[0];
   const second = backend.capturedTurnRequests[1];
   assert.equal(first.maxOutputTokens, MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS);
   assert.equal(
     second.maxOutputTokens,
-    MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS * MISSION_WRITER_TRUNCATED_BUDGET_FACTOR,
+    MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING,
     "повтор идёт с увеличенным лимитом вывода"
   );
   const directive = second.messages.at(-1).content;

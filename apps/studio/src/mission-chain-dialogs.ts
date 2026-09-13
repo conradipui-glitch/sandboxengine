@@ -252,6 +252,12 @@ export class MissionChainDialogStore {
           code: writerFailureCode(result.kind),
           message: writerFailureMessage(result)
         });
+        // След в журнале стенда: без попыток и счётчиков токенов причину отказа
+        // писателя (обрезано, пусто, не-JSON) снаружи не отличить.
+        const attempts = (result.evidence?.attempts ?? [])
+          .map((attempt) => `${attempt.attempt}:${attempt.errorCode ?? "ok"}:${attempt.usage?.outputTokens ?? "?"}/${attempt.maxOutputTokens ?? "?"}`)
+          .join(" ");
+        console.error(`[mission-chain] писатель не справился: kind=${result.kind} code=${result.kind === "failed" ? result.code : result.kind} попытки=${attempts || "нет"}`);
       }
     } catch (error) {
       // Исключение не прячем за общим текстом: автору нужна причина, а стенду —

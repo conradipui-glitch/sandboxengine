@@ -57,14 +57,27 @@ export const MISSION_WRITER_DEFAULT_ENDING_COUNT = 2;
  *  8 ресурсов, 8 финалов) вместе с нарративом: структура не должна обрезаться. */
 export const MISSION_WRITER_MAX_IDEA_CHARS = 24_000;
 
-export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
+/**
+ * Бюджет вывода писателя на одну попытку. Замер на живом стенде (token-juice,
+ * deepseek-ai/DeepSeek-V4.1-Flash): на реальном запросе писателя модель тратит
+ * 11–15,3 тыс. токенов, из них ~70–75 % — на размышления, и упирается в 16 000
+ * (finish_reason=length). Поэтому базовый бюджет выше с запасом, а повтор идёт
+ * с удвоенным (см. MISSION_WRITER_TRUNCATED_BUDGET_FACTOR).
+ */
+export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 24_000;
 /**
  * Обрыв по бюджету вывода лечится бюджетом: reasoning-модель может потратить
  * весь лимит на размышления и не написать текст. Повтор с прежним лимитом
  * повторит обрыв, поэтому на повторе лимит удваивается до потолка.
  */
 export const MISSION_WRITER_TRUNCATED_BUDGET_FACTOR = 2;
-export const MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING = 48_000;
+/**
+ * Потолок бюджета вывода писателя. Это же значение — предел, который принимает
+ * серверный бэкенд (model-agent-backend.ts, MAX_OUTPUT_TOKENS) и проверка самого
+ * писателя: заявка выше отвергается как недопустимая, и повтор не состоится.
+ * Поэтому потолок равен этому пределу, а не «красивому» числу побольше.
+ */
+export const MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING = 32_768;
 export const MISSION_WRITER_MAX_ATTEMPTS = 2;
 /**
  * Одна попытка не забирает весь дедлайн миссии: если медленная модель съест
@@ -186,6 +199,8 @@ export interface MissionWriterAttemptEvidence {
   readonly usage: ProviderUsage;
   readonly backendRequestId: string | null;
   readonly errorCode: AgentBackendErrorCode | null;
+  /** Бюджет вывода этой попытки: без него обрыв не отличить от «мало дали». */
+  readonly maxOutputTokens: number;
 }
 
 export interface MissionWriterEvidence {
@@ -321,7 +336,8 @@ export class ModelMissionWriter implements MissionWriter {
           ok: turn.ok,
           usage: turn.usage,
           backendRequestId: turn.ok ? turn.backendRequestId : turn.error.backendRequestId,
-          errorCode: turn.ok ? null : turn.error.code
+          errorCode: turn.ok ? null : turn.error.code,
+          maxOutputTokens: attemptMaxOutputTokens
         }));
 
         if (!turn.ok) {
