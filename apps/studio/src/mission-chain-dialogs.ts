@@ -30,7 +30,11 @@ const MAX_SESSIONS = 16;
 const SESSION_TTL_MS = 30 * 60_000;
 const MAX_MESSAGE_CHARS = 1_000;
 const CHAIN_BACKEND_DEADLINE_MS = 60_000;
-const CHAIN_WRITER_DEADLINE_MS = 240_000;
+// Бюджет писателя миссии: документ — это десятки сцен, выборов и финалов в JSON,
+// и писатель делит бюджет между двумя попытками (attempt 1 получает половину).
+// 240 с давали первой попытке 120 с — reasoning-модель не успевала, и автор
+// видел «Mission writer backend deadline expired» при живом ключе.
+const CHAIN_WRITER_DEADLINE_MS = 540_000;
 
 export interface MissionChainMessage {
   readonly role: "author" | "assistant";

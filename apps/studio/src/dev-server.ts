@@ -326,6 +326,11 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
       sendText(response, 500, "Studio server error");
     }
   });
+  // Долгая генерация идёт минутами: цепочка и документ миссии делят бюджет в
+  // сотни секунд, а Node по умолчанию обрывает запрос через 300 с и вернул бы
+  // автору пустой ответ вместо миссии. Заголовки приходят сразу, поэтому
+  // ограничение на их приём (headersTimeout) остаётся штатным.
+  server.requestTimeout = 0;
 
   return Object.freeze({
     server,

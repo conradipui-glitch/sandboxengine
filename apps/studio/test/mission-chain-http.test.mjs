@@ -149,8 +149,12 @@ async function bootStudio(queue) {
   const { stub, seen } = modelStub(queue);
   const stubPort = await listen(stub);
   const backend = new ModelProviderAgentBackend();
+  // Сколько времени модель получает на каждый ход: писатель миссии обязан
+  // получать окно, в которое reasoning-модель успевает выпустить документ.
+  const deadlines = [];
   backend.configure({
     async generate(request) {
+      deadlines.push(request.deadlineAtMs - Date.now());
       const response = await fetch(`http://127.0.0.1:${stubPort}/v1/chat/completions`, {
         method: "POST",
         headers: {
@@ -205,6 +209,7 @@ async function bootStudio(queue) {
   return {
     studioPort,
     seen,
+    deadlines,
     dialogs,
     close: async () => {
       await studio.close();
@@ -438,6 +443,10 @@ test("AI-CHAIN HTTP: подтверждённая цепочка доходит 
     assert.equal(confirmed.body.stage, "ready", `писатель отказал: ${confirmed.body.error?.message ?? ""}`);
     assert.equal(confirmed.body.error, null);
     assert.ok(confirmed.body.stats.sceneCount >= 2);
+    // Окно писателя: 240 с хватало только на первую попытку в 120 с, и на стенде
+    // живой прогон падал с «Mission writer backend deadline expired».
+    const writerWindow = env.deadlines.at(-1);
+    assert.ok(writerWindow >= 240_000, `окно писателя мало: ${writerWindow} мс`);
   } finally {
     await close();
   }

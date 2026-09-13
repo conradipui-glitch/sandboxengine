@@ -190,9 +190,10 @@ const missionDrafter = async (request: { readonly idea: string; readonly project
       ...(request.endingCount === undefined ? {} : { endingCount: request.endingCount })
     },
     // Бюджет генерации: длинный JSON-план редко приходит быстрее минуты, а с
-    // медленным провайдером — за две. 120 с не хватало и не давало второй попытке
-    // шанса; писатель делит этот бюджет между попытками сам.
-    deadlineAtMs: Date.now() + 240_000
+    // медленным провайдером — за две. Писатель делит этот бюджет между попытками
+    // сам, поэтому бюджет обязан вмещать две реалистичные попытки (см.
+    // CHAIN_WRITER_DEADLINE_MS в mission-chain-dialogs.ts).
+    deadlineAtMs: Date.now() + 540_000
   } as Parameters<InstanceType<typeof ModelMissionWriter>["write"]>[0]);
 };
 const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter, missionChainDialogs });
