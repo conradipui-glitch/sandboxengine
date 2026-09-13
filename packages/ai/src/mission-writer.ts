@@ -49,6 +49,14 @@ import type { ModelMessage, ProviderUsage } from "./types.js";
 
 export const MISSION_WRITER_DEFAULT_BRANCH_COUNT = 2;
 export const MISSION_WRITER_DEFAULT_ENDING_COUNT = 2;
+/** Предел поля `idea` в намерении писателя. Помощник создания миссии собирает
+ *  идею автора вместе с подтверждённой цепочкой, поэтому предел композиции
+ *  (mission-chain.ts) обязан совпадать с этим значением: иначе подтверждённая
+ *  автором цепочка отвергается писателем ещё до обращения к модели.
+ *  Значение покрывает максимальную законную цепочку (24 сцены, 96 выборов,
+ *  8 ресурсов, 8 финалов) вместе с нарративом: структура не должна обрезаться. */
+export const MISSION_WRITER_MAX_IDEA_CHARS = 24_000;
+
 export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 export const MISSION_WRITER_MAX_ATTEMPTS = 2;
 /**
@@ -977,7 +985,7 @@ function buildMessages(intent: MissionWriterIntent, attempt: number): readonly M
 
 function validateIntent(intent: MissionWriterIntent): string[] {
   const problems: string[] = [];
-  if (!isBoundedText(intent.idea, 1, 4_000)) problems.push("idea");
+  if (!isBoundedText(intent.idea, 1, MISSION_WRITER_MAX_IDEA_CHARS)) problems.push("idea");
   if (!isBoundedText(intent.genre, 1, 200)) problems.push("genre");
   if (!Number.isSafeInteger(intent.targetDurationMinutes) || intent.targetDurationMinutes < 1 || intent.targetDurationMinutes > 600) {
     problems.push("targetDurationMinutes");

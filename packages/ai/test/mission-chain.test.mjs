@@ -8,6 +8,7 @@ import {
   MISSION_CHAIN_MIN_QUESTIONS,
   MISSION_CHAIN_MAX_QUESTIONS,
   MISSION_CHAIN_MAX_ATTEMPTS,
+  MISSION_WRITER_MAX_IDEA_CHARS,
   ScriptedAgentBackend
 } from "../dist/index.js";
 
@@ -542,4 +543,73 @@ test("AI-CHAIN: missionIntentFromChain переносит цепочку в ин
   assert.equal(intent.endingCount, 2);
   assert.deepEqual([...intent.constraints], ["без насилия"]);
   assert.equal(intent.language, "ru");
+});
+
+test("AI-CHAIN: максимальная цепочка переносится в интент без потери структуры", () => {
+  // Законный максимум цепочки длиннее предела намерения, поэтому сжимается
+  // нарратив, а не структура: иначе писатель не увидит финалы и откажет.
+  const scenes = Array.from({ length: 24 }, (_, index) => ({
+    id: `scene-${index}`,
+    title: `Сцена ${index}`,
+    goal: "Решить, кому светить и чем за это платить"
+  }));
+  const choices = [];
+  for (let index = 0; index < 24; index += 1) {
+    choices.push({
+      from: `scene-${index}`,
+      label: `Выбор ${index}`,
+      to: index === 23 ? "ending-safe" : `scene-${index + 1}`,
+      consequence: "Масла меньше, риск выше"
+    });
+    if (index % 3 === 0) {
+      choices.push({
+        from: `scene-${index}`,
+        label: `Свернуть к цене ${index}`,
+        to: "ending-loss",
+        consequence: "Свет отдан не тому"
+      });
+    }
+  }
+  const payload = {
+    kind: "chain",
+    ideaRestated: IDEA,
+    genre: "драма",
+    durationMinutes: 20,
+    constraints: ["без насилия"],
+    narrative: "Шторм бьёт в стекло, смотритель считает масло. ".repeat(85),
+    chain: {
+      scenes,
+      choices,
+      resources: Array.from({ length: 8 }, (_, index) => ({
+        id: `res-${index}`,
+        title: `Ресурс ${index}`,
+        initial: index,
+        purpose: "Топливо истории"
+      })),
+      endings: Array.from({ length: 8 }, (_, index) => ({
+        id: index === 7 ? "ending-safe" : index === 6 ? "ending-loss" : `ending-${index}`,
+        title: `Финал ${index}`,
+        condition: "Условие достижимо выбором"
+      }))
+    }
+  };
+  // Все восемь финалов достижимы: крайние два — выборами, остальные добавляем.
+  payload.chain.choices.push(
+    { from: "scene-0", label: "К финалу 0", to: "ending-0", consequence: "Цена названа" },
+    { from: "scene-1", label: "К финалу 1", to: "ending-1", consequence: "Цена названа" },
+    { from: "scene-2", label: "К финалу 2", to: "ending-2", consequence: "Цена названа" },
+    { from: "scene-3", label: "К финалу 3", to: "ending-3", consequence: "Цена названа" },
+    { from: "scene-4", label: "К финалу 4", to: "ending-4", consequence: "Цена названа" },
+    { from: "scene-5", label: "К финалу 5", to: "ending-5", consequence: "Цена названа" }
+  );
+  const validation = validateChainPayload(payload, IDEA);
+  assert.equal(validation.ok, true, JSON.stringify(validation.problems ?? []));
+  if (!validation.ok) return;
+  const intent = missionIntentFromChain(validation.summary);
+  assert.ok(intent.idea.length <= MISSION_WRITER_MAX_IDEA_CHARS);
+  assert.match(intent.idea, /Финалы:/);
+  for (const ending of validation.summary.chain.endings) {
+    assert.ok(intent.idea.includes(ending.id), `финал ${ending.id} потерян при сборке интента`);
+  }
+  assert.equal(intent.idea.match(/- scene-\d+:/g)?.length, 24, "все сцены обязаны попасть в интент");
 });

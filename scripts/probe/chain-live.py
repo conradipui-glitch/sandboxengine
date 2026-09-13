@@ -4,6 +4,7 @@
 Печатает только форму ответов (стадии, коды, счётчики), без секретов.
 """
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -15,6 +16,10 @@ HEADERS = {
     "x-lh-local-settings": "1",
 }
 IDEA = "Квест: пропавший маяк на острове, три свидетеля, два финала"
+# Проект и квест стенда: помощник пишет документ миссии в реальные идентификаторы,
+# иначе писатель честно отказывается (пустой projectId — не идентификатор).
+PROJECT = os.environ.get("LHP_PROJECT", "c18-isbavg")
+QUEST = os.environ.get("LHP_QUEST", "c18-2aymmp")
 
 
 def post(path, payload, timeout=300):
@@ -46,6 +51,7 @@ def shape(view):
         "questionsMin": session.get("questionsMin"),
         "messages": len(session.get("messages") or []),
         "error": (session.get("error") or {}).get("message") if isinstance(session.get("error"), dict) else session.get("error"),
+        "errorCode": (session.get("error") or {}).get("code") if isinstance(session.get("error"), dict) else None,
         "hasSummary": session.get("summary") is not None,
     }
     summary = session.get("summary")
@@ -61,7 +67,7 @@ def shape(view):
 
 
 print("=== 1. СТАРТ ДИАЛОГА ===", flush=True)
-status, parsed, elapsed = post("/local/mission-chain", {"idea": IDEA, "projectId": "", "questId": ""})
+status, parsed, elapsed = post("/local/mission-chain", {"idea": IDEA, "projectId": PROJECT, "questId": QUEST})
 print(f"HTTP {status} за {elapsed:.1f} с")
 print(json.dumps(shape(parsed), ensure_ascii=False, indent=2), flush=True)
 session_id = ""

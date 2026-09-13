@@ -26,6 +26,7 @@
 import type { ModelMessage, ProviderUsage } from "./types.js";
 import type { AgentBackend } from "./agent-backend.js";
 import type { MissionWriterIntent } from "./mission-writer.js";
+import { MISSION_WRITER_MAX_IDEA_CHARS } from "./mission-writer.js";
 
 /** Минимум уточняющих вопросов до показа цепочки. */
 export const MISSION_CHAIN_MIN_QUESTIONS = 2;
@@ -552,7 +553,9 @@ const CHAIN_MAX_CHOICES = 96;
 const CHAIN_MAX_RESOURCES = 8;
 const CHAIN_MAX_ENDINGS = 8;
 const MAX_NARRATIVE_LIMIT = 4_000;
-const COMPOSED_IDEA_LIMIT = 8_000;
+/** Собранная идея (идея автора + нарратив + цепочка) обязана проходить проверку
+ *  намерения у писателя: предел берём из контракта писателя, а не своим числом. */
+const COMPOSED_IDEA_LIMIT = MISSION_WRITER_MAX_IDEA_CHARS;
 
 export function validateChainPayload(value: Record<string, unknown>, originalIdea: string): ChainValidation {
   const problems: string[] = [];
@@ -731,11 +734,19 @@ export function missionIntentFromChain(
   }
   chainLines.push("Финалы:");
   for (const ending of summary.chain.endings) chainLines.push(`- ${ending.id}: ${ending.title} — ${ending.condition}`);
-  const idea = [
-    `Идея автора: ${summary.idea}`,
-    `Нарратив: ${summary.narrative}`,
-    ...chainLines
-  ].join("\n");
+  const head = `Идея автора: ${summary.idea}`;
+  const structure = chainLines.join("\n");
+  // Сжимаем сначала нарратив: сцены, выборы и финалы — структура миссии, без них
+  // писатель не соберёт нужное число ветвей. Обрезка структуры — последний
+  // рубеж, он возможен только на цепочке сверх законного максимума.
+  const narrativeLabel = "\nНарратив: ";
+  const narrativeBudget = COMPOSED_IDEA_LIMIT - head.length - structure.length - narrativeLabel.length - 1;
+  const narrative = summary.narrative.length <= narrativeBudget
+    ? summary.narrative
+    : narrativeBudget <= 1
+      ? ""
+      : `${summary.narrative.slice(0, narrativeBudget - 1)}…`;
+  const idea = [head, ...(narrative.length === 0 ? [] : [`Нарратив: ${narrative}`]), structure].join("\n");
   return Object.freeze({
     idea: idea.length <= COMPOSED_IDEA_LIMIT ? idea : `${idea.slice(0, COMPOSED_IDEA_LIMIT - 1)}…`,
     genre: summary.genre,

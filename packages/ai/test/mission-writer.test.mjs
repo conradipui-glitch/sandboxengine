@@ -4,7 +4,10 @@ import {
   ModelMissionWriter,
   ScriptedAgentBackend,
   MISSION_WRITER_DEFAULT_BRANCH_COUNT,
-  MISSION_WRITER_DEFAULT_ENDING_COUNT
+  MISSION_WRITER_DEFAULT_ENDING_COUNT,
+  MISSION_WRITER_MAX_IDEA_CHARS,
+  validateChainPayload,
+  missionIntentFromChain
 } from "../dist/index.js";
 import { validateMissionDraft, MISSION_SCHEMA_VERSION } from "../../contracts/dist/index.js";
 
@@ -116,6 +119,51 @@ function runFull(plan = fullPlan(), intentOverrides = {}, writerOverrides = {}) 
   return writerFor(backend, writerOverrides).write({ intent: intent(intentOverrides), deadlineAtMs: DEADLINE() })
     .then((result) => ({ result, backend }));
 }
+
+// Предел собранной идеи — общий с писателем: подтверждённая автором цепочка
+// (несколько сцен, выборов и финалов) собирается в идею длиннее ручного лимита,
+// и раньше писатель отвергал её до обращения к модели: «Invalid mission intent: idea».
+test("FIN-09 намерение из подтверждённой цепочки помощника писатель принимает", async () => {
+  const chain = {
+    kind: "chain",
+    ideaRestated: "Маяк гаснет третью ночь: смотритель выбирает, кому светить.",
+    genre: "драма",
+    durationMinutes: 20,
+    constraints: ["без насилия"],
+    narrative: "Шторм. ".repeat(400),
+    chain: {
+      scenes: Array.from({ length: 8 }, (_, index) => ({
+        id: `scene-${index}`,
+        title: `Сцена ${index}`,
+        goal: "Решить, кому светить и чем за это платить"
+      })),
+      choices: Array.from({ length: 24 }, (_, index) => ({
+        from: `scene-${index % 8}`,
+        label: `Выбор ${index}`,
+        to: index % 8 === 7 ? "ending-quiet" : index % 8 === 3 ? "ending-price" : `scene-${(index + 1) % 8}`,
+        consequence: "Масла меньше, риск выше"
+      })),
+      resources: [{ id: "oil", title: "Масло", initial: 6, purpose: "Единственный свет маяка" }],
+      endings: [
+        { id: "ending-quiet", title: "Тихая гавань", condition: "Свет отдан тем, кто ждал" },
+        { id: "ending-price", title: "Цена шторма", condition: "Свет отдан не тому" }
+      ]
+    }
+  };
+  const validation = validateChainPayload(chain, "Маяк и смотритель");
+  assert.equal(validation.ok, true);
+  if (!validation.ok) return;
+  const composed = missionIntentFromChain(validation.summary);
+  assert.ok(
+    composed.idea.length > 4_000,
+    "цепочка обязана собираться в идею длиннее ручного лимита — иначе случай не воспроизводится"
+  );
+  assert.ok(composed.idea.length <= MISSION_WRITER_MAX_IDEA_CHARS);
+  const backend = backendWithPlan(fullPlan());
+  const result = await writerFor(backend).write({ intent: composed, deadlineAtMs: DEADLINE() });
+  assert.equal(result.kind, "ok", "подтверждённая цепочка доходит до модели, а не отвергается проверкой намерения");
+  assert.equal(backend.turnCount ?? 1, 1);
+});
 
 // 1. Полный план → валидный документ по штатному валидатору контракта.
 test("FIN-09 полный план даёт документ, который принимает validateMissionDraft без ошибок", async () => {

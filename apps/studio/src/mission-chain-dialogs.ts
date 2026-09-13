@@ -242,11 +242,15 @@ export class MissionChainDialogStore {
           message: writerFailureMessage(result)
         });
       }
-    } catch {
+    } catch (error) {
+      // Исключение не прячем за общим текстом: автору нужна причина, а стенду —
+      // след в журнале. Секретов в этих сообщениях нет (идентификаторы и код).
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      console.error(`[mission-chain] генерация документа сорвалась: ${detail}`);
       session.stage = "chain_ready";
       session.error = Object.freeze({
         code: "backend_failure",
-        message: "Генерация миссии сорвалась: проверьте подключение к ИИ и повторите подтверждение."
+        message: `Генерация миссии сорвалась: ${detail.slice(0, 160)}. Повторите подтверждение.`
       });
     } finally {
       session.busy = false;
@@ -389,16 +393,36 @@ function writerFailureCode(kind: string): string {
 
 type WriterFailureResult = { readonly message?: string };
 
+/**
+ * Техническая причина отказа писателя: код вида `plan.branches` или текст
+ * провайдера. Автору показываем её рядом с человеческим объяснением — иначе
+ * «не подошла структура» невозможно ни понять, ни сообщить о ней.
+ */
+function writerFailureDetail(result: { kind: string }): string {
+  const value = result as {
+    readonly message?: unknown;
+    readonly missing?: unknown;
+    readonly problems?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof value.message === "string" && value.message.trim().length > 0) parts.push(value.message.trim());
+  if (Array.isArray(value.missing) && value.missing.length > 0) parts.push(`не хватает: ${value.missing.map(String).join(", ")}`);
+  if (Array.isArray(value.problems) && value.problems.length > 0) parts.push(`нарушено: ${value.problems.map(String).join(", ")}`);
+  if (parts.length === 0) return "";
+  return ` Причина: ${parts.join("; ").slice(0, 200)}.`;
+}
+
 function writerFailureMessage(result: Exclude<{ kind: string } & WriterFailureResult, never> | { kind: string }): string {
   const kind = result.kind;
+  const detail = writerFailureDetail(result);
   if (kind === "insufficient_plan") {
-    return "По цепочке не удалось собрать полную миссию: не хватает ветвей или финалов. Уточните финалы в ответах и соберите цепочку заново.";
+    return `По цепочке не удалось собрать полную миссию: не хватает ветвей или финалов. Уточните финалы в ответах и соберите цепочку заново.${detail}`;
   }
   if (kind === "invalid_plan") {
-    return "Миссия по цепочке не прошла проверку структуры. Попробуйте подтвердить цепочку ещё раз.";
+    return `Миссия по цепочке не прошла проверку структуры. Попробуйте подтвердить цепочку ещё раз.${detail}`;
   }
   if (kind === "invalid_intent") {
-    return "Собранная цепочка не подошла для генерации: начните диалог заново с более подробной идеей.";
+    return `Собранная цепочка не подошла для генерации. Начните диалог заново с более подробной идеей.${detail}`;
   }
   const message = (result as { readonly message?: string }).message;
   return message ?? "Помощник не смог собрать миссию: проверьте подключение к ИИ и повторите.";

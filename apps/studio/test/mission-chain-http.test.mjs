@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createStudioDevServer } from "../dist/src/dev-server.js";
 import { MissionChainDialogStore } from "../dist/src/mission-chain-dialogs.js";
-import { ModelProviderAgentBackend, MISSION_CHAIN_MAX_ATTEMPTS } from "@living-history/ai";
+import { ModelProviderAgentBackend, MISSION_CHAIN_MAX_ATTEMPTS, missionIntentFromChain } from "@living-history/ai";
 
 /*
  * AI-CHAIN: HTTP-контракт /local/mission-chain на живом Studio-сервере.
@@ -375,6 +375,103 @@ test("AI-CHAIN HTTP: битый JSON ответа модели — invalid_respo
     });
     assert.equal(started.body.stage, "failed");
     assert.match(started.body.error.message, /неожиданном формате|нечитаемым/);
+  } finally {
+    await close();
+  }
+});
+
+test("AI-CHAIN HTTP: подтверждённая цепочка доходит до писателя — предел идеи общий", async () => {
+  // Цепочка из нескольких сцен собирается в идею длиннее «ручного» лимита
+  // (4 000 символов). Писатель обязан принять её: предел композиции берётся из
+  // его же контракта, иначе подтверждение падало до обращения к модели.
+  const longChain = JSON.stringify({
+    ...JSON.parse(CHAIN_JSON),
+    narrative: "Шторм бьёт в стекло, смотритель считает масло. ".repeat(80),
+    chain: {
+      scenes: Array.from({ length: 8 }, (_, index) => ({
+        id: `scene-${index}`,
+        title: `Сцена ${index}`,
+        goal: "Решить, кому светить и чем за это платить"
+      })),
+      choices: Array.from({ length: 8 }, (_, index) => [
+        {
+          from: `scene-${index}`,
+          label: `Выбор ${index}`,
+          to: index === 7 ? "ending-safe" : `scene-${index + 1}`,
+          consequence: "Масла меньше, риск выше"
+        },
+        ...(index === 3
+          ? [{ from: `scene-${index}`, label: "Свернуть к цене", to: "ending-loss", consequence: "Свет отдан не тому" }]
+          : [])
+      ]).flat(),
+      resources: [{ id: "oil", title: "Масло", initial: 6, purpose: "Свет маяка" }],
+      endings: [
+        { id: "ending-safe", title: "Тихая гавань", condition: "Вход удержан" },
+        { id: "ending-loss", title: "Цена шторма", condition: "Свет отдан не тому" }
+      ]
+    }
+  });
+  const env = await bootStudio([
+    { content: QUESTION_1 },
+    { content: QUESTION_2 },
+    { content: longChain },
+    { content: JSON.stringify(fullPlan()) }
+  ]);
+  const { studioPort, close } = env;
+  try {
+    const started = await post(studioPort, "/local/mission-chain", {
+      idea: "Смотритель маяка выбирает, кому светить.",
+      projectId: "p-chain",
+      questId: "q-chain"
+    });
+    const sessionId = started.body.sessionId;
+    await post(studioPort, "/local/mission-chain", { sessionId, text: "Тревогу и ответственность." });
+    const ready = await post(studioPort, "/local/mission-chain", { sessionId, text: "Готов жертвовать маслом." });
+    assert.equal(ready.body.stage, "chain_ready");
+    assert.equal(ready.body.summary.chain.scenes.length, 8);
+    // Собранная идея обязана перерастать прежний предел писателя (4 000): именно
+    // этот случай ломал подтверждение на стенде.
+    const composed = missionIntentFromChain(ready.body.summary);
+    assert.ok(composed.idea.length > 4_000, `собранная идея коротка: ${composed.idea.length}`);
+
+    const confirmed = await post(studioPort, "/local/mission-chain", { sessionId });
+    assert.equal(confirmed.body.stage, "ready", `писатель отказал: ${confirmed.body.error?.message ?? ""}`);
+    assert.equal(confirmed.body.error, null);
+    assert.ok(confirmed.body.stats.sceneCount >= 2);
+  } finally {
+    await close();
+  }
+});
+
+test("AI-CHAIN HTTP: неудача сборки называет причину, а не только общий текст", async () => {
+  // План без второй ветви: писатель честно говорит, чего не хватает. Автор
+  // должен видеть и объяснение, и техническую причину — иначе сообщить о сбое
+  // невозможно.
+  const plan = fullPlan();
+  const singleBranch = { ...plan, branches: [plan.branches[0]] };
+  const env = await bootStudio([
+    { content: QUESTION_1 },
+    { content: QUESTION_2 },
+    { content: CHAIN_JSON },
+    { content: JSON.stringify(singleBranch) }
+  ]);
+  const { studioPort, close } = env;
+  try {
+    const started = await post(studioPort, "/local/mission-chain", {
+      idea: "Смотритель маяка выбирает, кому светить.",
+      projectId: "p-chain",
+      questId: "q-chain"
+    });
+    const sessionId = started.body.sessionId;
+    await post(studioPort, "/local/mission-chain", { sessionId, text: "Тревогу и ответственность." });
+    await post(studioPort, "/local/mission-chain", { sessionId, text: "Готов жертвовать маслом." });
+
+    const failed = await post(studioPort, "/local/mission-chain", { sessionId });
+    assert.equal(failed.body.stage, "chain_ready", "цепочка сохраняется: автор может попробовать снова");
+    assert.ok(failed.body.error !== null);
+    assert.match(failed.body.error.message, /не хватает ветвей или финалов/i);
+    assert.match(failed.body.error.message, /Причина: /, "техническая причина обязана дойти до автора");
+    assert.match(failed.body.error.message, /branches|endings/);
   } finally {
     await close();
   }
