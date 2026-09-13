@@ -359,7 +359,7 @@ const PROVIDER_DOCK_HTML = `
   <summary>Подключение ИИ-помощника</summary>
   <form id="provider-form">
     <p>Настройка для локальной Studio. Ключ хранится в памяти сервера до отключения или перезапуска. Запросы оплачиваются по тарифу провайдера.</p>
-    <label>Провайдер <select name="preset"><option value="openrouter">OpenRouter</option><option value="compatible">Совместимый API</option></select></label>
+    <label>Провайдер <select name="preset"><option value="openrouter">OpenRouter</option><option value="token-juice">Token Juice</option><option value="compatible">Совместимый API</option></select></label>
     <label>Базовый адрес API <input name="baseUrl" type="url" value="https://openrouter.ai/api/v1" required></label>
     <label>Модель <input name="model" placeholder="Идентификатор модели у провайдера" required maxlength="200"></label>
     <label>API-ключ <input name="credential" type="password" autocomplete="off" required maxlength="4096"></label>

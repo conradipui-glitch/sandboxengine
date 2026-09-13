@@ -4,9 +4,11 @@ import {
   COMPATIBLE_PRESET,
   CONNECTION_PROBE_MAX_OUTPUT_TOKENS,
   OPENROUTER_PRESET,
+  TOKEN_JUICE_PRESET,
   OpenAiCompatibleModelProvider,
   ScriptedModelProvider,
   createModelProviderForConnection,
+  providerPresetById,
   resolveConnectionBaseUrl,
   testModelConnection,
   toSafeConnectionView,
@@ -56,6 +58,31 @@ test("B06-01 presets separate OpenRouter defaults from custom compatible URL", (
 
   const compatible = { ...openrouter, presetId: "compatible", baseUrl: "https://custom.example/api/v1" };
   assert.equal(resolveConnectionBaseUrl(compatible), "https://custom.example/api/v1");
+});
+
+test("B06-01 Token Juice preset: адрес по умолчанию, свой адрес уважается, пусто — адрес пресета", () => {
+  assert.equal(TOKEN_JUICE_PRESET.id, "token-juice");
+  assert.equal(TOKEN_JUICE_PRESET.title, "Token Juice");
+  assert.equal(TOKEN_JUICE_PRESET.defaultBaseUrl, "https://api.tokenjuice.ai/v1");
+  assert.equal(TOKEN_JUICE_PRESET.allowsCustomBaseUrl, true);
+  assert.equal(providerPresetById("token-juice"), TOKEN_JUICE_PRESET);
+  assert.equal(providerPresetById("no-such-preset"), null);
+
+  const base = {
+    connectionId: "tj-1",
+    presetId: "token-juice",
+    baseUrl: null,
+    credentialRef: "vault://tj",
+    credentialMask: "sk…tail",
+    credentialRevision: "r1",
+    allowLocal: false
+  };
+  // Пустой/отсутствующий адрес — берём адрес пресета, а не пустую строку.
+  assert.equal(resolveConnectionBaseUrl(base), "https://api.tokenjuice.ai/v1");
+  assert.equal(resolveConnectionBaseUrl({ ...base, baseUrl: "   " }), "https://api.tokenjuice.ai/v1");
+  // Свой адрес того же шлюза (например, локальное зеркало) — уважается.
+  assert.equal(resolveConnectionBaseUrl({ ...base, baseUrl: "https://tj-mirror.example/v1" }), "https://tj-mirror.example/v1");
+  assert.equal(toSafeConnectionView(base).baseUrl, "https://api.tokenjuice.ai/v1");
 });
 
 test("B06-01 endpoint policy blocks credentials/private/metadata and allows explicit loopback only", () => {

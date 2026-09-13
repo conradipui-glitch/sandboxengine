@@ -9,6 +9,7 @@
  */
 
 import { createProviderFormController, type ProviderFormFetchResponse } from "./ai-provider-form.js";
+import { providerPreset } from "./provider-connections-panel.js";
 
 const dock = document.querySelector<HTMLDetailsElement>(".provider-settings");
 const form = document.querySelector<HTMLFormElement>("#provider-form");
@@ -30,9 +31,11 @@ const credential = field<HTMLInputElement>("credential");
 /** Пресет, который сам задаёт адрес API, не даёт править поле адреса. */
 function syncBaseUrlReadOnly(): void {
   if (preset === null || baseUrl === null) return;
-  const fixed = preset.value === "openrouter";
+  const entry = providerPreset(preset.value);
+  const fixed = entry?.baseUrl != null;
   baseUrl.readOnly = fixed;
-  if (fixed) baseUrl.value = "https://openrouter.ai/api/v1";
+  if (fixed) baseUrl.value = entry?.baseUrl ?? "";
+  if (model !== null && model.value.trim().length === 0 && entry?.defaultModel != null) model.value = entry.defaultModel;
 }
 preset?.addEventListener("change", syncBaseUrlReadOnly);
 

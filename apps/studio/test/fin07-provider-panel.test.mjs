@@ -32,12 +32,17 @@ const SECRET_MASK = "sk-…cdef";
 
 test("FIN-07 UI: пресеты задают адрес API и делают поле адреса только для чтения", () => {
   assert.equal(providerPreset("openrouter")?.label, "OpenRouter");
+  assert.equal(providerPreset("token-juice")?.label, "Token Juice");
   assert.equal(providerPreset("compatible")?.label, "Совместимый API");
   assert.equal(providerPreset("unknown"), null);
 
   // openrouter фиксирует адрес — как сейчас в provider-settings.ts.
   assert.equal(presetFixesBaseUrl("openrouter"), true);
   assert.equal(baseUrlForPreset("openrouter"), "https://openrouter.ai/api/v1");
+  // Token Juice — адрес шлюза задан пресетом, модель по умолчанию подставлена.
+  assert.equal(presetFixesBaseUrl("token-juice"), true);
+  assert.equal(baseUrlForPreset("token-juice"), "https://api.tokenjuice.ai/v1");
+  assert.equal(providerPreset("token-juice")?.defaultModel, "deepseek-ai/DeepSeek-V4.1-Flash");
   // совместимый API адрес вводит пользователь.
   assert.equal(presetFixesBaseUrl("compatible"), false);
   assert.equal(baseUrlForPreset("compatible"), null);
@@ -45,6 +50,7 @@ test("FIN-07 UI: пресеты задают адрес API и делают по
 
   // Итоговый адрес: у фиксированного пресета введённое значение игнорируется.
   assert.equal(resolveBaseUrl("openrouter", "http://evil.example"), "https://openrouter.ai/api/v1");
+  assert.equal(resolveBaseUrl("token-juice", "http://evil.example"), "https://api.tokenjuice.ai/v1");
   assert.equal(resolveBaseUrl("compatible", "https://api.example/v1"), "https://api.example/v1");
   assert.equal(resolveBaseUrl("compatible", null), "");
 
@@ -53,6 +59,13 @@ test("FIN-07 UI: пресеты задают адрес API и делают по
   assert.doesNotMatch(owner, /http:\/\/evil\.example/);
   assert.match(owner, /data-provider-field="baseUrl"[^>]*readonly/);
   assert.match(owner, /Адрес задан провайдером и не редактируется\./);
+
+  // Token Juice в панели: адрес пресета, поле не редактируется, модель уже вписана.
+  const juice = renderProviderConnectionsPanel(providerConnectionsView({ preset: "token-juice" }));
+  assert.match(juice, /value="https:\/\/api\.tokenjuice\.ai\/v1"/);
+  assert.match(juice, /data-provider-field="baseUrl"[^>]*readonly/);
+  assert.match(juice, /data-provider-field="model"[^>]*value="deepseek-ai\/DeepSeek-V4\.1-Flash"/);
+  assert.match(juice, /<option value="token-juice" selected>Token Juice<\/option>/);
 
   const free = renderProviderConnectionsPanel(providerConnectionsView({ preset: "compatible", baseUrl: "https://api.example/v1" }));
   assert.doesNotMatch(free, /data-provider-field="baseUrl"[^>]*readonly/);
@@ -387,9 +400,9 @@ test("FIN-07 UI: состояние по умолчанию показывает
   assert.match(html, /Не настроено/);
 });
 
-test("FIN-07 UI: список пресетов содержит оба варианта и их подписи", () => {
-  assert.equal(PROVIDER_PRESETS.length, 2);
-  assert.deepEqual(PROVIDER_PRESETS.map((preset) => preset.id), ["openrouter", "compatible"]);
+test("FIN-07 UI: список пресетов содержит все варианты и их подписи", () => {
+  assert.equal(PROVIDER_PRESETS.length, 3);
+  assert.deepEqual(PROVIDER_PRESETS.map((preset) => preset.id), ["openrouter", "token-juice", "compatible"]);
   for (const preset of PROVIDER_PRESETS) {
     assert.ok(preset.label.length > 0);
     assert.ok(preset.modelPlaceholder.length > 0);

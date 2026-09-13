@@ -338,7 +338,7 @@ export function createProviderFormController(host: ProviderFormHost): ProviderFo
     const baseUrl = dom.baseUrl === null ? "" : dom.baseUrl.value;
     const model = dom.model === null ? "" : dom.model.value;
     const credential = dom.credential === null ? "" : dom.credential.value;
-    if (preset !== "openrouter" && baseUrl.trim().length === 0) {
+    if (providerPreset(preset)?.baseUrl == null && baseUrl.trim().length === 0) {
       if (dom.status !== null) dom.status.textContent = PROVIDER_CAUSE_TEXTS.invalid_base_url;
       return;
     }

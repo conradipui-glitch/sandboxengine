@@ -1,7 +1,7 @@
 import {
   ModelProviderAgentBackend,
   OpenAiCompatibleModelProvider,
-  OPENROUTER_PRESET,
+  providerPresetById,
   testModelConnection,
   type FetchLike,
   type GenerateRequest,
@@ -167,12 +167,20 @@ export class LocalAuthorProvider {
   configure(value: unknown, options: { readonly persist?: boolean } = {}): void {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_settings");
     const config = value as Record<string, unknown>;
+    // Список пресетов — из движка: добавленный там провайдер сразу принимается
+    // здесь, без второго рукописного перечня, который легко забыть обновить.
+    const preset = typeof config.preset === "string" ? providerPresetById(config.preset) : null;
     if (Object.keys(config).sort().join(",") !== "baseUrl,credential,model,preset"
-      || (config.preset !== "openrouter" && config.preset !== "compatible")
+      || preset === null
       || typeof config.model !== "string" || !config.model.trim() || config.model.length > 200
       || typeof config.credential !== "string" || config.credential.length > 4096
       || typeof config.baseUrl !== "string" || config.baseUrl.length > 2048) throw new Error("invalid_settings");
-    const baseUrl = config.preset === "openrouter" ? OPENROUTER_PRESET.defaultBaseUrl! : config.baseUrl.trim();
+    // Пресет с адресом по умолчанию (token-juice): пустое поле — берём адрес
+    // пресета, а не пустую строку, иначе сохранение падало бы «неверным адресом».
+    const typedBaseUrl = config.baseUrl.trim();
+    const baseUrl = preset.allowsCustomBaseUrl
+      ? (typedBaseUrl.length > 0 ? typedBaseUrl : preset.defaultBaseUrl ?? "")
+      : preset.defaultBaseUrl ?? "";
     const model = config.model.trim();
     // Адрес проверяется до создания провайдера: «неверный базовый адрес» —
     // отдельная понятная причина, а не общая ошибка настроек.
@@ -183,7 +191,7 @@ export class LocalAuthorProvider {
     const submitted = String(config.credential);
     const credential = submitted.length > 0 ? submitted : this.#credential;
     if (credential === null || credential.length === 0) throw new LocalAuthorProviderCredentialRequiredError();
-    const provider = this.#createProvider({ preset: config.preset as "openrouter" | "compatible", baseUrl, model }, credential);
+    const provider = this.#createProvider({ preset: preset.id, baseUrl, model }, credential);
     const nextGeneration = this.#generation + 1;
     this.#generation = nextGeneration;
     try {
@@ -192,7 +200,7 @@ export class LocalAuthorProvider {
       this.#generation -= 1;
       throw error;
     }
-    this.#settings = Object.freeze({ preset: config.preset, baseUrl, model });
+    this.#settings = Object.freeze({ preset: preset.id, baseUrl, model });
     this.#state = "settings_saved";
     this.#lastErrorCode = null;
     this.#activeRequests = 0;

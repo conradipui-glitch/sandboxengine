@@ -18,6 +18,16 @@ export const OPENROUTER_PRESET: ProviderPreset = Object.freeze({
   allowsCustomBaseUrl: false
 });
 
+// Token Juice — OpenAI-совместимый шлюз: адрес задан пресетом по умолчанию, но
+// остаётся редактируемым (у стенда может быть свой адрес того же шлюза).
+export const TOKEN_JUICE_PRESET: ProviderPreset = Object.freeze({
+  id: "token-juice",
+  title: "Token Juice",
+  protocol: "openai_chat_completions",
+  defaultBaseUrl: "https://api.tokenjuice.ai/v1",
+  allowsCustomBaseUrl: true
+});
+
 export const COMPATIBLE_PRESET: ProviderPreset = Object.freeze({
   id: "compatible",
   title: "Совместимый API",
@@ -28,13 +38,22 @@ export const COMPATIBLE_PRESET: ProviderPreset = Object.freeze({
 
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = Object.freeze([
   OPENROUTER_PRESET,
+  TOKEN_JUICE_PRESET,
   COMPATIBLE_PRESET
 ]);
 
+/** Пресет по идентификатору — один источник правды для движка и Studio. */
+export function providerPresetById(id: string): ProviderPreset | null {
+  return PROVIDER_PRESETS.find((item) => item.id === id) ?? null;
+}
+
 export function resolveConnectionBaseUrl(connection: ConnectionConfig): string | null {
-  const preset = PROVIDER_PRESETS.find((item) => item.id === connection.presetId);
+  const preset = providerPresetById(connection.presetId);
   if (!preset) return null;
   if (!preset.allowsCustomBaseUrl) return preset.defaultBaseUrl;
+  // Пресет с адресом по умолчанию (token-juice): пустое поле — берём адрес
+  // пресета, а не пустую строку, иначе запрос уйдёт «в никуда».
+  if (preset.defaultBaseUrl !== null && (connection.baseUrl ?? "").trim().length === 0) return preset.defaultBaseUrl;
   return connection.baseUrl;
 }
 

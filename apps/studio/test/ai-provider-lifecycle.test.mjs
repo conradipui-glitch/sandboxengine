@@ -353,3 +353,61 @@ test("L03-подключение: ключ сохраняется, пережи�
     await close(stand.server);
   }
 });
+
+test("L03-подключение: пресет token-juice принимается, адрес и модель подставляются", async () => {
+  const stand = providerStand();
+  const standPort = await listen(stand.server);
+  const baseUrl = `http://127.0.0.1:${standPort}/v1`;
+  const scope = { projectId: "local-operator", userId: "local-owner" };
+  const connections = new MemoryControlProviderConnectionStore();
+  const provider = new LocalAuthorProvider(undefined, { connections, scope });
+  const studio = createStudioDevServer({ controlOrigin: "http://127.0.0.1:1", authorProvider: provider });
+  const port = await studio.listen(0, "127.0.0.1").then((value) => value.port);
+  const jsonHeaders = { "content-type": "application/json", "x-lh-local-settings": "1" };
+  const configure = (body) => request(port, "/local/author-provider", { method: "POST", headers: jsonHeaders, body: JSON.stringify(body) });
+  const bodies = [];
+  const remember = (value) => { bodies.push(JSON.stringify(value)); return value; };
+
+  try {
+    // 1. Пресет token-juice без своего адреса: берётся адрес пресета, не пустая строка.
+    const saved = remember(await configure({ preset: "token-juice", baseUrl: "", model: "deepseek-ai/DeepSeek-V4.1-Flash", credential: FIXTURE_KEY }));
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.state, "settings_saved");
+    assert.equal(saved.body.settings.preset, "token-juice");
+    assert.equal(saved.body.settings.baseUrl, "https://api.tokenjuice.ai/v1");
+    assert.equal(saved.body.settings.model, "deepseek-ai/DeepSeek-V4.1-Flash");
+    assert.equal(saved.body.hasCredential, true);
+
+    // 2. Свой адрес того же шлюза уважается, ключ при смене адреса не теряется.
+    const custom = remember(await configure({ preset: "token-juice", baseUrl, model: "deepseek-ai/DeepSeek-V4.1-Flash", credential: "" }));
+    assert.equal(custom.status, 200);
+    assert.equal(custom.body.settings.baseUrl, baseUrl);
+    assert.equal(custom.body.hasCredential, true, "ключ остался сохранённым");
+
+    // 3. Неизвестный пресет отклоняется: перечень — из движка, а не «что угодно».
+    const unknown = remember(await configure({ preset: "no-such-provider", baseUrl, model: "model-1", credential: FIXTURE_KEY }));
+    assert.equal(unknown.status, 400);
+    assert.equal(unknown.body.error.code, "INVALID_SETTINGS");
+
+    // 4. Проверка подключения на адресе token-juice работает и не раскрывает ключ.
+    const probed = remember(await request(port, "/local/author-provider/probe", { method: "POST", headers: jsonHeaders }));
+    assert.equal(probed.body.state, "connected");
+    assert.equal(probed.body.probeHttpStatus, 200);
+
+    // 5. Подключение переживает перезапуск: пресет и адрес восстанавливаются.
+    await settle(6);
+    const restarted = new LocalAuthorProvider(undefined, { connections, scope });
+    await restarted.restore();
+    const restored = restarted.status();
+    assert.equal(restored.configured, true);
+    assert.equal(restored.settings.preset, "token-juice");
+    assert.equal(restored.settings.baseUrl, baseUrl);
+    assert.equal(restored.hasCredential, true);
+
+    // 6. Ни один ответ не раскрыл полный ключ.
+    for (const body of bodies) assert.equal(body.includes(FIXTURE_KEY), false, "полный ключ не должен попадать в ответы");
+  } finally {
+    await studio.close();
+    await close(stand.server);
+  }
+});

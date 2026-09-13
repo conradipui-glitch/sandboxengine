@@ -58,6 +58,8 @@ export interface ProviderPreset {
   /** Фиксированный адрес API. null — адрес редактирует пользователь. */
   readonly baseUrl: string | null;
   readonly modelPlaceholder: string;
+  /** Модель по умолчанию: подставляется в пустое поле, чтобы автор не искал её. */
+  readonly defaultModel?: string;
 }
 
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = Object.freeze([
@@ -66,6 +68,13 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = Object.freeze([
     label: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
     modelPlaceholder: "openai/gpt-4o-mini"
+  }),
+  Object.freeze({
+    id: "token-juice",
+    label: "Token Juice",
+    baseUrl: "https://api.tokenjuice.ai/v1",
+    modelPlaceholder: "deepseek-ai/DeepSeek-V4.1-Flash",
+    defaultModel: "deepseek-ai/DeepSeek-V4.1-Flash"
   }),
   Object.freeze({
     id: "compatible",
@@ -252,6 +261,7 @@ function renderOwnerForm(view: ProviderConnectionsView): string {
     .map((entry) => `<option value="${escapeAttr(entry.id)}"${entry.id === preset.id ? " selected" : ""}>${escapeHtml(entry.label)}</option>`)
     .join("");
   const modelPlaceholder = escapeAttr(preset.modelPlaceholder);
+  const modelValue = view.model.length > 0 ? view.model : preset.defaultModel ?? "";
   const baseUrlNote = readOnly
     ? `<p class="pc-note" data-provider-baseUrl-note>Адрес задан провайдером и не редактируется.</p>`
     : `<p class="pc-note" data-provider-baseUrl-note>Укажите базовый адрес совместимого API.</p>`;
@@ -261,7 +271,7 @@ function renderOwnerForm(view: ProviderConnectionsView): string {
     `<label>Провайдер <select name="preset" data-provider-field="preset">${options}</select></label>`,
     `<label>Базовый адрес API <input name="baseUrl" type="url" data-provider-field="baseUrl" value="${escapeAttr(baseUrl)}"${readOnly ? " readonly" : ""} style="${WRAP_STYLE}" required></label>`,
     baseUrlNote,
-    `<label>Модель <input name="model" type="text" data-provider-field="model" value="${escapeAttr(view.model)}" placeholder="${modelPlaceholder}" maxlength="200" style="${WRAP_STYLE}"></label>`,
+    `<label>Модель <input name="model" type="text" data-provider-field="model" value="${escapeAttr(modelValue)}" placeholder="${modelPlaceholder}" maxlength="200" style="${WRAP_STYLE}"></label>`,
     `<label>API-ключ <input name="credential" type="password" data-provider-field="credential" value="" autocomplete="off" maxlength="4096"></label>`,
     `<p class="pc-credential-state" data-provider-credential-state>${escapeHtml(credentialStateText(view))}</p>`,
     `<ul class="pc-current" data-provider-current>`,
