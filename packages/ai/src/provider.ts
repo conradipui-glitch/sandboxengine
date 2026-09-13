@@ -170,6 +170,22 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
 
       const content = readAssistantContent(payload);
       if (content === null) return failure("invalid_response", "Model provider response has no assistant content", false, response.status, requestId, request.model);
+      if (content.trim().length === 0) {
+        // Пустой текст при 200 — отдельная причина: модель израсходовала бюджет
+        // вывода (размышления) и не написала ответ. Без этого отличия автор
+        // видел бы то же «проверьте ключ», что и при неверном ключе.
+        const finish = readFinishReason(payload);
+        return failure(
+          "invalid_response",
+          finish === "length"
+            ? "Model provider returned an empty answer: the output budget was spent before the text (finish_reason=length)"
+            : "Model provider returned an empty assistant answer",
+          false,
+          response.status,
+          requestId,
+          request.model
+        );
+      }
 
       let output: GenerateSuccess["output"];
       if (request.responseFormat === "json_object") {
@@ -308,6 +324,14 @@ function readAssistantContent(payload: Record<string, unknown>): string | null {
   const first = choices[0];
   if (!isRecord(first) || !isRecord(first.message)) return null;
   return typeof first.message.content === "string" ? first.message.content : null;
+}
+
+function readFinishReason(payload: Record<string, unknown>): string | null {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return null;
+  const first = choices[0];
+  if (!isRecord(first)) return null;
+  return typeof first.finish_reason === "string" ? first.finish_reason : null;
 }
 
 function readUsage(value: unknown): ProviderUsage {

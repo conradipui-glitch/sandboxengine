@@ -313,6 +313,46 @@ test("FIN-09 исчерпанный retryable-таймаут backend → failed:
   assert.equal(result.evidence.attempts[0].errorCode, "timeout");
 });
 
+// 9a. Медленная модель не съедает весь бюджет миссии: первая попытка получает
+//     свою долю, поэтому у повтора остаётся настоящее время на ответ.
+test("FIN-09 попытки делят дедлайн: первая не забирает весь бюджет миссии", async () => {
+  const backend = new ScriptedAgentBackend({
+    openSteps: [{ kind: "success", sessionRef: "s1" }],
+    turnSteps: [
+      { kind: "failure", error: { code: "timeout", message: "deadline exceeded" } },
+      { kind: "success", outputText: JSON.stringify(fullPlan()) }
+    ]
+  });
+  const start = Date.now();
+  const deadline = start + 240_000;
+  const result = await writerFor(backend, { now: () => start }).write({ intent: intent(), deadlineAtMs: deadline });
+  assert.equal(result.kind, "ok");
+  const [first, second] = backend.capturedTurnRequests;
+  assert.equal(first.deadlineAtMs, start + 120_000, "первая попытка получает половину бюджета");
+  assert.equal(second.deadlineAtMs, deadline, "последняя попытка забирает остаток");
+});
+
+// 9b. Если попытка съела почти всё время, повтор не запускается зря: автор сразу
+//     получает честную ошибку с причиной, а не вторую попытку без шанса.
+test("FIN-09 повтор не стартует, когда в бюджете осталось меньше минимума", async () => {
+  const backend = new ScriptedAgentBackend({
+    openSteps: [{ kind: "success", sessionRef: "s1" }],
+    turnSteps: [
+      { kind: "failure", error: { code: "timeout", message: "deadline exceeded" } },
+      { kind: "success", outputText: JSON.stringify(fullPlan()) }
+    ]
+  });
+  const start = Date.now();
+  const ticks = [start, start + 235_000];
+  let call = 0;
+  const now = () => ticks[Math.min(call++, ticks.length - 1)];
+  const result = await writerFor(backend, { now }).write({ intent: intent(), deadlineAtMs: start + 240_000 });
+  assert.equal(result.kind, "failed");
+  assert.equal(result.code, "backend_failure");
+  assert.equal(result.evidence.attempts.length, 1, "повтор без времени не запускается");
+  assert.equal(backend.capturedTurnRequests.length, 1);
+});
+
 test("FIN-09 не-retryable ошибка backend (auth_required) завершает работу сразу", async () => {
   const backend = new ScriptedAgentBackend({
     openSteps: [{ kind: "success", sessionRef: "s1" }],

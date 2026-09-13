@@ -30,7 +30,7 @@ const MAX_SESSIONS = 16;
 const SESSION_TTL_MS = 30 * 60_000;
 const MAX_MESSAGE_CHARS = 1_000;
 const CHAIN_BACKEND_DEADLINE_MS = 60_000;
-const CHAIN_WRITER_DEADLINE_MS = 180_000;
+const CHAIN_WRITER_DEADLINE_MS = 240_000;
 
 export interface MissionChainMessage {
   readonly role: "author" | "assistant";

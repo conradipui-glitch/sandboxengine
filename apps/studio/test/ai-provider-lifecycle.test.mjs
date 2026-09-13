@@ -79,9 +79,11 @@ const settle = async (times = 4) => {
 /** Стенд-провайдер: отдаёт список моделей, умеет отказывать и «висеть». */
 function providerStand() {
   let mode = "ok";
+  let generationMode = "ok";
   const requests = [];
   const server = createServer((req, res) => {
-    requests.push({ url: req.url, authorization: req.headers.authorization ?? null });
+    const isChat = typeof req.url === "string" && req.url.includes("/chat/completions");
+    requests.push({ url: req.url, authorization: req.headers.authorization ?? null, isChat });
     if (mode === "hang") return; // намеренно не отвечаем: проверяется медленный ответ
     res.setHeader("content-type", "application/json");
     if (mode === "unauthorized") {
@@ -103,6 +105,20 @@ function providerStand() {
       res.end("<html>not json</html>");
       return;
     }
+    if (isChat) {
+      // Генерация: «hang» — провайдер отвечает на список моделей, но не генерирует.
+      if (generationMode === "hang") return;
+      if (generationMode === "empty") {
+        res.end(JSON.stringify({ id: "gen-empty", choices: [{ finish_reason: "length", message: { content: "" } }] }));
+        return;
+      }
+      res.end(JSON.stringify({
+        id: "gen-1",
+        choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }],
+        usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
+      }));
+      return;
+    }
     res.end(JSON.stringify({
       data: [
         { id: "qwen/qwen3-32b", name: "Qwen3 32B" },
@@ -117,7 +133,9 @@ function providerStand() {
     server,
     requests,
     setMode: (value) => { mode = value; },
-    getMode: () => mode
+    getMode: () => mode,
+    setGenerationMode: (value) => { generationMode = value; },
+    getGenerationMode: () => generationMode
   };
 }
 
@@ -177,6 +195,26 @@ test("L03-подключение: ключ сохраняется, пережи�
     assert.equal(connected.body.probeCause, "connected");
     assert.equal(connected.body.probeHttpStatus, 200);
     assert.equal(typeof connected.body.probeLatencyMs, "number");
+
+    // 5a. Проверка не ограничивается списком моделей: провайдер отвечает, но
+    //     модель отдаёт пустой ответ (лимит ушёл на размышления) — это отдельная
+    //     причина, а не «подключение работает».
+    stand.setGenerationMode("empty");
+    const empties = remember(await probe());
+    assert.equal(empties.body.state, "error");
+    assert.equal(empties.body.probeCause, "generation_empty");
+    assert.equal(empties.body.lastErrorCode, "generation_empty");
+
+    // 5b. Провайдер отвечает на список моделей, но не успевает сгенерировать
+    //     ответ: причина — тайм-аут генерации, а не «неверный ключ».
+    stand.setGenerationMode("hang");
+    const quick = new LocalAuthorProvider(undefined, { connections, scope }, { generationProbeTimeoutMs: 250 });
+    quick.configure({ preset: "compatible", baseUrl, model: "model-1", credential: FIXTURE_KEY }, { persist: false });
+    const quickState = await quick.probe();
+    assert.equal(quickState, "error");
+    assert.equal(quick.status().probeCause, "generation_timeout");
+    assert.equal(quick.status().connectionCheck, "error");
+    stand.setGenerationMode("ok");
 
     // 6. Провайдер отклонил ключ — это названо причиной, а не тайм-аутом.
     stand.setMode("unauthorized");

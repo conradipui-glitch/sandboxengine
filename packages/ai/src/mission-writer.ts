@@ -51,6 +51,14 @@ export const MISSION_WRITER_DEFAULT_BRANCH_COUNT = 2;
 export const MISSION_WRITER_DEFAULT_ENDING_COUNT = 2;
 export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 export const MISSION_WRITER_MAX_ATTEMPTS = 2;
+/**
+ * Одна попытка не забирает весь дедлайн миссии: если медленная модель съест
+ * общий бюджет, повтор уже не успеет, и автор увидит «модель не ответила» без
+ * второй попытки. Остаток делится между попытками, но не меньше этого минимума.
+ */
+export const MISSION_WRITER_MIN_ATTEMPT_BUDGET_MS = 60_000;
+/** Минимальный остаток, при котором повтор имеет смысл. */
+export const MISSION_WRITER_MIN_RETRY_BUDGET_MS = 15_000;
 const MISSION_WRITER_MAX_PLAN_ID_CHARS = 200;
 
 /** Входной контракт: идея автора и её рамки. */
@@ -201,6 +209,8 @@ export interface MissionWriterOptions {
   readonly questId: string;
   readonly maxOutputTokens?: number;
   readonly baseRevision?: number;
+  /** Часы для дележа дедлайна между попытками (тесты подставляют свои). */
+  readonly now?: () => number;
 }
 
 export interface MissionWriteRequest {
@@ -220,6 +230,7 @@ export class ModelMissionWriter implements MissionWriter {
   readonly #questId: string;
   readonly #maxOutputTokens: number;
   readonly #baseRevision: number;
+  readonly #now: () => number;
 
   constructor(options: MissionWriterOptions) {
     if (!isRuntimeId(options.profileId)) throw new TypeError("mission writer profileId is invalid");
@@ -239,6 +250,7 @@ export class ModelMissionWriter implements MissionWriter {
     this.#questId = options.questId;
     this.#maxOutputTokens = maxOutputTokens;
     this.#baseRevision = baseRevision;
+    this.#now = options.now ?? Date.now;
   }
 
   async write(request: MissionWriteRequest): Promise<MissionWriterResult> {
@@ -263,11 +275,18 @@ export class ModelMissionWriter implements MissionWriter {
     let lastInvalid: readonly string[] | null = null;
     try {
       for (let attempt = 1; attempt <= MISSION_WRITER_MAX_ATTEMPTS; attempt += 1) {
+        const attemptsLeft = MISSION_WRITER_MAX_ATTEMPTS - attempt + 1;
+        const startedAtMs = this.#now();
+        const remainingMs = request.deadlineAtMs - startedAtMs;
+        const attemptDeadlineAtMs = Math.min(
+          request.deadlineAtMs,
+          startedAtMs + Math.max(MISSION_WRITER_MIN_ATTEMPT_BUDGET_MS, Math.floor(remainingMs / attemptsLeft))
+        );
         const turn = await this.#backend.runTurn({
           session,
           messages: buildMessages(request.intent, attempt),
           maxOutputTokens: this.#maxOutputTokens,
-          deadlineAtMs: request.deadlineAtMs,
+          deadlineAtMs: attemptDeadlineAtMs,
           ...(request.signal ? { signal: request.signal } : {})
         });
         attempts.push(Object.freeze({
@@ -279,7 +298,8 @@ export class ModelMissionWriter implements MissionWriter {
         }));
 
         if (!turn.ok) {
-          if (turn.error.retryable && attempt < MISSION_WRITER_MAX_ATTEMPTS) continue;
+          const retryLeftMs = request.deadlineAtMs - this.#now();
+          if (turn.error.retryable && attempt < MISSION_WRITER_MAX_ATTEMPTS && retryLeftMs >= MISSION_WRITER_MIN_RETRY_BUDGET_MS) continue;
           return failure("backend_failure", normalizeBackendFailure(turn.error.code, turn.error.message), attempts);
         }
 

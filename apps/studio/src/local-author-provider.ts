@@ -2,6 +2,7 @@ import {
   ModelProviderAgentBackend,
   OpenAiCompatibleModelProvider,
   OPENROUTER_PRESET,
+  testModelConnection,
   type FetchLike,
   type GenerateRequest,
   type GenerateResult,
@@ -33,7 +34,18 @@ export type LocalAuthorProviderCause =
   | "slow_timeout"
   | "network"
   | "invalid_response"
-  | "backend_error";
+  | "backend_error"
+  /** Список моделей пришёл, но пробный ответ модель не сгенерировала вовремя. */
+  | "generation_timeout"
+  /** Модель вернула пустой ответ: весь лимит вывода ушёл на размышления. */
+  | "generation_empty"
+  /** Ключ принят, но пробная генерация не удалась по другой причине. */
+  | "generation_failed";
+
+/** Сколько ждём пробную генерацию: столько же, сколько занимает честная проверка. */
+export const PROVIDER_GENERATION_PROBE_TIMEOUT_MS = 45_000;
+/** Малый лимит вывода: проверяем сам факт ответа, а не объём текста. */
+export const PROVIDER_GENERATION_PROBE_MAX_TOKENS = 24;
 
 export interface LocalAuthorProviderProbe {
   readonly cause: LocalAuthorProviderCause;
@@ -92,6 +104,15 @@ export interface LocalAuthorProviderPersistence {
   readonly scope: LocalAuthorProviderScope;
 }
 
+/** Настройки стенда: сейчас — только бюджет пробной генерации при проверке. */
+export interface LocalAuthorProviderOptions {
+  /**
+   * Сколько ждать пробный короткий ответ. Параметр нужен тестам, чтобы проверить
+   * случай «провайдер отвечает, но не генерирует» без реального ожидания.
+   */
+  readonly generationProbeTimeoutMs?: number;
+}
+
 export class LocalAuthorProvider {
   readonly backend = new ModelProviderAgentBackend();
   #settings: LocalAuthorProviderSettings | null = null;
@@ -110,7 +131,8 @@ export class LocalAuthorProvider {
   #probe: LocalAuthorProviderProbe | null = null;
   constructor(
     private readonly providerFetch?: FetchLike,
-    private readonly persistence?: LocalAuthorProviderPersistence
+    private readonly persistence?: LocalAuthorProviderPersistence,
+    private readonly options?: LocalAuthorProviderOptions
   ) {}
 
   status() {
@@ -154,8 +176,7 @@ export class LocalAuthorProvider {
     const submitted = String(config.credential);
     const credential = submitted.length > 0 ? submitted : this.#credential;
     if (credential === null || credential.length === 0) throw new LocalAuthorProviderCredentialRequiredError();
-    const provider = new OpenAiCompatibleModelProvider({ baseUrl, credential, allowLocal: true,
-      capabilities: { text: true, jsonObject: true }, ...(this.providerFetch ? { fetch: this.providerFetch } : {}) });
+    const provider = this.#createProvider({ preset: config.preset as "openrouter" | "compatible", baseUrl, model }, credential);
     const nextGeneration = this.#generation + 1;
     this.#generation = nextGeneration;
     try {
@@ -261,12 +282,64 @@ export class LocalAuthorProvider {
       doFetch as never,
       options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }
     );
-    const cause: LocalAuthorProviderCause = result.kind === "connected" ? "connected" : probeCause(result.kind);
-    this.#lastErrorCode = result.kind === "connected" ? null : result.kind;
-    this.#state = result.kind === "connected" ? "connected" : "error";
-    this.#probe = probeRecord(cause, result.latencyMs, result.httpStatus);
-    await this.#persistState(result.kind === "connected" ? "connected" : "error", this.#lastErrorCode);
+    if (result.kind !== "connected") {
+      const failedCause = probeCause(result.kind);
+      this.#lastErrorCode = result.kind;
+      this.#state = "error";
+      this.#probe = probeRecord(failedCause, result.latencyMs, result.httpStatus);
+      await this.#persistState("error", this.#lastErrorCode);
+      return this.#state;
+    }
+    // Список моделей ещё не доказывает, что модель ответит: провайдер отдаёт 200
+    // на /models и может не успеть сгенерировать ответ (медленная модель,
+    // размышления съедают лимит вывода). Проверяем сам ответ — иначе автор видит
+    // «подключение работает», а помощник падает по таймауту.
+    const generation = await this.#probeGeneration(apiKey);
+    this.#lastErrorCode = generation.cause === "connected" ? null : generation.cause;
+    this.#state = generation.cause === "connected" ? "connected" : "error";
+    this.#probe = probeRecord(generation.cause, generation.latencyMs, result.httpStatus);
+    await this.#persistState(this.#state, this.#lastErrorCode);
     return this.#state;
+  }
+
+  /**
+   * Пробная генерация тем же провайдером, что и помощник: короткий запрос с
+   * малым лимитом вывода. Отличает «ключ и адрес верны» от «модель не успевает
+   * ответить за отведённое время» — без этого проверка подключения обещала успех.
+   */
+  async #probeGeneration(apiKey: string): Promise<{ readonly cause: LocalAuthorProviderCause; readonly latencyMs: number }> {
+    const settings = this.#settings;
+    if (!settings) return { cause: "not_configured", latencyMs: 0 };
+    const provider = this.#createProvider(settings, apiKey);
+    const startedAtMs = Date.now();
+    const result = await testModelConnection(provider, {
+      profileId: "studio-connection-probe",
+      connectionId: "studio-local-connection",
+      model: settings.model,
+      responseFormat: "json_object",
+      maxOutputTokens: PROVIDER_GENERATION_PROBE_MAX_TOKENS
+    }, { deadlineAtMs: startedAtMs + (this.options?.generationProbeTimeoutMs ?? PROVIDER_GENERATION_PROBE_TIMEOUT_MS) });
+    const latencyMs = Date.now() - startedAtMs;
+    if (result.ok) return { cause: "connected", latencyMs };
+    const code = result.error?.code ?? "";
+    const httpStatus = result.error?.httpStatus ?? null;
+    if (code === "timeout") return { cause: "generation_timeout", latencyMs };
+    if (code === "invalid_response") return { cause: "generation_empty", latencyMs };
+    if (code === "http" && (httpStatus === 401 || httpStatus === 403)) return { cause: "auth_required", latencyMs };
+    if (code === "http" && httpStatus === 429) return { cause: "rate_limited", latencyMs };
+    if (code === "network") return { cause: "network", latencyMs };
+    return { cause: "generation_failed", latencyMs };
+  }
+
+  /** Провайдер с теми же параметрами, что и рабочий: адрес, ключ, JSON-ответ. */
+  #createProvider(settings: LocalAuthorProviderSettings, credential: string): OpenAiCompatibleModelProvider {
+    return new OpenAiCompatibleModelProvider({
+      baseUrl: settings.baseUrl,
+      credential,
+      allowLocal: true,
+      capabilities: { text: true, jsonObject: true },
+      ...(this.providerFetch ? { fetch: this.providerFetch } : {})
+    });
   }
 
   /**

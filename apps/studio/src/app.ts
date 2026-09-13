@@ -3469,7 +3469,7 @@ export class StudioApp {
           return { ok: false as const, message: "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ» и повторите.", retryable: true };
         }
         if (payload?.kind !== "ok" || !payload.document) {
-          return { ok: false as const, message: aiDraftFailureMessage(payload?.kind), retryable: true };
+          return { ok: false as const, message: aiDraftFailureMessage(payload), retryable: true };
         }
         onProgress({ stage: "repairing", message: "Собираем сцены, связи и финалы…" });
         const document = payload.document as MissionDraft;
@@ -4366,7 +4366,7 @@ export class StudioApp {
     }
     if (payload?.kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
     if (payload?.kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
-    return "ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Черновик проекта уже создан и не потерян.";
+    return `${aiDraftFailureMessage(payload)} Черновик проекта уже создан и не потерян.`;
   }
 
   private async createMission(title: string): Promise<void> {
@@ -5333,11 +5333,36 @@ function isAcceptanceProject(projectId: string, title: string): boolean {
 }
 
 /** Материал → ссылка в документе миссии: адрес неизменяем, поэтому хеш обязателен. */
-/** Почему генерация не дала миссию — словами, которые автор может выполнить. */
-function aiDraftFailureMessage(kind: unknown): string {
-  if (kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
-  if (kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
-  return "ИИ не ответил: проверьте модель и ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+/**
+ * Почему генерация не дала миссию — словами, которые автор может выполнить.
+ * Код последней попытки берётся из доказательств писателя: «модель не успела» и
+ * «модель ответила не планом» требуют разных действий, а не совета про ключ.
+ */
+export function aiDraftFailureMessage(result: unknown): string {
+  const payload = (result ?? {}) as { readonly kind?: unknown; readonly evidence?: unknown };
+  if (payload.kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
+  if (payload.kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
+  const code = lastAttemptErrorCode(payload.evidence);
+  if (code === "timeout") {
+    return "Модель не успела ответить за отведённое время: для длинного ответа она слишком медленная или провайдер перегружен. Повторите — введённый текст сохранён; если снова не выйдет, выберите в «Настройки → ИИ» модель со скоростью «быстрая».";
+  }
+  if (code === "invalid_response") {
+    return "Модель ответила, но не готовым планом (возможно, весь лимит вывода ушёл на размышления). Повторите — введённый текст сохранён; если повторится, выберите модель без режима размышлений.";
+  }
+  if (code === "auth_required") return "Провайдер отклонил ключ: сохраните верный ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+  if (code === "rate_limited") return "Провайдер ограничил частоту запросов: подождите минуту и повторите. Введённый текст сохранён.";
+  if (code === "network") return "Не удалось связаться с провайдером: проверьте соединение и базовый адрес API в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+  return "ИИ не ответил: подключение сохранено, но ответ не пришёл. Повторите запрос — введённый текст сохранён.";
+}
+
+/** Код последней попытки из доказательств писателя (порядок попыток сохраняется). */
+function lastAttemptErrorCode(evidence: unknown): string {
+  if (!Array.isArray(evidence)) return "";
+  for (let index = evidence.length - 1; index >= 0; index -= 1) {
+    const item = evidence[index] as { readonly errorCode?: unknown } | null;
+    if (item && typeof item.errorCode === "string" && item.errorCode.length > 0) return item.errorCode;
+  }
+  return "";
 }
 
 /** Автопочинка плана — человеческой фразой, без служебных кодов. */

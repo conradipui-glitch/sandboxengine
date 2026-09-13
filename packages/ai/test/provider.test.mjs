@@ -198,6 +198,48 @@ test("B06-01 capability mismatch and expired deadline fail before network", asyn
   assert.equal(calls, 0);
 });
 
+// B06-01. Пустой ответ модели назван отдельной причиной: раньше он выглядел как
+// «неверный ключ», хотя ключ и адрес верны, а весь лимит вывода ушёл на размышления.
+test("B06-01 пустой ответ модели → invalid_response с причиной про израсходованный лимит", async () => {
+  const emptyProvider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({
+      model: "reasoning/model",
+      choices: [{ finish_reason: "length", message: { content: "" } }],
+      usage: { prompt_tokens: 20, completion_tokens: 8000, total_tokens: 8020 }
+    })
+  });
+  const truncated = await emptyProvider.generate({
+    model: "reasoning/model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "json_object",
+    maxOutputTokens: 8000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(truncated.ok, false);
+  assert.equal(truncated.error.code, "invalid_response");
+  assert.match(truncated.error.message, /output budget was spent/);
+
+  const blankProvider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({ choices: [{ message: { content: "   " } }] })
+  });
+  const blank = await blankProvider.generate({
+    model: "model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "text",
+    maxOutputTokens: 8000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(blank.ok, false);
+  assert.equal(blank.error.code, "invalid_response");
+  assert.match(blank.error.message, /empty assistant answer/);
+});
+
 test("B06-01 scripted fake is deterministic and connection test reports real shape", async () => {
   const provider = new ScriptedModelProvider([
     { kind: "success", output: { format: "json_object", value: { ok: true } }, providerRequestId: "fake-1" },
