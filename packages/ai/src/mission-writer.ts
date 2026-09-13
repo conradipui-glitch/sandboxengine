@@ -376,6 +376,17 @@ export class ModelMissionWriter implements MissionWriter {
           }
           return evaluated;
         }
+        // Структура нарушена (например, выдуманная форма effects). Повтор без
+        // объяснения повторяет ту же ошибку, поэтому называем её модели словами
+        // формы — и только потом честно отказываем.
+        {
+          const retryLeftMs = request.deadlineAtMs - this.#now();
+          if (attempt < MISSION_WRITER_MAX_ATTEMPTS && retryLeftMs >= MISSION_WRITER_MIN_RETRY_BUDGET_MS) {
+            repairNote = missionWriterInvalidDirective(evaluated.problems);
+            lastInvalid = evaluated.problems;
+            continue;
+          }
+        }
         lastInvalid = evaluated.problems;
       }
       return Object.freeze({
@@ -1019,6 +1030,38 @@ export function missionWriterRepairDirective(
   return `Предыдущий ответ отклонён: ${list}. Верни полный JSON заново, без сокращений, без пояснений и без markdown.`;
 }
 
+/**
+ * Директива на повтор после invalid_plan: называет модели, что именно нарушено,
+ * словами формы плана. Без неё повтор повторяет ту же ошибку, и автор видит
+ * технический список кодов вместо миссии.
+ */
+export function missionWriterInvalidDirective(problems: readonly string[]): string {
+  const notes: string[] = [];
+  if (problems.some((problem) => problem.startsWith("plan.choice_effect"))) {
+    notes.push("effects: только {\"schemaVersion\":\"1.0\",\"type\":\"resource.change\",\"sourceId\":str,\"resourceId\":str из start.resources,\"delta\":целое} — или пустой массив");
+  }
+  if (problems.some((problem) => problem.startsWith("plan.choice_condition"))) {
+    notes.push("conditions: только {\"schemaVersion\":\"1.0\",\"type\":\"resource.atLeast\",\"resourceId\":str из start.resources,\"value\":целое} — или пустой массив");
+  }
+  if (problems.some((problem) => problem.startsWith("plan.choice_target"))) {
+    notes.push("target.id: только id сцены или финала из этого же плана");
+  }
+  if (problems.some((problem) => problem.startsWith("plan.listing"))) {
+    notes.push("listing: все поля — непустые строки");
+  }
+  if (problems.some((problem) => problem.startsWith("plan.start"))) {
+    notes.push("start: непустые locations, resources (initial — целое), characters");
+  }
+  if (problems.some((problem) => problem.startsWith("plan.branch") || problem === "plan.branches" || problem === "plan.branches_invalid")) {
+    notes.push("branches: у каждой ветви непустые scenes и свой финал");
+  }
+  if (problems.some((problem) => problem === "plan.not_json" || problem === "plan.not_object")) {
+    notes.push("ответ должен быть одним JSON-объектом без markdown и пояснений");
+  }
+  const list = notes.length > 0 ? notes.join("; ") : "структура плана нарушена";
+  return `Предыдущий ответ отклонён проверкой структуры: ${list}. Верни полный JSON заново, без сокращений, без пояснений и без markdown.`;
+}
+
 function buildMessages(intent: MissionWriterIntent, attempt: number, repairNote: string | null = null): readonly ModelMessage[] {
   const requiredBranches = intent.branchCount ?? MISSION_WRITER_DEFAULT_BRANCH_COUNT;
   const requiredEndings = intent.endingCount ?? MISSION_WRITER_DEFAULT_ENDING_COUNT;
@@ -1035,6 +1078,7 @@ function buildMessages(intent: MissionWriterIntent, attempt: number, repairNote:
     "\"dialogue\":[{\"speakerId\":str|null,\"text\":str}],",
     "\"choices\":[{\"label\":str,\"target\":{\"kind\":\"scene\"|\"ending\",\"id\":str},\"conditions\":[],\"effects\":[]}]}],",
     "\"ending\":{\"id\":str,\"title\":str,\"text\":str}}]}.",
+    "conditions и effects заполняй только так: conditions — {\"schemaVersion\":\"1.0\",\"type\":\"resource.atLeast\",\"resourceId\":str,\"value\":int}, effects — {\"schemaVersion\":\"1.0\",\"type\":\"resource.change\",\"sourceId\":str,\"resourceId\":str,\"delta\":int}; resourceId — только из start.resources. Если условие или эффект не нужен, оставь пустой массив: других видов не бывает.",
     "id — латиница/цифры/._:-. Каждая сцена имеет непустой choices с переходами; финал каждой ветви достижим хотя бы одним выбором.",
     `Язык текста: ${intent.language}. Жанр/тон: ${intent.genre}. Длительность: примерно ${intent.targetDurationMinutes} минут.`,
     ...(intent.constraints && intent.constraints.length > 0

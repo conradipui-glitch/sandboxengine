@@ -333,6 +333,38 @@ test("FIN-09 не-объектный JSON → invalid_plan:plan.not_object", asy
   assert.ok(result.problems.includes("plan.not_object"));
 });
 
+// 8b. Структура нарушена (например, выдуманная форма effects): повтор обязан
+// назвать модели форму словами, а не повторить ту же ошибку молча.
+test("FIN-09 нарушенная структура → повтор с директивой о форме условий и эффектов", async () => {
+  const broken = fullPlan();
+  broken.branches[0].scenes[0].choices[0].effects = [{ type: "resource.change", resourceId: "lamp-oil", delta: -2 }];
+  broken.branches[0].scenes[1].choices[0].conditions = [{ type: "resource.atLeast", resourceId: "lamp-oil", value: 0 }];
+  const backend = backendWithPlan(fullPlan(), {
+    turnSteps: [
+      { kind: "success", outputText: JSON.stringify(broken), usage: { outputTokens: 500 }, backendRequestId: "turn-1" },
+      { kind: "success", outputText: JSON.stringify(fullPlan()), usage: { outputTokens: 500 }, backendRequestId: "turn-2" }
+    ]
+  });
+  const result = await writerFor(backend).write({ intent: intent(), deadlineAtMs: DEADLINE() });
+  assert.equal(result.kind, "ok", `ожидали ok, получили ${result.kind}`);
+  assert.equal(backend.capturedTurnRequests.length, 2, "после нарушенной структуры была вторая попытка");
+  const directive = backend.capturedTurnRequests[1].messages.at(-1).content;
+  assert.match(directive, /schemaVersion/);
+  assert.match(directive, /resource\.change/);
+  assert.match(directive, /resource\.atLeast/);
+});
+
+// 8c. Форма условий и эффектов названа в самом задании: иначе модель придумывает
+// свои поля, и миссия падает на проверке структуры уже у автора.
+test("FIN-09 задание писателя называет допустимую форму conditions и effects", async () => {
+  const backend = backendWithPlan(fullPlan());
+  await writerFor(backend).write({ intent: intent(), deadlineAtMs: DEADLINE() });
+  const system = backend.capturedTurnRequests[0].messages[0].content;
+  assert.match(system, /resource\.change/);
+  assert.match(system, /resource\.atLeast/);
+  assert.match(system, /schemaVersion/);
+});
+
 // 8. Невалидные условия/эффекты и висячие переходы → честная ошибка.
 test("FIN-09 невалидное условие выбора → invalid_plan, а не молчаливое отбрасывание", async () => {
   const plan = fullPlan();
