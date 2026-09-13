@@ -43,9 +43,14 @@ export type LocalAuthorProviderCause =
   | "generation_failed";
 
 /** Сколько ждём пробную генерацию: столько же, сколько занимает честная проверка. */
-export const PROVIDER_GENERATION_PROBE_TIMEOUT_MS = 45_000;
-/** Малый лимит вывода: проверяем сам факт ответа, а не объём текста. */
-export const PROVIDER_GENERATION_PROBE_MAX_TOKENS = 24;
+export const PROVIDER_GENERATION_PROBE_TIMEOUT_MS = 60_000;
+/**
+ * Лимит вывода для пробной генерации. Десятков токенов мало: на моделях с
+ * размышлениями весь такой лимит уходит в reasoning, и рабочий ключ выглядит
+ * как пустой ответ (замер на стенде: 24 токена → reasoning 26, content пуст;
+ * 128 токенов → осмысленный JSON). Проверяем сам факт ответа, а не объём.
+ */
+export const PROVIDER_GENERATION_PROBE_MAX_TOKENS = 1_024;
 
 export interface LocalAuthorProviderProbe {
   readonly cause: LocalAuthorProviderCause;

@@ -72,6 +72,15 @@ export function createModelProviderForConnection(
   });
 }
 
+/**
+ * Бюджет вывода для проверки связи. Десятки токенов для этой проверки мало:
+ * на моделях с размышлениями весь такой лимит уходит в reasoning, и рабочий
+ * ключ выглядит как пустой ответ. Замер на стенде (reasoning-модель, запрос
+ * ровно как здесь): max_tokens 24 → finish_reason=length, reasoning 26
+ * токенов, content пуст; max_tokens 128 → осмысленный JSON за 11 с.
+ */
+export const CONNECTION_PROBE_MAX_OUTPUT_TOKENS = 1_024;
+
 export async function testModelConnection(
   provider: ModelProvider,
   profile: ModelProfile,
@@ -84,7 +93,7 @@ export async function testModelConnection(
       Object.freeze({ role: "user" as const, content: profile.responseFormat === "json_object" ? "Return one JSON object with {\"ok\":true}." : "Return OK." })
     ]),
     responseFormat: profile.responseFormat,
-    maxOutputTokens: Math.max(1, Math.min(profile.maxOutputTokens, 32)),
+    maxOutputTokens: Math.max(1, Math.min(profile.maxOutputTokens, CONNECTION_PROBE_MAX_OUTPUT_TOKENS)),
     deadlineAtMs: options.deadlineAtMs,
     ...(options.signal ? { signal: options.signal } : {})
   });

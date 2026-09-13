@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COMPATIBLE_PRESET,
+  CONNECTION_PROBE_MAX_OUTPUT_TOKENS,
   OPENROUTER_PRESET,
   OpenAiCompatibleModelProvider,
   ScriptedModelProvider,
@@ -238,6 +239,35 @@ test("B06-01 пустой ответ модели → invalid_response с при
   assert.equal(blank.ok, false);
   assert.equal(blank.error.code, "invalid_response");
   assert.match(blank.error.message, /empty assistant answer/);
+});
+
+test("B06-02 проверка связи не ставит микроскопический лимит вывода: reasoning-модель отвечает", async () => {
+  const bodies = [];
+  const provider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async (_url, init) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return jsonResponse({
+        model: "reasoning/model",
+        choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }],
+        usage: { prompt_tokens: 30, completion_tokens: 40, total_tokens: 70 }
+      });
+    }
+  });
+  const result = await testModelConnection(
+    provider,
+    { ...jsonProfile, model: "reasoning/model", maxOutputTokens: 8_000 },
+    { deadlineAtMs: Date.now() + 5_000 }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "connected");
+  assert.equal(bodies.length, 1);
+  const sent = bodies[0];
+  assert.equal(sent.max_tokens, CONNECTION_PROBE_MAX_OUTPUT_TOKENS);
+  assert.ok(sent.max_tokens > 32, "лимит проверки должен быть больше 32 токенов");
+  assert.equal(sent.response_format.type, "json_object");
 });
 
 test("B06-01 scripted fake is deterministic and connection test reports real shape", async () => {

@@ -81,9 +81,17 @@ function providerStand() {
   let mode = "ok";
   let generationMode = "ok";
   const requests = [];
+  const chatRequests = [];
   const server = createServer((req, res) => {
     const isChat = typeof req.url === "string" && req.url.includes("/chat/completions");
     requests.push({ url: req.url, authorization: req.headers.authorization ?? null, isChat });
+    if (isChat) {
+      // Тело запроса генерации нужен целиком: проверка связи обязана просить
+      // столько вывода, чтобы модель с размышлениями успела ответить.
+      let raw = "";
+      req.on("data", (chunk) => { raw += chunk; });
+      req.on("end", () => { try { chatRequests.push(JSON.parse(raw)); } catch { chatRequests.push(raw); } });
+    }
     if (mode === "hang") return; // намеренно не отвечаем: проверяется медленный ответ
     res.setHeader("content-type", "application/json");
     if (mode === "unauthorized") {
@@ -132,6 +140,7 @@ function providerStand() {
   return {
     server,
     requests,
+    chatRequests,
     setMode: (value) => { mode = value; },
     getMode: () => mode,
     setGenerationMode: (value) => { generationMode = value; },
@@ -195,6 +204,10 @@ test("L03-подключение: ключ сохраняется, пережи�
     assert.equal(connected.body.probeCause, "connected");
     assert.equal(connected.body.probeHttpStatus, 200);
     assert.equal(typeof connected.body.probeLatencyMs, "number");
+    // Проверка обязана просить реальный запас вывода: с 24 токенами модель с
+    // размышлениями возвращает пустой ответ при рабочем ключе (замер на стенде).
+    const probeBody = stand.chatRequests.at(-1);
+    assert.ok(probeBody.max_tokens >= 128, `проверка просит слишком мало вывода: ${probeBody.max_tokens}`);
 
     // 5a. Проверка не ограничивается списком моделей: провайдер отвечает, но
     //     модель отдаёт пустой ответ (лимит ушёл на размышления) — это отдельная
