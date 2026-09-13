@@ -2365,6 +2365,9 @@ export class StudioApp {
   private async refreshVersions(projectId: string, questId: string): Promise<void> {
     this.state.versions = null;
     this.state.versionsError = null;
+    // Пока публикация не перечитана, старая ссылка не должна «прилипать» к
+    // другой миссии (например, если список выпусков не загрузился).
+    this.state.publishedSlug = null;
     try {
       this.state.versions = await loadVersionsReadModel(this.api, projectId, questId);
       // Ссылка на сайте берётся из текущей публикации, поэтому панель показывает
