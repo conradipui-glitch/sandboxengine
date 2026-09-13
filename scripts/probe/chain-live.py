@@ -106,8 +106,11 @@ if isinstance(document, dict):
     scenes = story.get("scenes") or []
     endings = story.get("endings") or []
     choices = sum(len(scene.get("choices") or []) for scene in scenes if isinstance(scene, dict))
-    print("title:", str(story.get("title") or document.get("title") or "")[:80])
-    print("logline:", str(story.get("logline") or document.get("logline") or "")[:120])
+    # Название и логлайн миссии живут в listing — это то, что автор видит
+    # в списке миссий; раньше probe печатал пустые строки и это путало.
+    listing = document.get("listing") if isinstance(document.get("listing"), dict) else {}
+    print("title:", str(story.get("title") or listing.get("title") or document.get("title") or "")[:80])
+    print("logline:", str(story.get("logline") or listing.get("logline") or document.get("logline") or "")[:120])
     print("scenes:", len(scenes), "| choices:", choices, "| endings:", len(endings))
     print("endingTitles:", [str(e.get("title") or "")[:40] for e in endings if isinstance(e, dict)][:4])
     print("keys:", sorted(document.keys())[:14])

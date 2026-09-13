@@ -118,7 +118,13 @@ const httpExpected = [];
 
 // 404 на /control/v1/auth/session — ШТАТНЫЙ признак локального режима Studio
 // (probeStudioAccess трактует 404 NOT_FOUND как local-owner), не дефект.
-const EXPECTED_HTTP = [/^404 \/control\/v1\/auth\/session$/];
+const EXPECTED_HTTP = [
+  /^404 \/control\/v1\/auth\/session$/,
+  // Player по контракту остаётся paint-клиентом: если в замороженном playtest
+  // нет сюжетной миссии, /player-story.json честно отвечает 404, и это не дефект
+  // (см. apps/player/app.js, loadStory).
+  /^404 \/player-story\.json$/
+];
 function expectedHttp(entry) { return EXPECTED_HTTP.some((rx) => rx.test(`${entry.status} ${entry.url}`)); }
 
 function note(text) { notes.push(text); }
@@ -379,9 +385,18 @@ const LAYOUT = `(() => {
       for (let j = i + 1; j < kids.length; j += 1) {
         const a = kids[i].getBoundingClientRect();
         const b = kids[j].getBoundingClientRect();
-        const ix = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
-        const iy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-        const area = ix * iy;
+        // Многострочный inline-текст имеет общий прямоугольник, который
+        // накрывает соседа по первой строке. Считаем пересечение по строкам.
+        const rectsA = getComputedStyle(kids[i]).display === "inline" ? Array.from(kids[i].getClientRects()) : [a];
+        const rectsB = getComputedStyle(kids[j]).display === "inline" ? Array.from(kids[j].getClientRects()) : [b];
+        let area = 0;
+        for (const ra of rectsA) {
+          for (const rb of rectsB) {
+            const ix = Math.max(0, Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left));
+            const iy = Math.max(0, Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top));
+            area = Math.max(area, ix * iy);
+          }
+        }
         const minA = Math.min(a.width * a.height, b.width * b.height);
         if (area > 24 && minA > 0 && area / minA > 0.35) {
           found.push({ a: path(kids[i]), b: path(kids[j]), area: Math.round(area), ratio: Number((area / minA).toFixed(2)) });
@@ -1174,7 +1189,7 @@ async function main() {
     note("Известный RED вне зоны инструмента: apps/studio, FIN-05B (screen composition persists through canonical /mission) — не дефект этого инструмента.");
     note("Инструмент не проверяет по-настоящему разрушительные сценарии (удаление, откат, публикацию и снятие с публикации) — они вне его зоны.");
     note("Кнопка «Помощь» на экране «Мои проекты» (data-action=\"help-projects\", app.ts:825) справку НЕ открывает: она только пишет строку «Нажмите «Новый проект» или выберите карточку…» в статус экрана. Настоящая справка открывается кнопкой «Справка» (#studio-help-trigger, data-action=\"studio-help\"), которую модуль onboarding добавляет в body на каждом экране.");
-    note("Кнопка «Настроить подключение» (data-action=\"ai-configure\", apps/studio/src/ai-panel.ts:504) диспатчит CustomEvent \"ai-panel:configure\" на корне панели, но НИ ОДИН модуль приложения его не слушает (в apps/studio/src событие встречается только в определении константы) — нажатие не даёт ни изменения DOM, ни запроса.");
+    note("Кнопка «Настроить подключение» (data-action=\"ai-configure\") подключена: панель шлёт ai-panel:configure, а оболочка Studio слушает это событие (apps/studio/src/app.ts:456, onAiConfigureRequest) и открывает настоящий блок подключения провайдера (#provider-form), подтверждая открытие preventDefault.");
     note("Presence: клиент доски (apps/studio/src/app.ts:3306 mountPresenceIfNeeded) в локальном режиме всё равно открывает EventSource на /control/v1/.../presence/stream и POST .../presence/leave; серверный presence смонтирован только при auth, поэтому маршруты отвечают 404 {code:\"NOT_FOUND\"}, и клиент повторяет попытки.");
 
     const smallZoom = [];

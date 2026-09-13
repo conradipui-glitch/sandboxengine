@@ -118,7 +118,13 @@ const httpExpected = [];
 
 // 404 на /control/v1/auth/session — ШТАТНЫЙ признак локального режима Studio
 // (probeStudioAccess трактует 404 NOT_FOUND как local-owner), не дефект.
-const EXPECTED_HTTP = [/^404 \/control\/v1\/auth\/session$/];
+const EXPECTED_HTTP = [
+  /^404 \/control\/v1\/auth\/session$/,
+  // Player по контракту остаётся paint-клиентом: если в замороженном playtest
+  // нет сюжетной миссии, /player-story.json честно отвечает 404, и это не дефект
+  // (см. apps/player/app.js, loadStory).
+  /^404 \/player-story\.json$/
+];
 function expectedHttp(entry) { return EXPECTED_HTTP.some((rx) => rx.test(`${entry.status} ${entry.url}`)); }
 
 function note(text) { notes.push(text); }
@@ -379,9 +385,18 @@ const LAYOUT = `(() => {
       for (let j = i + 1; j < kids.length; j += 1) {
         const a = kids[i].getBoundingClientRect();
         const b = kids[j].getBoundingClientRect();
-        const ix = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
-        const iy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-        const area = ix * iy;
+        // Многострочный inline-текст имеет общий прямоугольник, который
+        // накрывает соседа по первой строке. Считаем пересечение по строкам.
+        const rectsA = getComputedStyle(kids[i]).display === "inline" ? Array.from(kids[i].getClientRects()) : [a];
+        const rectsB = getComputedStyle(kids[j]).display === "inline" ? Array.from(kids[j].getClientRects()) : [b];
+        let area = 0;
+        for (const ra of rectsA) {
+          for (const rb of rectsB) {
+            const ix = Math.max(0, Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left));
+            const iy = Math.max(0, Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top));
+            area = Math.max(area, ix * iy);
+          }
+        }
         const minA = Math.min(a.width * a.height, b.width * b.height);
         if (area > 24 && minA > 0 && area / minA > 0.35) {
           found.push({ a: path(kids[i]), b: path(kids[j]), area: Math.round(area), ratio: Number((area / minA).toFixed(2)) });
