@@ -93,6 +93,27 @@ function backendWithPlan(plan, extra = {}) {
   });
 }
 
+// Один и тот же неполный план на обе попытки: писатель обязан переспросить
+// модель, а не отказать автору с первой попытки.
+function backendWithPlanTwice(plan) {
+  return new ScriptedAgentBackend({
+    backendId: "scripted-mission-author",
+    openSteps: [{ kind: "success", sessionRef: "mission-session-1" }],
+    turnSteps: [1, 2].map((n) => ({
+      kind: "success",
+      outputText: JSON.stringify(plan),
+      usage: { inputTokens: 100, outputTokens: 400, totalTokens: 500 },
+      backendRequestId: `turn-${n}`
+    }))
+  });
+}
+
+function runFullTwice(plan, intentOverrides = {}) {
+  const backend = backendWithPlanTwice(plan);
+  return writerFor(backend).write({ intent: intent(intentOverrides), deadlineAtMs: DEADLINE() })
+    .then((result) => ({ result, backend }));
+}
+
 function writerFor(backend, overrides = {}) {
   return new ModelMissionWriter({
     backend,
@@ -263,16 +284,17 @@ test("FIN-09 id не зависят от sessionRef бэкенда (только
 test("FIN-09 план без финалов → insufficient_plan с missing:endings, финалы не дорисовываются", async () => {
   const plan = fullPlan();
   plan.branches.forEach((branch) => { delete branch.ending; });
-  const { result } = await runFull(plan);
+  const { result } = await runFullTwice(plan);
   assert.equal(result.kind, "insufficient_plan");
   assert.ok(result.missing.includes("endings"), `missing=${JSON.stringify(result.missing)}`);
   assert.equal("document" in result, false, "невалидный план не должен выдавать документ");
+  assert.equal(result.evidence.attempts.length, 2, "модель переспросили, прежде чем отказать");
 });
 
 test("FIN-09 одной ветви при branchCount 2 недостаточно → insufficient_plan:branches", async () => {
   const plan = fullPlan();
   plan.branches = [plan.branches[0]];
-  const { result } = await runFull(plan, { endingCount: 1 });
+  const { result } = await runFullTwice(plan, { endingCount: 1 });
   assert.equal(result.kind, "insufficient_plan");
   assert.deepEqual([...result.missing], ["branches"]);
 });
@@ -280,7 +302,7 @@ test("FIN-09 одной ветви при branchCount 2 недостаточно
 test("FIN-09 отсутствие стартовых персонажей → insufficient_plan, а не выдумывание", async () => {
   const plan = fullPlan();
   plan.start.characters = [];
-  const { result } = await runFull(plan);
+  const { result } = await runFullTwice(plan);
   assert.equal(result.kind, "insufficient_plan");
   assert.ok(result.missing.includes("start.characters"));
 });
@@ -485,4 +507,45 @@ test("FIN-09 порядок сцен соответствует порядку �
   assert.deepEqual(titles, ["Шторм", "Решение", "Выбор"]);
   const endingTitles = result.document.story.endings.map((ending) => ending.title);
   assert.deepEqual(endingTitles, ["Свет долга", "Тихая гавань"]);
+});
+
+// 15. Неполный план — не отказ автору, а второй вопрос модели: живой прогон на
+// стенде падал с «не хватает: branches, endings» на первой же попытке.
+test("FIN-09 неполный план писатель переспрашивает у модели, а не отказывает автору", async () => {
+  const incomplete = fullPlan();
+  incomplete.branches = [{ id: "duty", title: "Долг", scenes: [] }];
+  const backend = new ScriptedAgentBackend({
+    backendId: "scripted-mission-author",
+    openSteps: [{ kind: "success", sessionRef: "mission-session-1" }],
+    turnSteps: [
+      { kind: "success", outputText: JSON.stringify(incomplete), usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 }, backendRequestId: "turn-1" },
+      { kind: "success", outputText: JSON.stringify(fullPlan()), usage: { inputTokens: 100, outputTokens: 400, totalTokens: 500 }, backendRequestId: "turn-2" }
+    ]
+  });
+
+  const result = await writerFor(backend).write({ intent: intent(), deadlineAtMs: DEADLINE() });
+  assert.equal(result.kind, "ok", `ожидали ok, получили ${result.kind}`);
+  assert.equal(result.evidence.attempts.length, 2, "модель спросили второй раз");
+  const directive = backend.capturedTurnRequests[1].messages.at(-1).content;
+  assert.match(directive, /ветвей \(branches\) должно быть 2/, "директива называет недостающие ветви");
+  assert.match(directive, /финалов не меньше 2/, "директива называет недостающие финалы");
+});
+
+// 16. Если модель неполна и во второй раз — автор видит честную причину.
+test("FIN-09 неполный план после всех попыток остаётся insufficient_plan", async () => {
+  const incomplete = fullPlan();
+  incomplete.branches = [{ id: "duty", title: "Долг", scenes: [] }];
+  const backend = new ScriptedAgentBackend({
+    backendId: "scripted-mission-author",
+    openSteps: [{ kind: "success", sessionRef: "mission-session-1" }],
+    turnSteps: [
+      { kind: "success", outputText: JSON.stringify(incomplete), usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 }, backendRequestId: "turn-1" },
+      { kind: "success", outputText: JSON.stringify(incomplete), usage: { inputTokens: 100, outputTokens: 200, totalTokens: 300 }, backendRequestId: "turn-2" }
+    ]
+  });
+
+  const result = await writerFor(backend).write({ intent: intent(), deadlineAtMs: DEADLINE() });
+  assert.equal(result.kind, "insufficient_plan");
+  assert.deepEqual([...result.missing], ["branches", "endings"]);
+  assert.equal(result.evidence.attempts.length, 2);
 });

@@ -462,6 +462,7 @@ test("AI-CHAIN HTTP: неудача сборки называет причину
     { content: QUESTION_1 },
     { content: QUESTION_2 },
     { content: CHAIN_JSON },
+    { content: JSON.stringify(singleBranch) },
     { content: JSON.stringify(singleBranch) }
   ]);
   const { studioPort, close } = env;

@@ -281,6 +281,7 @@ export class ModelMissionWriter implements MissionWriter {
 
     const attempts: MissionWriterAttemptEvidence[] = [];
     let lastInvalid: readonly string[] | null = null;
+    let repairNote: string | null = null;
     try {
       for (let attempt = 1; attempt <= MISSION_WRITER_MAX_ATTEMPTS; attempt += 1) {
         const attemptsLeft = MISSION_WRITER_MAX_ATTEMPTS - attempt + 1;
@@ -292,7 +293,7 @@ export class ModelMissionWriter implements MissionWriter {
         );
         const turn = await this.#backend.runTurn({
           session,
-          messages: buildMessages(request.intent, attempt),
+          messages: buildMessages(request.intent, attempt, repairNote),
           maxOutputTokens: this.#maxOutputTokens,
           deadlineAtMs: attemptDeadlineAtMs,
           ...(request.signal ? { signal: request.signal } : {})
@@ -318,7 +319,18 @@ export class ModelMissionWriter implements MissionWriter {
           questId: this.#questId,
           baseRevision: this.#baseRevision
         }, attempts);
-        if (evaluated.kind === "ok" || evaluated.kind === "insufficient_plan") return evaluated;
+        if (evaluated.kind === "ok") return evaluated;
+        if (evaluated.kind === "insufficient_plan") {
+          // Модель часто просто не досчитывает ветви и финалы. Это лечится повтором
+          // с явным перечнем того, чего не хватает, а не отказом автору: писатель
+          // финалы не дорисовывает сам, он просит модель вернуть полный план.
+          const retryLeftMs = request.deadlineAtMs - this.#now();
+          if (attempt < MISSION_WRITER_MAX_ATTEMPTS && retryLeftMs >= MISSION_WRITER_MIN_RETRY_BUDGET_MS) {
+            repairNote = missionWriterRepairDirective(evaluated.missing, requiredBranches, requiredEndings);
+            continue;
+          }
+          return evaluated;
+        }
         lastInvalid = evaluated.problems;
       }
       return Object.freeze({
@@ -943,12 +955,31 @@ function buildStartState(start: MissionPlanStart): MissionWriterStartState {
   });
 }
 
-function buildMessages(intent: MissionWriterIntent, attempt: number): readonly ModelMessage[] {
+/**
+ * Что сказать модели, если её план неполон. Писатель финалы не дорисовывает —
+ * он просит модель вернуть план целиком, называя недостающее.
+ */
+export function missionWriterRepairDirective(
+  missing: readonly string[],
+  requiredBranches: number,
+  requiredEndings: number
+): string {
+  const parts: string[] = [];
+  if (missing.includes("branches")) parts.push(`ветвей (branches) должно быть ${requiredBranches}`);
+  if (missing.includes("endings")) parts.push(`у каждой ветви нужен свой финал (ending), финалов не меньше ${requiredEndings}`);
+  if (missing.some((item) => item.startsWith("start."))) {
+    parts.push("в start нужны непустые locations, resources и characters");
+  }
+  const list = parts.length > 0 ? parts.join("; ") : "структура плана неполная";
+  return `Предыдущий ответ отклонён: ${list}. Верни полный JSON заново, без сокращений, без пояснений и без markdown.`;
+}
+
+function buildMessages(intent: MissionWriterIntent, attempt: number, repairNote: string | null = null): readonly ModelMessage[] {
   const requiredBranches = intent.branchCount ?? MISSION_WRITER_DEFAULT_BRANCH_COUNT;
   const requiredEndings = intent.endingCount ?? MISSION_WRITER_DEFAULT_ENDING_COUNT;
-  const repair = attempt > 1
+  const repair = repairNote ?? (attempt > 1
     ? " Предыдущий ответ был отклонён: верни строго один JSON-объект нужной формы, без markdown и пояснений."
-    : "";
+    : "");
   const system = [
     "Ты — писатель миссий Living History. Собери интерактивную историю как один JSON-объект.",
     "Никакой markdown, только JSON. Не выдумывай идентификаторы ассетов и URL.",
@@ -970,7 +1001,7 @@ function buildMessages(intent: MissionWriterIntent, attempt: number): readonly M
     Object.freeze({ role: "system" as const, content: system }),
     Object.freeze({
       role: "user" as const,
-      content: `Идея и рамки (JSON):\n${JSON.stringify({
+      content: `${repairNote !== null ? `${repairNote}\n` : ""}Идея и рамки (JSON):\n${JSON.stringify({
         idea: intent.idea,
         genre: intent.genre,
         targetDurationMinutes: intent.targetDurationMinutes,
