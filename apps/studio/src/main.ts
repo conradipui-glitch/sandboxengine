@@ -196,7 +196,12 @@ const missionDrafter = async (request: { readonly idea: string; readonly project
     deadlineAtMs: Date.now() + 540_000
   } as Parameters<InstanceType<typeof ModelMissionWriter>["write"]>[0]);
 };
-const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter, missionChainDialogs });
+// Публичный адрес сайта для панели публикации: отдаётся в index.html как
+// meta[name="lh-site-base"], из него собирается ссылка на страницу миссии
+// (<site-base>/p/<slug>/). Не задан — панель честно говорит «адрес сайта не
+// настроен» вместо выдуманной ссылки. Значение стенд задаёт в deploy/vps/.env.
+const siteBaseUrl = String(process.env.LHC_STUDIO_SITE_BASE_URL ?? "");
+const studio = createStudioDevServer({ controlOrigin: `http://127.0.0.1:${controlAddress.port}`, authorProvider, playerLauncher, missionDrafter, missionChainDialogs, siteBaseUrl: siteBaseUrl.length > 0 ? siteBaseUrl : null });
 const studioAddress = await studio.listen(Number(process.env.LH_STUDIO_PORT ?? 4173), "127.0.0.1");
 
 console.log(`Living History Studio: http://${studioAddress.host}:${studioAddress.port}`);

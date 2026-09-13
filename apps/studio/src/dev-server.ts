@@ -116,6 +116,14 @@ export interface StudioDevServerOptions {
   readonly playerLauncher?: PlayerLauncher;
   /** Лимит тела прокси для POST /control/v1/projects/<id>/imports (по умолчанию 64 МиБ). */
   readonly importBodyLimitBytes?: number;
+  /**
+   * Публичный адрес сайта: попадает в отдаваемый index.html как
+   * `meta[name="lh-site-base"]`, откуда панель публикации берёт адрес страницы
+   * миссии (`<site-base>/p/<slug>/`). Не задан или не http(s) — тег не
+   * добавляется, и панель честно говорит «адрес сайта не настроен», а не
+   * выдумывает ссылку.
+   */
+  readonly siteBaseUrl?: string | null;
 }
 
 export interface StudioDevServer {
@@ -138,6 +146,7 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
   const importLimitBytes = Number.isSafeInteger(options.importBodyLimitBytes) && (options.importBodyLimitBytes as number) > 0
     ? (options.importBodyLimitBytes as number)
     : STUDIO_PROXY_IMPORT_BODY_LIMIT_BYTES;
+  const siteBaseUrl = normalizeSiteBaseUrl(options.siteBaseUrl ?? null);
 
   // Origin запущенного Player для same-origin прокси. Живёт в замыкании одного
   // сервера Studio: второй стенд в том же процессе не переиспользует чужой
@@ -321,7 +330,7 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         await proxyControl(request, response, control, url, importLimitBytes);
         return;
       }
-      await serveStatic(response, url.pathname);
+      await serveStatic(response, url.pathname, siteBaseUrl);
     } catch {
       sendText(response, 500, "Studio server error");
     }
@@ -453,7 +462,7 @@ async function proxyPlayer(request: any, response: any, playerOrigin: string, ur
   response.end(payload);
 }
 
-async function serveStatic(response: any, pathname: string): Promise<void> {
+async function serveStatic(response: any, pathname: string, siteBaseUrl: string | null = null): Promise<void> {
   // Канонические пути статики Studio — только /studio-assets/* (V00: разводка
   // неймспейсов со стилями Player). Корневые /styles.css и /dist/* больше
   // не обслуживаются: публичный /styles.css раньше уходил в Player (F01).
@@ -491,13 +500,56 @@ async function serveStatic(response: any, pathname: string): Promise<void> {
   }
   try {
     const bytes = await readFile(filePath);
+    const body = normalized === "index.html" && siteBaseUrl !== null
+      ? injectSiteBaseMeta(bytes.toString("utf8"), siteBaseUrl)
+      : bytes;
     response.statusCode = 200;
     response.setHeader("content-type", mimeType(filePath));
     response.setHeader("cache-control", "no-store");
-    response.end(bytes);
+    response.end(body);
   } catch {
     sendText(response, 404, "Not found");
   }
+}
+
+/**
+ * Публичный адрес сайта для `meta[name="lh-site-base"]`: панель публикации
+ * показывает по нему страницу миссии `<site-base>/p/<slug>/`. Пустая строка,
+ * не-URL и адреса со встроенными учётными данными не принимаются — тогда тег
+ * не добавляется вовсе, и панель честно сообщает, что адрес сайта не настроен.
+ */
+function normalizeSiteBaseUrl(value: string | null): string | null {
+  if (value === null) return null;
+  const text = value.trim().replace(/\/+$/, "");
+  if (text.length === 0) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  if (parsed.username.length > 0 || parsed.password.length > 0) return null;
+  if (parsed.search.length > 0 || parsed.hash.length > 0) return null;
+  return text;
+}
+
+/**
+ * Вставка тега перед `</head>`. Если разметка уже несёт `lh-site-base`
+ * (например, стенд положил тег руками), второй тег не добавляется: первый —
+ * единственный источник адреса. Разметка без `</head>` не переписывается.
+ */
+function injectSiteBaseMeta(html: string, siteBaseUrl: string): string {
+  if (html.includes("lh-site-base")) return html;
+  const at = html.indexOf("</head>");
+  if (at < 0) return html;
+  const escaped = siteBaseUrl
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const tag = `  <meta name="lh-site-base" content="${escaped}">\n`;
+  return `${html.slice(0, at)}${tag}${html.slice(at)}`;
 }
 
 async function readRequestBody(request: any, maxBytes = STUDIO_PROXY_BODY_LIMIT_BYTES): Promise<ArrayBuffer> {

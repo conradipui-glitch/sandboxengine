@@ -71,6 +71,10 @@ services:
       - CONTROL_SECURE_COOKIES=${LHC_STUDIO_SECURE_COOKIES:-false}
       - CONTROL_ALLOWED_ORIGINS=${LHC_STUDIO_ALLOWED_ORIGINS:-}
       - LH_GATE_IDENTITY_SECRET=${LHC_GATE_IDENTITY_SECRET:-}
+      # Публичный адрес сайта: панель публикации показывает по нему ссылку
+      # игрокам (<site-base>/p/<slug>/). Пусто — панель честно говорит, что
+      # адрес не настроен, и ссылку не выдумывает.
+      - LHC_STUDIO_SITE_BASE_URL=${LHC_STUDIO_SITE_BASE_URL:-}
     volumes:
       - engine-data:/data
     depends_on:
