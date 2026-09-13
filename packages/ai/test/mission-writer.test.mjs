@@ -6,6 +6,8 @@ import {
   MISSION_WRITER_DEFAULT_BRANCH_COUNT,
   MISSION_WRITER_DEFAULT_ENDING_COUNT,
   MISSION_WRITER_MAX_IDEA_CHARS,
+  MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS,
+  MISSION_WRITER_TRUNCATED_BUDGET_FACTOR,
   validateChainPayload,
   missionIntentFromChain
 } from "../dist/index.js";
@@ -531,7 +533,39 @@ test("FIN-09 неполный план писатель переспрашива
   assert.match(directive, /финалов не меньше 2/, "директива называет недостающие финалы");
 });
 
-// 16. Если модель неполна и во второй раз — автор видит честную причину.
+// 16. Обрыв по бюджету вывода — повтор с увеличенным лимитом и просьбой сжать
+// текст, а не отказ автору после первой попытки.
+test("FIN-09 обрыв по лимиту вывода → повтор с удвоенным бюджетом и целым планом", async () => {
+  const backend = new ScriptedAgentBackend({
+    backendId: "scripted-mission-author",
+    openSteps: [{ kind: "success", sessionRef: "mission-session-truncated" }],
+    turnSteps: [
+      {
+        kind: "failure",
+        error: { code: "output_truncated", retryable: true, message: "Model provider returned no assistant text: the output budget was spent before the answer (finish_reason=length, output_tokens=16000)" },
+        usage: { outputTokens: 16_000 }
+      },
+      { kind: "success", outputText: JSON.stringify(fullPlan()), usage: { outputTokens: 900 }, backendRequestId: "turn-2" }
+    ]
+  });
+  const result = await writerFor(backend).write({ intent: intent(), deadlineAtMs: Date.now() + 600_000 });
+  assert.equal(result.kind, "ok", `ожидали ok, получили ${result.kind}`);
+  assert.equal(result.evidence.attempts.length, 2, "была вторая попытка");
+  assert.equal(result.evidence.attempts[0].errorCode, "output_truncated");
+  const first = backend.capturedTurnRequests[0];
+  const second = backend.capturedTurnRequests[1];
+  assert.equal(first.maxOutputTokens, MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS);
+  assert.equal(
+    second.maxOutputTokens,
+    MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS * MISSION_WRITER_TRUNCATED_BUDGET_FACTOR,
+    "повтор идёт с увеличенным лимитом вывода"
+  );
+  const directive = second.messages.at(-1).content;
+  assert.match(directive, /не поместился в лимит вывода/);
+  assert.match(directive, /Структура важнее объёма текста/);
+});
+
+// 17. Если модель неполна и во второй раз — автор видит честную причину.
 test("FIN-09 неполный план после всех попыток остаётся insufficient_plan", async () => {
   const incomplete = fullPlan();
   incomplete.branches = [{ id: "duty", title: "Долг", scenes: [] }];

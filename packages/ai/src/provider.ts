@@ -170,7 +170,24 @@ export class OpenAiCompatibleModelProvider implements ModelProvider {
 
       const content = readAssistantContent(payload);
       const finish = readFinishReason(payload);
-      if (content === null) return failure("invalid_response", "Model provider response has no assistant content", false, response.status, requestId, request.model);
+      if (content === null) {
+        // Ответ 200 без текста вообще (не пустая строка, а отсутствующее поле).
+        // У reasoning-моделей так выглядит исчерпанный бюджет вывода: модель
+        // ушла в размышления и до текста не дошла. Это не «кривой ключ» и не
+        // повод отказывать автору — повтор с тем же бюджетом может пройти,
+        // поэтому причина отдельная и повторяемая.
+        const usage = readUsage(payload.usage);
+        return failure(
+          finish === "length" ? "output_truncated" : "invalid_response",
+          finish === "length"
+            ? `Model provider returned no assistant text: the output budget was spent before the answer (finish_reason=length${usage.outputTokens === null ? "" : `, output_tokens=${usage.outputTokens}`})`
+            : "Model provider response has no assistant content",
+          finish === "length",
+          response.status,
+          requestId,
+          request.model
+        );
+      }
       if (content.trim().length === 0) {
         // Пустой текст при 200 — отдельная причина: модель израсходовала бюджет
         // вывода (размышления) и не написала ответ. Без этого отличия автор

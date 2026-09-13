@@ -244,6 +244,52 @@ test("B06-01 пустой ответ модели → output_truncated при fi
   assert.match(blank.error.message, /empty assistant answer/);
 });
 
+// B06-01. У reasoning-моделей поле message.content может отсутствовать целиком
+// (весь бюджет ушёл на размышления). Раньше это было не повторяемым
+// «no assistant content» и автор получал отказ после первой же попытки.
+test("B06-01 отсутствие поля content при finish_reason=length → output_truncated с объёмом вывода", async () => {
+  const provider = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({
+      model: "reasoning/model",
+      choices: [{ finish_reason: "length", message: { role: "assistant", reasoning_content: "думаю…" } }],
+      usage: { prompt_tokens: 30, completion_tokens: 16000, total_tokens: 16030 }
+    })
+  });
+  const result = await provider.generate({
+    model: "reasoning/model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "json_object",
+    maxOutputTokens: 16_000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "output_truncated");
+  assert.equal(result.error.retryable, true, "обрыв бюджета повторяем");
+  assert.match(result.error.message, /no assistant text/);
+  assert.match(result.error.message, /output_tokens=16000/);
+
+  const stopped = new OpenAiCompatibleModelProvider({
+    baseUrl: "https://provider.example/v1",
+    credential: "TOP-SECRET",
+    capabilities: { text: true, jsonObject: true },
+    fetch: async () => jsonResponse({ choices: [{ finish_reason: "stop", message: { role: "assistant" } }] })
+  });
+  const withoutFinish = await stopped.generate({
+    model: "model",
+    messages: [{ role: "user", content: "plan" }],
+    responseFormat: "text",
+    maxOutputTokens: 16_000,
+    deadlineAtMs: Date.now() + 5_000
+  });
+  assert.equal(withoutFinish.ok, false);
+  assert.equal(withoutFinish.error.code, "invalid_response");
+  assert.equal(withoutFinish.error.retryable, false);
+  assert.match(withoutFinish.error.message, /no assistant content/);
+});
+
 // Живой случай стенда: reasoning-модель упёрлась в лимит вывода и недописала JSON
 // (finish_reason=length). Автор обязан узнать про обрыв, а не про «модель ответила
 // ерунду»: действия у этих причин разные.

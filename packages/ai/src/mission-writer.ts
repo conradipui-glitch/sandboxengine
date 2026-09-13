@@ -57,7 +57,14 @@ export const MISSION_WRITER_DEFAULT_ENDING_COUNT = 2;
  *  8 ресурсов, 8 финалов) вместе с нарративом: структура не должна обрезаться. */
 export const MISSION_WRITER_MAX_IDEA_CHARS = 24_000;
 
-export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
+export const MISSION_WRITER_DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
+/**
+ * Обрыв по бюджету вывода лечится бюджетом: reasoning-модель может потратить
+ * весь лимит на размышления и не написать текст. Повтор с прежним лимитом
+ * повторит обрыв, поэтому на повторе лимит удваивается до потолка.
+ */
+export const MISSION_WRITER_TRUNCATED_BUDGET_FACTOR = 2;
+export const MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING = 48_000;
 export const MISSION_WRITER_MAX_ATTEMPTS = 2;
 /**
  * Одна попытка не забирает весь дедлайн миссии: если медленная модель съест
@@ -67,6 +74,16 @@ export const MISSION_WRITER_MAX_ATTEMPTS = 2;
 export const MISSION_WRITER_MIN_ATTEMPT_BUDGET_MS = 60_000;
 /** Минимальный остаток, при котором повтор имеет смысл. */
 export const MISSION_WRITER_MIN_RETRY_BUDGET_MS = 15_000;
+/**
+ * Что сказать модели после обрыва по бюджету: план должен быть короче, но
+ * целым. Структура важнее объёма текста — сокращать нужно описания.
+ */
+export const MISSION_WRITER_TRUNCATED_DIRECTIVE = [
+  "Прошлый ответ не поместился в лимит вывода и был обрезан.",
+  "Верни весь план целиком одним JSON, но короче: сократи описания и реплики,",
+  "не убирай сцены, выборы, ресурсы и финалы. Структура важнее объёма текста."
+].join(" ");
+
 const MISSION_WRITER_MAX_PLAN_ID_CHARS = 200;
 
 /** Входной контракт: идея автора и её рамки. */
@@ -282,6 +299,7 @@ export class ModelMissionWriter implements MissionWriter {
     const attempts: MissionWriterAttemptEvidence[] = [];
     let lastInvalid: readonly string[] | null = null;
     let repairNote: string | null = null;
+    let attemptMaxOutputTokens = this.#maxOutputTokens;
     try {
       for (let attempt = 1; attempt <= MISSION_WRITER_MAX_ATTEMPTS; attempt += 1) {
         const attemptsLeft = MISSION_WRITER_MAX_ATTEMPTS - attempt + 1;
@@ -294,7 +312,7 @@ export class ModelMissionWriter implements MissionWriter {
         const turn = await this.#backend.runTurn({
           session,
           messages: buildMessages(request.intent, attempt, repairNote),
-          maxOutputTokens: this.#maxOutputTokens,
+          maxOutputTokens: attemptMaxOutputTokens,
           deadlineAtMs: attemptDeadlineAtMs,
           ...(request.signal ? { signal: request.signal } : {})
         });
@@ -308,7 +326,18 @@ export class ModelMissionWriter implements MissionWriter {
 
         if (!turn.ok) {
           const retryLeftMs = request.deadlineAtMs - this.#now();
-          if (turn.error.retryable && attempt < MISSION_WRITER_MAX_ATTEMPTS && retryLeftMs >= MISSION_WRITER_MIN_RETRY_BUDGET_MS) continue;
+          if (turn.error.retryable && attempt < MISSION_WRITER_MAX_ATTEMPTS && retryLeftMs >= MISSION_WRITER_MIN_RETRY_BUDGET_MS) {
+            if (turn.error.code === "output_truncated") {
+              // Повтор с тем же лимитом снова упрётся в него: модель уже
+              // израсходовала бюджет на размышления и не написала план.
+              attemptMaxOutputTokens = Math.min(
+                MISSION_WRITER_MAX_OUTPUT_TOKENS_CEILING,
+                attemptMaxOutputTokens * MISSION_WRITER_TRUNCATED_BUDGET_FACTOR
+              );
+              repairNote = MISSION_WRITER_TRUNCATED_DIRECTIVE;
+            }
+            continue;
+          }
           return failure("backend_failure", normalizeBackendFailure(turn.error.code, turn.error.message), attempts);
         }
 
