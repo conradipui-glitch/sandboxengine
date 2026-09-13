@@ -510,3 +510,36 @@ test("AI-CHAIN HTTP: невалидный запрос (пустая идея / 
     await close();
   }
 });
+
+test("AI-CHAIN HTTP: ход сборки цепочки получает длинное окно, а не бюджет вопроса", async () => {
+  // Помощник отвечает вопросами, пока автор не попросит собрать. Такой ход —
+  // один длинный ответ со всем документом сцен, выборов и финалов: живой прогон
+  // на стенде отдавал его за 60–90 с, и окно вопроса в 60 с превращало сборку в
+  // «Помощник не ответил за отведённое время» при живом ключе.
+  const env = await bootStudio([
+    { content: QUESTION_1 },
+    { content: QUESTION_2 },
+    { content: QUESTION_1 },
+    { content: CHAIN_JSON },
+    { content: JSON.stringify(fullPlan()) }
+  ]);
+  const { studioPort, close } = env;
+  try {
+    const started = await post(studioPort, "/local/mission-chain", {
+      idea: "Смотритель маяка выбирает, кому светить.",
+      projectId: "p-chain",
+      questId: "q-chain"
+    });
+    const sessionId = started.body.sessionId;
+    await post(studioPort, "/local/mission-chain", { sessionId, text: "Тревогу и ответственность." });
+    const asked = await post(studioPort, "/local/mission-chain", { sessionId, text: "Готов жертвовать маслом." });
+    assert.equal(asked.body.stage, "interview", "помощник ещё спрашивает: цепочка собирается отдельным ходом");
+
+    const assembled = await post(studioPort, "/local/mission-chain", { sessionId });
+    assert.equal(assembled.body.stage, "ready", assembled.body.error?.message ?? "сборка не дошла до писателя");
+    const assembleWindow = env.deadlines.at(-2);
+    assert.ok(assembleWindow >= 300_000, `окно сборки цепочки мало: ${assembleWindow} мс`);
+  } finally {
+    await close();
+  }
+});

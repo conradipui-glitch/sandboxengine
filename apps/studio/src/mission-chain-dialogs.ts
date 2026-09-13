@@ -30,6 +30,11 @@ const MAX_SESSIONS = 16;
 const SESSION_TTL_MS = 30 * 60_000;
 const MAX_MESSAGE_CHARS = 1_000;
 const CHAIN_BACKEND_DEADLINE_MS = 60_000;
+// Ход сборки цепочки — один длинный ответ модели: весь документ сцен, выборов и
+// финалов приходит одним сообщением. Живой прогон на стенде отдавал его за 60–90 с,
+// и прежние 60 с давали автору «Помощник не ответил за отведённое время» при живом
+// ключе. Вопросы интервью отвечаются за секунды, поэтому общий бюджет не трогаем.
+const CHAIN_ASSEMBLE_DEADLINE_MS = 420_000;
 // Бюджет писателя миссии: документ — это десятки сцен, выборов и финалов в JSON,
 // и писатель делит бюджет между двумя попытками (attempt 1 получает половину).
 // 240 с давали первой попытке 120 с — reasoning-модель не успевала, и автор
@@ -311,7 +316,7 @@ export class MissionChainDialogStore {
     session.busy = true;
     let turn: MissionChainTurnResult;
     try {
-      turn = await session.agent.close(this.#nowMs() + CHAIN_BACKEND_DEADLINE_MS);
+      turn = await session.agent.close(this.#nowMs() + CHAIN_ASSEMBLE_DEADLINE_MS);
     } finally {
       session.busy = false;
     }
