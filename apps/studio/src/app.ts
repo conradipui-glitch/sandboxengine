@@ -4721,7 +4721,7 @@ export class StudioApp {
               <section class="sidebar-section">
                 <div class="section-heading-row"><h2>Миссии</h2><span>${this.state.quests.length}</span></div>
                 <div class="rail-list">${this.state.quests.map((item) => missionRailItemHtml(item, item.questId === this.state.selectedQuestId)).join("") || `<div class="empty-rail">Создайте первую миссию</div>`}</div>
-                ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">Роль ${escapeHtml(project.role)}: создание миссии недоступно.</p>`}
+                ${allowEdit ? questForm() : `<p class="form-hint sidebar-readonly">${project.role ? `Роль ${escapeHtml(projectRoleLabel(project.role))}: ` : ""}создание миссии недоступно.</p>`}
               </section>
               ${draft && allowEdit ? `<section class="sidebar-section block-library" aria-label="Добавить блок">
                 <div class="section-heading-row"><h2>Добавить карточку</h2></div>
@@ -5793,11 +5793,13 @@ function shortHash(value: string): string {
   return value.length > 14 ? `${value.slice(0, 7)}…${value.slice(-6)}` : value;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
+function escapeHtml(value: unknown): string {
+  // Значение может отсутствовать: в локальном режиме у проекта нет роли, а
+  // подпись всё равно рисуется. Пустая строка честнее падения всего экрана.
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
 }
 
-function escapeAttr(value: string): string {
+function escapeAttr(value: unknown): string {
   return escapeHtml(value);
 }
 

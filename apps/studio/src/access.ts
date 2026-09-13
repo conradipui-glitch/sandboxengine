@@ -186,7 +186,10 @@ function roleSummary(role: ProjectView["role"]): string {
   return `<div class="access-role"><span>Роль</span><strong>${escapeHtml(projectRoleLabel(role))}</strong><small>${escapeHtml(permissions)}</small></div>`;
 }
 
-export function projectRoleLabel(role: string): string {
+export function projectRoleLabel(role: string | null | undefined): string {
+  // Роль приходит не всегда: у локального проекта её нет. Пустая подпись
+  // честнее слова «undefined» на экране.
+  if (role === null || role === undefined || role === "") return "";
   if (role === "owner") return "Владелец";
   if (role === "editor") return "Редактор";
   if (role === "tester") return "Наблюдатель";
