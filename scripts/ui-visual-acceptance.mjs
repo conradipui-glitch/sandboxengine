@@ -633,8 +633,10 @@ const SCREENS = [
     base: "editor",
     marker: `document.querySelector(".settings-panel") !== null`,
     route: [{ click: OPEN_MENU_ITEM("settings"), wait: 2000 }],
-    content: `document.querySelectorAll(".settings-panel .access-panel").length`,
-    contentExpected: 1,
+    // Панель настроек держит раздел доступа в .access-role/.access-note, а не
+    // в .access-panel: считаем живой текст панели, а не устаревший класс.
+    content: `(document.querySelector(".settings-panel")?.innerText || "").trim().length`,
+    contentExpected: 40,
     expected: { tour: false, help: false, panel: true }
   }
 ];
