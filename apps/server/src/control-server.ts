@@ -237,6 +237,14 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         sendJson(response, 503, { error: { code: "CONTROL_STORAGE_BUSY" } });
         return;
       }
+      // 500 обязан быть диагностируемым: без этой строки причина теряется
+      // вместе с ответом, и в отчётах остаётся только код.
+      console.error(
+        "control: необработанная ошибка %s %s",
+        String(request.method ?? ""),
+        String(request.url ?? ""),
+        error
+      );
       sendJson(response, 500, { error: { code: "CONTROL_INTERNAL_ERROR" } });
     }
   });

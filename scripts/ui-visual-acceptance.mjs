@@ -127,6 +127,25 @@ const EXPECTED_HTTP = [
 ];
 function expectedHttp(entry) { return EXPECTED_HTTP.some((rx) => rx.test(`${entry.status} ${entry.url}`)); }
 
+// Отказы, которые продукт делает честно и с объяснением автору на экране.
+// Причину кладём в отчёт, поэтому такой ответ — не дефект приёмки. 5xx сюда не
+// попадает никогда: необработанная ошибка сервера всегда проблема.
+function honestRefusal(entry) {
+  if (entry.status >= 500) return null;
+  let code = null;
+  try {
+    const parsed = JSON.parse(typeof entry.body === "string" ? entry.body : "");
+    code = typeof parsed?.error?.code === "string" ? parsed.error.code : null;
+  } catch { code = null; }
+  if (entry.status === 409 && /\/mission$/.test(entry.url) && code === "MISSION_REVISION_CONFLICT") {
+    return "CAS: правка поверх устаревшей ревизии миссии — Studio просит обновить миссию и не теряет локальную правку";
+  }
+  if (entry.status === 409 && entry.url === "/local/launch-player" && code === "unsupported_playtest") {
+    return "замороженный playtest без сюжетной миссии и без ровно одного действия — Player честно отказывает и объясняет причину";
+  }
+  return null;
+}
+
 function note(text) { notes.push(text); }
 function problem(list, entry) { list.push(entry); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -1053,10 +1072,24 @@ function renderMarkdown(report) {
   }
   lines.push("");
   if (report.httpExpected.length > 0) {
-    lines.push(`Ожидаемые по замыслу (не дефект): ${report.httpExpected.length} ответ(ов)`);
-    const grouped = {};
-    for (const e of report.httpExpected) grouped[`HTTP ${e.status} ${e.url}`] = (grouped[`HTTP ${e.status} ${e.url}`] || 0) + 1;
-    for (const key of Object.keys(grouped)) lines.push(`- ${key} — ${grouped[key]} раз(а): так Studio отличает локальный режим без входа.`);
+    const refusals = report.httpExpected.filter((e) => typeof e.reason === "string");
+    const routine = report.httpExpected.filter((e) => typeof e.reason !== "string");
+    if (refusals.length > 0) {
+      lines.push(`Честные отказы продукта (не дефект, причина названа): ${refusals.length} ответ(ов)`);
+      const grouped = new Map();
+      for (const e of refusals) {
+        const key = `HTTP ${e.status} ${e.url} — ${e.reason}`;
+        grouped.set(key, (grouped.get(key) ?? 0) + 1);
+      }
+      for (const [key, count] of grouped) lines.push(`- ${key} — ${count} раз(а)`);
+      lines.push("");
+    }
+    if (routine.length > 0) {
+      lines.push(`Ожидаемые по замыслу (не дефект): ${routine.length} ответ(ов)`);
+      const grouped = {};
+      for (const e of routine) grouped[`HTTP ${e.status} ${e.url}`] = (grouped[`HTTP ${e.status} ${e.url}`] || 0) + 1;
+      for (const key of Object.keys(grouped)) lines.push(`- ${key} — ${grouped[key]} раз(а): так Studio отличает локальный режим без входа.`);
+    }
     lines.push("");
   }
   lines.push("## Ошибки консоли");
@@ -1223,6 +1256,17 @@ async function main() {
     }
     if (smallZoom.length > 0) {
       note(`Начальный масштаб доски/сюжета ≤30%: ${[...new Set(smallZoom)].join("; ")} — доска открывается мелко (требование владельца: читаемый начальный масштаб).`);
+    }
+
+    // Честные отказы продукта переносим из проблем в ожидаемые ответы — с
+    // причиной в отчёте, чтобы их было видно и не прятать.
+    for (let i = httpResponses.length - 1; i >= 0; i -= 1) {
+      const reason = honestRefusal(httpResponses[i]);
+      if (reason === null) continue;
+      const [moved] = httpResponses.splice(i, 1);
+      const at = httpProblems.indexOf(moved);
+      if (at >= 0) httpProblems.splice(at, 1);
+      httpExpected.push({ ...moved, reason });
     }
 
     const summary = {
