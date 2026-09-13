@@ -22,7 +22,7 @@ PROJECT = os.environ.get("LHP_PROJECT", "c18-isbavg")
 QUEST = os.environ.get("LHP_QUEST", "c18-2aymmp")
 
 
-def post(path, payload, timeout=700):
+def post(path, payload, timeout=900):
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(BASE + path, data=body, headers=HEADERS)
     started = time.time()
