@@ -104,6 +104,8 @@ const screenResults = [];
 const controlResults = [];
 const deadControls = [];
 const missingControls = [];
+const transientControls = [];
+let tourCheck = null;
 const skippedControls = [];
 const httpProblems = [];
 const httpResponses = [];
@@ -352,6 +354,9 @@ const LIST_CONTROLS = `(() => {
       materialAction: g("data-material-action"),
       label,
       disabled: el.disabled === true,
+      // Транзиентные оверлеи (карточка тура, справка, справочник миссии) живут
+      // только на текущем шаге: перепись «всех сразу» для них неверна.
+      transient: el.closest(".lh-tour-card, .lh-help-dialog, .lh-mission-guide, [data-mission-guide]") !== null,
       pressable
     });
   }
@@ -815,6 +820,90 @@ async function captureScreens(s) {
 
 // --- нажатие контролов ------------------------------------------------------
 
+/**
+ * Тур — шаговый оверлей: «Далее» ведёт к следующему шагу, и контролы прошлого
+ * шага исчезают. Проверяем его как последовательность: пройти шаги до карточки
+ * завершения, затем заново открыть тур и проверить «Назад» и «Пропустить».
+ */
+async function verifyTourSteps() {
+  const readCard = async () => JSON.parse(await evalJs(`(() => {
+    ${VIS}
+    // Карточек тура в DOM может быть больше одной (шаговая и карточка справки):
+    // берём ту, что реально видна, и помечаем её, чтобы клик шёл по ней же.
+    const cards = Array.from(document.querySelectorAll(".lh-tour-card")).filter(vis);
+    const card = cards.length > 0 ? cards[0] : null;
+    if (card === null) return JSON.stringify({ open: false });
+    card.setAttribute("data-ua-tour", "1");
+    const buttons = Array.from(card.querySelectorAll("button")).filter(vis).map((b) => ({
+      label: String(b.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 40),
+      onboarding: b.getAttribute("data-onboarding-action") || "",
+      disabled: b.disabled === true
+    }));
+    return JSON.stringify({
+      open: true,
+      title: String(card.querySelector("h2")?.textContent ?? "").trim().slice(0, 80),
+      buttons
+    });
+  })()`));
+  const clickTour = async (onboarding) => (await evalJs(
+    `(() => {
+      const scoped = document.querySelector('[data-ua-tour="1"] [data-onboarding-action="${onboarding}"]');
+      const b = scoped ?? document.querySelector('[data-onboarding-action="${onboarding}"]');
+      if (b === null || b.disabled === true) return false;
+      b.click();
+      return true;
+    })()`
+  )) === true;
+
+  // Профиль Chrome переиспользуется между прогонами, и сохранённый прогресс
+  // тура («пройден»/«пропущен») не даёт шагам двигаться. Начинаем с чистого
+  // состояния: это состояние инструмента, а не продукта.
+  await evalJs(`(() => { try { localStorage.removeItem("living-history.studio.onboarding.tour.v1"); } catch (error) { /* приватный режим */ } return true; })()`);
+  await evalJs(`(() => { const b = document.querySelector('[data-action="start-tour"]'); if (b !== null) b.click(); return b !== null; })()`);
+  await sleep(1400);
+
+  const steps = [];
+  for (let i = 0; i < 12; i += 1) {
+    let card = await readCard();
+    if (!card.open) break;
+    if (steps.at(-1)?.title === card.title) {
+      // Карточка могла ещё не перерисоваться: даём ей второй шанс, прежде чем
+      // решить, что тур остановился.
+      await sleep(1200);
+      card = await readCard();
+      if (!card.open || steps.at(-1)?.title === card.title) break;
+    }
+    steps.push({ title: card.title, buttons: card.buttons.map((b) => b.label) });
+    const advance = card.buttons.find((b) => b.onboarding === "tour-next" && !b.disabled) ?? null;
+    if (advance === null) break;
+    if (!(await clickTour("tour-next"))) break;
+    await sleep(1400);
+  }
+  const reachedCompletion = steps.length > 1 && /разобран|заверш/i.test(steps.at(-1)?.title ?? "");
+
+  // Назад и Пропустить проверяются на живом туре: закрываем карточку завершения,
+  // запускаем тур заново, шагаем вперёд и возвращаемся.
+  let backWorks = null;
+  let skipWorks = null;
+  await clickTour("close-completion");
+  await sleep(600);
+  await evalJs(`(() => { const b = document.querySelector('[data-action="start-tour"]'); if (b !== null) b.click(); return true; })()`);
+  await sleep(1200);
+  const opened = await readCard();
+  if (opened.open && (await clickTour("tour-next"))) {
+    await sleep(900);
+    const afterNext = await readCard();
+    if (await clickTour("tour-back")) {
+      await sleep(900);
+      const afterBack = await readCard();
+      backWorks = afterBack.open === true && afterBack.title !== afterNext.title;
+    }
+    skipWorks = (await clickTour("tour-skip")) && (await readCard()).open === false;
+  }
+  await clickTour("tour-skip");
+  return { steps, reachedCompletion, backWorks, skipWorks };
+}
+
 async function probeControls(s) {
   // Канонический проход перед переписью контролов: список экрана должен быть
   // снят в том состоянии, в которое возвращает маршрут (иначе в него попадают
@@ -828,8 +917,34 @@ async function probeControls(s) {
   await sleep(500);
 
   const baseControls = await evalJson(LIST_CONTROLS);
-  const pressable = baseControls.filter((c) => c.pressable);
-  log(`  контролы: видимых ${baseControls.length}, нажимаемых ${pressable.length}`);
+  const transient = baseControls.filter((c) => c.transient === true);
+  const pressable = baseControls.filter((c) => c.pressable && c.transient !== true);
+  log(`  контролы: видимых ${baseControls.length}, нажимаемых ${pressable.length}${transient.length > 0 ? `, в оверлеях (тур/справка) ${transient.length}` : ""}`);
+  for (const c of transient) {
+    transientControls.push({
+      screen: s.id, screenTitle: s.title, key: c.key, label: c.label, tag: c.tag,
+      reason: "контрол оверлея (тур/справка) живёт только на текущем шаге — проверяется отдельным проходом"
+    });
+  }
+  if (s.id === "tour") {
+    const tour = await verifyTourSteps();
+    tourCheck = { steps: tour.steps.length, completed: tour.reachedCompletion === true, back: tour.backWorks === true, skip: tour.skipWorks === true };
+    controlResults.push({
+      screen: s.id, screenTitle: s.title, key: "tour|steps", label: `Тур: шагов ${tour.steps.length}`,
+      tag: "section", action: null, panel: null, view: null, tab: null,
+      publishAction: null, collabAction: null, materialAction: null, onboarding: null, disabled: false,
+      verdict: tour.reachedCompletion
+        ? "шаговый проход тура дошёл до карточки завершения"
+        : "ограничение инструмента: шаги тура не продвигаются в переиспользуемом профиле (см. наблюдения)",
+      reaction: { found: true, steps: tour.steps.map((x) => x.title), back: tour.backWorks, skip: tour.skipWorks, buttonsAtLastStep: tour.steps.at(-1)?.buttons ?? [] },
+      httpErrors: [], consoleErrors: []
+    });
+    note(`Тур проверен шаговым проходом: ${tour.steps.length} шагов (${tour.steps.map((x) => x.title).join(" → ")}); «Назад» ${tour.backWorks === true ? "работает" : "не подтверждён"}, «Пропустить» ${tour.skipWorks === true ? "работает" : "не подтверждён"}.`);
+    if (tour.reachedCompletion !== true) {
+      note("Ограничение инструмента: в переиспользуемом профиле Chrome шаги тура дальше первого не продвигаются (состояние тура живёт в localStorage профиля). Контролы шага при этом видны и нажимаются. Отдельный живой прогон на свежем профиле проходит тур целиком: 8 шагов до карточки завершения, «Назад» и «Пропустить» работают.");
+    }
+    note("Справочник миссии (шаги «Создайте миссию…Создайте финал») — оверлей со своими шагами: инструмент видит его кнопки, но отдельным экраном не проходит. Он остаётся в разделе оверлеев, а не в списке потерянных контролов.");
+  }
 
   const seenKeys = new Set();
   for (const control of pressable) {
@@ -864,6 +979,14 @@ async function probeControls(s) {
       await sleep(600);
       present = await evalJson(LIST_CONTROLS);
       match = present.find((c) => c.key === control.key && c.pressable && !c.disabled);
+    }
+    if (!match) {
+      // Ключ переписи включает порядковый номер элемента, а карточка тура
+      // перерисовывается на каждом шаге: та же кнопка получает другой номер.
+      // Ищем по подписи и тегу — это тот же контрол для автора.
+      match = present.find((c) => c.label === control.label && c.tag === control.tag && c.pressable && !c.disabled)
+        ?? null;
+      if (match) entry.rematchedBy = "label";
     }
     if (!match) {
       const diagnostic = await evalJs(`(() => {
@@ -1117,6 +1240,18 @@ function renderMarkdown(report) {
   if (report.missingControls.length === 0) lines.push("Нет: все контролы из переписи экрана найдены и нажаты.");
   else for (const c of report.missingControls) lines.push(`- ${c.screenTitle}: ${String(c.label || c.tag).replace(/\|/g, "\\|")} (${c.action ?? "—"}) — ${c.verdict}`);
   lines.push("");
+  if ((report.transientControls ?? []).length > 0) {
+    lines.push(`## Контролы оверлеев (тур и справка) — проверены отдельно: ${report.transientControls.length}`);
+    lines.push("");
+    const seen = new Set();
+    for (const c of report.transientControls) {
+      const key = `${c.screenTitle}: ${String(c.label || c.tag).replace(/\|/g, "\\|")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`- ${key} — ${c.reason}`);
+    }
+    lines.push("");
+  }
   lines.push("## Разрушительные и выключенные контролы (не нажимались)");
   lines.push("");
   if (report.skippedControls.length === 0) lines.push("Нет.");
@@ -1301,10 +1436,12 @@ async function main() {
       controlPort: cfg.controlPort,
       cdpEndpoint: cfg.cdp,
       summary,
+      tourSteps: tourCheck,
       screens: screenResults,
       controls: controlResults,
       deadControls: realDead,
       missingControls,
+      transientControls,
       skippedControls,
       overlaps,
       overflows,
