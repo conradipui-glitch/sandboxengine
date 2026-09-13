@@ -132,22 +132,25 @@ async function startPlayer(options: LaunchFrozenPlayerOptions & { readonly playt
   try {
     const bootstrapped = bootstrapFrozenPlaytest(playtest);
     if (bootstrapped.ok) {
-      if (bootstrapped.template.paintActions.length !== 1) {
-        controlStore.close();
-        return failure("unsupported_playtest", `Player supports exactly one core.paint action, playtest has ${bootstrapped.template.paintActions.length}`);
+      if (bootstrapped.template.paintActions.length === 1) {
+        return await startPaintPlayer(options, playtest, bootstrapped.template, controlStore);
       }
-      return await startPaintPlayer(options, playtest, bootstrapped.template, controlStore);
-    }
-    if (bootstrapped.code !== "unsupported_playtest") {
+    } else if (bootstrapped.code !== "unsupported_playtest") {
       controlStore.close();
       return failure("invalid_playtest", `Frozen playtest cannot start Player: ${bootstrapped.code}`);
     }
 
+    // Блочный режим возможен только с ровно одним действием. Если действий
+    // больше, снимок всё равно может играться сюжетом: доска и документ миссии —
+    // разные слои одной авторской работы, и для сюжетной миссии главный из них
+    // сюжет. Отказываем только когда играть нечем.
     const story = await resolveStoryMission(controlStore, playtest.projectId, playtest.questId);
     const world = buildFrozenWorldState(playtest.snapshot);
     if (story === null || !world.ok) {
       controlStore.close();
-      return failure("unsupported_playtest", "Frozen playtest has no core.paint action and no authored story mission: nothing to play");
+      return failure("unsupported_playtest", bootstrapped.ok
+        ? `Player supports exactly one core.paint action, playtest has ${bootstrapped.template.paintActions.length}, and the quest has no story mission`
+        : "Frozen playtest has no core.paint action and no authored story mission: nothing to play");
     }
     return await startStoryPlayer(options, playtest, story, world.state, controlStore);
   } catch (error) {

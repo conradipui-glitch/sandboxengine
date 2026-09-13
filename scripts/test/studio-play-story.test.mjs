@@ -305,3 +305,52 @@ test("«Проверить и сыграть» всё ещё честно отк
   assert.equal(launched.status, 409);
   assert.equal(launched.body.error.code, "unsupported_playtest");
 });
+
+test("«Проверить и сыграть» играет сюжет, если в снимке больше одного действия", async () => {
+  const { databasePath, directory } = await makeDatabase();
+  const { studioPort } = await makeStand(databasePath, directory);
+  const api = new ControlApiClient((input, init) => fetch(new URL(String(input), `http://127.0.0.1:${studioPort}`), init));
+  const jsonHeaders = { "content-type": "application/json", "x-lh-local-settings": "1" };
+  const draft = await api.getDraft(PROJECT_ID, QUEST_ID);
+  const validation = await api.validateDraft(PROJECT_ID, QUEST_ID, draft.draftRevision);
+  const playtest = await api.createPlaytest(PROJECT_ID, QUEST_ID, draft.draftRevision, validation.validationId);
+
+  // Доска автора и документ миссии — разные слои одной работы: в снимке
+  // сюжетной миссии может оказаться больше одного блочного действия. Блочный
+  // runtime требует ровно одно, но это не повод отказывать автору в проверке
+  // того, что он написал: такой playtest обязан играться сюжетом.
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(databasePath);
+  try {
+    const row = db.prepare("SELECT snapshot_json FROM control_playtests WHERE playtest_id = ?").get(playtest.playtestId);
+    const snapshot = JSON.parse(row.snapshot_json);
+    let resourceId = snapshot.blocks.find((block) => block.kind === "core.resource")?.id ?? null;
+    const added = [];
+    if (resourceId === null) {
+      resourceId = "acceptance-paint-resource";
+      added.push({
+        schemaVersion: "1.0", id: resourceId, kind: "core.resource", title: "Краска", description: "",
+        data: { unit: "portion", initialValue: 2, min: 0, max: 20 }
+      });
+    }
+    for (const id of ["acceptance-paint-one", "acceptance-paint-two"]) {
+      added.push({
+        schemaVersion: "1.0", id, kind: "core.action", title: "Рисовать", description: "",
+        data: { actionType: "core.paint", resourceId, resourceUnitsPerUnit: 1, durationSecondsPerUnit: 300, allowPartial: true }
+      });
+    }
+    snapshot.blocks = [...snapshot.blocks, ...added];
+    db.prepare("UPDATE control_playtests SET snapshot_json = ? WHERE playtest_id = ?")
+      .run(JSON.stringify(snapshot), playtest.playtestId);
+  } finally {
+    db.close();
+  }
+
+  const launched = await request(studioPort, "/local/launch-player", {
+    method: "POST", headers: jsonHeaders, body: JSON.stringify({ playtestId: playtest.playtestId })
+  });
+  assert.equal(launched.status, 200, `сюжетный playtest с двумя действиями обязан играться: ${JSON.stringify(launched.body)}`);
+  assert.equal(launched.body.ok, true);
+  const story = await fetch(`${launched.body.url}/player-story.json`);
+  assert.equal(story.status, 200, "Player обязан отдавать сюжет, а не отказывать в запуске");
+});
