@@ -38,8 +38,10 @@ const CHAIN_ASSEMBLE_DEADLINE_MS = 420_000;
 // Бюджет писателя миссии: документ — это десятки сцен, выборов и финалов в JSON,
 // и писатель делит бюджет между двумя попытками (attempt 1 получает половину).
 // 240 с давали первой попытке 120 с — reasoning-модель не успевала, и автор
-// видел «Mission writer backend deadline expired» при живом ключе.
-const CHAIN_WRITER_DEADLINE_MS = 540_000;
+// видел «Mission writer backend deadline expired» при живом ключе. Живой прогон
+// на стенде (0e31651) показал, что и 540 с бывает мало: обе попытки по 270 с
+// выгорели в timeout, документ не пришёл. 900 с дают по 450 с на попытку.
+const CHAIN_WRITER_DEADLINE_MS = 900_000;
 
 export interface MissionChainMessage {
   readonly role: "author" | "assistant";

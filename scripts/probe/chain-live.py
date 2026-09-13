@@ -22,7 +22,9 @@ PROJECT = os.environ.get("LHP_PROJECT", "c18-isbavg")
 QUEST = os.environ.get("LHP_QUEST", "c18-2aymmp")
 
 
-def post(path, payload, timeout=900):
+# Таймаут probe выше окна писателя (900 с) и сборки цепочки (420 с): иначе сам
+# probe обрывает ответ раньше, чем это сделает сервер, и «сбой» виден только здесь.
+def post(path, payload, timeout=1500):
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(BASE + path, data=body, headers=HEADERS)
     started = time.time()
