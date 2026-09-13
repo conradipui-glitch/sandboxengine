@@ -9,7 +9,7 @@ import {
   type ModelProvider
 } from "@living-history/ai";
 // @ts-ignore — репозиторий закреплён на Node 24.19.0; @types/node не установлен.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   isAllowedLocalHttpRequest,
   maskProviderApiKey,
@@ -126,6 +126,12 @@ export class LocalAuthorProvider {
   #state: LocalAuthorProviderState = "not_configured";
   #lastErrorCode: string | null = null;
   #generation = 0;
+  /**
+   * Идентификатор экземпляра процесса: входит в ключ идемпотентности сохранения,
+   * чтобы после перезапуска повтор номера генерации не столкнулся с ключом
+   * прошлого запуска (иначе сохранение молча не ложилось в хранилище).
+   */
+  readonly #instanceId = randomUUID();
   #activeRequests = 0;
   /** Безопасное представление ключа: наружу отдаётся только признак и маска. */
   #credentialMask: string | null = null;
@@ -222,7 +228,7 @@ export class LocalAuthorProvider {
       baseUrl: settings.baseUrl,
       model: settings.model,
       apiKey,
-      idempotencyKey: `provider-save-${this.#generation}`,
+      idempotencyKey: `provider-save-${this.#instanceId}-${this.#generation}`,
       requestHash: sha256Text(`save\u0000${settings.preset}\u0000${settings.baseUrl}\u0000${settings.model}\u0000${apiKey}`),
       updatedAtMs: Date.now()
     }).then((result) => {

@@ -411,3 +411,37 @@ test("L03-подключение: пресет token-juice принимаетс�
     await close(stand.server);
   }
 });
+
+test("L03-подключение: после перезапуска сохранение не теряется из-за повторного номера попытки", async () => {
+  const stand = providerStand();
+  const standPort = await listen(stand.server);
+  const baseUrl = `http://127.0.0.1:${standPort}/v1`;
+  const scope = { projectId: "local-operator", userId: "local-owner" };
+  const connections = new MemoryControlProviderConnectionStore();
+
+  try {
+    // Первый запуск: две правки подряд — вторая занимает номер попытки 2.
+    const first = new LocalAuthorProvider(undefined, { connections, scope });
+    first.configure({ preset: "compatible", baseUrl, model: "model-1", credential: FIXTURE_KEY });
+    await settle(8);
+    first.configure({ preset: "compatible", baseUrl, model: "model-2", credential: "" });
+    await settle(8);
+    assert.equal(first.status().credentialStorage, "local_file_masked");
+
+    // Перезапуск: номер попытки снова начинается с 1, и та же цифра не должна
+    // столкнуться с ключом прошлого запуска — иначе сохранение молча не ляжет.
+    const second = new LocalAuthorProvider(undefined, { connections, scope });
+    await second.restore();
+    second.configure({ preset: "token-juice", baseUrl: "", model: "deepseek-ai/DeepSeek-V4.1-Flash", credential: FIXTURE_KEY_2 });
+    await settle(8);
+    assert.equal(second.status().credentialStorage, "local_file_masked", "после перезапуска сохранение обязано лечь в хранилище");
+
+    const stored = await connections.getConnection(scope.projectId, scope.userId);
+    assert.equal(stored.providerPreset, "token-juice");
+    assert.equal(stored.model, "deepseek-ai/DeepSeek-V4.1-Flash");
+    assert.equal(stored.baseUrl, "https://api.tokenjuice.ai/v1");
+    assert.equal(stored.revision >= 3, true, `ревизия растёт, а не откатывается: ${stored.revision}`);
+  } finally {
+    await close(stand.server);
+  }
+});
