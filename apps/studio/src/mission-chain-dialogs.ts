@@ -203,6 +203,12 @@ export class MissionChainDialogStore {
   async confirm(sessionId: string): Promise<MissionChainSessionView> {
     const session = this.#liveSession(sessionId);
     if (session === null) return unknownSession();
+    if (session.stage === "interview") {
+      // Автор просит собрать по уже сказанному: интервью закрывает тот же
+      // агент, который его вёл, — цепочка собирается моделью, а не сервером.
+      const refusal = await this.#closeInterview(session);
+      if (refusal !== null) return view(session, refusal);
+    }
     if (session.stage !== "chain_ready" || session.summary === null) {
       return view(session, "Сначала соберите цепочку: ответьте на вопросы помощника.");
     }
@@ -283,6 +289,40 @@ export class MissionChainDialogStore {
     for (const [sessionId, session] of this.#sessions) {
       if (now - session.updatedAtMs > this.#ttlMs) this.#sessions.delete(sessionId);
     }
+  }
+
+  /**
+   * Закрытие интервью по требованию автора. Возвращает текст отказа, если
+   * собрать нельзя: сессия остаётся в interview, ответы автора не теряются.
+   */
+  async #closeInterview(session: SessionRecord): Promise<string | null> {
+    if (session.agent.questionsAsked < MISSION_CHAIN_MIN_QUESTIONS) {
+      return `Собирать пока рано: ответьте минимум на ${MISSION_CHAIN_MIN_QUESTIONS} вопроса помощника.`;
+    }
+    if (session.busy) return "Помощник ещё отвечает: подождите завершения хода.";
+    session.busy = true;
+    let turn: MissionChainTurnResult;
+    try {
+      turn = await session.agent.close(this.#nowMs() + CHAIN_BACKEND_DEADLINE_MS);
+    } finally {
+      session.busy = false;
+    }
+    session.updatedAtMs = this.#nowMs();
+    if (turn.kind === "chain_ready") {
+      session.messages.push({ role: "assistant", text: chainReportText(turn.summary) });
+      session.summary = turn.summary;
+      session.stage = "chain_ready";
+      session.error = null;
+      return null;
+    }
+    if (turn.kind === "question") {
+      // Режим «только цепочка» такой исход исключает — но не молчим, если он придёт.
+      const message = "Помощник снова задал вопрос вместо сборки цепочки. Повторите сборку.";
+      session.error = Object.freeze({ code: "invalid_response", message });
+      return message;
+    }
+    session.error = Object.freeze({ code: mapTurnCode(turn.code), message: turn.message });
+    return turn.message;
   }
 }
 

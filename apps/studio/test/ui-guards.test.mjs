@@ -427,6 +427,20 @@ function findSmallTargets(cssText, interactiveClasses) {
 /* Сборка корпуса                                                       */
 /* ------------------------------------------------------------------ */
 
+function findUnstyledChainClasses(sourceText, cssText) {
+  const classes = new Set();
+  for (const match of sourceText.matchAll(/class="([^"]*)"/g)) {
+    // Разметка собирается шаблонами: берём только целые имена классов.
+    for (const token of match[1].split(/\s+/)) {
+      if (/^chain-[a-z0-9-]+$/.test(token)) classes.add(token);
+    }
+  }
+  const plain = stripComments(cssText);
+  return [...classes]
+    .sort()
+    .filter((name) => !new RegExp(`\\.${name}(?![a-zA-Z0-9_-])`).test(plain));
+}
+
 function loadCssCorpus() {
   return discoverCssFiles().map((path) => ({ path, name: relativeName(path), text: readFileSync(path, "utf8") }));
 }
@@ -576,6 +590,14 @@ test("UI-STRICT: ни одна НОВАЯ кнопка не меньше 32px", 
   );
 });
 
+test("UI-STRICT: классы диалога ИИ-помощника не остаются без CSS (код есть — панель оформлена)", () => {
+  const sources = loadSourceCorpus().filter((entry) => entry.name.endsWith("mission-chain-panel.ts"));
+  assert.equal(sources.length, 1, "панель цепочки обязана быть в корпусе исходников");
+  const cssText = loadCssCorpus().map((file) => file.text).join("\n");
+  const unstyled = findUnstyledChainClasses(sources[0].text, cssText);
+  assert.deepEqual(unstyled, [], `панель цепочки рисует классы без стилей:\n${unstyled.join("\n")}`);
+});
+
 /* ------------------------------------------------------------------ */
 /* Несущая способность стража: подсунутый корпус обязан краснеть         */
 /* ------------------------------------------------------------------ */
@@ -618,6 +640,19 @@ test("UI-STRICT: проверки краснеют на подсунутых к�
   assert.equal(findSmallTargets(".probe button { height: 20px; }", new Set()).length, 1);
   assert.deepEqual(findSmallTargets(".probe button { height: 32px; }", new Set()), []);
   assert.equal(findSmallTargets(".probe-short { min-height: 24px; }", new Set(["probe-short"])).length, 1);
+
+  // (5) Класс панели без стилей — ровно тот дефект «код есть, UI не подключён».
+  const chainSource = '<div class="chain-probe"></div><div class="chain-message chain-message-${role}"></div>';
+  assert.deepEqual(
+    findUnstyledChainClasses(chainSource, ".chain-probe { color: red; } .chain-message { color: red; }"),
+    []
+  );
+  assert.deepEqual(findUnstyledChainClasses(chainSource, ""), ["chain-message", "chain-probe"]);
+  assert.deepEqual(
+    findUnstyledChainClasses(chainSource, ".chain-message-author { color: red; } .chain-probe-extra { color: red; }"),
+    ["chain-message", "chain-probe"],
+    "похожие имена не засчитываются как стиль, шаблон role не создаёт фантомных классов"
+  );
 });
 
 /* Санity: текущие модули реально читаются из репозитория. */

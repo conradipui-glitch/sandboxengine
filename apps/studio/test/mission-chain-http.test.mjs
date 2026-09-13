@@ -275,6 +275,68 @@ test("AI-CHAIN HTTP: многошаговый диалог — старт, дв�
   }
 });
 
+test("AI-CHAIN HTTP: автор собирает миссию сам из интервью — без ожидания модели", async () => {
+  // Автор ответил на два вопроса и нажимает «Собрать миссию по цепочке», не
+  // дожидаясь, пока помощник сам решит остановиться. Тот же движок закрывает
+  // интервью директивой и собирает цепочку из сказанного.
+  const env = await bootStudio([
+    { content: QUESTION_1 },
+    { content: QUESTION_2 },
+    { content: CHAIN_JSON },
+    { content: JSON.stringify(fullPlan()) }
+  ]);
+  const { studioPort, close, seen } = env;
+  try {
+    const started = await post(studioPort, "/local/mission-chain", {
+      idea: "Смотритель маяка выбирает, кому светить.",
+      projectId: "p-chain",
+      questId: "q-chain"
+    });
+    assert.equal(started.body.stage, "interview");
+    const sessionId = started.body.sessionId;
+
+    const turn1 = await post(studioPort, "/local/mission-chain", { sessionId, text: "Тревогу и ответственность." });
+    assert.equal(turn1.body.questionsAnswered, 2);
+    assert.equal(turn1.body.stage, "interview");
+
+    // Сборка по требованию автора: без текста — это и есть «собрать сейчас».
+    const assembled = await post(studioPort, "/local/mission-chain", { sessionId });
+    assert.equal(assembled.body.stage, "ready");
+    assert.ok(assembled.body.stats !== null);
+    assert.ok(assembled.body.stats.sceneCount >= 2);
+
+    // Модель получила директиву закрытия, а не ещё один вопрос.
+    const closingRequest = JSON.stringify(seen[2].messages.at(-1).content);
+    assert.match(closingRequest, /Лимит уточняющих вопросов исчерпан|собери цепочку/i);
+
+    const doc = await post(studioPort, "/local/mission-chain/document", { sessionId });
+    assert.equal(doc.body.ok, true);
+    assert.equal(doc.body.document.listing.title, "Маяк на краю ночи");
+  } finally {
+    await close();
+  }
+});
+
+test("AI-CHAIN HTTP: сборка раньше минимума ответов — честный отказ, интервью живо", async () => {
+  const env = await bootStudio([{ content: QUESTION_1 }]);
+  const { studioPort, close, seen } = env;
+  try {
+    const started = await post(studioPort, "/local/mission-chain", {
+      idea: "Идея без ответов",
+      projectId: "p-chain",
+      questId: "q-chain"
+    });
+    const sessionId = started.body.sessionId;
+    const tooEarly = await post(studioPort, "/local/mission-chain", { sessionId });
+    assert.equal(tooEarly.body.stage, "interview", "сессия не переходит в ready");
+    assert.ok(tooEarly.body.error !== null);
+    assert.match(tooEarly.body.error.message, /минимум на \d+ вопрос/i);
+    assert.equal(seen.length, 1, "запрос к модели не отправлялся");
+  } finally {
+    await close();
+  }
+});
+
 test("AI-CHAIN HTTP: честная ошибка при сбое провайдера — stage failed, message по-русски", async () => {
   const env = await bootStudio([
     { kind: "http_error", status: 500, message: "boom" },

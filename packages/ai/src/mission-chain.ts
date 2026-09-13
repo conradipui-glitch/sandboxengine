@@ -33,6 +33,23 @@ export const MISSION_CHAIN_MIN_QUESTIONS = 2;
 export const MISSION_CHAIN_MAX_QUESTIONS = 3;
 /** Попыток на один ход (битый JSON/нарушение контракта → повтор). */
 export const MISSION_CHAIN_MAX_ATTEMPTS = 2;
+
+/**
+ * Директива закрытия интервью. Нужна и когда лимит вопросов исчерпан, и когда
+ * автор сам просит собрать цепочку. Без неё модель продолжает спрашивать, а
+ * машина такие ходы отклоняет — автор остаётся без собранной миссии, хотя
+ * материала уже достаточно.
+ */
+export function missionChainClosingDirective(reason: "limit" | "author"): string {
+  const lead = reason === "limit"
+    ? `Лимит уточняющих вопросов исчерпан (${MISSION_CHAIN_MAX_QUESTIONS}).`
+    : "Автор просит собрать цепочку сейчас — материала достаточно.";
+  return [
+    lead,
+    "Больше вопросов задавать нельзя: собери цепочку по уже сказанному, недостающие детали дополни сам.",
+    'Ответ строго один JSON-объект вида {"kind":"chain", ...} по контракту выше, без markdown и пояснений.'
+  ].join(" ");
+}
 const CHAIN_MAX_OUTPUT_TOKENS = 4_000;
 const MAX_IDEA_CHARS = 4_000;
 const MAX_QUESTION_CHARS = 1_000;
@@ -269,15 +286,58 @@ export class MissionChainAgent {
     if (!isBoundedText(authorText, 1, MAX_ANSWER_CHARS)) {
       return failed("invalid_use", `Ответ автора должен быть текстом от 1 до ${MAX_ANSWER_CHARS} символов.`);
     }
-    const outgoing: readonly ModelMessage[] = [...this.#messages, { role: "user" as const, content: authorText }];
-    return this.#runTurn(outgoing, deadlineAtMs, signal, (internal) => this.#commitTurn(outgoing, internal, authorText));
+    const atLimit = this.#questionsAsked >= this.#maxQuestions;
+    const outgoing: readonly ModelMessage[] = atLimit
+      // Лимит вопросов исчерпан: ответ автора закрывает интервью, а не тянет
+      // его дальше. Иначе машина отклоняет очередной вопрос, и автор не может
+      // получить цепочку вообще.
+      ? [
+          ...this.#messages,
+          { role: "user" as const, content: authorText },
+          { role: "user" as const, content: missionChainClosingDirective("limit") }
+        ]
+      : [...this.#messages, { role: "user" as const, content: authorText }];
+    return this.#runTurn(
+      outgoing,
+      deadlineAtMs,
+      signal,
+      (internal) => this.#commitTurn(outgoing, internal, authorText),
+      atLimit ? { requireChain: true } : undefined
+    );
+  }
+
+  /**
+   * Закрытие интервью по требованию автора («собрать сейчас»). Раньше минимума
+   * вопросов возвращается invalid_use: пустая цепочка вместо миссии не собирается.
+   */
+  async close(deadlineAtMs: number, signal?: AbortSignal): Promise<MissionChainTurnResult> {
+    if (!this.#started) {
+      return failed("invalid_use", "Диалог ещё не начат: опишите идею и ответьте на вопросы помощника.");
+    }
+    if (this.#phase === "ready") {
+      return failed("invalid_use", "Цепочка уже собрана: подтвердите генерацию миссии.");
+    }
+    if (this.#questionsAsked < this.#minQuestions) {
+      return failed(
+        "invalid_use",
+        `Собирать пока рано: нужно минимум ${this.#minQuestions} ответа автора, получено ${this.#questionsAsked}.`
+      );
+    }
+    const outgoing: readonly ModelMessage[] = [
+      ...this.#messages,
+      { role: "user" as const, content: missionChainClosingDirective("author") }
+    ];
+    return this.#runTurn(outgoing, deadlineAtMs, signal, (internal) => this.#commitTurn(outgoing, internal), {
+      requireChain: true
+    });
   }
 
   async #runTurn(
     outgoing: readonly ModelMessage[],
     deadlineAtMs: number,
     signal: AbortSignal | undefined,
-    commit: (internal: InternalQuestionTurn | InternalChainTurn) => MissionChainTurnResult
+    commit: (internal: InternalQuestionTurn | InternalChainTurn) => MissionChainTurnResult,
+    mode?: { readonly requireChain?: boolean }
   ): Promise<MissionChainTurnResult> {
     for (let attempt = 1; attempt <= MISSION_CHAIN_MAX_ATTEMPTS; attempt += 1) {
       const canRetry = attempt < MISSION_CHAIN_MAX_ATTEMPTS;
@@ -303,7 +363,7 @@ export class MissionChainAgent {
           if (turn.error.retryable && canRetry) continue;
           return failed("backend_failure", backendFailureMessage(turn.error.code));
         }
-        const internal = this.#evaluateTurn(turn.outputText, turn.usage);
+        const internal = this.#evaluateTurn(turn.outputText, turn.usage, mode);
         if (internal.ok) return commit(internal);
         if (!canRetry) return failed(internal.code, internal.message, internal.problems);
       } finally {
@@ -319,7 +379,7 @@ export class MissionChainAgent {
    * и машина состояний. Нарушение контракта — invalid_response, а не молчаливая
    * починка: автор видит честную ошибку.
    */
-  #evaluateTurn(outputText: string, usage: ProviderUsage): InternalTurn {
+  #evaluateTurn(outputText: string, usage: ProviderUsage, mode?: { readonly requireChain?: boolean }): InternalTurn {
     let parsed: unknown;
     try {
       parsed = JSON.parse(outputText);
@@ -347,6 +407,15 @@ export class MissionChainAgent {
           code: "invalid_response",
           message: "Помощник задал вопрос без текста или слишком длинный.",
           problems: ["chain.question_invalid"]
+        };
+      }
+      if (mode?.requireChain === true) {
+        return {
+          ok: false,
+          code: "invalid_response",
+          message:
+            "Помощник снова задал вопрос вместо сборки цепочки. Повторите сборку — цепочка собирается по уже сказанному.",
+          problems: ["chain.close_expected_chain"]
         };
       }
       if (this.#questionsAsked >= this.#maxQuestions) {

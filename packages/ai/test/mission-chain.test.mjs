@@ -145,9 +145,10 @@ test("AI-CHAIN: вопросы сверх максимума отклоняют�
   assert.equal(agent.transcript[0].answer.length > 0, true);
 });
 
-test("AI-CHAIN: четвёртый вопрос сверх лимита 3 отклоняется как invalid_response", async () => {
+test("AI-CHAIN: на исчерпанном лимите вопросов ход обязан собрать цепочку", async () => {
   // start=Q1, a1=Q2, a2=Q3 → лимит исчерпан. Следующий ход дважды пытается
-  // задать Q1 (обе попытки сверх лимита) → финальная ошибка too_many_questions.
+  // задать вопрос (обе попытки нарушают контракт «только цепочка») → финальная
+  // ошибка. Счётчик вопросов при этом не растёт: сверхлимитных вопросов нет.
   const backend = scripted([
     { kind: "success", outputText: QUESTION_1 },
     { kind: "success", outputText: QUESTION_2 },
@@ -161,8 +162,77 @@ test("AI-CHAIN: четвёртый вопрос сверх лимита 3 отк
   await agent.reply("Ответ 2.", DEADLINE());
   const extra = await agent.reply("Ответ 3.", DEADLINE());
   assert.equal(extra.kind, "failed");
-  assert.ok((extra.kind === "failed" && (extra.problems ?? []).includes("chain.too_many_questions")));
+  assert.ok(
+    extra.kind === "failed" && (extra.problems ?? []).includes("chain.close_expected_chain"),
+    "на исчерпанном лимите вопрос вместо цепочки — нарушение контракта закрытия"
+  );
   assert.equal(agent.questionsAsked, 3, "сверхлимитный ход не увеличил счётчик");
+});
+
+test("AI-CHAIN: последний ответ автора на исчерпанном лимите собирает цепочку сам", async () => {
+  // Автор отвечает на третий вопрос, лимит исчерпан — ход сразу собирает
+  // цепочку. Раньше здесь можно было получить только ошибку «слишком много
+  // вопросов», и автор оставался без миссии.
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: QUESTION_2 },
+    { kind: "success", outputText: QUESTION_3 },
+    { kind: "success", outputText: chainPayload() }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  await agent.reply("Ответ 1.", DEADLINE());
+  await agent.reply("Ответ 2.", DEADLINE());
+  const ready = await agent.reply("Ответ 3.", DEADLINE());
+  assert.equal(ready.kind, "chain_ready");
+  assert.equal(agent.phase, "ready");
+  assert.equal(agent.questionsAsked, 3);
+  // Ответ автора не потерян: он попал в транскрипт интервью.
+  assert.equal(agent.transcript.length, 3);
+  assert.equal(agent.transcript[2].answer, "Ответ 3.");
+});
+
+test("AI-CHAIN: close() собирает цепочку по уже сказанному без нового вопроса", async () => {
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: QUESTION_2 },
+    { kind: "success", outputText: chainPayload() }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  await agent.reply("Ответ 1.", DEADLINE());
+  const ready = await agent.close(DEADLINE());
+  assert.equal(ready.kind, "chain_ready");
+  assert.equal(agent.phase, "ready");
+  assert.equal(backend.capturedTurnRequests.length, 3, "close идёт тем же движком: ровно один ход");
+});
+
+test("AI-CHAIN: close() раньше минимума ответов — invalid_use без запроса к бэкенду", async () => {
+  const backend = scripted([{ kind: "success", outputText: QUESTION_1 }]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  const early = await agent.close(DEADLINE());
+  assert.equal(early.kind, "failed");
+  assert.equal(early.kind === "failed" && early.code, "invalid_use");
+  assert.equal(backend.capturedTurnRequests.length, 1, "запрос к модели не отправлялся");
+  assert.equal(agent.phase, "interview", "интервью осталось живым: ответы автора не потеряны");
+});
+
+test("AI-CHAIN: close() после готовности — invalid_use, цепочка не пересобирается", async () => {
+  const backend = scripted([
+    { kind: "success", outputText: QUESTION_1 },
+    { kind: "success", outputText: QUESTION_2 },
+    { kind: "success", outputText: chainPayload() }
+  ]);
+  const agent = new MissionChainAgent({ backend, profileId: PROFILE, idea: IDEA });
+  await agent.start(DEADLINE());
+  await agent.reply("Ответ 1.", DEADLINE());
+  const ready = await agent.reply("Ответ 2.", DEADLINE());
+  assert.equal(ready.kind, "chain_ready");
+  const again = await agent.close(DEADLINE());
+  assert.equal(again.kind, "failed");
+  assert.equal(again.kind === "failed" && again.code, "invalid_use");
+  assert.equal(backend.capturedTurnRequests.length, 3, "повторный close не пошёл в модель");
 });
 
 test("AI-CHAIN: повторный start и reply после готовности — invalid_use без запроса к бэкенду", async () => {

@@ -213,7 +213,7 @@ test("форма подключения: список сохранённых п�
 test("форма подключения: итог проверки называет причину, задержку и код ответа", () => {
   assert.equal(providerProbeSummary(null), null);
   const ok = providerProbeSummary(CONNECTED_STATUS);
-  assert.match(ok, /прошла успешно \(ответ за 120 мс, код ответа 200\)/);
+  assert.match(ok, /прошла успешно: модель ответила на пробную генерацию \(ответ за 120 мс, код ответа 200\)/);
   const refused = providerProbeSummary({ ...CONNECTED_STATUS, state: "error", probeCause: "auth_required", probeLatencyMs: 88, probeHttpStatus: 401 });
   assert.match(refused, /не удалась/);
   assert.match(refused, /401 или 403/);

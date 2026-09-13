@@ -108,6 +108,8 @@ export const CHAIN_REPLY_PLACEHOLDER = "Ваш ответ помощнику…"
 export const CHAIN_START_LABEL = "Обсудить идею с помощником";
 export const CHAIN_SEND_LABEL = "Ответить";
 export const CHAIN_CONFIRM_LABEL = "Собрать миссию по цепочке";
+export const CHAIN_ASSEMBLE_HINT =
+  "Можно собрать миссию уже сейчас: помощник возьмёт то, что вы рассказали, и сам дополнит детали.";
 export const CHAIN_RESTART_LABEL = "Начать заново";
 export const CHAIN_ACCEPT_LABEL = "Принять и редактировать";
 export const CHAIN_DECLINE_LABEL = "Отклонить";
@@ -185,23 +187,28 @@ function nodeTitle(summary: ChainSummaryView, nodeId: string): string {
 }
 
 function renderChainReview(summary: ChainSummaryView): string {
-  const scenes = summary.chain.scenes
+  // Полезная нагрузка приходит из сети: если провайдер вернул неполную
+  // цепочку, показываем то, что есть, вместо падения всей панели — иначе
+  // автор видит «помощник не ответил» там, где миссия уже собрана.
+  const chain = summary.chain ?? { scenes: [], choices: [], resources: [], endings: [] };
+  const scenes = (chain.scenes ?? [])
     .map((scene) => `<li data-chain-scene-id="${escapeAttr(scene.id)}"><strong>${escapeHtml(scene.title)}</strong><span>${escapeHtml(scene.goal)}</span></li>`)
     .join("");
-  const choices = summary.chain.choices
+  const choices = (chain.choices ?? [])
     .map((choice) => `<li data-chain-choice><strong>${escapeHtml(choice.label)}</strong><span>из «${escapeHtml(sceneTitle(summary, choice.from))}» → «${escapeHtml(nodeTitle(summary, choice.to))}». ${escapeHtml(choice.consequence)}</span></li>`)
     .join("");
-  const resources = summary.chain.resources.length === 0
+  const resources = (chain.resources ?? []).length === 0
     ? ""
-    : `<h4>Ресурсы</h4><ul class="chain-resources" data-chain-resources>${summary.chain.resources
+    : `<h4>Ресурсы</h4><ul class="chain-resources" data-chain-resources>${(chain.resources ?? [])
         .map((resource) => `<li data-chain-resource-id="${escapeAttr(resource.id)}"><strong>${escapeHtml(resource.title)}</strong><span>старт: ${escapeHtml(String(resource.initial))}. ${escapeHtml(resource.purpose)}</span></li>`)
         .join("")}</ul>`;
-  const endings = summary.chain.endings
+  const endings = (chain.endings ?? [])
     .map((ending) => `<li data-chain-ending-id="${escapeAttr(ending.id)}"><strong>${escapeHtml(ending.title)}</strong><span>${escapeHtml(ending.condition)}</span></li>`)
     .join("");
-  const constraints = summary.constraints.length === 0
+  const constraintsList = summary.constraints ?? [];
+  const constraints = constraintsList.length === 0
     ? ""
-    : `<p class="chain-constraints" data-chain-constraints>Ограничения: ${escapeHtml(summary.constraints.join("; "))}</p>`;
+    : `<p class="chain-constraints" data-chain-constraints>Ограничения: ${escapeHtml(constraintsList.join("; "))}</p>`;
   return `<div class="chain-review" data-chain-review>
     <h3>${icon("layers", 16)} Цепочка взаимодействий</h3>
     ${constraints}
@@ -230,6 +237,14 @@ function renderComposer(session: ChainSessionView, composerError: string | null)
         <button class="primary chain-send" type="submit" data-action="chain-send">${CHAIN_SEND_LABEL}</button>
       </form>`
     : "";
+  // Автор всегда может закончить интервью сам, как только дал минимум ответов:
+  // иначе сборка миссии зависела бы от того, решит ли модель остановиться.
+  const assembleNow = session.stage === "interview" && session.questionsAnswered >= session.questionsMin
+    ? `<div class="chain-actions">
+         <button class="secondary" type="button" data-action="chain-confirm">${CHAIN_CONFIRM_LABEL}</button>
+       </div>
+       <p class="chain-hint" data-chain-assemble-hint>${CHAIN_ASSEMBLE_HINT}</p>`
+    : "";
   const review = session.stage === "chain_ready" && session.summary !== null
     ? `${renderChainReview(session.summary)}
        <div class="chain-actions">
@@ -240,7 +255,7 @@ function renderComposer(session: ChainSessionView, composerError: string | null)
   const waitNote = session.stage === "generating"
     ? `<p class="chain-wait" data-chain-wait role="status">Собираем миссию по цепочке: сцены, диалоги, условия и финалы. Это занимает до пары минут.</p>`
     : "";
-  return `${sessionError}${composer}${review}${waitNote}${composerError !== null ? `<p class="chain-error" data-chain-composer-error role="alert">${escapeHtml(composerError)}</p>` : ""}`;
+  return `${sessionError}${composer}${assembleNow}${review}${waitNote}${composerError !== null ? `<p class="chain-error" data-chain-composer-error role="alert">${escapeHtml(composerError)}</p>` : ""}`;
 }
 
 function renderReady(view: Extract<PanelView, { kind: "ready" }>): string {
@@ -461,7 +476,14 @@ export function renderMissionChainPanel(host: MissionChainPanelHost): () => void
 
   const confirmChain = async (): Promise<void> => {
     if (busy || disposed) return;
-    if (state.view.kind !== "chat" || state.view.session.stage !== "chain_ready") return;
+    if (state.view.kind !== "chat") return;
+    const stage = state.view.session.stage;
+    // Собирать можно и из интервью: автор вправе сказать «достаточно» после
+    // минимального числа ответов, иначе кнопка была бы недостижима, пока
+    // модель сама не решит остановиться.
+    const canAssemble = stage === "chain_ready"
+      || (stage === "interview" && state.view.session.questionsAnswered >= state.view.session.questionsMin);
+    if (!canAssemble) return;
     const sessionId = state.view.session.sessionId;
     busy = true;
     setView({
@@ -480,7 +502,7 @@ export function renderMissionChainPanel(host: MissionChainPanelHost): () => void
     } catch (error) {
       if (disposed) return;
       host.onError(error);
-      setView({ kind: "chat", session: { ...state.view.session, stage: "chain_ready" }, composerError: CHAIN_CONFIRM_FAILED });
+      setView({ kind: "chat", session: { ...state.view.session, stage }, composerError: CHAIN_CONFIRM_FAILED });
     } finally {
       busy = false;
       render();

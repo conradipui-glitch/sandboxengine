@@ -155,3 +155,283 @@
 .ai-actions button {
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------------------------------ *
+ * Диалог «ИИ-помощник»: интервью → цепочка → черновик миссии.
+ *
+ * Классы .chain-* раньше не были описаны ни в одном листе: панель рисовалась
+ * браузерными умолчаниями. Здесь тот же договор, что у .ai-*: ничего не
+ * обрезаем многоточием, длинные реплики переносим, цели нажатия >= 32px.
+ * ------------------------------------------------------------------ */
+
+.chain-panel {
+  display: block;
+  color: inherit;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chain-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-2);
+}
+
+.chain-head-main h2,
+.chain-head h2 {
+  margin: 0 0 var(--gap-1);
+  font-size: 1.15rem;
+}
+
+.chain-head p {
+  margin: 0 0 var(--gap-4);
+  opacity: 0.85;
+}
+
+.chain-empty,
+.chain-unavailable,
+.chain-note,
+.chain-hint {
+  margin: var(--gap-2) 0;
+  opacity: 0.8;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.chain-unavailable {
+  border-left: 3px solid var(--border-strong);
+  padding: var(--gap-2) var(--gap-3);
+  opacity: 0.95;
+}
+
+.chain-field {
+  display: block;
+  margin-bottom: var(--gap-2);
+}
+
+.chain-field textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: var(--gap-1);
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-sunken);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chain-field textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.chain-composer {
+  display: block;
+  margin: var(--gap-3) 0;
+}
+
+.chain-send {
+  min-height: 40px;
+}
+
+.chain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  margin: var(--gap-3) 0;
+}
+
+.chain-actions button {
+  min-height: 40px;
+  overflow-wrap: anywhere;
+}
+
+.chain-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  margin: var(--gap-3) 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.chain-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  margin: var(--gap-3) 0;
+}
+
+.chain-message {
+  margin: 0;
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius-m);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chain-message-assistant {
+  border-left: 3px solid var(--info);
+  background: var(--info-bg);
+}
+
+.chain-message-author {
+  border-left: 3px solid var(--border-strong);
+}
+
+.chain-message-label {
+  display: block;
+  margin-bottom: var(--gap-1);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.chain-step {
+  margin: var(--gap-2) 0;
+  font-weight: 600;
+}
+
+.chain-wait {
+  margin: var(--gap-3) 0;
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border-accent);
+  background: var(--surface-soft);
+  overflow-wrap: anywhere;
+}
+
+.chain-wait::before {
+  content: "… ";
+  font-weight: 700;
+}
+
+.chain-error {
+  margin: var(--gap-3) 0;
+  padding: var(--gap-2) var(--gap-3);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-s);
+  background: var(--danger-bg);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chain-error::before {
+  content: "⚠ ";
+  font-weight: 700;
+}
+
+.chain-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.chain-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+.chain-restart {
+  align-self: flex-start;
+  min-height: 40px;
+}
+
+.chain-review,
+.chain-result {
+  margin: var(--gap-3) 0;
+  padding: var(--gap-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.chain-summary,
+.chain-endings,
+.chain-constraints,
+.chain-resources {
+  margin: var(--gap-2) 0;
+  padding-left: var(--gap-6);
+  overflow-wrap: anywhere;
+}
+
+.chain-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2) var(--gap-4);
+  padding-left: 0;
+  list-style: none;
+}
+
+.chain-summary strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.chain-scenes {
+  margin: var(--gap-2) 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.chain-scenes li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-1) var(--gap-3);
+  justify-content: space-between;
+  margin: var(--gap-2) 0;
+  padding: var(--gap-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chain-scenes li span {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.chain-narrative {
+  margin: var(--gap-2) 0;
+  padding-left: var(--gap-4);
+  border-left: 3px solid var(--border-subtle);
+  opacity: 0.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chain-idea {
+  margin: var(--gap-2) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chain-done,
+.chain-accepted {
+  margin: var(--gap-3) 0;
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius-s);
+  background: var(--success-bg);
+  overflow-wrap: anywhere;
+}
+
+.chain-accepted {
+  border-left: 3px solid var(--success);
+}
+
+.chain-accepted-failed {
+  border-left: 3px solid var(--danger);
+  background: var(--danger-bg);
+}

@@ -171,7 +171,7 @@ export function providerProbeSummary(status: ProviderStatusView | null): string 
     details.push(`код ответа ${status.probeHttpStatus}`);
   }
   const suffix = details.length === 0 ? "" : ` (${details.join(", ")})`;
-  if (cause === "connected") return `Проверка подключения прошла успешно${suffix}.`;
+  if (cause === "connected") return `Проверка подключения прошла успешно: модель ответила на пробную генерацию${suffix}.`;
   return `Проверка подключения не удалась${suffix}. ${providerCauseText(cause)}`;
 }
 
@@ -375,7 +375,7 @@ export function createProviderFormController(host: ProviderFormHost): ProviderFo
       if (dom.status !== null) dom.status.textContent = PROVIDER_CAUSE_TEXTS.key_missing;
       return;
     }
-    if (dom.status !== null) dom.status.textContent = "Проверяем подключение к провайдеру…";
+    if (dom.status !== null) dom.status.textContent = "Проверяем подключение: отправляем пробную генерацию — это может занять до минуты…";
     try {
       const response = await host.fetchImpl(`${actionUrl}/probe`, { method: "POST", headers: SETTINGS_HEADERS });
       if (disposed) return;
