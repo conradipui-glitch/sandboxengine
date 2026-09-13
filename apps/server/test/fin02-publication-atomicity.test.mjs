@@ -107,6 +107,7 @@ async function harness(t) {
     rollback: (targetReleaseId, expectedCurrentReleaseId, key) =>
       posts("/control/v1/projects/project/quests/quest/rollback", { targetReleaseId, expectedCurrentReleaseId }, key),
     catalog: () => get("/public/v1/missions"),
+    releases: () => get("/control/v1/projects/project/quests/quest/releases"),
     startSession: (identifier, key) => posts(`/public/v1/missions/${identifier}/sessions`, { sessionId: randomUUID(), initialWorld: world() }, key)
   };
 }
@@ -115,13 +116,29 @@ test("FIN-02/B03: a publish rejected by CAS leaves the unpublished mission out o
   const h = await harness(t);
   const v1 = await h.saveMission("A");
   await h.buildRelease("release-1");
+
+  const beforePublish = await h.releases();
+  assert.equal(beforePublish.status, 200);
+  assert.equal(beforePublish.body.publication, null, "до публикации записи каталога нет");
+
   const first = await h.publish("release-1", null);
   assert.equal(first.status, 200);
   const publicMissionId = first.body.catalog.publicMissionId;
 
+  // Панель публикации берёт слаг ссылки из текущей публикации: он должен быть
+  // виден в списке выпусков сразу после публикации, а не только в ответе на неё.
+  const afterPublish = await h.releases();
+  assert.equal(afterPublish.body.publication.slug, "cargo");
+  assert.equal(afterPublish.body.publication.releaseId, "release-1");
+  assert.equal(afterPublish.body.publication.status, "published");
+  assert.equal(afterPublish.body.publication.channel, "production");
+
   const unpublished = await h.unpublish(publicMissionId, "release-1");
   assert.equal(unpublished.status, 200);
   assert.equal((await h.publications.getPublicationForQuest("project", "quest")).status, "unlisted");
+
+  const afterUnpublish = await h.releases();
+  assert.equal(afterUnpublish.body.publication.status, "unlisted", "снятая миссия остаётся в истории, но не как живая ссылка");
 
   await h.saveMission("B");
   await h.buildRelease("release-2");

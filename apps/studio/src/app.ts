@@ -2367,6 +2367,12 @@ export class StudioApp {
     this.state.versionsError = null;
     try {
       this.state.versions = await loadVersionsReadModel(this.api, projectId, questId);
+      // Ссылка на сайте берётся из текущей публикации, поэтому панель показывает
+      // её и тогда, когда её открыли уже после публикации (не только сразу после
+      // нажатия «Опубликовать»). Снятая с публикации миссия (unlisted) по ссылке
+      // не открывается — тогда ссылки нет.
+      const publication = this.state.versions.publication;
+      this.state.publishedSlug = publication?.status === "published" ? publication.slug : null;
     } catch (error) {
       this.state.versionsError = error instanceof ControlApiError
         ? `Versions API: ${error.code}.`
@@ -3343,7 +3349,11 @@ export class StudioApp {
           const expected = this.state.versions?.currentReleaseId ?? null;
           await this.api.publishRelease(projectId, questId, release.releaseId, expected, `publish-panel-confirm-${releaseId}`);
           await this.refreshVersions(projectId, questId);
-          const slug = this.state.versions?.releases.find((item) => item.releaseId === release.releaseId)?.releaseId ?? release.releaseId;
+          // Слаг ссылки: у записи каталога он канонический; если сервер её ещё не
+          // отдал, ссылку собираем из releaseId (сайт понимает обе формы).
+          const slug = this.state.versions?.publication?.slug
+            ?? this.state.versions?.releases.find((item) => item.releaseId === release.releaseId)?.releaseId
+            ?? release.releaseId;
           this.state.publishedSlug = slug;
           this.state.message = `Опубликовано: ${slug}. Сайт отдаёт новую версию.`;
           this.render();

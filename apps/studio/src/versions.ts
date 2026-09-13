@@ -2,6 +2,7 @@ import {
   ControlApiClient,
   type DraftHistoryEntryView,
   type PublicationResultView,
+  type ReleaseListView,
   type ReleaseSummaryView
 } from "./api.js";
 import { escapeAttr, escapeHtml } from "./dom-escape.js";
@@ -63,6 +64,8 @@ export interface VersionsReadModel {
   readonly historyHasMore: boolean;
   readonly currentReleaseId: string | null;
   readonly releases: readonly ReleaseSummaryView[];
+  /** Текущая публикация (или null): из неё панель берёт слаг ссылки на сайте. */
+  readonly publication: ReleaseListView["publication"];
 }
 
 export async function loadVersionsReadModel(
@@ -80,7 +83,8 @@ export async function loadVersionsReadModel(
     history: [...historyPage.history],
     historyHasMore: historyPage.nextBeforeRevision !== null,
     currentReleaseId: releaseList.currentReleaseId,
-    releases: [...releaseList.releases]
+    releases: [...releaseList.releases],
+    publication: releaseList.publication ?? null
   });
 }
 

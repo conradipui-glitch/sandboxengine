@@ -159,6 +159,19 @@ export interface ReleaseSummaryView {
 export interface ReleaseListView {
   readonly currentReleaseId: string | null;
   readonly releases: readonly ReleaseSummaryView[];
+  /**
+   * Текущая публикация миссии (или null, если её нет). Панель публикации берёт
+   * отсюда слаг, чтобы показать рабочую ссылку и при открытии панели уже после
+   * публикации — не только сразу после нажатия «Опубликовать».
+   */
+  readonly publication: {
+    readonly publicMissionId: string;
+    readonly slug: string;
+    readonly releaseId: string;
+    readonly channel: string;
+    readonly status: string;
+    readonly publishedAtMs: number;
+  } | null;
 }
 
 export interface PublicationEventView {

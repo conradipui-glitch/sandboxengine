@@ -1382,15 +1382,27 @@ async function routeControlRequest(
     if (method === "GET") {
       if (!(await requireProjectRole(response, auth, identity, projectId, "tester"))) return;
       if (!(await store.getDraft(projectId, questId))) { sendNotFound(response); return; }
-      const [records, currentReleaseId, events] = await Promise.all([
+      const [records, currentReleaseId, events, publication] = await Promise.all([
         releases.store.listReleases(projectId, questId),
         releases.store.getCurrentReleaseId(projectId, questId),
-        releases.store.listPublicationEvents(projectId, questId)
+        releases.store.listPublicationEvents(projectId, questId),
+        releases.publicationStore ? releases.publicationStore.getPublicationForQuest(projectId, questId) : Promise.resolve(null)
       ]);
       const publishedIds = new Set(events.map((event) => event.toReleaseId));
       sendJson(response, 200, {
         currentReleaseId,
-        releases: records.map((release) => releaseSummaryView(release, currentReleaseId, publishedIds.has(release.releaseId)))
+        releases: records.map((release) => releaseSummaryView(release, currentReleaseId, publishedIds.has(release.releaseId))),
+        // Текущая публикация (или null): панель публикации берёт из неё слаг для
+        // ссылки на сайте, поэтому ссылка видна и когда панель открыли уже после
+        // публикации, а не только сразу после нажатия «Опубликовать».
+        publication: publication === null ? null : {
+          publicMissionId: publication.publicMissionId,
+          slug: publication.slug,
+          releaseId: publication.releaseId,
+          channel: publication.channel,
+          status: publication.status,
+          publishedAtMs: publication.publishedAtMs
+        }
       });
       return;
     }

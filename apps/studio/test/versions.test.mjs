@@ -57,6 +57,14 @@ test("B09-03 Versions read model joins only server history and release truth", a
     async listReleases() {
       return {
         currentReleaseId: "release-2",
+        publication: {
+          publicMissionId: "mission:p:q",
+          slug: "master-workshop",
+          releaseId: "release-2",
+          channel: "production",
+          status: "published",
+          publishedAtMs: 1700000000000
+        },
         releases: [
           {
             releaseId: "release-1",
@@ -102,6 +110,8 @@ test("B09-03 Versions read model joins only server history and release truth", a
   const model = await loadVersionsReadModel(api, "p", "q");
   assert.equal(model.currentRevision, 2);
   assert.equal(model.currentReleaseId, "release-2");
+  assert.equal(model.publication?.slug, "master-workshop");
+  assert.equal(model.publication?.releaseId, "release-2");
   assert.equal(Object.isFrozen(model), true);
 
   const html = renderVersionsPanel(model, { draftRevision: 2, contentHash: "b".repeat(64) }, "server saved");
