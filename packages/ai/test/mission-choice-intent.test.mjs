@@ -101,6 +101,34 @@ test("a scene without choices cannot be resolved at all", async () => {
   assert.equal(provider.callCount, 0);
 });
 
+test("asks for a budget that survives a reasoning model", async () => {
+  // Рассуждающая модель тратит бюджет на reasoning_content: при 400 токенах
+  // `content` приходит пустым и разбор молча падает. Бюджет обязан иметь запас.
+  let seen = null;
+  const provider = {
+    capabilities: { text: true, jsonObject: true },
+    async generate(request) {
+      seen = request;
+      return {
+        ok: true,
+        output: { format: "json_object", value: { kind: "choice", choiceId: "hide-carton", reason: "Спрятать картон." } },
+        usage: { inputTokens: 10, outputTokens: 5 },
+        modelId: "test",
+        providerRequestId: null
+      };
+    }
+  };
+  const interpreter = new ModelMissionChoiceInterpreter({ provider, model: "reasoning-model" });
+  assert.equal((await interpreter.interpret(request())).kind, "resolved");
+  assert.ok(seen.maxOutputTokens >= 1_024, `бюджет ${seen.maxOutputTokens} слишком мал для рассуждающей модели`);
+});
+
+test("rejects an unusable output budget at construction", () => {
+  const provider = { capabilities: { text: true, jsonObject: true }, async generate() { throw new Error("unused"); } };
+  assert.throws(() => new ModelMissionChoiceInterpreter({ provider, model: "m", maxOutputTokens: 400 }), RangeError);
+  assert.throws(() => new ModelMissionChoiceInterpreter({ provider, model: "m", maxOutputTokens: 99_999 }), RangeError);
+});
+
 test("decideMissionChoice refuses anything but the two authored shapes", () => {
   assert.equal(decideMissionChoice({ kind: "choice", choiceId: "nope", reason: "ок" }, options), null);
   assert.equal(decideMissionChoice({ kind: "choice", choiceId: "hide-carton", reason: "" }, options), null);

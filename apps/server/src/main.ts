@@ -79,7 +79,7 @@ const missionChoiceInterpreter = {
       allowLocal: true,
       capabilities: { text: true, jsonObject: true }
     });
-    return new ModelMissionChoiceInterpreter({ provider, model: summary.model }).interpret(request);
+    return new ModelMissionChoiceInterpreter({ provider, model: summary.model, maxOutputTokens: 2_048 }).interpret(request);
   }
 };
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);

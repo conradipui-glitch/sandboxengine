@@ -75,8 +75,11 @@ export class ModelMissionChoiceInterpreter implements MissionChoiceInterpreter {
     if (typeof options.model !== "string" || options.model.trim().length === 0) {
       throw new TypeError("mission choice model must be a non-empty string");
     }
-    const maxOutputTokens = options.maxOutputTokens ?? 400;
-    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 32 || maxOutputTokens > 4_096) {
+    // Модель с рассуждением тратит бюджет сначала на reasoning_content, и при
+    // малом лимите `content` приходит пустым. 400 токенов хватало на обычную
+    // модель и молча ломало разбор на рассуждающей, поэтому запас обязателен.
+    const maxOutputTokens = options.maxOutputTokens ?? 2_048;
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1_024 || maxOutputTokens > 4_096) {
       throw new RangeError("mission choice maxOutputTokens outside supported bounds");
     }
     this.#provider = options.provider;
