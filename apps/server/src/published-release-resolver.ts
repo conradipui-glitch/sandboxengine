@@ -16,10 +16,34 @@ import { preflightStoredControlRelease } from "./release-authority.js";
 import type { PublishedSessionBinding } from "./published-session-binding.js";
 import { isId } from "./input-guards.js";
 
+export interface PublishedRuntimeMetadata {
+  readonly schemaVersion: 1;
+  readonly locations: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly description: string;
+  }[];
+  readonly participants: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly description: string;
+  }[];
+  readonly resources: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly description: string;
+    readonly unit: string;
+    readonly min: number;
+    readonly max: number;
+  }[];
+}
+
 export interface PublishedRuntimeTemplate {
   readonly sourceProjectId: string;
   readonly release: PinnedReleaseIdentity;
   readonly initialState: WorldState;
+  /** Safe author-facing labels for the public player; values live in initialState/session.world. */
+  readonly metadata: PublishedRuntimeMetadata;
   readonly executor: ExplicitActionExecutor | null;
   readonly intentCatalog: readonly IntentActionCatalogEntry[];
 }
@@ -115,6 +139,27 @@ export function materializePublishedRuntimeTemplate(
   });
   if (!hasValidWorldStateReferences(state)) return frozen({ ok: false, code: "RELEASE_PREFLIGHT_FAILED" });
 
+  const blocks = release.compiledArtifact.blocks;
+  const metadata: PublishedRuntimeMetadata = deepFreeze({
+    schemaVersion: 1,
+    locations: blocks
+      .filter((block) => block.kind === "core.location")
+      .map((block) => ({ id: block.id, title: block.title, description: block.description })),
+    participants: blocks
+      .filter((block) => block.kind === "core.character")
+      .map((block) => ({ id: block.id, title: block.title, description: block.description })),
+    resources: blocks
+      .filter((block) => block.kind === "core.resource")
+      .map((block) => ({
+        id: block.id,
+        title: block.title,
+        description: block.description,
+        unit: block.data.unit,
+        min: block.data.min,
+        max: block.data.max
+      }))
+  });
+
   return deepFreeze({
     ok: true,
     template: {
@@ -125,6 +170,7 @@ export function materializePublishedRuntimeTemplate(
         contentHash: release.compiledContentHash.toLowerCase()
       },
       initialState: state,
+      metadata,
       executor,
       intentCatalog: action === null ? [] : createPaintIntentCatalog()
     }

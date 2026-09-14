@@ -2240,7 +2240,13 @@ async function routePublicMissionSession(
       initialWorld: authoritativeWorld as never
     });
     if (result.kind === "created" || result.kind === "replay") {
-      sendJson(response, result.kind === "created" ? 201 : 200, { mission, session: result.session, credential, ...(result.kind === "replay" ? { replay: true } : {}) });
+      sendJson(response, result.kind === "created" ? 201 : 200, {
+        mission,
+        session: result.session,
+        runtime: materialized.template.metadata,
+        credential,
+        ...(result.kind === "replay" ? { replay: true } : {})
+      });
     } else if (result.kind === "project_not_found" || result.kind === "quest_not_found" || result.kind === "mission_not_found") {
       sendNotFound(response);
     } else if (result.kind === "session_binding_conflict" || result.kind === "idempotency_key_reused") {

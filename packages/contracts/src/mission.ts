@@ -82,8 +82,12 @@ export interface MissionSceneScreen {
 
 export interface MissionIntroScreen {
   readonly id: string;
+  /** Short authored context above the title (place/date or speaker). */
+  readonly kicker?: string;
   readonly title: string;
   readonly body: string;
+  /** Authored takeaway below the body. */
+  readonly note?: string;
   readonly background: AssetRefV2 | null;
 }
 

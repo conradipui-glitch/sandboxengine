@@ -188,8 +188,19 @@ test("seed-real-content: 12 материалов, миссия с 6 сценам
     }
     assert.ok(reachable.size >= 2, `expected >=2 reachable endings, got ${reachable.size}`);
     for (const endingId of reachable) assert.ok(endingIds.has(endingId), `reachable ending ${endingId} not declared`);
+    assert.equal(mission.screens.intros.length, 5, "published Florence must keep the five original intro screens");
+    assert.deepEqual(
+      mission.screens.intros.map((intro) => intro.id),
+      ["workshop", "people", "condition", "contract", "signature"]
+    );
+    assert.equal(mission.screens.intros[0].kicker, "Флоренция · 17 апреля 1512 года");
+    assert.equal(mission.screens.intros[4].note, "Вы — хозяин мастерской. Первый ответ за вами");
+    assert.equal(mission.defaults.animationPreset, "breath", "published Florence must animate authored scene layers");
     // Фон, музыка и портретные слои ссылаются на реально загруженные материалы.
     const hashes = new Set(assets.map((entry) => entry.hash));
+    for (const intro of mission.screens.intros) {
+      assert.ok(intro.background && hashes.has(intro.background.hash), "intro background ref must resolve to a loaded asset");
+    }
     for (const screen of Object.values(mission.screens.scenes)) {
       assert.ok(screen.background && hashes.has(screen.background.hash), "scene background ref must resolve to a loaded asset");
       assert.ok(screen.music && hashes.has(screen.music.hash), "scene music ref must resolve to a loaded asset");

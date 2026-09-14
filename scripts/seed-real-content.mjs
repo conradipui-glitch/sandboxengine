@@ -141,6 +141,52 @@ const SCENE_MUSIC = Object.freeze({
 });
 const ENDING_SCREEN = Object.freeze({ background: "workshop-background", music: "dawn-finale" });
 
+// Пять экранов вступления из исходного публичного player (App.tsx:introDecks).
+// Здесь это содержимое миссии, поэтому оно проходит через публикацию и доступно
+// любому renderer'у по контракту, а не включается по специальному scenarioId.
+const INTRO_SCREENS = Object.freeze([
+  {
+    id: "workshop",
+    kicker: "Флоренция · 17 апреля 1512 года",
+    title: "Сегодня вы — хозяин мастерской",
+    body: "Вы художник. Вместе с учениками вы расписываете большую стену для кардинала Веттори — богатого церковного заказчика. На стене уже видны фигуры людей, но небо над ними ещё не закончено. Сегодня утром кардинал неожиданно сообщил: вечером он приведёт гостей смотреть работу.",
+    note: "Показ назначен раньше, чем вы рассчитывали",
+    backgroundId: "workshop-background"
+  },
+  {
+    id: "people",
+    kicker: "Джулиано Белли · ваш ученик",
+    title: "«Мастер, я ещё могу работать»",
+    body: "Джулиано девятнадцать. Со вчерашнего вечера у него жар, а руки дрожат от болезни и долгой работы. Он боится потерять заработок и снова берётся за кисть. Именно он рисует небо. Если отпустить его к врачу, эту работу придётся закончить вам или другому ученику.",
+    note: "Джулиано заболел. До утра ученики ждут зарплату",
+    backgroundId: "workshop-background"
+  },
+  {
+    id: "condition",
+    kicker: "Бартоломео Риччи · старшина гильдии",
+    title: "Краску оплатили. Но её не хватает",
+    body: "Риччи представляет гильдию — объединение городских художников. Она купила для вас синий пигмент в долг. В деревянном ящике должна была быть полная партия баночек с краской, но пришла лишь часть. На крышке сломана восковая печать дома кардинала: ящик вскрывали по дороге. Риччи хочет сверить доставку и понять, за что теперь платить.",
+    note: "След есть. Кто виноват — пока неизвестно",
+    backgroundId: "guildhall-background"
+  },
+  {
+    id: "contract",
+    kicker: "Лука Орсини · секретарь кардинала",
+    title: "Деньги сейчас — но без вашего имени",
+    body: "Под вечер приходит Лука. Он ведёт дела кардинала и приносит деньги: часть оплаты можно получить сегодня. Есть условие: на готовой стене должно остаться только имя кардинала как покровителя искусств. Имени художника не будет. Лука ждёт, согласитесь ли вы. Деньги помогли бы заплатить ученикам и купить краску.",
+    note: "Заказчик предлагает оплату до завершения работы",
+    backgroundId: "piazza-background"
+  },
+  {
+    id: "signature",
+    kicker: "В мастерской · вечер",
+    title: "Лука ставит сумку на стол",
+    body: "«Что мне передать кардиналу?» — спрашивает он. Джулиано замер у стены с кистью в руке. Рядом стоит ящик, в котором не хватает оплаченной краски. Вам нужно решить, что делать с заказом и людьми до утра. Начните с разговора, предложите свои условия или сделайте то, чего от вас сейчас никто не ждёт.",
+    note: "Вы — хозяин мастерской. Первый ответ за вами",
+    backgroundId: "workshop-background"
+  }
+]);
+
 // Трансформации слоёв — дословные значения по умолчанию сайта
 // (mission-legacy-adapter.ts: SIDE_X = { left: 0.24, center: 0.5, right: 0.76 },
 //  y = 0.62, scale = 1, rotation = 0, flipH/flipV = false, opacity = 1, z = 10 + index).
@@ -380,11 +426,11 @@ async function main() {
       },
       fieldsWithoutSource: [
         "scene.dialogue — статических реплик сцены-открытия в источниках нет, оставлено []",
-        "screens.intros — вступительного экрана в источниках нет, оставлено []",
         "choice.conditions — условные ветки (cases) narrative-beats не выражены одним выбором, оставлено []",
         "ending.text — только первый абзац нейтральной ветки florence-engine.ts:ending()"
       ],
       derivedFields: [
+        "screens.intros <- исходный публичный player App.tsx:introDecks[florence-workshop]",
         "listing.summary <- florence.ts:createFlorenceState objective",
         "listing.playerRole <- florence.ts:createFlorenceState role",
         "listing.period <- florence.ts date 1512-04-17",
@@ -456,7 +502,18 @@ function buildMission({ release, beats, refs }) {
       text: ENDING_TEXT[option.terminal.reason] ?? ""
     }));
 
-  const screens = { intros: [], scenes: {}, endings: {} };
+  const screens = {
+    intros: INTRO_SCREENS.map((intro) => ({
+      id: intro.id,
+      kicker: intro.kicker,
+      title: intro.title,
+      body: intro.body,
+      note: intro.note,
+      background: connection(intro.backgroundId)
+    })),
+    scenes: {},
+    endings: {}
+  };
   for (const beat of beats) {
     const location = SCENE_LOCATION[beat.id];
     const backgroundId = LOCATION_BACKGROUND[location];
@@ -514,7 +571,7 @@ function buildMission({ release, beats, refs }) {
     },
     story: { entrySceneId: beats[0].id, scenes, endings },
     screens,
-    defaults: { background: null, theme: "default", animationPreset: "none" }
+    defaults: { background: null, theme: "florence-editorial", animationPreset: "breath" }
   };
 }
 

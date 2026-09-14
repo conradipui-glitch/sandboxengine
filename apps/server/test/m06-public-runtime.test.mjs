@@ -38,7 +38,17 @@ test("M06 public mission runtime pins the published release and keeps credential
   });
   try {
     await store.createProject({ projectId: "project", title: "Проект" });
-    await store.createQuest({ projectId: "project", questId: "quest", title: "Квест", entryLocationId: "start", initialBlocks: [{ schemaVersion: "1.0", id: "start", kind: "core.location", title: "Старт", description: "", data: {} }] });
+    await store.createQuest({
+      projectId: "project",
+      questId: "quest",
+      title: "Квест",
+      entryLocationId: "start",
+      initialBlocks: [
+        { schemaVersion: "1.0", id: "start", kind: "core.location", title: "Перрон", description: "Ночной перрон.", data: {} },
+        { schemaVersion: "1.0", id: "porter", kind: "core.character", title: "Носильщик", description: "Ждёт приказа.", data: { initialLocationId: "start", initialStatus: "waiting" } },
+        { schemaVersion: "1.0", id: "coal", kind: "core.resource", title: "Запас угля", description: "Топливо для поезда.", data: { unit: "тонна", initialValue: 3, min: 0, max: 10 } }
+      ]
+    });
     const saved = await store.saveMission("project", "quest", { baseRevision: 0, mission: mission(), idempotencyKey: "save-public-mission", actorUserId: "owner" });
     assert.equal(saved.kind, "saved");
     // A real built-and-frozen release: the public session's start world is
@@ -63,6 +73,12 @@ test("M06 public mission runtime pins the published release and keeps credential
     assert.equal(created.status, 201);
     assert.equal(created.body.session.currentSceneId, "start");
     assert.equal(typeof created.body.credential, "string");
+    assert.deepEqual(created.body.runtime, {
+      schemaVersion: 1,
+      locations: [{ id: "start", title: "Перрон", description: "Ночной перрон." }],
+      participants: [{ id: "porter", title: "Носильщик", description: "Ждёт приказа." }],
+      resources: [{ id: "coal", title: "Запас угля", description: "Топливо для поезда.", unit: "тонна", min: 0, max: 10 }]
+    });
     const denied = await req(base, "/public/v1/missions/cargo/sessions/browser-session-1");
     assert.equal(denied.status, 401);
     const got = await req(base, "/public/v1/missions/cargo/sessions/browser-session-1", { headers: { authorization: `Bearer ${created.body.credential}` } });
