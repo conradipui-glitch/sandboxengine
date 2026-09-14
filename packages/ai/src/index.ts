@@ -5,6 +5,7 @@ export * from "./profile-router.js";
 export * from "./provider.js";
 export * from "./quota.js";
 export * from "./intent.js";
+export * from "./mission-choice-intent.js";
 export * from "./narrative.js";
 export * from "./agent-backend.js";
 export * from "./mission-writer.js";

@@ -567,7 +567,9 @@ function buildMission({ release, beats, refs }) {
       place: "Флоренция",
       playerRole: "Художник и хозяин мастерской",
       estimatedMinutes: estimateMinutes(beats),
-      supportedModes: ["choice"]
+      // Свободный ход открыт: текст игрока сводится к одному из авторских
+      // вариантов текущей сцены, а не превращается в выдуманную механику.
+      supportedModes: ["choice", "free-input"]
     },
     story: { entrySceneId: beats[0].id, scenes, endings },
     screens,

@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 // @ts-ignore — Node 24.19.0 provides node:crypto; repository intentionally has no @types/node dependency yet.
 import { createHash } from "node:crypto";
 import { canonicalStringify } from "@living-history/core";
+import type { MissionChoiceInterpreter } from "@living-history/ai";
+import { resolveMissionTextTurn } from "./mission-text-turn.js";
 import {
   MAX_LHQUEST_ARCHIVE_BYTES,
   createControlOpaqueSecret,
@@ -82,6 +84,10 @@ const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const DEFAULT_LOGIN_WINDOW_MS = 60_000;
 const DEFAULT_LOGIN_COOLDOWN_MS = 60_000;
 const DEFAULT_MAX_LOGIN_ATTEMPTS = 5;
+/** Предел свободного хода: столько же, сколько помещается в поле ввода игрока. */
+const MAX_PUBLIC_MISSION_TEXT_TURN_CHARS = 700;
+/** Сколько ждём разбор текста, прежде чем честно отказать и не тратить ход. */
+const PUBLIC_MISSION_TEXT_TURN_TIMEOUT_MS = 45_000;
 
 export interface ControlGateIdentityOptions {
   /**
@@ -125,6 +131,12 @@ export interface ControlServerDependencies {
   readonly boardStore?: BoardDocumentStore;
   readonly collaborationStore?: CollaborationStore;
   readonly missionStore?: MissionDocumentStore & MissionSessionStore;
+  /**
+   * Свободный ход опубликованной миссии: текст игрока → авторский вариант.
+   * Без него маршрут хода принимает только авторские варианты, а свободный
+   * ввод честно отвечает `MISSION_TURN_TEXT_UNAVAILABLE`.
+   */
+  readonly missionChoiceInterpreter?: MissionChoiceInterpreter;
   readonly assetStorage?: LocalAssetStore;
   readonly assetLibrary?: ProjectAssetLibrary;
   readonly releases?: ControlReleaseModeOptions;
@@ -223,6 +235,7 @@ export function createControlHttpServer(dependencies: ControlServerDependencies)
         boardStore,
         collaborationStore,
         missionStore,
+        dependencies.missionChoiceInterpreter ?? null,
         dependencies.assetStorage ?? null,
         assetLibrary,
         releases,
@@ -298,6 +311,7 @@ async function routeControlRequest(
   boardStore: BoardDocumentStore | null,
   collaborationStore: CollaborationStore | null,
   missionStore: (MissionDocumentStore & MissionSessionStore) | null,
+  missionChoiceInterpreter: MissionChoiceInterpreter | null,
   assetStorage: LocalAssetStore | null,
   assetLibrary: ProjectAssetLibrary | null,
   releases: ControlReleaseModeOptions | null,
@@ -362,7 +376,7 @@ async function routeControlRequest(
 
   const publicSessionMatch = /^\/public\/v1\/missions\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})\/sessions(?:\/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})(\/turns)?)?$/.exec(publicPathname);
   if (publicSessionMatch && releases?.publicationStore && missionStore) {
-    await routePublicMissionSession(request, response, method, publicSessionMatch, releases, missionStore);
+    await routePublicMissionSession(request, response, method, publicSessionMatch, releases, missionStore, missionChoiceInterpreter);
     return;
   }
 
@@ -2155,7 +2169,8 @@ async function routePublicMissionSession(
   method: string,
   match: RegExpExecArray,
   releases: ControlReleaseModeOptions,
-  missionStore: MissionDocumentStore & MissionSessionStore
+  missionStore: MissionDocumentStore & MissionSessionStore,
+  missionChoiceInterpreter: MissionChoiceInterpreter | null
 ): Promise<void> {
   const identifier = match[1] ?? "";
   const sessionId = match[2] ?? null;
@@ -2286,18 +2301,53 @@ async function routePublicMissionSession(
     const idempotencyKey = requireIdempotencyKey(request, response);
     if (idempotencyKey === null) return;
     const body = await requireJsonObject(request, response);
-    if (body === null || !hasExactKeys(body, ["baseTurn", "choiceId"]) || !isRevision(body.baseTurn) || !isId(body.choiceId)) {
+    if (body === null) return;
+    // Два законных хода: авторский вариант (`choiceId`) и свободный текст
+    // (`input.kind = "text"`), который сводится к авторскому варианту текущей
+    // сцены. Ничего третьего маршрут не принимает.
+    const isChoiceTurn = hasExactKeys(body, ["baseTurn", "choiceId"]) && isRevision(body.baseTurn) && isId(body.choiceId);
+    const isTextTurn = hasExactKeys(body, ["baseTurn", "input"]) && isRevision(body.baseTurn) && isTextTurnInput(body.input);
+    if (!isChoiceTurn && !isTextTurn) {
       sendJson(response, 400, { error: { code: "INVALID_PUBLIC_MISSION_TURN" } });
       return;
     }
+    let choiceId: string;
+    if (isChoiceTurn) {
+      choiceId = body.choiceId as string;
+    } else {
+      if (missionChoiceInterpreter === null) {
+        sendJson(response, 503, { error: { code: "MISSION_TURN_TEXT_UNAVAILABLE" } });
+        return;
+      }
+      const textInput = body.input as { readonly text: string };
+      const resolution = await resolveMissionTextTurn({
+        interpreter: missionChoiceInterpreter,
+        doc: mission as unknown as Parameters<typeof resolveMissionTextTurn>[0]["doc"],
+        session: existing as unknown as Parameters<typeof resolveMissionTextTurn>[0]["session"],
+        text: textInput.text,
+        deadlineAtMs: Date.now() + PUBLIC_MISSION_TEXT_TURN_TIMEOUT_MS
+      });
+      if (resolution.kind === "unsupported") {
+        // Ход не тратится: позиция, ревизия и мир не меняются.
+        sendJson(response, 422, { error: { code: "MISSION_TURN_TEXT_UNSUPPORTED", explanation: resolution.explanation } });
+        return;
+      }
+      if (resolution.kind === "failed") {
+        sendJson(response, resolution.code === "invalid_context" ? 422 : 503, { error: { code: "MISSION_TURN_TEXT_FAILED", reason: resolution.code } });
+        return;
+      }
+      choiceId = resolution.choiceId;
+    }
     const result = await missionStore.applyMissionTurn(sessionId, {
       baseTurn: body.baseTurn,
-      choiceId: body.choiceId,
+      choiceId,
       idempotencyKey,
       actorUserId: `public:${sessionPublicMissionId}`
     });
     if (result.kind === "applied" || result.kind === "replay") {
-      sendJson(response, 200, { mission, session: result.session, target: result.target, ...(result.kind === "replay" ? { replay: true } : {}) });
+      // `choiceId` — применённый авторский вариант. Для свободного хода это
+      // единственный способ узнать, к какому варианту сведён текст игрока.
+      sendJson(response, 200, { mission, session: result.session, target: result.target, choiceId, ...(result.kind === "replay" ? { replay: true } : {}) });
     } else if (result.kind === "session_not_found") sendNotFound(response);
     else if (result.kind === "turn_conflict") sendJson(response, 409, { error: { code: "MISSION_TURN_CONFLICT", currentTurn: result.currentTurn } });
     else if (result.kind === "idempotency_key_reused") sendJson(response, 409, { error: { code: "MISSION_IDEMPOTENCY_KEY_REUSED" } });
@@ -3473,6 +3523,19 @@ function isTitle(value: unknown): value is string {
 
 function isRevision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Свободный ход опубликованной миссии. Границы те же, что у поля ввода игрока:
+ * от одного видимого знака до `MAX_PUBLIC_MISSION_TEXT_TURN_CHARS`.
+ */
+function isTextTurnInput(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  const input = value as { kind?: unknown; text?: unknown };
+  if (input.kind !== "text") return false;
+  if (typeof input.text !== "string") return false;
+  const text = input.text.trim();
+  return text.length >= 1 && text.length <= MAX_PUBLIC_MISSION_TEXT_TURN_CHARS;
 }
 
 function isLoopbackHost(host: string): boolean {

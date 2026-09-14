@@ -3,11 +3,18 @@ import { mkdirSync } from "node:fs";
 // @ts-ignore — runtime is pinned to Node 24.19.0; no @types/node dependency is installed yet.
 import { dirname, join, resolve } from "node:path";
 import {
+  SQLiteControlProviderConnectionStore,
   SQLiteControlPublicationStore,
   SQLiteControlReleaseStore,
   SQLiteControlSecurityStore,
   SQLiteControlStore
 } from "@living-history/control";
+import {
+  ModelMissionChoiceInterpreter,
+  OpenAiCompatibleModelProvider,
+  providerPresetById,
+  type MissionChoiceRequest
+} from "@living-history/ai";
 import { LocalAssetStore } from "@living-history/assets";
 import { buildPluginRegistry } from "@living-history/plugins";
 import { DICE_CHECK_MANIFEST } from "@living-history/plugins/dice-check";
@@ -48,6 +55,33 @@ const releaseStore = new SQLiteControlReleaseStore({ path: databasePath });
 const publicationStore = new SQLiteControlPublicationStore({ path: databasePath });
 const publishedBindings = new SQLitePublishedSessionBindingStore({ path: databasePath });
 const controlSecurity = controlAuthenticated ? new SQLiteControlSecurityStore({ path: databasePath }) : null;
+/**
+ * Свободный ход опубликованной миссии читает ту же строку подключения, что автор
+ * сохранил в Studio: ключ остаётся в границах серверного вызова провайдера и
+ * наружу не возвращается. Строка читается на каждый ход, поэтому смена модели
+ * или ключа автором не требует перезапуска движка.
+ */
+const providerConnections = new SQLiteControlProviderConnectionStore({ path: databasePath });
+const providerScope = Object.freeze({ projectId: "local-operator", userId: "local-owner" });
+
+const missionChoiceInterpreter = {
+  async interpret(request: MissionChoiceRequest) {
+    const summary = await providerConnections.getConnection(providerScope.projectId, providerScope.userId);
+    if (!summary) return { kind: "failed", code: "provider_failure" } as const;
+    const credential = await providerConnections.revealApiKey(providerScope);
+    if (credential === null) return { kind: "failed", code: "provider_failure" } as const;
+    const preset = providerPresetById(summary.providerPreset);
+    const baseUrl = String(summary.baseUrl ?? "").trim().length > 0 ? summary.baseUrl : preset?.defaultBaseUrl ?? null;
+    if (baseUrl === null) return { kind: "failed", code: "invalid_context" } as const;
+    const provider = new OpenAiCompatibleModelProvider({
+      baseUrl,
+      credential,
+      allowLocal: true,
+      capabilities: { text: true, jsonObject: true }
+    });
+    return new ModelMissionChoiceInterpreter({ provider, model: summary.model }).interpret(request);
+  }
+};
 const builtPluginRegistry = buildPluginRegistry([DICE_CHECK_MANIFEST]);
 if (!builtPluginRegistry.ok) {
   throw new Error(`Production plugin registry failed: ${builtPluginRegistry.code}`);
@@ -89,6 +123,7 @@ const control = createControlHttpServer({
   store: controlStore,
   boardStore: controlStore,
   missionStore: controlStore,
+  missionChoiceInterpreter,
   assetLibrary: controlStore,
   assetStorage: new LocalAssetStore(join(dirname(databasePath), "assets")),
   releases: {
@@ -116,6 +151,7 @@ async function shutdown(): Promise<void> {
   await control.close();
   await runtime.close();
   controlSecurity?.close();
+  providerConnections.close();
   publishedBindings.close();
   publicationStore.close();
   releaseStore.close();
