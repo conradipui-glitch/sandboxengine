@@ -2316,7 +2316,12 @@ async function routePublicMissionSession(
       choiceId = body.choiceId as string;
     } else {
       if (missionChoiceInterpreter === null) {
-        sendJson(response, 503, { error: { code: "MISSION_TURN_TEXT_UNAVAILABLE" } });
+        sendJson(response, 503, {
+          error: {
+            code: "MISSION_TURN_TEXT_UNAVAILABLE",
+            explanation: "Эта миссия играется выбором вариантов: свободный ход здесь не открыт."
+          }
+        });
         return;
       }
       const textInput = body.input as { readonly text: string };
@@ -2333,7 +2338,15 @@ async function routePublicMissionSession(
         return;
       }
       if (resolution.kind === "failed") {
-        sendJson(response, resolution.code === "invalid_context" ? 422 : 503, { error: { code: "MISSION_TURN_TEXT_FAILED", reason: resolution.code } });
+        // Ход не применён: игрок должен видеть, что мир не пострадал и ход не
+        // потрачен, а не голый код отказа.
+        sendJson(response, resolution.code === "invalid_context" ? 422 : 503, {
+          error: {
+            code: "MISSION_TURN_TEXT_FAILED",
+            reason: resolution.code,
+            explanation: "Не удалось разобрать ход — мир не изменился, ход не потрачен. Попробуйте сформулировать иначе или выберите вариант."
+          }
+        });
         return;
       }
       choiceId = resolution.choiceId;

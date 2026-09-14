@@ -116,6 +116,8 @@ test("a provider failure is a failure, not a refusal", async () => {
     const failed = await turn(stand, "text-turn-failed", { baseTurn: 0, input: { kind: "text", text: "Подожду" } });
     assert.equal(failed.status, 503);
     assert.equal(failed.body.error.code, "MISSION_TURN_TEXT_FAILED");
+    // Отказ обязан объяснять игроку, что мир не изменился и ход не потрачен.
+    assert.match(failed.body.error.explanation, /ход не потрачен/);
     assert.equal(failed.body.error.reason, "provider_failure");
   } finally {
     await stand.close();
