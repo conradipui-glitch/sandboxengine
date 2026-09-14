@@ -131,9 +131,32 @@ test("rejects an unusable output budget at construction", () => {
 
 test("decideMissionChoice refuses anything but the two authored shapes", () => {
   assert.equal(decideMissionChoice({ kind: "choice", choiceId: "nope", reason: "ок" }, options), null);
-  assert.equal(decideMissionChoice({ kind: "choice", choiceId: "hide-carton", reason: "" }, options), null);
   assert.equal(decideMissionChoice({ kind: "none", explanation: "" }, options), null);
   assert.equal(decideMissionChoice({ kind: "other" }, options), null);
   assert.equal(decideMissionChoice(null, options), null);
   assert.deepEqual(decideMissionChoice({ kind: "none", explanation: "не подходит" }, options), { kind: "unsupported", explanation: "не подходит" });
+});
+
+test("a renamed id key or a forgotten reason never costs the player the turn", () => {
+  // Живой прогон: модель ответила {"kind":"choice","id":"hide-carton"}, а на
+  // повторе {"kind":"choice","choice":"hide-carton"}. Решение то же самое, и
+  // терять на этом ход нельзя.
+  for (const alias of ["choiceId", "id", "choice"]) {
+    const decision = decideMissionChoice({ kind: "choice", [alias]: "hide-carton" }, options);
+    assert.equal(decision.kind, "resolved");
+    assert.equal(decision.choiceId, "hide-carton");
+    // Причина не пришла — берём авторское название варианта, а не пустую строку.
+    assert.equal(decision.reason, "Спрятать картон до утра");
+  }
+  // Алиас не ослабляет проверку: id вне каталога остаётся отказом.
+  assert.equal(decideMissionChoice({ kind: "choice", id: "burn-the-workshop" }, options), null);
+});
+
+test("the system prompt states the exact answer schema", async () => {
+  const provider = new ScriptedModelProvider([json({ kind: "choice", choiceId: "hide-carton", reason: "ок" })]);
+  await new ModelMissionChoiceInterpreter({ provider, model: "test-model" }).interpret(request());
+  const system = provider.capturedRequests[0].messages[0].content;
+  assert.match(system, /choiceId/);
+  assert.match(system, /"kind":"none"/);
+  assert.match(system, /do not rename it/);
 });
