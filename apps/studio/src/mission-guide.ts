@@ -257,7 +257,11 @@ export const MISSION_GUIDE_STYLE_ID = "mission-guide-styles";
 
 /** Лист помощника: только токены темы — тёмная, светлая и графит выглядят одинаково верно. */
 export const MISSION_GUIDE_STYLE = `
-  .lh-mission-guide{position:fixed;left:16px;bottom:64px;z-index:880;width:min(340px,calc(100vw - 32px));max-height:min(72vh,600px);overflow:auto;padding:16px;border:1px solid var(--border-strong);border-radius:var(--radius-m);background:var(--surface);color:var(--text);box-shadow:0 14px 40px var(--shadow-md);font-family:var(--font-body)}
+  /* Помощник стоит справа от колонки библиотеки (240px): у левого края он
+     накрывал саму форму миссии, к которой зовёт. При свёрнутой библиотеке
+     возвращается к краю. */
+  .lh-mission-guide{position:fixed;left:256px;bottom:64px;z-index:880;width:min(340px,calc(100vw - 32px));max-height:min(72vh,600px);overflow:auto;padding:16px;border:1px solid var(--border-strong);border-radius:var(--radius-m);background:var(--surface);color:var(--text);box-shadow:0 14px 40px var(--shadow-md);font-family:var(--font-body)}
+  body:has(.ed-body.library-hidden) .lh-mission-guide{left:16px}
   .lh-mission-guide .mg-heading{display:flex;align-items:start;justify-content:space-between;gap:10px}
   .lh-mission-guide .mg-kicker{color:var(--muted);font-size:11px;font-weight:750;letter-spacing:var(--letter-eyebrow);text-transform:uppercase}
   .lh-mission-guide h2{margin:2px 0 0;font-family:var(--font-display);font-weight:400;font-size:19px;letter-spacing:var(--letter-display)}
