@@ -4729,7 +4729,7 @@ export class StudioApp {
 
         <div class="ed-body ${this.state.libraryCollapsed ? "library-hidden" : ""}${this.state.inspectorTab === "notes" ? " notes-open" : ""}">
           <aside class="ed-library layout-sidebar" aria-label="Библиотека миссий">
-            <button class="collapse-btn" data-action="toggle-library" title="Свернуть библиотеку">${this.state.libraryCollapsed ? `${icon("chevron-right", 20)}<span>Библиотека</span>` : `${icon("chevron-left", 20)}<span>Библиотека</span>`}</button>
+            <button class="collapse-btn" data-action="toggle-library" title="${this.state.libraryCollapsed ? "Развернуть библиотеку" : "Свернуть библиотеку"}">${this.state.libraryCollapsed ? `${icon("chevron-right", 20)}<span>Библиотека</span>` : `${icon("chevron-left", 20)}<span>Библиотека</span>`}</button>
             <div class="library-content">
               <section class="sidebar-section">
                 <div class="section-heading-row"><h2>Миссии</h2><span>${this.state.quests.length}</span></div>
@@ -4837,7 +4837,8 @@ export class StudioApp {
                     locations,
                     resources,
                     allowEdit,
-                    this.state.inspectorDraft
+                    this.state.inspectorDraft,
+                    this.state.selectedQuestId !== null
                   )}
                 <button class="button-secondary settings-link" data-action="open-utility-panel" data-panel="settings">Настройки доступа и проекта</button>
               </section>
@@ -5189,9 +5190,16 @@ function renderBlockInspector(
   locations: readonly Block[],
   resources: readonly Block[],
   editable: boolean,
-  local: StudioState["inspectorDraft"]
+  local: StudioState["inspectorDraft"],
+  missionOpen: boolean
 ): string {
-  if (!block) return `<p class="inspector-empty">Выберите карточку на доске</p>`;
+  if (!block) {
+    // Пока миссия не открыта, доски на экране нет: подсказка про карточку на
+    // доске отправляла бы искать то, чего ещё не существует.
+    return missionOpen
+      ? `<p class="inspector-empty">Выберите карточку на доске</p>`
+      : `<p class="inspector-empty">Миссия ещё не открыта: выберите или создайте её в библиотеке слева.</p>`;
+  }
   const values = (field: string, fallback: string | boolean): string | boolean => {
     if (local?.blockId === block.id && local.fields[field] !== undefined) return local.fields[field];
     if (field === "title") return block.title;

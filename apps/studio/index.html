@@ -31,6 +31,7 @@
   <details class="provider-settings">
     <summary>Подключение ИИ-помощника</summary>
     <form id="provider-form">
+      <button type="button" class="provider-close-x" data-action="provider-close" aria-label="Закрыть панель подключения" title="Закрыть">✕</button>
       <p>Настройка для локальной Studio. Ключ хранится на сервере стенда и наружу отдаётся только маской; подстановка ключа в запросы скрыта. Запросы оплачиваются по тарифу провайдера.</p>
       <label>Провайдер <select name="preset"><option value="openrouter">OpenRouter</option><option value="token-juice">Token Juice</option><option value="compatible">Совместимый API</option></select></label>
       <label>Базовый адрес API <input name="baseUrl" type="url" value="https://openrouter.ai/api/v1"></label>

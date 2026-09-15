@@ -925,9 +925,15 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .provider-settings { position: fixed; left: 16px; bottom: 16px; z-index: 15; margin: 0; padding: 12px 16px; max-width: min(680px, calc(100vw - 32px)); max-height: min(70vh, 620px); overflow: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-m); background: var(--surface); box-shadow: 0 10px 30px var(--overlay); }
 .provider-settings > summary { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; font-weight: 600; }
 .provider-settings[open] > summary { margin-bottom: 8px; }
+/* Открытая панель — по центру экрана: её вызывают из правого инспектора, а в
+   левом нижнем углу окно появлялось «не там, где нажали» и перекрывало блоки. */
+.provider-settings[open] { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(680px, calc(100vw - 32px)); max-height: min(80vh, 720px); z-index: 30; }
 .provider-settings form { display: grid; gap: 12px; max-width: 680px; margin-top: 12px; }
 .provider-settings label { display: grid; gap: 4px; }
 .provider-settings input, .provider-settings select { min-width: 0; width: 100%; box-sizing: border-box; }
+/* Кнопка закрытия поверх панели: «Закрыть» внизу формы уезжала за границу
+   прокрутки, и панель выглядела окном без выхода. */
+.provider-settings .provider-close-x { position: absolute; top: 10px; right: 10px; width: 32px; min-height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 /* Подключение ИИ-помощника: кнопки, список сохранённых подключений и моделей.
    Длинные адреса и идентификаторы моделей переносятся, а не обрезаются. */
 .provider-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1013,6 +1019,9 @@ button.primary:hover:not(:disabled), .entity-form > button:hover:not(:disabled) 
 .ed-library { border-right: 1px solid var(--border); background: var(--surface); padding: var(--gap-3); min-height: 0; height: 100%; position: relative; top: auto; max-height: none; overflow-y: auto; }
 .ed-library .collapse-btn { width: 100%; min-height: 40px; }
 .ed-body.library-hidden .ed-library .library-content { display: none; }
+/* Свёрнутая библиотека: в колонке 48px подпись кнопки вылезала за её границы и
+   перекрывала заголовок рабочей области — остаётся только значок. */
+.ed-body.library-hidden .ed-library .collapse-btn span { display: none; }
 .ed-main { min-width: 0; min-height: 0; height: 100%; padding: var(--gap-4) clamp(16px, 3vw, 32px) 40px; overflow-y: auto; }
 .ed-inspector { border-left: 1px solid var(--border); background: var(--surface); padding: var(--gap-4); min-height: 0; height: 100%; position: relative; top: auto; max-height: none; overflow-y: auto; }
 .ed-tabs { display: flex; gap: var(--gap-2); margin-bottom: var(--gap-3); }

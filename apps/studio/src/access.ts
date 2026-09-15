@@ -30,6 +30,18 @@ export function initialAccessState(): StudioAccessState {
 export async function probeStudioAccess(api: ControlApiClient): Promise<StudioAccessState> {
   try {
     const auth = await api.getSession();
+    // Подтверждение мутаций (CSRF) живёт только в памяти вкладки и теряется при
+    // каждой перезагрузке. В режиме единого входа вход уже подтверждён краем
+    // (gate), поэтому свежее подтверждение берётся повторным обменом — без
+    // логина и пароля. Если обмен недоступен (парольный режим), поведение
+    // прежнее: сессия читается, изменения требуют «Подтвердить вход».
+    if (!api.hasMutationProof()) {
+      try {
+        return authenticatedAccessState(api, await api.openGateSession());
+      } catch {
+        return authenticatedAccessState(api, auth);
+      }
+    }
     return authenticatedAccessState(api, auth);
   } catch (error) {
     if (error instanceof ControlApiError && error.status === 401 && error.code === "CONTROL_AUTH_REQUIRED") {

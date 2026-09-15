@@ -115,3 +115,57 @@ test("B09-03 tester presentation has read/test semantics and no editor mutation 
   const html = renderAccessPanel(access, testerProject);
   assert.match(html, /чтение · проверка и запуск; редактирование, публикация и участники недоступны/);
 });
+
+test("FIN-06 gate: перезагрузка вкладки восстанавливает подтверждение без пароля", async () => {
+  const requests = [];
+  const api = new ControlApiClient(async (input, init) => {
+    const path = String(input);
+    requests.push(`${init?.method ?? "GET"} ${path}`);
+    if (path === "/control/v1/auth/session") {
+      // Живая cookie-сессия Control: подтверждение мутаций живёт только в
+      // памяти вкладки и после перезагрузки отсутствует.
+      return jsonResponse(200, {
+        user: { userId: "telegram:1", username: "tg_user0001" },
+        session: { sessionId: "session-reload-gate", createdAtMs: 10, expiresAtMs: 1000 }
+      });
+    }
+    if (path === "/control/v1/auth/gate/session") {
+      return jsonResponse(200, {
+        user: { userId: "telegram:1", username: "tg_user0001" },
+        session: { sessionId: "session-reload-gate", createdAtMs: 10, expiresAtMs: 1000 },
+        csrfToken: "gate-refreshed-csrf-proof-kept-in-memory"
+      });
+    }
+    throw new Error(`unexpected request: ${path}`);
+  });
+
+  const reloaded = await probeStudioAccess(api);
+  assert.deepEqual(requests, ["GET /control/v1/auth/session", "POST /control/v1/auth/gate/session"]);
+  assert.equal(reloaded.mode, "authenticated");
+  assert.equal(reloaded.mutationProof, true, "обмен через gate возвращает подтверждение без пароля");
+  const project = { projectId: "project", title: "Project", role: "owner" };
+  assert.equal(canEditProject(reloaded, project), true);
+  const html = renderAccessPanel(reloaded, project);
+  assert.doesNotMatch(html, /Подтвердить вход/, "формы логина и пароля в едином входе нет");
+  assert.match(html, /Выйти/);
+});
+
+test("FIN-06 gate: без обмена (парольный режим) перезагрузка по-прежнему просит подтверждение", async () => {
+  const api = new ControlApiClient(async (input) => {
+    const path = String(input);
+    if (path === "/control/v1/auth/session") {
+      return jsonResponse(200, {
+        user: { userId: "editor", username: "editor.user" },
+        session: { sessionId: "session-password-reload", createdAtMs: 10, expiresAtMs: 1000 }
+      });
+    }
+    if (path === "/control/v1/auth/gate/session") return jsonResponse(404, { error: { code: "NOT_FOUND" } });
+    throw new Error(`unexpected request: ${path}`);
+  });
+
+  const reloaded = await probeStudioAccess(api);
+  assert.equal(reloaded.mode, "authenticated");
+  assert.equal(reloaded.mutationProof, false, "без gate подтверждение не выдумывается");
+  assert.equal(canEditProject(reloaded, { projectId: "project", title: "Project", role: "editor" }), false);
+  assert.match(renderAccessPanel(reloaded, null), /Подтвердить вход/);
+});
