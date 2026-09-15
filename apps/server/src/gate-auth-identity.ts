@@ -75,7 +75,7 @@ export function signGateIdentityAssertion(identity: GateIdentityAssertionInput, 
     throw new TypeError(`gate identity secret must be at least ${MIN_GATE_IDENTITY_SECRET_CHARS} chars`);
   }
   if (!TELEGRAM_ID.test(identity.telegramId)) throw new TypeError("gate assertion telegram id outside bounds");
-  if (!TELEGRAM_HANDLE.test(identity.username)) throw new TypeError("gate assertion username outside bounds");
+  if (identity.username !== "" && !TELEGRAM_HANDLE.test(identity.username)) throw new TypeError("gate assertion username outside bounds");
   if (!isFiniteTimestamp(identity.issuedAtMs) || !isFiniteTimestamp(identity.expiresAtMs)
     || identity.expiresAtMs <= identity.issuedAtMs) {
     throw new TypeError("gate assertion timestamps outside bounds");
@@ -143,7 +143,10 @@ export function createGateIdentityVerifier(options: GateIdentityVerifierOptions)
       if (payload.v !== 1) return null;
       if (typeof payload.sub !== "string" || !TELEGRAM_ID.test(payload.sub)) return null;
       const username = payload.username === undefined ? "" : payload.username;
-      if (typeof username !== "string" || !TELEGRAM_HANDLE.test(username)) return null;
+      // Ник — только отображение. У владельца и у добавленных по числовому ID
+      // ника в Telegram может не быть вовсе, и gate честно шлёт пустую строку.
+      // Ключ личности — числовой ID, поэтому пустой ник допустим, а не порча.
+      if (typeof username !== "string" || (username !== "" && !TELEGRAM_HANDLE.test(username))) return null;
       const issuedAtMs = payload.iat;
       const expiresAtMs = payload.exp;
       if (!isFiniteTimestamp(issuedAtMs) || !isFiniteTimestamp(expiresAtMs)) return null;

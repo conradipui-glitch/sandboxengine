@@ -336,6 +336,32 @@ test("FIN-06/GATE: идентичность Studio берётся из пров�
     assert.equal(foreign.body.error.code, "NOT_FOUND");
   });
 
+  await t.test("GATE-04b: личность без ника в Telegram входит — пустой username допустим", async () => {
+    // Владелец не состоит в state.users (он входит неявно), а у части людей
+    // ника в Telegram нет вовсе — gate честно шлёт username:"". Ключ личности —
+    // числовой ID, поэтому пустой ник обязан быть принят: иначе владелец заперт.
+    const assertion = signGateIdentityAssertion({
+      telegramId: OWNER_TG, username: "", issuedAtMs: now, expiresAtMs: now + 60_000
+    }, GATE_SECRET);
+    const response = await fetch(`${world.controlBase}/control/v1/auth/session`, {
+      headers: { origin: ORIGIN, "x-lhc-gate-identity": assertion }
+    });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json().catch(() => ({}))));
+    const body = await response.json();
+    assert.equal(body.user.userId, `telegram:${OWNER_TG}`);
+
+    // И такой ассерт реально выпускается gate для личности без ника.
+    const HANDLELESS_TG = "777888999";
+    assert.deepEqual(await world.gate.addUser(HANDLELESS_TG, { username: "" }), { ok: true });
+    const emitted = await world.gate.identityAssertion(HANDLELESS_TG);
+    assert.ok(typeof emitted === "string" && emitted.length > 0, "gate выпускает ассерт без ника");
+    const viaGate = await fetch(`${world.controlBase}/control/v1/auth/session`, {
+      headers: { origin: ORIGIN, "x-lhc-gate-identity": emitted }
+    });
+    assert.equal(viaGate.status, 200, JSON.stringify(await viaGate.clone().json().catch(() => ({}))));
+    assert.equal((await viaGate.json()).user.userId, `telegram:${HANDLELESS_TG}`);
+  });
+
   await t.test("GATE-05: недостаточная роль — 403, редактор не получает owner-прав", async () => {
     const editor = createBrowser(world.edgeBase);
     const gateCookie = await enterThroughBot(world, EDITOR_TG);

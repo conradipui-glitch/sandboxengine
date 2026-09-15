@@ -223,6 +223,23 @@ Configuration:
 - `LH_PUBLIC_MISSION_SESSION_SECRET` is required by `engine` for public mission sessions. Do not place it in `/tmp` overrides: the file would be world-readable and would not survive a reboot;
 - `authored` uses `SQLitePublishedSessionBindingStore`, so a container restart no longer drops already started legacy authored sessions.
 
+### Единый вход Studio (бот-сессия gate)
+
+Studio переводится в режим «один вход через Telegram-бот» переменными стенда в `deploy/vps/.env`; умолчание — `local` (безопасное), переключение обратимо одной правкой:
+
+| Переменная | Значение для единого входа | Смысл |
+|---|---|---|
+| `LHC_STUDIO_AUTH_MODE` | `authenticated` | права берутся только из `control_project_members`; парольного входа в Studio нет вовсе |
+| `LHC_GATE_IDENTITY_SECRET` | тот же секрет, что `LHC_GATE_SECRET` (>= 32 символов) | ключ подписи ассерта личности; gate подписывает им же (fallback на `LHC_GATE_SECRET`) |
+| `LHC_STUDIO_SECURE_COOKIES` | `true` | cookie сессии Control только по HTTPS |
+| `LHC_STUDIO_ALLOWED_ORIGINS` | `https://85.137.95.104.sslip.io:8741` | источник браузера для мутаций (иначе Origin-проверка режет записи) |
+
+После правки — `docker compose --env-file deploy/vps/.env -f deploy/vps/docker-compose.yml up -d --no-deps studio`. Владельцу и участникам нужны строки в `control_project_members` (вход сам по себе не даёт ни проекта, ни роли).
+
+Край обязан доносить ассерт: в `deploy/vps/nginx-lhc.conf` строки `auth_request_set $gate_identity …` живут в тех же `location`, где стоит `auth_request` — внутри внутреннего `/_gate_check` переменные главному запросу не выставляются, ассерт доедет пустым и Studio ответит 401. Контракт закреплён тестом `apps/server/test/edge-conf-identity.test.mjs`; обновлённый конфиг ставится вручную: `cp deploy/vps/nginx-lhc.conf /etc/nginx/conf.d/lhc.conf && nginx -t && systemctl reload nginx`.
+
+Проверка после включения: аноним на `https://<host>:8741/` получает страницу входа, владелец входит через бота и видит свои проекты. Откат: `LHC_STUDIO_AUTH_MODE=local` и пересоздание studio.
+
 Delivered state (2026-09-11): `/opt/lhc/engine` is at `7e61f9889724f01a5f5c1c2e511093c177ceac6b`; `lhc-engine`, `lhc-authored`, `lhc-studio` and `lhc-gate` are healthy; the legacy `/tmp/lhc-m06-compose-override.yml` override is removed and the public session secret lives only in `deploy/vps/.env` (mode 600).
 
 Recovery procedure after recreating a container:
