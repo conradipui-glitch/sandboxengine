@@ -63,7 +63,7 @@ const authorJobs = new SQLiteAuthorAgentJobStore({ path: databasePath });
 const authorArtifacts = new SQLiteAuthorAgentProposalArtifactStore(authorJobs, { path: databasePath });
 const authorConversation = new SQLiteAuthorConversationStore(authorJobs, { path: databasePath });
 // Ключ провайдера живёт в локальном файле стенда (не в памяти процесса) и
-// наружу отдаётся только маской: «Настройки → ИИ» переживают перезапуск.
+// наружу отдаётся только маской: «Подключение ИИ-помощника» переживает перезапуск.
 const providerConnections = new SQLiteControlProviderConnectionStore({ path: databasePath });
 // Auth-enabled Control keeps users/sessions/memberships in the same SQLite file.
 // Bootstrap credentials follow the engine's contract: id/username/password all
@@ -190,10 +190,11 @@ const missionDrafter = async (request: { readonly idea: string; readonly project
       ...(request.endingCount === undefined ? {} : { endingCount: request.endingCount })
     },
     // Бюджет генерации: длинный JSON-план редко приходит быстрее минуты, а с
-    // медленным провайдером — за две. Писатель делит этот бюджет между попытками
-    // сам, поэтому бюджет обязан вмещать две реалистичные попытки (см.
-    // CHAIN_WRITER_DEADLINE_MS в mission-chain-dialogs.ts).
-    deadlineAtMs: Date.now() + 540_000
+    // медленным провайдером — за четыре-пять. Писатель делит этот бюджет между
+    // попытками сам, поэтому бюджет обязан вмещать две реалистичные попытки —
+    // иначе первая попытка упирается в половину бюджета (270 с) и сгорает
+    // впустую (см. CHAIN_WRITER_DEADLINE_MS в mission-chain-dialogs.ts).
+    deadlineAtMs: Date.now() + 900_000
   } as Parameters<InstanceType<typeof ModelMissionWriter>["write"]>[0]);
 };
 // Публичный адрес сайта для панели публикации: отдаётся в index.html как
@@ -206,7 +207,7 @@ const studioAddress = await studio.listen(Number(process.env.LH_STUDIO_PORT ?? 4
 
 console.log(`Living History Studio: http://${studioAddress.host}:${studioAddress.port}`);
 console.log(`Control API (loopback only): http://${controlAddress.host}:${controlAddress.port}`);
-console.log("Author Assistant: configure an API provider in Studio (key held in process memory; no tools)");
+console.log("Author Assistant: configure an API provider in Studio (credential kept in a local file; no tools)");
 
 const shutdown = async () => {
   await playerLaunchModule.closeAllPlayers();

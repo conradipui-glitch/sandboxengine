@@ -1131,7 +1131,7 @@ export class StudioApp {
         await this.openProject(project.projectId);
         await this.selectQuest(draft.questId);
         // FIN-09: «Создать с ИИ» собирает ПОЛНУЮ миссию (сцены, две развилки,
-        // два финала) тем же провайдером, что настроен в «Настройки → ИИ».
+        // два финала) тем же провайдером, что настроен в «Подключение ИИ-помощника».
         // Отказ ИИ никогда не подменяется пустым черновиком: текст говорит, что делать.
         this.state.message = await this.draftMissionWithAi(project.projectId, draft.questId, about.trim());
         this.state.inspectorTab = "coauthor";
@@ -3469,6 +3469,9 @@ export class StudioApp {
       },
       generate: async (idea, onProgress) => {
         onProgress({ stage: "connecting", message: "Проверяем подключение к ИИ…" });
+        // Длинная генерация: без второй строки автор минутами видит «подключаемся»
+        // и не понимает, идёт ли работа. Строка честно называет ожидание.
+        onProgress({ stage: "generating", message: "Собираем миссию по описанию — у медленных моделей это занимает минуты." });
         let payload: any = null;
         try {
           const response = await fetch("/local/mission-draft", {
@@ -3479,7 +3482,7 @@ export class StudioApp {
           payload = await response.json().catch(() => null);
           if (!response.ok) payload = payload ?? { kind: "failed" };
         } catch {
-          return { ok: false as const, message: "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ» и повторите.", retryable: true };
+          return { ok: false as const, message: "ИИ недоступен: проверьте адрес и ключ в «Подключение ИИ-помощника» и повторите.", retryable: true };
         }
         if (payload?.kind !== "ok" || !payload.document) {
           return { ok: false as const, message: aiDraftFailureMessage(payload), retryable: true };
@@ -4367,7 +4370,7 @@ export class StudioApp {
       payload = await response.json().catch(() => null);
       if (!response.ok) payload = payload ?? { kind: "failed" };
     } catch {
-      return "ИИ недоступен: проверьте адрес и ключ в «Настройки → ИИ», затем повторите попытку. Черновик проекта уже создан и не потерян.";
+      return "ИИ недоступен: проверьте адрес и ключ в «Подключение ИИ-помощника», затем повторите попытку. Черновик проекта уже создан и не потерян.";
     }
     if (payload?.kind === "ok" && payload.document) {
       try {
@@ -4846,7 +4849,11 @@ export class StudioApp {
               <section class="inspector-section ai-panel-flat" aria-label="ИИ-помощник">
                 <p class="paint-note">Опишите идею — помощник соберёт сцены, развилки и финалы. Текст и структуру потом правите теми же инструментами, что и ручной квест.</p>
                 <div class="ai-panel-host" data-ai-panel-host></div>
-                <div class="chain-panel-host" data-chain-panel-host></div>
+                <details class="diagnostics">
+                  <summary>Дополнительно: диалог с помощником по шагам</summary>
+                  <p class="paint-note">Другой способ: помощник задаст уточняющие вопросы и покажет цепочку сцен, выборов и финалов до генерации миссии.</p>
+                  <div class="chain-panel-host" data-chain-panel-host></div>
+                </details>
                 <details class="diagnostics">
                   <summary>Дополнительно: служебный журнал помощника</summary>
                   <p class="paint-note">Технические сведения для разработчика: профиль, состояние задачи и счётчики сегментов.</p>
@@ -5360,12 +5367,13 @@ function isAcceptanceProject(projectId: string, title: string): boolean {
  * «модель ответила не планом» требуют разных действий, а не совета про ключ.
  */
 export function aiDraftFailureMessage(result: unknown): string {
-  const payload = (result ?? {}) as { readonly kind?: unknown; readonly evidence?: unknown };
+  const payload = (result ?? {}) as { readonly kind?: unknown; readonly code?: unknown; readonly evidence?: unknown };
   if (payload.kind === "insufficient_plan") return "ИИ предложил план без двух развилок и двух финалов, поэтому миссия не сохранена. Опишите идею подробнее или задайте финалы сами на доске.";
   if (payload.kind === "invalid_plan") return "Ответ ИИ не прошёл проверку документа миссии. Попробуйте ещё раз или уточните идею одним предложением.";
+  if (payload.code === "invalid_intent") return "Помощнику не хватило описания: назовите героя, место и то, что должно случиться, и повторите. Введённый текст сохранён.";
   const code = lastAttemptErrorCode(payload.evidence);
   if (code === "timeout") {
-    return "Модель не успела ответить за отведённое время: для длинного ответа она слишком медленная или провайдер перегружен. Повторите — введённый текст сохранён; если снова не выйдет, выберите в «Настройки → ИИ» модель со скоростью «быстрая».";
+    return "Модель не успела ответить за отведённое время: для длинного ответа она слишком медленная или провайдер перегружен. Повторите — введённый текст сохранён; если снова не выйдет, выберите в «Подключение ИИ-помощника» модель со скоростью «быстрая».";
   }
   if (code === "invalid_response") {
     return "Модель ответила, но не готовым планом (возможно, весь лимит вывода ушёл на размышления). Повторите — введённый текст сохранён; если повторится, выберите модель без режима размышлений.";
@@ -5373,25 +5381,41 @@ export function aiDraftFailureMessage(result: unknown): string {
   if (code === "output_truncated") {
     return "Модель не договорила: ответ оборвался на середине плана (лимит вывода). Повторите — введённый текст сохранён; если повторится, выберите модель со скоростью «быстрая» без режима размышлений.";
   }
-  if (code === "auth_required") return "Провайдер отклонил ключ: сохраните верный ключ в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+  if (code === "auth_required") return "Провайдер отклонил ключ: сохраните верный ключ в «Подключение ИИ-помощника» и повторите. Введённый текст сохранён.";
   if (code === "rate_limited") return "Провайдер ограничил частоту запросов: подождите минуту и повторите. Введённый текст сохранён.";
-  if (code === "network") return "Не удалось связаться с провайдером: проверьте соединение и базовый адрес API в «Настройки → ИИ» и повторите. Введённый текст сохранён.";
+  if (code === "backend_error" || code === "network") return "Не удалось связаться с провайдером: проверьте соединение и базовый адрес API в «Подключение ИИ-помощника» и повторите. Введённый текст сохранён.";
+  if (code === "aborted") return "Запрос к ИИ прервался до ответа модели — повторите: введённый текст сохранён.";
   return "ИИ не ответил: подключение сохранено, но ответ не пришёл. Повторите запрос — введённый текст сохранён.";
 }
 
-/** Код последней попытки из доказательств писателя (порядок попыток сохраняется). */
+/**
+ * Код последней попытки из доказательств писателя (порядок попыток сохраняется).
+ * Писатель отдаёт доказательства объектом `{attempts:[…]}`; плоский массив тоже
+ * принимаем, чтобы уже сохранённые ответы читались прежним способом.
+ */
 function lastAttemptErrorCode(evidence: unknown): string {
-  if (!Array.isArray(evidence)) return "";
-  for (let index = evidence.length - 1; index >= 0; index -= 1) {
-    const item = evidence[index] as { readonly errorCode?: unknown } | null;
+  const attempts = attemptListFromEvidence(evidence);
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const item = attempts[index] as { readonly errorCode?: unknown } | null;
     if (item && typeof item.errorCode === "string" && item.errorCode.length > 0) return item.errorCode;
   }
   return "";
 }
 
+/** Список попыток из доказательств: `{attempts:[…]}` или сам массив. */
+function attemptListFromEvidence(evidence: unknown): readonly unknown[] {
+  if (Array.isArray(evidence)) return evidence;
+  if (evidence !== null && typeof evidence === "object") {
+    const attempts = (evidence as { readonly attempts?: unknown }).attempts;
+    if (Array.isArray(attempts)) return attempts;
+  }
+  return [];
+}
+
 /** Автопочинка плана — человеческой фразой, без служебных кодов. */
 function aiRepairMessage(code: string): string {
   if (code.startsWith("duplicate_scene")) return "Две сцены получили одинаковый идентификатор — вторая переименована, история не потеряна.";
+  if (code.startsWith("empty_scene_choices")) return "У сцены не было ни одного выбора — добавлен выбор «Завершить», ведущий в финал её ветви.";
   if (code.startsWith("dangling_choice_target")) return "Выбор вёл в несуществующую сцену — он направлен в ближайший подходящий финал.";
   if (code.startsWith("dangling_")) return "Найдена висячая ссылка в структуре — она исправлена автоматически.";
   return `Структура исправлена автоматически (${code}).`;

@@ -109,7 +109,7 @@ export interface MissionChainDialogs {
 export interface StudioDevServerOptions {
   readonly controlOrigin: string;
   readonly authorProvider?: LocalAuthorProvider;
-  /** Генерация полной миссии тем же провайдером, что настроен в «Настройки → ИИ». */
+  /** Генерация полной миссии тем же провайдером, что настроен в «Подключение ИИ-помощника». */
   readonly missionDrafter?: (request: LocalMissionDraftRequest) => Promise<unknown>;
   /** AI-CHAIN: чат создания миссии с уточняющими вопросами и цепочкой. */
   readonly missionChainDialogs?: MissionChainDialogs;

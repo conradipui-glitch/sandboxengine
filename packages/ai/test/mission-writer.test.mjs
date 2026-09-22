@@ -525,6 +525,40 @@ test("FIN-09 починка достижимости детерминирова�
   assert.deepEqual(a.result.document.story, b.result.document.story);
 });
 
+// Сцена без выборов — привычка модели: последняя сцена ветви «заканчивает»
+// историю, и поле choices просто пропускается. План не теряется целиком:
+// сборка даёт такой сцене детерминированный выход в финал её ветви.
+test("FIN-09 сцена без выборов получает терминальный выбор ветви, а не отказ", async () => {
+  const plan = fullPlan();
+  delete plan.branches[0].scenes[1].choices; // сцена-«конец ветви» без поля choices
+  plan.branches[1].scenes[0].choices = []; // и пустой список — та же привычка
+  const { result } = await runFull(plan);
+  assert.equal(result.kind, "ok");
+  assert.deepEqual(
+    result.repairs.filter((repair) => repair.startsWith("empty_scene_choices")),
+    ["empty_scene_choices:b0:s1", "empty_scene_choices:b1:s0"]
+  );
+  assert.deepEqual(validateMissionDraft(result.document), []);
+  const scenes = result.document.story.scenes;
+  const second = scenes.find((scene) => scene.title === "Решение");
+  assert.equal(second.choices.length, 1);
+  assert.equal(second.choices[0].label, "Завершить: Свет долга");
+  assert.ok(second.choices[0].endingId, "выбор ведёт в финал ветви");
+  const third = scenes.find((scene) => scene.title === "Выбор");
+  assert.equal(third.choices.length, 1);
+  assert.equal(third.choices[0].label, "Завершить: Тихая гавань");
+});
+
+test("FIN-09 починка пустых выборов детерминирована между прогонами", async () => {
+  const plan = fullPlan();
+  delete plan.branches[0].scenes[1].choices;
+  const a = await runFull(plan);
+  const b = await runFull(plan);
+  assert.equal(a.result.kind, "ok");
+  assert.deepEqual(a.result.repairs, b.result.repairs);
+  assert.deepEqual(a.result.document.story, b.result.document.story);
+});
+
 // 13. Реальный валидатор действительно используется (негативный контроль).
 test("FIN-09 штатный валидатор отвергает испорченный документ (контроль вызова)", async () => {
   const { result } = await runFull();

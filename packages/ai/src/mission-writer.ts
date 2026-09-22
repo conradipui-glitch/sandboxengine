@@ -698,7 +698,12 @@ function normalizeDialogue(value: unknown, path: string, problems: string[]): Mi
 }
 
 function normalizeChoices(value: unknown, path: string, problems: string[]): MissionPlanChoice[] | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
+  // Сцена без выборов — частая привычка модели: последняя сцена ветви
+  // «заканчивает» историю, и поле choices просто пропускается. Это не повод
+  // терять весь план: сборка добавит такой сцене терминальный выбор ветви
+  // (empty_scene_choices), и сцена не останется тупиком.
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 16) {
     problems.push(`plan.scene_choices_invalid:${path}`);
     return null;
   }
@@ -816,6 +821,9 @@ async function assembleMission(
   const scenes: MissionScene[] = [];
   const endings: MissionEnding[] = [];
   const terminalChoiceForBranch = new Map<number, MissionChoice>();
+  // Список починок ведём с начала сборки: часть из них (пустые выборы сцены)
+  // делается прямо при сборке сцен ветви.
+  const repairs: string[] = [];
 
   plan.branches.forEach((branch, branchIndex) => {
     const endingId = endingIdByPlanId.get(branch.ending.id)!;
@@ -845,6 +853,20 @@ async function assembleMission(
           effects: Object.freeze([...(choice.effects ?? [])])
         });
       });
+      if (choices.length === 0) {
+        // Та же привычка модели, что и в плане: сцена-«конец ветви» без выборов.
+        // Даём ей выход в финал ветви — история не обрывается тупиком, новых
+        // сцен и финалов не появляется.
+        repairs.push(`empty_scene_choices:b${branchIndex}:s${sceneIndex}`);
+        choices.push(Object.freeze({
+          id: deriveId(seed, "choice", "fill", "b", branchIndex, "s", sceneIndex),
+          label: `Завершить: ${branch.ending.title}`,
+          targetSceneId: null,
+          endingId,
+          conditions: Object.freeze([] as Condition[]),
+          effects: Object.freeze([] as GameplayEffect[])
+        }));
+      }
       scenes.push(Object.freeze({ id: sceneId, title: scene.title, text: scene.text, dialogue: Object.freeze(dialogue), choices: Object.freeze(choices) }));
     });
 
@@ -860,7 +882,6 @@ async function assembleMission(
     }));
   });
 
-  const repairs: string[] = [];
   // Детерминированная починка: если финал не достижим ни одним выбором,
   // добавляем терминальный выбор в последнюю сцену его ветви. Новые финалы
   // НЕ придумываются — чинится только достижимость уже существующего.
