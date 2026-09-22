@@ -236,7 +236,24 @@ export function createStudioDevServer(options: StudioDevServerOptions): StudioDe
         if (!isLocalOperatorRequest(request)) { sendJson(response, 403, { error: { code: "LOCAL_OPERATOR_REQUIRED" } }); return; }
         try {
           const body = await readLocalJson(request) as LocalMissionDraftRequest;
-          sendJson(response, 200, await options.missionDrafter(body));
+          const result = await options.missionDrafter(body);
+          // Отказ сборки обязан оставлять след в журнале: без строки причина
+          // «ИИ не ответил» задним числом не восстановима (как у цепочки —
+          // см. [mission-chain] в mission-chain-dialogs.ts).
+          if (result !== null && typeof result === "object" && (result as { kind?: unknown }).kind !== "ok") {
+            const outcome = result as {
+              readonly kind?: unknown;
+              readonly code?: unknown;
+              readonly problems?: readonly unknown[];
+              readonly evidence?: { readonly attempts?: readonly { readonly errorCode?: unknown }[] };
+            };
+            const attempts = Array.isArray(outcome.evidence?.attempts)
+              ? outcome.evidence.attempts.map((attempt) => String(attempt?.errorCode ?? "ok")).join(",")
+              : "нет";
+            const problems = Array.isArray(outcome.problems) ? outcome.problems.length : 0;
+            console.error(`[mission-draft] писатель не справился: kind=${String(outcome.kind)} code=${String(outcome.code ?? outcome.kind)} проблемы=${problems} попытки=${attempts}`);
+          }
+          sendJson(response, 200, result);
         } catch (error) {
           if (error instanceof LocalAuthorProviderRequestError) sendJson(response, error.status, { error: { code: error.code } });
           else sendJson(response, 400, { error: { code: "INVALID_MISSION_DRAFT_REQUEST" } });
